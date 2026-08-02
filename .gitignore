@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Node backend
+node_modules/
+backend/.env
+backend/data/
+*.log
+
+# 临时调试脚本（含真实 key，不入库）
+backend/asr-debug.js
