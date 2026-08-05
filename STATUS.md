@@ -14,7 +14,7 @@
 | 豆包 ASR / DeepSeek | ✅ key 已配置，端到端联调通过（wav 16kHz 实测识别正确） |
 | 录音→转写→解析→进出场 全链路 | ✅ 本地端到端验证通过（/tmp/asr-test.wav 实测） |
 | 多设备同步 | ✅ 双客户端场景码隔离 + 轮询同步行为已验证（API 级） |
-| VPS 部署 | ⛔ 未开始 |
+| VPS 部署 | ✅ 已上线 bytevirt（Debian 11）：HTTPS 8443 + pm2 自启 + 证书自动续期，公网全链路验证通过 |
 
 ## 架构
 
@@ -72,11 +72,21 @@ app/                     Flutter 客户端（org com.firewatch.watchdog，包名
 ## 运行
 
 ```bash
-cd backend && cp .env.example .env && node --env-file=.env src/server.js   # 需先配 .env 的 key
+cd backend && cp .env.example .env && node --env-file=.env src/server.js   # 本地：需先配 .env 的 key
 cd backend && npm test                                                      # 后端单测 21 例
 cd app && flutter run                                                       # 真机，设置页填服务器地址/场景码/令牌
 cd app && flutter build apk --release                                       # 正式包（需 android/key.properties）
+./deploy/deploy.sh                                                          # 一键部署到 VPS（bytevirt）
 ```
+
+## 生产部署（bytevirt VPS）
+
+- 地址：`https://bytevirt.meiyou.xyz:8443`（nginx 8443 HTTPS 反代 → 127.0.0.1:3100；避开 proexam 的 3000 与 sing-box 的 443）
+- 进程：pm2 管理（`watchdog-api`，开机自启已启用），日志 `/var/log/watchdog/`
+- 证书：Let's Encrypt `bytevirt.meiyou.xyz`，certbot.timer 自动续期
+- 配置：`/opt/watchdog/.env`（PORT 由 ecosystem 强制 3100）、`/opt/watchdog/ecosystem.config.cjs`
+- 更新：`./deploy/deploy.sh`（rsync 代码 + npm install + pm2 restart + nginx reload）
+- 注意：`.env` 与 `data/` 不上传，密钥与数据只在服务器
 
 ## 产品规则（重要）
 
@@ -89,8 +99,8 @@ cd app && flutter build apk --release                                       # �
 
 ## 待办
 
-1. 真机录音链路验证（Release APK 已就绪，需真机跑通 录音→转写→解析→看板）
+1. 真机录音链路验证（Release APK 已就绪，服务器已上线，需真机跑通 录音→转写→解析→看板）
 2. 真机多设备同步 + 通知/报警实测（本地精确闹钟行为需 Android 13/14 真机确认）
-3. VPS 部署（node 运行 + 反代 HTTPS + 设置 API_TOKEN）
+3. App 指向生产服务器（设置页填 https://bytevirt.meiyou.xyz:8443 + 场景码 + 令牌）
 4. iOS 构建验证（暂缓，集中 Android）
 5. Android 正式签名 keystore 密码保护（当前开发密码，上架前需更换）
