@@ -11,6 +11,7 @@ class Settings {
   static const _kAlarm = 'alarm_min';
   static const _kTts = 'tts_enabled';
   static const _kAlarmSound = 'alarm_sound_enabled';
+  static const _kKeepScreenOn = 'keep_screen_on';
 
   static Future<String> get serverUrl async {
     final sp = await SharedPreferences.getInstance();
@@ -92,5 +93,13 @@ class Settings {
   static Future<void> setAlarmSoundEnabled(bool v) async {
     final sp = await SharedPreferences.getInstance();
     await sp.setBool(_kAlarmSound, v);
+  }
+
+  static Future<bool> get keepScreenOn async =>
+      (await SharedPreferences.getInstance()).getBool(_kKeepScreenOn) ?? true;
+
+  static Future<void> setKeepScreenOn(bool v) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool(_kKeepScreenOn, v);
   }
 }

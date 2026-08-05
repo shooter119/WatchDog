@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/alarm_service.dart';
+import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/tts_service.dart';
 
@@ -44,6 +45,7 @@ class AppController extends ChangeNotifier {
     api = ApiClient(baseUrl: serverUrl, sceneCode: sceneCode, apiToken: token);
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
+    await ScreenOn.setKeepScreenOn(await Settings.keepScreenOn);
     try {
       final cfg = await api!.fetchConfig();
       calcConfig = cfg;

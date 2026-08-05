@@ -2,32 +2,40 @@
 
 消防救援现场安全管控 App：安全员语音录入（姓名+气瓶压力）→ 云端 ASR + LLM 解析 → 自动计算可用时间并倒计时，看板实时显示在场人员，多设备云端同步。
 
-## 当前状态（更新于 2026-08-02）
+## 当前状态（更新于 2026-08-05）
 
 | 模块 | 状态 |
 | --- | --- |
-| 后端（Express + node:sqlite） | ✅ 开发完成，冒烟测试通过 |
-| App（Flutter） | ✅ 代码完成，`flutter analyze` 0 问题，Android debug APK 构建通过 |
-| iOS 构建 | ⚠️ 未验证（Xcode 环境未跑通构建） |
+| 后端（Express + node:sqlite） | ✅ 单测 21/21 通过（calc/db/API 集成/token 鉴权），含请求日志、旧数据自动清理、场景列表 |
+| App（Flutter） | ✅ UI v0.1 重构完成，`flutter analyze` 0 问题，widget 测试 13/13 通过 |
+| Android Release APK | ✅ 已配置正式签名（watchdog-release.keystore）+ minify/shrink，构建通过（52.1MB） |
+| Android 保活/常亮 | ✅ 精确闹钟 USE_EXACT_ALARM + 运行时通知权限申请 + 屏幕常亮（原生 FLAG_KEEP_SCREEN_ON，无第三方依赖） |
+| iOS 构建 | ⏸ 暂缓（集中开发 Android） |
 | 豆包 ASR / DeepSeek | ✅ key 已配置，端到端联调通过（wav 16kHz 实测识别正确） |
+| 录音→转写→解析→进出场 全链路 | ✅ 本地端到端验证通过（/tmp/asr-test.wav 实测） |
+| 多设备同步 | ✅ 双客户端场景码隔离 + 轮询同步行为已验证（API 级） |
 | VPS 部署 | ⛔ 未开始 |
 
 ## 架构
 
 ```
 backend/                 Node.js 后端（Express + ws + node:sqlite，端口 3000）
-  src/server.js          全部 REST API + Token/场景码校验 + CORS
+  src/server.js          全部 REST API + Token/场景码校验 + CORS + 请求日志 + 定时清理旧记录
   src/asr.js             豆包 Seed-ASR WebSocket 客户端（热词注入）
   src/parse.js           DeepSeek 语义解析（enter/exit + 姓名 + 压力）
   src/calc.js            可用时间 = 气瓶容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
   src/db.js              SQLite（WAL），表：entries / firefighters / hotwords，均带 scene
+  src/logger.js          统一日志（时间戳 + 级别）
+  test/                  node:test 单测（calc / db / API 集成 / token 鉴权），npm test 运行
   .env.example           环境变量模板
 app/                     Flutter 客户端（org com.firewatch.watchdog，包名 watchdog）
-  lib/main.dart          四 Tab：看板 / 语音录入 / 名单 / 设置
-  lib/pages/             board / home(语音) / roster(名单热词) / settings
+  lib/main.dart          三 Tab + 中央语音按钮：看板 / 语音录入 / 设置（UI 规范 v0.1）
+  lib/theme/             设计 Token（颜色/间距/圆角/字级/阴影）+ 通用组件（卡片/徽章/倒计时/脉冲/连接状态/语音按钮）
+  lib/pages/             board(看板+概览横幅) / home(语音) / roster(名单热词) / settings / entry_detail(人员详情)
   lib/api/api_client.dart 全部接口调用（带 X-Scene-Code / X-Api-Token）
   lib/state/app_controller.dart 5 秒轮询同步 + 每秒阈值检查 + TTS/通知调度
-  lib/services/          audio(录音 wav 16kHz) / tts(播报) / alarm(本地通知+警报音)
+  lib/services/          audio(录音 wav 16kHz) / tts(播报) / alarm(精确闹钟通知+警报音) / screen_on(常亮) / settings
+  android/app/watchdog-release.keystore + key.properties  正式签名（勿提交 keystore 与密码）
   assets/sounds/alarm.wav 警报音（Android 另存于 res/raw/ 供通知使用）
 ```
 
@@ -41,10 +49,12 @@ app/                     Flutter 客户端（org com.firewatch.watchdog，包名
 | CYLINDER_VOL_L=6.8 / FULL_PRESSURE_MPA=30 / CONSUMPTION_LPM=40 | 计算参数 |
 | WARN_MIN=10 / ALARM_MIN=5 | 提醒阈值 |
 | PORT=3000 / API_TOKEN | API_TOKEN 设置后所有接口须带 X-Api-Token |
+| PURGE_EXITED_DAYS=7 | 自动清理已出场超过 N 天的记录（启动时 + 每 24h） |
+| LOG_LEVEL=info | debug 输出更多细节 |
 
 ## API 清单
 
-- `GET /api/health`（免 token）、`GET /api/config`
+- `GET /api/health`（免 token）、`GET /api/config`、`GET /api/scenes`（活跃场景列表）
 - `POST /api/transcribe`（raw 音频 ≤15MB，Content-Type: audio/wav | pcm | mp3 | ogg，未知按 wav）
 - `POST /api/parse`（{text} → enter/exit/unknown + name + pressure_mpa）
 - `GET/POST /api/entries`、`POST /api/entries/:id/exit`
@@ -62,8 +72,10 @@ app/                     Flutter 客户端（org com.firewatch.watchdog，包名
 ## 运行
 
 ```bash
-cd backend && cp .env.example .env && node src/server.js   # 需先配 .env 的 key
-cd app && flutter run                                      # 真机，设置页填服务器地址/场景码/令牌
+cd backend && cp .env.example .env && node --env-file=.env src/server.js   # 需先配 .env 的 key
+cd backend && npm test                                                      # 后端单测 21 例
+cd app && flutter run                                                       # 真机，设置页填服务器地址/场景码/令牌
+cd app && flutter build apk --release                                       # 正式包（需 android/key.properties）
 ```
 
 ## 产品规则（重要）
@@ -71,13 +83,14 @@ cd app && flutter run                                      # 真机，设置页�
 - 语音识别到「进入火场」后停在确认页，压力**必填**才能登记（不默认满压）
 - 长按说话、松手自动转写；识别到「出火场」自动登记出火场
 - 未报压力时后端 400 拒绝，App 提示补填
-- 倒计时阈值：剩余 warnMin 提醒、alarmMin 报警、超时报警；后台走本地通知，前台 TTS+警报音
+- 倒计时阈值：剩余 warnMin 提醒、alarmMin 报警、超时报警；后台走本地精确闹钟通知（Android 14+ 用 USE_EXACT_ALARM，无需手动授权；设置页可见「精确闹钟被关闭」提示），前台 TTS+警报音
+- 屏幕常亮默认开启（原生 FLAG_KEEP_SCREEN_ON），设置页可关
 - 报「姓名，20兆帕」时按名单热词提升识别率
 
 ## 待办
 
-1. 真机录音链路验证（App 已改 wav，需真机跑通 录音→转写→解析）
-2. iOS 构建验证（xcodebuild / 模拟器）
+1. 真机录音链路验证（Release APK 已就绪，需真机跑通 录音→转写→解析→看板）
+2. 真机多设备同步 + 通知/报警实测（本地精确闹钟行为需 Android 13/14 真机确认）
 3. VPS 部署（node 运行 + 反代 HTTPS + 设置 API_TOKEN）
-4. 真机多设备同步测试（场景码 + 轮询）
-5. git init + 提交
+4. iOS 构建验证（暂缓，集中 Android）
+5. Android 正式签名 keystore 密码保护（当前开发密码，上架前需更换）

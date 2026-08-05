@@ -16,6 +16,8 @@ class AlarmService {
   bool _inited = false;
   final Set<String> _firedLocal = {};
   String _lastSpokenKey = '';
+  /// 精确闹钟是否可用（Android 12+ 可能被系统/用户关闭）
+  bool exactAlarmAvailable = true;
 
   Future<void> init() async {
     if (_inited) return;
@@ -30,9 +32,25 @@ class AlarmService {
     await _notifications.initialize(
       const InitializationSettings(android: androidInit, iOS: iosInit),
     );
+    // Android 13+：运行时申请通知权限
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+    // Android 12+：检测精确闹钟授权（USE_EXACT_ALARM 默认授予；SCHEDULE_EXACT_ALARM 需手动）
+    exactAlarmAvailable =
+        await _notifications
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>()
+            ?.canScheduleExactNotifications() ??
+        true;
     await _player.setPlayerMode(PlayerMode.lowLatency);
     await _player.setSource(AssetSource('sounds/alarm.wav'));
   }
+
+  AndroidScheduleMode get _scheduleMode => exactAlarmAvailable
+      ? AndroidScheduleMode.exactAllowWhileIdle
+      : AndroidScheduleMode.inexactAllowWhileIdle;
 
   /// 每个条目调度本地通知：warn 提醒、alarm 报警、timeout 超时（已过时间点跳过）
   Future<void> scheduleForEntry(Entry e, {required int warnMin, required int alarmMin}) async {
@@ -57,7 +75,7 @@ class AlarmService {
           ),
           iOS: DarwinNotificationDetails(),
         ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: _scheduleMode,
       );
     }
     if (alarmAt.isAfter(now)) {
@@ -77,7 +95,7 @@ class AlarmService {
           ),
           iOS: DarwinNotificationDetails(),
         ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: _scheduleMode,
       );
     }
     if (exit.isAfter(now)) {
@@ -98,7 +116,7 @@ class AlarmService {
           ),
           iOS: DarwinNotificationDetails(),
         ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: _scheduleMode,
       );
     }
   }

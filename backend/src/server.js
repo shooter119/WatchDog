@@ -4,6 +4,7 @@ const { transcribe } = require('./asr');
 const { parseTextWithDeepSeek } = require('./parse');
 const { durationMinutes, exitAtMs } = require('./calc');
 const db = require('./db');
+const logger = require('./logger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,8 +34,18 @@ app.use(express.json({ limit: '5mb' }));
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Scene-Code');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Scene-Code, X-Api-Token');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// 请求日志（health 探活不刷屏）
+app.use((req, res, next) => {
+  if (req.path === '/api/health') return next();
+  const start = Date.now();
+  res.on('finish', () => {
+    logger.info(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms`);
+  });
   next();
 });
 
@@ -64,6 +75,11 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/config', (req, res) => {
   res.json({ calc: CFG.calc, asrConfigured: !!CFG.asr.appId, llmConfigured: !!CFG.llm.apiKey });
+});
+
+// 场景列表（供多设备确认场景码、查看活跃场景）
+app.get('/api/scenes', (req, res) => {
+  res.json(db.listScenes());
 });
 
 app.post('/api/transcribe', (req, res, next) => {
@@ -213,12 +229,30 @@ app.delete('/api/hotwords/:id', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error('[error]', err);
-  res.status(500).json({ error: err.message || '服务器内部错误' });
+  logger.error(req.method, req.path, err.stack || err);
+  const status = err.status || 500;
+  res.status(status).json({ error: status === 500 ? '服务器内部错误' : err.message });
 });
 
-app.listen(PORT, () => {
-  console.log(`WatchDog 后端已启动: http://0.0.0.0:${PORT}`);
-  console.log(`ASR 配置: ${CFG.asr.appId ? '已配置' : '未配置 (VOLC_APP_KEY)'}`);
-  console.log(`LLM 配置: ${CFG.llm.apiKey ? '已配置' : '未配置 (DEEPSEEK_API_KEY)'}`);
-});
+// 仅作为入口运行时监听端口；被测试 require 时导出 app
+if (require.main === module) {
+  const purgeDays = Number(process.env.PURGE_EXITED_DAYS || 7);
+  const doPurge = () => {
+    try {
+      const n = db.purgeOldExited(purgeDays);
+      if (n > 0) logger.info(`已清理 ${n} 条超过 ${purgeDays} 天的出场记录`);
+    } catch (e) {
+      logger.error('清理旧记录失败', e.message);
+    }
+  };
+  doPurge();
+  setInterval(doPurge, 24 * 3600 * 1000);
+
+  app.listen(PORT, () => {
+    logger.info(`WatchDog 后端已启动: http://0.0.0.0:${PORT}`);
+    logger.info(`ASR 配置: ${CFG.asr.appId ? '已配置' : '未配置 (VOLC_APP_KEY)'}`);
+    logger.info(`LLM 配置: ${CFG.llm.apiKey ? '已配置' : '未配置 (DEEPSEEK_API_KEY)'}`);
+  });
+}
+
+module.exports = app;

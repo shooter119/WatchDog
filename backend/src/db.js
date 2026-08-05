@@ -139,6 +139,25 @@ function removeHotword(id) {
   db.prepare('DELETE FROM hotwords WHERE id = ?').run(id);
 }
 
+/** 清理已出火场超过 days 天的记录（含全部场景），返回删除条数 */
+function purgeOldExited(days = 7) {
+  const cutoff = Date.now() - days * 24 * 3600 * 1000;
+  const r = db
+    .prepare('DELETE FROM entries WHERE exited_at IS NOT NULL AND exited_at < ?')
+    .run(cutoff);
+  return r.changes;
+}
+
+/** 全部场景码（跨 entries/firefighters/hotwords 去重） */
+function listScenes() {
+  const rows = db
+    .prepare(
+      'SELECT scene FROM entries UNION SELECT scene FROM firefighters UNION SELECT scene FROM hotwords ORDER BY scene'
+    )
+    .all();
+  return rows.map((r) => r.scene);
+}
+
 module.exports = {
   listEntries,
   getEntry,
@@ -150,4 +169,6 @@ module.exports = {
   listHotwords,
   addHotword,
   removeHotword,
+  purgeOldExited,
+  listScenes,
 };

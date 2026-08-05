@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
@@ -25,6 +26,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _tokenVisible = false;
   bool _tts = true;
   bool _sound = true;
+  bool _keepScreenOn = true;
 
   @override
   void initState() {
@@ -43,6 +45,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _alarm.text = (await Settings.alarmMin).toString();
     _tts = await Settings.ttsEnabled;
     _sound = await Settings.alarmSoundEnabled;
+    _keepScreenOn = await Settings.keepScreenOn;
     if (mounted) setState(() {});
   }
 
@@ -59,6 +62,8 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     await Settings.setTtsEnabled(_tts);
     await Settings.setAlarmSoundEnabled(_sound);
+    await Settings.setKeepScreenOn(_keepScreenOn);
+    await ScreenOn.setKeepScreenOn(_keepScreenOn);
     await widget.controller.refreshConfig();
     widget.controller.startSync();
     if (mounted) {
@@ -203,6 +208,26 @@ class _SettingsPageState extends State<SettingsPage> {
                   value: _sound,
                   onChanged: (v) => setState(() => _sound = v),
                 ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                SwitchListTile(
+                  title: const Text('屏幕常亮', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  subtitle: const Text('看板页保持屏幕常亮，适合火场值守'),
+                  activeThumbColor: AppColors.actionPrimary,
+                  value: _keepScreenOn,
+                  onChanged: (v) => setState(() => _keepScreenOn = v),
+                ),
+                if (!widget.controller.alarm.exactAlarmAvailable) ...[
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.notifications_off_outlined, color: AppColors.caution, size: 20),
+                    title: const Text(
+                      '系统已关闭精确闹钟权限，后台提醒可能延迟',
+                      style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: const Text('请在系统设置-应用-安全员助手中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
+                  ),
+                ],
               ],
             ),
           ),
