@@ -1,86 +1,40 @@
 # WatchDog 安全员助手
 
-消防救援现场安全管控应用：安全员**语音录入**（姓名 + 气瓶压力）→ 云端 ASR + LLM 语义解析 → 自动计算气瓶可用时间并倒计时 → 看板实时显示在场人员 → 多设备云端同步。
+一款由消防员开发、给消防员用的 App。
 
-## 功能
+## 为什么会有这个 App
 
-- **语音录入**：按住即录，自动转写并解析「张三 24 兆帕」「李四进场」等口语，无需手动打字
-- **气瓶倒计时**：可用时间 = 气瓶容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)，自动倒数并在阈值（10min / 5min）提醒
-- **实时看板**：在场人员、剩余时间一目了然，超时脉冲 + TTS 播报 + 精确闹钟通知
-- **名单与热词**：维护人员名单，热词注入 ASR 提升姓名识别率
-- **多设备同步**：场景码隔离，5 秒轮询，多台手机/平板协同
-- **离线友好**：Android 保活、屏幕常亮，适合火场环境
+火场里，安全员是最要紧也最紧张的岗位。进了多少人、进去多久了、谁的气瓶快空了——每一个数字都人命关天。
 
-## 架构
+但现场往往是这样：防护服、手套、对讲机的嘈杂声，烟雾里看不清纸笔，指挥员一句「报一下里面几个人」，靠的是一张被水打湿的名单和一个记在心里的时间。气瓶剩余时间要心算，人多了一乱就错。
 
-```
-backend/    Node.js 后端（Express + ws + node:sqlite，端口 3000）
-  src/server.js      全部 REST API + Token/场景码校验 + CORS + 请求日志 + 定时清理
-  src/asr.js         豆包 Seed-ASR WebSocket 客户端（热词注入）
-  src/parse.js       DeepSeek 语义解析（enter/exit + 姓名 + 压力）
-  src/calc.js        可用时间计算
-  src/db.js          SQLite（WAL），表：entries / firefighters / hotwords
-app/        Flutter 客户端（Android 优先）
-  lib/pages/         board(看板) / home(语音) / roster(名单) / settings / entry_detail
-  lib/state/         5 秒轮询同步 + 阈值检查 + TTS/通知调度
-  lib/services/      audio(录音 wav 16kHz) / tts / alarm / screen_on / settings
-deploy/     VPS 一键部署脚本（HTTPS + pm2 + 证书自动续期）
-```
+安全员真的没时间翻记录本。我们做了这个 App，让安全员只做一件事：**张嘴说**。
 
-## 快速开始
+## 它是怎么用的
 
-### 后端
+安全员站在入口，队员进场时报一句「张三，24」：
 
-```bash
-cd backend
-cp .env.example .env   # 填入豆包 / DeepSeek key
-npm install
-node --env-file=.env src/server.js   # 或 npm start
-npm test               # 单测 21 例
-```
+- App 自动听清人名和压力值，算好这瓶气能用多久
+- 谁进来、谁出去、还剩多少分钟，全部实时显示在看板上
+- 快没气了，App 会提醒、会响警报、会大声喊出来
+- 退场时一句「张三退场」，记录自动归档
 
-### App
+全程不用敲一个字，戴着战术手套也能操作。几台手机连上同一个场景码，指挥员和多个安全员看到的是同一块看板，数据实时同步。
 
-```bash
-cd app
-flutter run            # 真机运行，设置页填服务器地址 / 场景码 / 令牌
-flutter build apk --release   # 正式包（需 android/key.properties 签名配置）
-```
+## 它能帮你什么
 
-### 部署到 VPS
+- **语音录入**：进场、退场、压力值，一句话搞定，自动识别人名和气瓶压力
+- **自动计算**：气瓶容量、压力、消耗率的关系交给我们算，10 分钟、5 分钟双阈值预警
+- **实时看板**：在场谁、进去多久、还剩多久，一目了然；到点自动播报、闹钟提醒
+- **名单与热词**：把班组名单录进去，语音识别对你的人名更准
+- **火场友好**：屏幕常亮、后台保活、按键式录音，戴着手套、满场嘈杂也能用
 
-```bash
-./deploy/deploy.sh     # 一键部署（HTTPS 8443 + pm2 自启 + 证书自动续期）
-```
+## 场景
 
-## 环境变量
+室内烟火特性训练、楼层火灾进攻、化工装置处置……凡是需要安全员盯着气瓶和人员的现场，都适用。
 
-`backend/.env`（详见 `backend/.env.example`）：
+## 关于这个项目
 
-| 变量 | 说明 |
-| --- | --- |
-| VOLC_APP_KEY / VOLC_ACCESS_TOKEN / VOLC_RESOURCE_ID | 豆包语音（火山引擎）凭证 |
-| DEEPSEEK_API_KEY / BASE_URL / MODEL | DeepSeek 语义解析 |
-| CYLINDER_VOL_L=6.8 / FULL_PRESSURE_MPA=30 / CONSUMPTION_LPM=40 | 气瓶计算参数 |
-| WARN_MIN=10 / ALARM_MIN=5 | 提醒阈值 |
-| PORT=3000 / API_TOKEN | 服务端口；API_TOKEN 设置后所有接口须带 `X-Api-Token` |
-| PURGE_EXITED_DAYS=7 | 自动清理已出场超 N 天的记录 |
-| LOG_LEVEL=info | 日志级别 |
+由一线消防员在工作之余开发，用了豆包语音识别和 DeepSeek 语义理解做语音解析，后端和 App 全部开源。项目进展见 [STATUS.md](STATUS.md)。
 
-## API 摘要
-
-- `GET /api/health`、`GET /api/config`、`GET /api/scenes`
-- `POST /api/transcribe`（raw 音频 ≤15MB，wav/pcm/mp3/ogg）
-- `POST /api/parse`（{text} → enter/exit/unknown + name + pressure_mpa）
-- `GET/POST /api/entries`、`POST /api/entries/:id/exit`
-- `GET/POST/DELETE /api/firefighters`、`/api/hotwords`（名单/热词按场景隔离）
-
-## 技术栈
-
-- 后端：Node.js ≥24、Express、ws、node:sqlite（内置 SQLite，无需外部依赖）
-- AI：豆包 Seed-ASR（语音转写）、DeepSeek（语义解析）
-- App：Flutter、record / flutter_tts / audioplayers / flutter_local_notifications
-
-## 项目状态
-
-详见 [STATUS.md](STATUS.md)：后端单测 21/21、Flutter analyze 0 问题、widget 测试 13/13、Android Release 签名构建通过、VPS 已上线。
+如果你的队伍也用得上，欢迎提需求、提 bug，一起让它变得更好用。
