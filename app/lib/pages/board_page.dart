@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
+import 'entry_detail_page.dart';
 
-/// 看板仪表盘：在场人员 + 倒计时 + 状态分级
+/// 看板仪表盘：在场人员 + 倒计时 + 状态分级（规范 5.1）
 class BoardPage extends StatefulWidget {
   final AppController controller;
-  const BoardPage({super.key, required this.controller});
+  final VoidCallback? onGoVoice;
+
+  const BoardPage({super.key, required this.controller, this.onGoVoice});
 
   @override
   State<BoardPage> createState() => _BoardPageState();
@@ -18,60 +22,45 @@ class _BoardPageState extends State<BoardPage> {
     final active = widget.controller.entries.where((e) => e.isActive).toList()
       ..sort((a, b) => a.exitAt.compareTo(b.exitAt));
     final cfg = widget.controller.calcConfig;
+    final offline = widget.controller.syncError != null;
 
     return SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
               children: [
-                const Text('火场安全管控看板', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                const Text('火场安全管控看板', style: AppTextStyles.h1),
                 const Spacer(),
-                Icon(Icons.local_fire_department, color: Colors.deepOrange.shade300),
+                ConnectionStatus(
+                  syncing: widget.controller.syncing,
+                  offline: offline,
+                  onRetry: () => widget.controller.startSync(),
+                ),
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _statChip('在场 ${active.length} 人', Colors.white70),
-                const SizedBox(width: 8),
-                _statChip('最早到期 ${_earliestText(active)}', Colors.amber),
-                const Spacer(),
-                if (widget.controller.syncing)
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
-            ),
+            child: _OverviewBanner(entries: active, config: cfg),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Expanded(
             child: active.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.shield_outlined, size: 96, color: Colors.white12),
-                        const SizedBox(height: 16),
-                        Text('暂无人员在场', style: TextStyle(color: Colors.grey.shade500, fontSize: 18)),
-                        const SizedBox(height: 8),
-                        Text('切换到「语音录入」登记进入人员', style: TextStyle(color: Colors.grey.shade700, fontSize: 14)),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: active.length,
-                    itemBuilder: (context, i) => _EntryCard(
-                      entry: active[i],
-                      config: cfg,
-                      onExit: () => _confirmExit(active[i]),
+                ? _EmptyBoard(onGoVoice: widget.onGoVoice)
+                : RefreshIndicator(
+                    onRefresh: () async => widget.controller.startSync(),
+                    child: ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                      itemCount: active.length,
+                      itemBuilder: (context, i) => _EntryCard(
+                        entry: active[i],
+                        config: cfg,
+                        onTap: () => _openDetail(active[i]),
+                      ),
                     ),
                   ),
           ),
@@ -80,147 +69,231 @@ class _BoardPageState extends State<BoardPage> {
     );
   }
 
-  Widget _statChip(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E2126),
-        borderRadius: BorderRadius.circular(20),
+  void _openDetail(Entry e) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EntryDetailPage(controller: widget.controller, entryId: e.id),
       ),
-      child: Text(text, style: TextStyle(color: color, fontSize: 13)),
     );
   }
+}
 
-  String _earliestText(List<Entry> active) {
-    if (active.isEmpty) return '--';
-    final ms = active.first.remainingMs;
-    if (ms <= 0) return '已超时!';
-    final m = (ms / 60000).ceil();
-    return '$m 分钟后';
-  }
+/// 顶部概览横幅：在场人数 / 需关注 / 最早到期（规范 4.1）
+class _OverviewBanner extends StatelessWidget {
+  final List<Entry> entries;
+  final CalcConfig config;
 
-  Future<void> _confirmExit(Entry e) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('确认「${e.name}」已出火场？'),
-        content: const Text('登记后将停止倒计时并取消提醒'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.teal),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认出火场'),
+  const _OverviewBanner({required this.entries, required this.config});
+
+  @override
+  Widget build(BuildContext context) {
+    final dangerCount = entries
+        .where((e) => e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin) != 'normal')
+        .length;
+    final earliest = entries.isEmpty ? null : entries.first;
+    final earliestStatus = earliest?.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppShadow.card,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _metric(
+              value: '${entries.length}',
+              label: '在场人员',
+              icon: Icons.people_outline,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          Container(width: 1, height: 40, color: AppColors.border),
+          Expanded(
+            child: _metric(
+              value: '$dangerCount',
+              label: '需关注',
+              icon: Icons.warning_amber_rounded,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          Container(width: 1, height: 40, color: AppColors.border),
+          Expanded(
+            child: _metric(
+              value: earliest == null ? '--' : _earliestText(earliest),
+              label: '最早到期',
+              icon: Icons.timer_outlined,
+              color: earliestStatus == null
+                  ? AppColors.textPrimary
+                  : switch (earliestStatus) {
+                      'warn' => AppColors.caution,
+                      'alarm' => AppColors.alarm,
+                      'timeout' => AppColors.timeout,
+                      _ => AppColors.textPrimary,
+                    },
+            ),
           ),
         ],
       ),
     );
-    if (confirmed == true) {
-      await widget.controller.markExited(e.id);
-      widget.controller.tts.speak('${e.name} 已登记出火场');
-    }
+  }
+
+  Widget _metric({required String value, required String label, required IconData icon, required Color color}) {
+    return Column(
+      children: [
+        Icon(icon, size: 18, color: AppColors.textTertiary),
+        const SizedBox(height: 4),
+        FittedBox(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              color: color,
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11, letterSpacing: 0.5)),
+      ],
+    );
+  }
+
+  String _earliestText(Entry e) {
+    final ms = e.remainingMs;
+    if (ms <= 0) return '已超时';
+    final m = (ms / 60000).floor();
+    final s = (ms % 60000) ~/ 1000;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 }
 
-class _EntryCard extends StatefulWidget {
-  final Entry entry;
-  final CalcConfig config;
-  final VoidCallback onExit;
-  const _EntryCard({required this.entry, required this.config, required this.onExit});
+class _EmptyBoard extends StatelessWidget {
+  final VoidCallback? onGoVoice;
 
-  @override
-  State<_EntryCard> createState() => _EntryCardState();
-}
+  const _EmptyBoard({this.onGoVoice});
 
-class _EntryCardState extends State<_EntryCard> {
   @override
   Widget build(BuildContext context) {
-    final e = widget.entry;
-    final status = e.statusAt(warnMin: widget.config.warnMin, alarmMin: widget.config.alarmMin);
-    final (Color color, String label) = switch (status) {
-      'normal' => (const Color(0xFF2E7D32), '安全'),
-      'warn' => (Colors.orange, '注意'),
-      'alarm' => (Colors.redAccent, '报警'),
-      _ => (Colors.red.shade900, '超时'),
-    };
-
-    final ms = e.remainingMs.clamp(0, 1 << 62);
-    final totalSec = ms ~/ 1000;
-    final h = totalSec ~/ 3600;
-    final m = (totalSec % 3600) ~/ 60;
-    final s = totalSec % 60;
-    final timeText = h > 0
-        ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
-        : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-
-    final danger = status == 'alarm' || status == 'timeout';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      color: danger ? color.withValues(alpha: 0.18) : const Color(0xFF1E2126),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: danger ? color : Colors.white12, width: danger ? 2 : 1),
+    final voiceGuide = onGoVoice == null
+        ? null
+        : [
+            const SizedBox(height: 20),
+            SizedBox(
+              height: 48,
+              child: FilledButton.icon(
+                onPressed: onGoVoice,
+                icon: const Icon(Icons.mic_rounded),
+                label: const Text('去语音录入'),
+              ),
+            ),
+          ];
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.surface,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Icon(Icons.shield_outlined, size: 44, color: AppColors.textTertiary),
+          ),
+          const SizedBox(height: 20),
+          const Text('暂无人员在场', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          const Text('可通过语音录入完成进场登记', style: TextStyle(color: AppColors.textTertiary, fontSize: 13)),
+          ...?voiceGuide,
+        ],
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: widget.onExit,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
+    );
+  }
+}
+
+/// 人员状态卡片：整块状态色，倒计时为视觉重心（规范 4.2）
+class _EntryCard extends StatelessWidget {
+  final Entry entry;
+  final CalcConfig config;
+  final VoidCallback onTap;
+
+  const _EntryCard({required this.entry, required this.config, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final e = entry;
+    final status = e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin);
+    final s = EntryStatus.of(status);
+    final fg = s.fg;
+    final subFg = fg.withValues(alpha: 0.75);
+
+    final card = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: s.color,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1),
+        boxShadow: AppShadow.card,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Expanded(
-                flex: 5,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(e.name, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
-                        const SizedBox(width: 8),
-                        if (e.pressureMpa != null)
-                          Text('${e.pressureMpa}MPa', style: TextStyle(color: Colors.grey.shade400, fontSize: 14)),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(Icons.timer_outlined, size: 14, color: color),
-                        const SizedBox(width: 4),
-                        Text(label, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600)),
-                        const SizedBox(width: 12),
-                        Text(
-                          '${e.durationMin}分钟上限',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ],
+              Flexible(
+                child: Text(
+                  e.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 22, height: 1.25, fontWeight: FontWeight.w800, color: fg),
                 ),
               ),
-              Expanded(
-                flex: 3,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      timeText,
-                      style: TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w800,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                        color: danger ? Colors.white : Colors.amber,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text('剩余时间', style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.logout, color: Colors.grey.shade500, size: 20),
+              const SizedBox(width: 8),
+              StatusBadge(status: status, onColorCard: true),
             ],
           ),
-        ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (e.pressureMpa != null) ...[
+                Icon(Icons.speed, size: 14, color: subFg),
+                const SizedBox(width: 4),
+                Text('${e.pressureMpa} MPa', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 12),
+              ],
+              Icon(Icons.timer_outlined, size: 14, color: subFg),
+              const SizedBox(width: 4),
+              Text('${e.durationMin} 分钟上限', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              CountdownText(ms: e.remainingMs, color: fg, size: 56, timeoutText: '已超时'),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text('剩余时间', style: TextStyle(color: subFg, fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final wrapped = s.danger ? PulseGlow(color: s.color, child: card) : card;
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: wrapped,
       ),
     );
   }

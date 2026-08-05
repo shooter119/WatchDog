@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../services/settings.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
+import 'roster_page.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -20,6 +22,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _consumption = TextEditingController();
   final TextEditingController _warn = TextEditingController();
   final TextEditingController _alarm = TextEditingController();
+  bool _tokenVisible = false;
   bool _tts = true;
   bool _sound = true;
 
@@ -40,7 +43,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _alarm.text = (await Settings.alarmMin).toString();
     _tts = await Settings.ttsEnabled;
     _sound = await Settings.alarmSoundEnabled;
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _save() async {
@@ -80,90 +83,164 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
         children: [
-          const Text('设置', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          _sectionTitle('服务端'),
-          _field(_server, '服务器地址', 'http://你的VPS:3000', keyboard: TextInputType.url),
-          _field(_scene, '场景码', '多设备同步用同一场景码'),
-          _field(_token, '访问令牌', '与服务器 API_TOKEN 一致', obscure: true),
-          const SizedBox(height: 8),
-          _sectionTitle('计算参数'),
           Row(
             children: [
-              Expanded(child: _field(_volume, '气瓶容量 (L)', '6.8')),
-              const SizedBox(width: 8),
-              Expanded(child: _field(_full, '满压 (MPa)', '30')),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(child: _field(_consumption, '消耗率 (L/min)', '40')),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _warn,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: '提醒剩余 (min)'),
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _alarm,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: '报警剩余 (min)'),
-                ),
-              ),
+              const Text('设置', style: AppTextStyles.h1),
               const Spacer(),
+              ConnectionStatus(
+                syncing: widget.controller.syncing,
+                offline: widget.controller.syncError != null,
+                onRetry: () => widget.controller.startSync(),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          _sectionTitle('提醒方式'),
-          SwitchListTile(
-            title: const Text('语音播报'),
-            subtitle: const Text('确认/提醒/报警时播报中文语音'),
-            value: _tts,
-            onChanged: (v) => setState(() => _tts = v),
-            contentPadding: EdgeInsets.zero,
-          ),
-          SwitchListTile(
-            title: const Text('报警音'),
-            subtitle: const Text('前台警报音 + 后台本地通知'),
-            value: _sound,
-            onChanged: (v) => setState(() => _sound = v),
-            contentPadding: EdgeInsets.zero,
+          const SizedBox(height: 18),
+          const SectionTitle(text: '服务端'),
+          AppCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _field(_server, '服务器地址', 'http://你的VPS:3000', icon: Icons.dns_outlined, keyboard: TextInputType.url),
+                _field(_scene, '场景码', '多设备同步用同一场景码', icon: Icons.tag),
+                _field(
+                  _token,
+                  '访问令牌',
+                  '与服务器 API_TOKEN 一致',
+                  icon: Icons.key_outlined,
+                  obscure: !_tokenVisible,
+                  suffix: IconButton(
+                    icon: Icon(_tokenVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                    onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
+          const SectionTitle(text: '计算参数'),
+          AppCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: _field(_volume, '气瓶容量 (L)', '6.8', icon: Icons.local_fire_department_outlined)),
+                    const SizedBox(width: 10),
+                    Expanded(child: _field(_full, '满压 (MPa)', '30', icon: Icons.speed)),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(child: _field(_consumption, '消耗率 (L/min)', '40', icon: Icons.water_drop_outlined)),
+                    const SizedBox(width: 10),
+                    Expanded(child: _field(_warn, '提醒剩余 (min)', '10', icon: Icons.notifications_active_outlined)),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(child: _field(_alarm, '报警剩余 (min)', '5', icon: Icons.warning_amber_rounded)),
+                    const SizedBox(width: 10),
+                    const Expanded(child: SizedBox()),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const SectionTitle(text: '名单与热词'),
+          AppCard(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => RosterPage(controller: widget.controller)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceSubtle,
+                  ),
+                  child: const Icon(Icons.group_outlined, size: 20, color: AppColors.textPrimary),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('消防员与专业术语', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      SizedBox(height: 2),
+                      Text('提前录入，语音识别更准', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const SectionTitle(text: '提醒方式'),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('语音播报', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  subtitle: const Text('确认/提醒/报警时播报中文语音'),
+                  activeThumbColor: AppColors.actionPrimary,
+                  value: _tts,
+                  onChanged: (v) => setState(() => _tts = v),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                SwitchListTile(
+                  title: const Text('报警音', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  subtitle: const Text('前台警报音 + 后台本地通知'),
+                  activeThumbColor: AppColors.actionPrimary,
+                  value: _sound,
+                  onChanged: (v) => setState(() => _sound = v),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
           SizedBox(
-            height: 50,
+            height: 52,
             child: FilledButton.icon(
               onPressed: _save,
-              icon: const Icon(Icons.save),
+              icon: const Icon(Icons.save_outlined),
               label: const Text('保存设置', style: TextStyle(fontSize: 16)),
             ),
           ),
-          const SizedBox(height: 24),
-          Text(
-            '安全员助手 WatchDog v0.1\n语音录入 → 气瓶余量 → 自动倒计时\n豆包语音识别 + DeepSeek 语义解析',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 12, height: 1.6),
+          const SizedBox(height: 28),
+          Column(
+            children: [
+              const Icon(Icons.shield_outlined, size: 28, color: AppColors.textTertiary),
+              const SizedBox(height: 8),
+              Text(
+                '安全员助手 WatchDog v0.1\n语音录入 → 气瓶余量 → 自动倒计时\n豆包语音识别 + DeepSeek 语义解析',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textTertiary, fontSize: 12, height: 1.7),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _sectionTitle(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 8, top: 4),
-        child: Text(t, style: TextStyle(color: Colors.grey.shade400, fontSize: 14, fontWeight: FontWeight.w600)),
-      );
-
-  Widget _field(TextEditingController c, String label, String hint, {TextInputType? keyboard, bool obscure = false}) {
+  Widget _field(
+    TextEditingController c,
+    String label,
+    String hint, {
+    IconData? icon,
+    TextInputType? keyboard,
+    bool obscure = false,
+    Widget? suffix,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
@@ -173,7 +250,8 @@ class _SettingsPageState extends State<SettingsPage> {
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          hintStyle: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+          prefixIcon: icon != null ? Icon(icon) : null,
+          suffixIcon: suffix,
         ),
       ),
     );

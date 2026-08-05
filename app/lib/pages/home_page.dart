@@ -5,17 +5,26 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/audio_service.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
 
-/// 语音录入主页面
+/// 语音录入主页面：按住说话 → 自动识别 → 确认进场 / 登记出场
 class HomePage extends StatefulWidget {
   final AppController controller;
-  const HomePage({super.key, required this.controller});
+  final bool autoRecord; // 底部导航语音按钮长按触发
+  final VoidCallback? onAutoRecordConsumed;
+
+  const HomePage({
+    super.key,
+    required this.controller,
+    this.autoRecord = false,
+    this.onAutoRecordConsumed,
+  });
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> {
   final AudioService _audio = AudioService();
 
   bool _recording = false;
@@ -31,6 +40,24 @@ class _HomePageState extends State<HomePage> {
   final TextEditingController _pressureCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.autoRecord) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => beginRecording());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.autoRecord && !oldWidget.autoRecord) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) beginRecording();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _ampSub?.cancel();
     _nameCtrl.dispose();
@@ -39,8 +66,10 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  Future<void> _beginRecording() async {
-    if (_recording) return;
+  /// 开始录音（长按触发）
+  Future<void> beginRecording() async {
+    widget.onAutoRecordConsumed?.call();
+    if (_recording || _processing) return;
     setState(() {
       _error = null;
       _transcript = null;
@@ -48,21 +77,23 @@ class _HomePageState extends State<HomePage> {
     });
     final ok = await _audio.hasPermission();
     if (!ok) {
-      setState(() => _error = '需要麦克风权限');
+      if (mounted) setState(() => _error = '需要麦克风权限');
       return;
     }
     try {
       await _audio.start();
+      if (!mounted) return;
       setState(() => _recording = true);
       _ampSub = _audio.amplitudeStream().listen((a) {
         if (mounted) setState(() => _amp = a);
       });
     } catch (e) {
-      setState(() => _error = '录音启动失败: $e');
+      if (mounted) setState(() => _error = '录音启动失败: $e');
     }
   }
 
-  Future<void> _finishRecording() async {
+  /// 结束录音（松手触发）→ 转写 + 解析
+  Future<void> finishRecording() async {
     if (!_recording) return;
     setState(() {
       _recording = false;
@@ -74,13 +105,16 @@ class _HomePageState extends State<HomePage> {
       final bytes = await _audio.stop();
       final text = await widget.controller.api!.transcribe(bytes);
       if (text.isEmpty) {
-        setState(() {
-          _processing = false;
-          _error = '未识别到语音，请再说一次';
-        });
+        if (mounted) {
+          setState(() {
+            _processing = false;
+            _error = '未识别到语音，请再说一次';
+          });
+        }
         return;
       }
       final parsed = await widget.controller.api!.parse(text);
+      if (!mounted) return;
       setState(() {
         _transcript = text;
         _parsed = parsed;
@@ -96,10 +130,12 @@ class _HomePageState extends State<HomePage> {
         await _handleExit(parsed.name!);
       }
     } catch (e) {
-      setState(() {
-        _processing = false;
-        _error = '$e';
-      });
+      if (mounted) {
+        setState(() {
+          _processing = false;
+          _error = '$e';
+        });
+      }
     }
   }
 
@@ -184,27 +220,43 @@ class _HomePageState extends State<HomePage> {
           children: [
             Row(
               children: [
-                const Text('语音录入', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                const Text('语音录入', style: AppTextStyles.h1),
                 const Spacer(),
-                if (widget.controller.syncError != null)
-                  const Icon(Icons.cloud_off, color: Colors.orange, size: 18),
-                if (widget.controller.syncError == null)
-                  const Icon(Icons.cloud_done, color: Colors.green, size: 18),
+                ConnectionStatus(
+                  syncing: widget.controller.syncing,
+                  offline: widget.controller.syncError != null,
+                  onRetry: widget.controller.startSync,
+                ),
               ],
             ),
             const SizedBox(height: 8),
-            Expanded(
-              child: _buildResultCard(context, cfg),
+            Expanded(child: _buildResultCard(context, cfg)),
+            const SizedBox(height: 12),
+            VoiceButton(
+              size: 88,
+              recording: _recording,
+              onTap: _recording
+                  ? null
+                  : () {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('请按住按钮说话，松手自动识别'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+              onLongPressStart: (_) => beginRecording(),
+              onLongPressEnd: (_) => finishRecording(),
             ),
-            const SizedBox(height: 16),
-            _buildMicButton(),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
-              _recording ? '正在聆听…' : (_processing ? '识别中…' : '按住说话，例：「张伟，20兆帕」'),
+              _recording ? '正在聆听，松开结束' : (_processing ? '识别中…' : '按住说话，例：「张伟，20兆帕」'),
               style: TextStyle(
                 fontSize: 15,
-                color: _recording ? Colors.redAccent : Colors.grey.shade400,
-                fontWeight: _recording ? FontWeight.bold : FontWeight.normal,
+                fontWeight: _recording ? FontWeight.w700 : FontWeight.w500,
+                color: _recording ? AppColors.voice : AppColors.textSecondary,
               ),
             ),
           ],
@@ -219,49 +271,79 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              width: 90 + _amp * 140,
-              height: 90 + _amp * 140,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.redAccent.withValues(alpha: 0.15 + _amp * 0.4),
-              ),
-              child: const Icon(Icons.mic, size: 48, color: Colors.redAccent),
-            ),
+            _PulseMic(size: 90 + _amp * 140, intensity: _amp),
             const SizedBox(height: 24),
-            Text('请清晰说出：姓名 + 气瓶压力', style: TextStyle(color: Colors.grey.shade400, fontSize: 16)),
+            const Text(
+              '请清晰说出：姓名 + 气瓶压力',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
-            Text('或：出火场人员姓名', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
+            const Text('或：出火场人员姓名', style: TextStyle(color: AppColors.textTertiary, fontSize: 14)),
           ],
         ),
       );
     }
     if (_processing) {
-      return const Center(child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          Text('语音转文字中…', style: TextStyle(color: Colors.grey)),
-        ],
-      ));
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(
+              width: 44,
+              height: 44,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(height: 18),
+            const Text('语音转文字中…', style: TextStyle(color: AppColors.textSecondary)),
+          ],
+        ),
+      );
     }
     if (_error != null) {
-      return Center(child: Text(_error!, style: const TextStyle(color: Colors.orange, fontSize: 16)));
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.caution.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: AppColors.caution.withValues(alpha: 0.35)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: AppColors.caution, size: 36),
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     if (_transcript == null || _parsed == null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.record_voice_over, size: 96, color: Colors.white24),
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.surface,
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Icon(Icons.record_voice_over, size: 44, color: AppColors.textTertiary),
+            ),
             const SizedBox(height: 24),
-            Text('按住下方按钮说话', style: TextStyle(color: Colors.grey.shade500, fontSize: 18)),
-            const SizedBox(height: 8),
-            Text('例：「张伟，20兆帕」 → 自动计算可用34分钟并倒计时', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+            const Text('按住下方按钮说话', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 10),
+            _example('例：「张伟，20兆帕」 → 自动计算可用34分钟并倒计时'),
             const SizedBox(height: 4),
-            Text('例：「李娜出来了」 → 登记出火场', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+            _example('例：「李娜出来了」 → 登记出火场'),
           ],
         ),
       );
@@ -275,57 +357,52 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E2126),
-              borderRadius: BorderRadius.circular(12),
-            ),
+          AppCard(
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('转写结果', style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
-                const SizedBox(height: 6),
-                Text(_transcript!, style: const TextStyle(fontSize: 18)),
+                Row(
+                  children: [
+                    Icon(Icons.graphic_eq, size: 16, color: AppColors.voice),
+                    const SizedBox(width: 6),
+                    const Text('转写结果', style: TextStyle(color: AppColors.textTertiary, fontSize: 12, letterSpacing: 0.5)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(_transcript!, style: const TextStyle(fontSize: 17, height: 1.4, color: AppColors.textPrimary)),
               ],
             ),
           ),
           const SizedBox(height: 12),
           if (_parsed!.action == 'exit')
-            Container(
+            AppCard(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.teal.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
+              color: AppColors.safe.withValues(alpha: 0.10),
+              side: const BorderSide(color: AppColors.safe, width: 1),
               child: Row(
                 children: [
-                  const Icon(Icons.logout, color: Colors.teal),
+                  const Icon(Icons.logout, color: AppColors.safe),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       '识别为出火场指令：${_parsed!.name ?? '未识别姓名'}',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                     ),
                   ),
                 ],
               ),
             )
           else
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E2126),
-                borderRadius: BorderRadius.circular(12),
-              ),
+            AppCard(
               child: Column(
                 children: [
                   TextField(
                     controller: _nameCtrl,
-                    decoration: const InputDecoration(labelText: '姓名', prefixIcon: Icon(Icons.person)),
-                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(labelText: '姓名', prefixIcon: Icon(Icons.person_outline)),
+                    style: const TextStyle(fontSize: 17),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   TextField(
                     controller: _pressureCtrl,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -334,21 +411,22 @@ class _HomePageState extends State<HomePage> {
                       prefixIcon: Icon(Icons.speed),
                       suffixText: 'MPa',
                     ),
-                    style: const TextStyle(fontSize: 18),
+                    style: const TextStyle(fontSize: 17),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   if (durationMin != null)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2A2E35),
-                        borderRadius: BorderRadius.circular(8),
+                        color: AppColors.caution.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(color: AppColors.caution.withValues(alpha: 0.4)),
                       ),
                       child: Text(
-                        '可用时间：$durationMin 分钟（${cfg.cylinderVolL}L 气瓶 × ${_parsed!.pressureMpa} 兆帕 ÷ ${cfg.consumptionLpm}L/min）',
+                        '可用时间：$durationMin 分钟\n（${cfg.cylinderVolL}L 气瓶 × ${_parsed!.pressureMpa} 兆帕 ÷ ${cfg.consumptionLpm}L/min）',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 15, color: Colors.amber),
+                        style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, fontWeight: FontWeight.w600, height: 1.5),
                       ),
                     )
                   else
@@ -356,13 +434,14 @@ class _HomePageState extends State<HomePage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
+                        color: AppColors.caution.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(color: AppColors.caution.withValues(alpha: 0.4)),
                       ),
                       child: const Text(
                         '未识别到气瓶压力，请手动填写（如 20）后确认',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 14, color: Colors.orange),
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
                       ),
                     ),
                   const SizedBox(height: 16),
@@ -371,8 +450,8 @@ class _HomePageState extends State<HomePage> {
                     height: 52,
                     child: FilledButton.icon(
                       onPressed: _confirmEnter,
-                      icon: const Icon(Icons.check),
-                      label: const Text('确认进入火场，开始倒计时', style: TextStyle(fontSize: 17)),
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('确认进入火场，开始倒计时', style: TextStyle(fontSize: 16)),
                     ),
                   ),
                 ],
@@ -383,42 +462,51 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildMicButton() {
-    return GestureDetector(
-      onLongPressStart: (_) => _beginRecording(),
-      onLongPressEnd: (_) => _finishRecording(),
-      onTap: _recording
-          ? null
-          : () {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('请按住按钮说话，松手自动识别'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              }
-            },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 96,
-        height: 96,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _recording ? Colors.redAccent : const Color(0xFFD32F2F),
-          boxShadow: [
-            BoxShadow(
-              color: (_recording ? Colors.redAccent : const Color(0xFFD32F2F)).withValues(alpha: 0.5),
-              blurRadius: _recording ? 32 : 16,
-              spreadRadius: _recording ? 8 : 2,
+  Widget _example(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Text(text, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
+    );
+  }
+}
+
+/// 录音时随振幅缩放的核心圆（橙色脉冲）
+class _PulseMic extends StatelessWidget {
+  final double size;
+  final double intensity;
+
+  const _PulseMic({required this.size, required this.intensity});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.voice;
+    return SizedBox(
+      width: 220,
+      height: 220,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          PulseRing(color: c.withValues(alpha: 0.5), ringSize: 150 + intensity * 50),
+          PulseRing(color: c.withValues(alpha: 0.3), ringSize: 170 + intensity * 40),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: c.withValues(alpha: 0.15 + intensity * 0.35),
+              border: Border.all(
+                color: c.withValues(alpha: 0.4 + intensity * 0.5),
+                width: 2,
+              ),
             ),
-          ],
-        ),
-        child: Icon(
-          _recording ? Icons.stop : Icons.mic,
-          size: 44,
-          color: Colors.white,
-        ),
+            child: Icon(Icons.mic_rounded, size: 48, color: c),
+          ),
+        ],
       ),
     );
   }
