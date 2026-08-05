@@ -113,6 +113,21 @@ function markExited(id, exitedAtMs) {
   return getEntry(id);
 }
 
+/** 同场景同名且未出场的在场记录（用于防重复进场） */
+function findActiveByName(scene, name) {
+  return db
+    .prepare('SELECT * FROM entries WHERE scene = ? AND name = ? AND exited_at IS NULL ORDER BY entry_at ASC LIMIT 1')
+    .get(scene, name);
+}
+
+/** 部分更新在场记录：传 null 的字段保持不变 */
+function updateEntry(id, { name, pressureMpa, durationMin, exitAtMs }) {
+  db.prepare(
+    'UPDATE entries SET name = COALESCE(?, name), pressure_mpa = COALESCE(?, pressure_mpa), duration_min = COALESCE(?, duration_min), exit_at = COALESCE(?, exit_at) WHERE id = ?'
+  ).run(name ?? null, pressureMpa ?? null, durationMin ?? null, exitAtMs ?? null, id);
+  return getEntry(id);
+}
+
 function listFirefighters(scene = 'default') {
   return db.prepare('SELECT id, name FROM firefighters WHERE scene = ? ORDER BY created_at ASC').all(scene);
 }
@@ -163,6 +178,8 @@ module.exports = {
   getEntry,
   createEntry,
   markExited,
+  findActiveByName,
+  updateEntry,
   listFirefighters,
   addFirefighter,
   removeFirefighter,

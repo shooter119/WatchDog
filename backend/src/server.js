@@ -150,19 +150,32 @@ app.get('/api/entries', (req, res) => {
 
 app.post('/api/entries', (req, res, next) => {
   try {
-    const { name, pressure_mpa, source = 'voice', raw_text = null } = req.body || {};
+    const { name, pressure_mpa, source = 'voice', raw_text = null, force = false } = req.body || {};
     const scene = sceneKey(req);
-    if (!name || !String(name).trim()) return res.status(400).json({ error: '缺少姓名' });
+    const cleanName = String(name || '').trim();
+    if (!cleanName) return res.status(400).json({ error: '缺少姓名' });
     if (pressure_mpa == null) return res.status(400).json({ error: '缺少气瓶压力，请确认压力后再登记' });
     const p = Number(pressure_mpa);
     if (!(p > 0) || p > 40) return res.status(400).json({ error: '压力数值异常' });
+
+    // 同名在场记录：防止同一人重复登记（改名合并走 PATCH，重复进场须 force）
+    const existing = db.findActiveByName(scene, cleanName);
+    if (existing && !force) {
+      const at = new Date(existing.entry_at);
+      const hh = String(at.getHours()).padStart(2, '0');
+      const mm = String(at.getMinutes()).padStart(2, '0');
+      return res.status(409).json({
+        error: `「${existing.name}」已在火场内（${hh}:${mm} 进入，尚未出场）。请选择改名合并或确认重复进场`,
+        entry: existing,
+      });
+    }
 
     const now = Date.now();
     const durationMin = Math.round(durationMinutes({ ...CFG.calc, pressureMpa: p }));
     const entry = db.createEntry({
       id: crypto.randomUUID(),
       scene,
-      name: String(name).trim(),
+      name: cleanName,
       pressureMpa: p,
       durationMin,
       entryAtMs: now,
@@ -171,6 +184,33 @@ app.post('/api/entries', (req, res, next) => {
       rawText: raw_text,
     });
     res.status(201).json(entry);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 在场记录改名/复核压力（合并场景：保留原记录，不产生重复计数）
+app.patch('/api/entries/:id', (req, res, next) => {
+  try {
+    const entry = db.getEntry(req.params.id);
+    if (!entry) return res.status(404).json({ error: '记录不存在' });
+    const { name, pressure_mpa } = req.body || {};
+    const newName = name != null ? String(name).trim() : null;
+    if (name != null && !newName) return res.status(400).json({ error: '姓名不能为空' });
+    let p = null;
+    if (pressure_mpa != null) {
+      p = Number(pressure_mpa);
+      if (!(p > 0) || p > 40) return res.status(400).json({ error: '压力数值异常' });
+    }
+    const now = Date.now();
+    const updated = db.updateEntry(entry.id, {
+      name: newName,
+      pressureMpa: p,
+      // 压力视为现场复核读数，从此刻起重新倒计时
+      durationMin: p != null ? Math.round(durationMinutes({ ...CFG.calc, pressureMpa: p })) : null,
+      exitAtMs: p != null ? exitAtMs({ ...CFG.calc, pressureMpa: p, entryAtMs: now }) : null,
+    });
+    res.json(updated);
   } catch (e) {
     next(e);
   }

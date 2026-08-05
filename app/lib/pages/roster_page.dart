@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
@@ -47,6 +50,65 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
     }
   }
 
+  /// 批量导入姓名：弹窗粘贴（支持 Excel 姓名列/整表），切分去重后逐条入库
+  Future<void> _batchImport() async {
+    final raw = await showDialog<String>(
+      context: context,
+      builder: (_) => const _BatchImportDialog(),
+    );
+    if (raw == null || raw.trim().isEmpty) return;
+
+    final existing = widget.controller.firefighters.map((f) => f.name).toSet();
+    final seen = <String>{};
+    var dup = 0;
+    for (final name in extractNamesFromPaste(raw)) {
+      if (existing.contains(name) || !seen.add(name)) {
+        dup++;
+      }
+    }
+    final toAdd = seen.toList();
+    if (toAdd.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('未发现可导入的姓名（已有 $dup 个重复）')),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    final api = widget.controller.api!;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+            SizedBox(width: 16),
+            Expanded(child: Text('正在导入姓名…')),
+          ],
+        ),
+      ),
+    );
+    var added = 0;
+    for (final name in toAdd) {
+      try {
+        await api.addFirefighter(name);
+        added++;
+      } catch (e) {
+        dup++;
+      }
+    }
+    await widget.controller.loadRoster();
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导入完成：新增 $added 人，跳过重复 $dup 个')),
+      );
+    }
+  }
+
   Future<void> _remove(String id, bool isFirefighter, String label) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -83,66 +145,54 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Row(
-          children: [
-            const Text('名单与热词'),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.actionPrimary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-              ),
-              child: const Text(
-                '提前录入，识别更准',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
+        title: const Text('名单与热词'),
+        actions: [
+          TextButton.icon(
+            onPressed: _batchImport,
+            icon: const Icon(Icons.paste, size: 18),
+            label: const Text('批量导入'),
+          ),
+        ],
       ),
       body: SafeArea(
         top: false,
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _input,
-                      onSubmitted: (_) => _add(),
-                      decoration: InputDecoration(
-                        hintText: _tab.index == 0 ? '输入消防员姓名…' : '输入专业术语…',
-                        prefixIcon: Icon(_tab.index == 0 ? Icons.person_add_alt : Icons.tag),
+            AnimatedBuilder(
+              animation: _tab,
+              builder: (context, _) => Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _input,
+                        onSubmitted: (_) => _add(),
+                        decoration: InputDecoration(
+                          hintText: _tab.index == 0 ? '输入消防员姓名…' : '输入专业术语…',
+                          prefixIcon: Icon(_tab.index == 0 ? Icons.person_add_alt : Icons.tag),
+                        ),
+                        textInputAction: TextInputAction.done,
                       ),
-                      textInputAction: TextInputAction.done,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    height: 50,
-                    child: FilledButton.icon(
-                      onPressed: _add,
-                      icon: const Icon(Icons.add),
-                      label: const Text('添加'),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 50,
+                      child: FilledButton.icon(
+                        onPressed: _add,
+                        icon: const Icon(Icons.add),
+                        label: const Text('添加'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             TabBar(
               controller: _tab,
               tabs: [
-                Tab(
-                  text: '消防员',
-                  child: _TabLabel(text: '消防员', count: widget.controller.firefighters.length),
-                ),
-                Tab(
-                  text: '专业术语',
-                  child: _TabLabel(text: '专业术语', count: widget.controller.hotwords.length),
-                ),
+                Tab(child: _TabLabel(text: '消防员', count: widget.controller.firefighters.length)),
+                Tab(child: _TabLabel(text: '专业术语', count: widget.controller.hotwords.length)),
               ],
             ),
             Expanded(
@@ -279,3 +329,128 @@ class _TabLabel extends StatelessWidget {
     );
   }
 }
+
+/// 批量导入弹窗：多行粘贴，支持一键读取剪贴板
+class _BatchImportDialog extends StatefulWidget {
+  const _BatchImportDialog();
+
+  @override
+  State<_BatchImportDialog> createState() => _BatchImportDialogState();
+}
+
+class _BatchImportDialogState extends State<_BatchImportDialog> {
+  final TextEditingController _input = TextEditingController();
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData('text/plain');
+    final text = data?.text;
+    if (text == null || text.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('剪贴板为空')));
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        if (_input.text.isEmpty) {
+          _input.text = text;
+        } else {
+          _input.text = '${_input.text}\n$text';
+        }
+        _input.selection = TextSelection.collapsed(offset: _input.text.length);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final maxFieldHeight = math.max(
+      120.0,
+      math.min(260.0, mq.size.height - mq.viewInsets.bottom - 300.0),
+    );
+    return AlertDialog(
+      title: const Text('批量导入姓名'),
+      scrollable: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '每行一个姓名，支持粘贴 Excel 姓名列；\n整表复制时自动取每行第一个单元格。\n重复姓名自动跳过。',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.5),
+          ),
+          const SizedBox(height: 12),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxFieldHeight),
+            child: TextField(
+              controller: _input,
+              maxLines: null,
+              minLines: 4,
+              keyboardType: TextInputType.multiline,
+              decoration: const InputDecoration(
+                alignLabelWithHint: true,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _paste,
+              icon: const Icon(Icons.copy_all, size: 18),
+              label: const Text('从剪贴板粘贴'),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        FilledButton(onPressed: () => Navigator.pop(context, _input.text), child: const Text('导入')),
+      ],
+    );
+  }
+}
+
+/// 常见的职务/衔级词，避免整表复制时被误识别为姓名
+const _titleWords = <String>{
+  '站长', '副站长', '站长助理', '指导员', '班长', '副班长', '分队长', '副分队长',
+  '车管', '文书', '出纳', '会计', '实习', '干部', '领导', '助理',
+  '驾驶员', '战斗员', '通信员', '给养员', '消防员', '宣传员', '调度员',
+  '管理员', '协查员', '受理员', '考评员', '信息员', '装备技师',
+};
+
+/// 从一段粘贴文本中解析姓名（逐行处理，保留重复项，由调用方去重）
+List<String> extractNamesFromPaste(String raw) {
+  final out = <String>[];
+  for (final line in raw.split('\n')) {
+    out.addAll(_extractNames(line));
+  }
+  return out;
+}
+
+/// 从一行粘贴内容中提取姓名：
+/// - 含 Tab 视为表格行，取第一个单元格
+/// - 去掉空白后整体为 2~4 字汉字 → 直接作为姓名（兼容"李 翔"这类中间带空格的）
+/// - 否则按连续 2~4 字汉字切分，过滤职务词（兼容"盛承华 大队长"）
+List<String> _extractNames(String line) {
+  final cell = line.contains('\t') ? line.split('\t').first : line;
+  final compact = cell.replaceAll(RegExp(r'\s+'), '');
+  if (RegExp(r'^[\u4e00-\u9fa5]{2,4}$').hasMatch(compact)) {
+    return _titleWords.contains(compact) ? const [] : [compact];
+  }
+  return RegExp(r'[\u4e00-\u9fa5]{2,4}')
+      .allMatches(cell)
+      .map((m) => m.group(0)!)
+      .where((w) => !_titleWords.contains(w) && !_hasTitleSuffix(w))
+      .toList();
+}
+
+/// 职务词常见后缀（大队长/会计助理/政治教导员…），仅在混排兜底切分时用于过滤
+bool _hasTitleSuffix(String w) => RegExp(r'[员长师理]$').hasMatch(w);

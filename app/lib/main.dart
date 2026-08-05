@@ -116,7 +116,7 @@ class _BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     return Container(
-      height: 72 + safeBottom,
+      height: 60 + safeBottom,
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(top: BorderSide(color: AppColors.border)),

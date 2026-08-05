@@ -16,6 +16,7 @@ class AlarmService {
   bool _inited = false;
   final Set<String> _firedLocal = {};
   String _lastSpokenKey = '';
+  bool _looping = false;
   /// 精确闹钟是否可用（Android 12+ 可能被系统/用户关闭）
   bool exactAlarmAvailable = true;
 
@@ -92,6 +93,7 @@ class AlarmService {
             importance: Importance.max,
             priority: Priority.max,
             sound: RawResourceAndroidNotificationSound('alarm'),
+            fullScreenIntent: true,
           ),
           iOS: DarwinNotificationDetails(),
         ),
@@ -130,23 +132,27 @@ class AlarmService {
     }
   }
 
-  /// 前台警报音播放
-  Future<void> playAlarm({bool loop = false}) async {
+  /// 前台循环警报音：存在 alarm/timeout 状态人员时持续响（幂等）
+  Future<void> startAlarmLoop() async {
     if (!soundEnabled) return;
-    await _player.stop();
-    await _player.setReleaseMode(loop ? ReleaseMode.loop : ReleaseMode.stop);
+    if (_looping) return;
+    _looping = true;
+    await _player.setPlayerMode(PlayerMode.lowLatency);
+    await _player.setSource(AssetSource('sounds/alarm.wav'));
+    await _player.setReleaseMode(ReleaseMode.loop);
     await _player.resume();
   }
 
   Future<void> stopAlarm() async {
+    if (!_looping) return;
+    _looping = false;
     await _player.stop();
   }
 
-  /// 对某人员状态变化触发前台提醒（去重）
+  /// 对某人员状态变化触发前台提醒（去重；声音由 [startAlarmLoop] 统一管理）
   Future<void> fire(String key, {required String ttsText}) async {
     if (_lastSpokenKey == key) return;
     _lastSpokenKey = key;
-    if (soundEnabled) await playAlarm(loop: false);
   }
 
   void resetSession() {

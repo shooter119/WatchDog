@@ -226,7 +226,7 @@ function transcribe({ appId, accessToken, resourceId, audioBuffer, format = 'wav
         const results = Array.isArray(obj.message?.result) ? obj.message.result : Array.isArray(obj.result) ? obj.result : [];
         const texts = [directText, ...results.map((r) => r.text || '')].filter(Boolean).join('');
         if (texts) finish(null, texts.trim());
-        else finish(new Error('ASR 未识别到文本'));
+        else finish(Object.assign(new Error('未听清，请再说一遍'), { status: 422 }));
       } catch (e) {
         finish(e);
       }

@@ -9,10 +9,9 @@ REMOTE_DIR="/opt/watchdog"
 BACKEND_DIR="$(cd "$(dirname "$0")/../backend" && pwd)"
 
 echo "==> 同步代码到 $HOST:$REMOTE_DIR"
-rsync -az --delete \
-  --exclude node_modules --exclude data --exclude .env \
-  -e ssh "$BACKEND_DIR"/src/ "$BACKEND_DIR"/package.json "$BACKEND_DIR"/package-lock.json \
-  "$HOST:$REMOTE_DIR/"
+ssh "$HOST" "mkdir -p $REMOTE_DIR/src"
+rsync -az --delete -e ssh "$BACKEND_DIR"/src/ "$HOST:$REMOTE_DIR/src/"
+rsync -az -e ssh "$BACKEND_DIR"/package.json "$BACKEND_DIR"/package-lock.json "$HOST:$REMOTE_DIR/"
 
 echo "==> 同步部署配置（ecosystem + nginx）"
 scp "$(dirname "$0")/ecosystem.config.cjs" "$HOST:$REMOTE_DIR/ecosystem.config.cjs"

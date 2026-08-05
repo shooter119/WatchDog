@@ -86,6 +86,91 @@ test('场景隔离：同后端不同场景码互不可见', async () => {
   assert.equal(a.length, 1);
 });
 
+test('同名在场记录：重复进场返回 409，force 才允许另建记录', async () => {
+  const created = await (await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '张伟', pressure_mpa: 20 }),
+  })).json();
+  assert.equal(created.name, '张伟');
+
+  const dup = await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '张伟', pressure_mpa: 18 }),
+  });
+  assert.equal(dup.status, 409);
+  const dupBody = await dup.json();
+  assert.equal(dupBody.entry.id, created.id);
+  assert.match(dupBody.error, /已在火场内/);
+
+  const forced = await (await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '张伟', pressure_mpa: 18, force: true }),
+  })).json();
+  assert.equal(forced.id !== created.id, true);
+
+  // 出场后再进场不再冲突
+  await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: H });
+  await fetch(`${base}/api/entries/${forced.id}/exit`, { method: 'POST', headers: H });
+  const again = await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '张伟', pressure_mpa: 20 }),
+  });
+  assert.equal(again.status, 201);
+  const againBody = await again.json();
+  await fetch(`${base}/api/entries/${againBody.id}/exit`, { method: 'POST', headers: H });
+});
+
+test('PATCH /api/entries/:id 改名与压力复核（重新倒计时）', async () => {
+  const created = await (await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '刘洋', pressure_mpa: 20 }),
+  })).json();
+
+  const renamed = await (await fetch(`${base}/api/entries/${created.id}`, {
+    method: 'PATCH',
+    headers: H,
+    body: JSON.stringify({ name: '刘扬' }),
+  })).json();
+  assert.equal(renamed.name, '刘扬');
+  assert.equal(renamed.pressure_mpa, 20);
+  assert.equal(renamed.exit_at, created.exit_at);
+
+  const rechecked = await (await fetch(`${base}/api/entries/${created.id}`, {
+    method: 'PATCH',
+    headers: H,
+    body: JSON.stringify({ pressure_mpa: 15 }),
+  })).json();
+  assert.equal(rechecked.pressure_mpa, 15);
+  assert.equal(rechecked.duration_min, 26); // 15MPa → 25.5min → 26
+  assert.ok(Math.abs(rechecked.exit_at - Date.now() - 25.5 * 60000) < 5000); // 从此刻重新倒计时
+
+  // 改名后同名不再冲突（旧名可再次进场）
+  const conflict = await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '刘洋', pressure_mpa: 20 }),
+  });
+  assert.equal(conflict.status, 201);
+  const conflictBody = await conflict.json();
+  await fetch(`${base}/api/entries/${conflictBody.id}/exit`, { method: 'POST', headers: H });
+
+  const res404 = await fetch(`${base}/api/entries/nope`, { method: 'PATCH', headers: H, body: JSON.stringify({ name: 'x' }) });
+  assert.equal(res404.status, 404);
+  const res400 = await fetch(`${base}/api/entries/${created.id}`, {
+    method: 'PATCH',
+    headers: H,
+    body: JSON.stringify({ pressure_mpa: 99 }),
+  });
+  assert.equal(res400.status, 400);
+
+  await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: H });
+});
+
 test('消防员/热词 CRUD 与 409 查重', async () => {
   const f1 = await (await fetch(`${base}/api/firefighters`, { method: 'POST', headers: H, body: JSON.stringify({ name: '王强' }) })).json();
   assert.equal(f1.name, '王强');

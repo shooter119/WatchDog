@@ -95,7 +95,7 @@ class _OverviewBanner extends StatelessWidget {
     final earliestStatus = earliest?.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin);
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -259,18 +259,26 @@ class _EntryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              if (e.pressureMpa != null) ...[
-                Icon(Icons.speed, size: 14, color: subFg),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              children: [
+                if (e.pressureMpa != null) ...[
+                  Icon(Icons.speed, size: 14, color: subFg),
+                  const SizedBox(width: 4),
+                  Text('${e.pressureMpa} MPa', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 12),
+                ],
+                Icon(Icons.timer_outlined, size: 14, color: subFg),
                 const SizedBox(width: 4),
-                Text('${e.pressureMpa} MPa', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text('${e.durationMin} 分钟上限', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(width: 12),
+                Icon(Icons.schedule, size: 14, color: subFg),
+                const SizedBox(width: 4),
+                Text(_elapsedTime(e), style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
               ],
-              Icon(Icons.timer_outlined, size: 14, color: subFg),
-              const SizedBox(width: 4),
-              Text('${e.durationMin} 分钟上限', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
-            ],
+            ),
           ),
           const SizedBox(height: 10),
           Row(
@@ -296,5 +304,16 @@ class _EntryCard extends StatelessWidget {
         child: wrapped,
       ),
     );
+  }
+
+  String _elapsedTime(Entry e) {
+    final ms = DateTime.now().millisecondsSinceEpoch - e.entryAt;
+    final totalSec = ms.clamp(0, 1 << 62) ~/ 1000;
+    final h = totalSec ~/ 3600;
+    final m = (totalSec % 3600) ~/ 60;
+    final s = totalSec % 60;
+    return h > 0
+        ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')} 已进场'
+        : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')} 已进场';
   }
 }

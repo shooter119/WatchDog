@@ -62,6 +62,7 @@ class ApiClient {
     required double pressureMpa,
     String source = 'voice',
     String? rawText,
+    bool force = false,
   }) async {
     final res = await http
         .post(
@@ -72,12 +73,38 @@ class ApiClient {
             'pressure_mpa': pressureMpa,
             'source': source,
             'raw_text': rawText,
+            if (force) 'force': true,
           }),
         )
         .timeout(const Duration(seconds: 15));
     final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode == 409 && body['entry'] != null) {
+      throw EntryConflictException(
+        body['error']?.toString() ?? '该人员已在火场内',
+        Entry.fromJson(body['entry'] as Map<String, dynamic>),
+      );
+    }
     if (res.statusCode != 201) {
       throw ApiException((body as Map)['error']?.toString() ?? '创建失败(${res.statusCode})');
+    }
+    return Entry.fromJson(body as Map<String, dynamic>);
+  }
+
+  /// 更新在场记录（改名 / 按现场复核压力重新倒计时）
+  Future<Entry> updateEntry({required String id, String? name, double? pressureMpa}) async {
+    final res = await http
+        .patch(
+          _uri('/api/entries/$id'),
+          headers: _headers,
+          body: jsonEncode({
+            if (name != null) 'name': name,
+            if (pressureMpa != null) 'pressure_mpa': pressureMpa,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) {
+      throw ApiException((body as Map)['error']?.toString() ?? '更新失败(${res.statusCode})');
     }
     return Entry.fromJson(body as Map<String, dynamic>);
   }
@@ -132,7 +159,7 @@ class ApiClient {
   }
 
   Future<CalcConfig> fetchConfig() async {
-    final res = await http.get(_uri('/api/config')).timeout(const Duration(seconds: 10));
+    final res = await http.get(_uri('/api/config'), headers: _headers).timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('获取配置失败(${res.statusCode})');
     return CalcConfig.fromJson(jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
   }
@@ -141,6 +168,15 @@ class ApiClient {
 class ApiException implements Exception {
   final String message;
   ApiException(this.message);
+  @override
+  String toString() => message;
+}
+
+/// 同名人员已在火场内（409）：携带已有在场记录，供确认页二选一处理
+class EntryConflictException implements Exception {
+  final String message;
+  final Entry existing;
+  EntryConflictException(this.message, this.existing);
   @override
   String toString() => message;
 }

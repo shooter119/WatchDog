@@ -102,55 +102,60 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 18),
-          const SectionTitle(text: '服务端'),
-          AppCard(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _field(_server, '服务器地址', 'http://你的VPS:3000', icon: Icons.dns_outlined, keyboard: TextInputType.url),
-                _field(_scene, '场景码', '多设备同步用同一场景码', icon: Icons.tag),
-                _field(
-                  _token,
-                  '访问令牌',
-                  '与服务器 API_TOKEN 一致',
-                  icon: Icons.key_outlined,
-                  obscure: !_tokenVisible,
-                  suffix: IconButton(
-                    icon: Icon(_tokenVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                    onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
+          _CollapsibleSection(
+            title: '服务端',
+            child: AppCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _field(_server, '服务器地址', 'http://你的VPS:3000', icon: Icons.dns_outlined, keyboard: TextInputType.url),
+                  _field(_scene, '场景码', '多设备同步用同一场景码', icon: Icons.tag),
+                  _field(
+                    _token,
+                    '访问令牌',
+                    '与服务器 API_TOKEN 一致',
+                    icon: Icons.key_outlined,
+                    obscure: !_tokenVisible,
+                    suffix: IconButton(
+                      icon: Icon(_tokenVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                      onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),
-          const SectionTitle(text: '计算参数'),
-          AppCard(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: _field(_volume, '气瓶容量 (L)', '6.8', icon: Icons.local_fire_department_outlined)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _field(_full, '满压 (MPa)', '30', icon: Icons.speed)),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(child: _field(_consumption, '消耗率 (L/min)', '40', icon: Icons.water_drop_outlined)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _field(_warn, '提醒剩余 (min)', '10', icon: Icons.notifications_active_outlined)),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(child: _field(_alarm, '报警剩余 (min)', '5', icon: Icons.warning_amber_rounded)),
-                    const SizedBox(width: 10),
-                    const Expanded(child: SizedBox()),
-                  ],
-                ),
-              ],
+          _CollapsibleSection(
+            title: '计算参数',
+            initiallyExpanded: true,
+            child: AppCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(child: _field(_volume, '气瓶容量 (L)', '6.8', icon: Icons.local_fire_department_outlined)),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_full, '满压 (MPa)', '30', icon: Icons.speed)),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(child: _field(_consumption, '消耗率 (L/min)', '40', icon: Icons.water_drop_outlined)),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_warn, '提醒剩余 (min)', '10', icon: Icons.notifications_active_outlined)),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(child: _field(_alarm, '报警剩余 (min)', '5', icon: Icons.warning_amber_rounded)),
+                      const SizedBox(width: 10),
+                      const Expanded(child: SizedBox()),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -188,47 +193,50 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           const SizedBox(height: 16),
-          const SectionTitle(text: '提醒方式'),
-          AppCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                SwitchListTile(
-                  title: const Text('语音播报', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                  subtitle: const Text('确认/提醒/报警时播报中文语音'),
-                  activeThumbColor: AppColors.actionPrimary,
-                  value: _tts,
-                  onChanged: (v) => setState(() => _tts = v),
-                ),
-                const Divider(height: 1, indent: 16, endIndent: 16),
-                SwitchListTile(
-                  title: const Text('报警音', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                  subtitle: const Text('前台警报音 + 后台本地通知'),
-                  activeThumbColor: AppColors.actionPrimary,
-                  value: _sound,
-                  onChanged: (v) => setState(() => _sound = v),
-                ),
-                const Divider(height: 1, indent: 16, endIndent: 16),
-                SwitchListTile(
-                  title: const Text('屏幕常亮', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                  subtitle: const Text('看板页保持屏幕常亮，适合火场值守'),
-                  activeThumbColor: AppColors.actionPrimary,
-                  value: _keepScreenOn,
-                  onChanged: (v) => setState(() => _keepScreenOn = v),
-                ),
-                if (!widget.controller.alarm.exactAlarmAvailable) ...[
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.notifications_off_outlined, color: AppColors.caution, size: 20),
-                    title: const Text(
-                      '系统已关闭精确闹钟权限，后台提醒可能延迟',
-                      style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: const Text('请在系统设置-应用-安全员助手中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
+          _CollapsibleSection(
+            title: '提醒方式',
+            initiallyExpanded: true,
+            child: AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: const Text('语音播报', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('确认/提醒/报警时播报中文语音'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _tts,
+                    onChanged: (v) => setState(() => _tts = v),
                   ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('报警音', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('前台警报音 + 后台本地通知'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _sound,
+                    onChanged: (v) => setState(() => _sound = v),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('屏幕常亮', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('看板页保持屏幕常亮，适合火场值守'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _keepScreenOn,
+                    onChanged: (v) => setState(() => _keepScreenOn = v),
+                  ),
+                  if (!widget.controller.alarm.exactAlarmAvailable) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.notifications_off_outlined, color: AppColors.caution, size: 20),
+                      title: const Text(
+                        '系统已关闭精确闹钟权限，后台提醒可能延迟',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text('请在系统设置-应用-安全员助手中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 20),
@@ -279,6 +287,53 @@ class _SettingsPageState extends State<SettingsPage> {
           suffixIcon: suffix,
         ),
       ),
+    );
+  }
+}
+
+/// 可折叠分区：点击标题展开/收起，标题文字后带方向箭头符号
+class _CollapsibleSection extends StatefulWidget {
+  final String title;
+  final bool initiallyExpanded;
+  final Widget child;
+
+  const _CollapsibleSection({
+    required this.title,
+    required this.child,
+    this.initiallyExpanded = false,
+  });
+
+  @override
+  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
+}
+
+class _CollapsibleSectionState extends State<_CollapsibleSection> {
+  late bool _expanded = widget.initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: SectionTitle(
+            text: widget.title,
+            inline: Icon(
+              _expanded ? Icons.expand_less : Icons.expand_more,
+              size: 18,
+              color: AppColors.textTertiary,
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 200),
+          crossFadeState: _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          firstChild: widget.child,
+          secondChild: const SizedBox(width: double.infinity),
+        ),
+      ],
     );
   }
 }

@@ -200,8 +200,9 @@ class StatusBadge extends StatelessWidget {
 class SectionTitle extends StatelessWidget {
   final String text;
   final Widget? trailing;
+  final Widget? inline; // 紧跟标题文字后的符号（如折叠指示箭头）
 
-  const SectionTitle({super.key, required this.text, this.trailing});
+  const SectionTitle({super.key, required this.text, this.trailing, this.inline});
 
   @override
   Widget build(BuildContext context) {
@@ -227,6 +228,10 @@ class SectionTitle extends StatelessWidget {
               letterSpacing: 0.5,
             ),
           ),
+          if (inline != null) ...[
+            const SizedBox(width: 4),
+            inline!,
+          ],
           const Spacer(),
           if (trailing != null) trailing!,
         ],

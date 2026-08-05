@@ -80,8 +80,8 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  /// 新条目到达时调度本地通知
-  final Set<String> _scheduledIds = {};
+  /// 新条目到达时调度本地通知；exitAt 变化（改名/压力复核）时重新调度
+  final Map<String, int> _scheduled = {};
 
   Future<void> _rescheduleNotifications() async {
     final active = entries.where((e) => e.isActive).toList();
@@ -89,15 +89,16 @@ class AppController extends ChangeNotifier {
     final allIds = entries.map((e) => e.id).toSet();
 
     for (final e in active) {
-      if (!_scheduledIds.contains(e.id)) {
-        _scheduledIds.add(e.id);
+      if (_scheduled[e.id] != e.exitAt) {
+        _scheduled[e.id] = e.exitAt;
+        await alarm.cancelForEntry(e.id);
         await alarm.scheduleForEntry(e, warnMin: calcConfig.warnMin, alarmMin: calcConfig.alarmMin);
       }
     }
     // 已出火场或已消失的条目：取消通知
-    for (final id in List.of(_scheduledIds)) {
+    for (final id in List.of(_scheduled.keys)) {
       if (!activeIds.contains(id) || !allIds.contains(id)) {
-        _scheduledIds.remove(id);
+        _scheduled.remove(id);
         await alarm.cancelForEntry(id);
       }
     }
@@ -106,15 +107,24 @@ class AppController extends ChangeNotifier {
   /// 每秒检查：剩余10分钟提醒、5分钟报警、超时报警（前台 TTS+声音）
   void _checkThresholds() {
     final now = DateTime.now().millisecondsSinceEpoch;
+    var inDanger = false;
     for (final e in entries.where((e) => e.isActive)) {
       final remaining = e.exitAt - now;
       if (remaining <= 0) {
+        inDanger = true;
         _announce(e, 'timeout', '${e.name}超时！${e.name}超时！立即确认！');
       } else if (remaining <= calcConfig.alarmMin * 60000) {
+        inDanger = true;
         _announce(e, 'alarm', '${e.name}，气瓶剩余${(remaining / 60000).ceil()}分钟，立即撤离！');
       } else if (remaining <= calcConfig.warnMin * 60000) {
         _announce(e, 'warn', '${e.name}，气瓶剩余${(remaining / 60000).ceil()}分钟，准备撤离。');
       }
+    }
+    // 红色（alarm/timeout）状态持续循环警报，全部脱险后停止
+    if (inDanger) {
+      alarm.startAlarmLoop();
+    } else {
+      alarm.stopAlarm();
     }
   }
 
@@ -126,8 +136,26 @@ class AppController extends ChangeNotifier {
     alarm.fire(key, ttsText: text);
   }
 
-  Future<Entry?> createEntryFromVoice({required String name, required double pressureMpa, String? rawText}) async {
-    final e = await api!.createEntry(name: name, pressureMpa: pressureMpa, source: 'voice', rawText: rawText);
+  Future<Entry?> createEntryFromVoice({
+    required String name,
+    required double pressureMpa,
+    String? rawText,
+    bool force = false,
+  }) async {
+    final e = await api!.createEntry(
+      name: name,
+      pressureMpa: pressureMpa,
+      source: 'voice',
+      rawText: rawText,
+      force: force,
+    );
+    await sync();
+    return e;
+  }
+
+  /// 合并：同名已在场的记录按本次复核压力重新倒计时（保留原记录，不重复计数）
+  Future<Entry> mergeEntryPressure({required String id, required double pressureMpa}) async {
+    final e = await api!.updateEntry(id: id, pressureMpa: pressureMpa);
     await sync();
     return e;
   }

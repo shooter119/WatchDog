@@ -15,7 +15,7 @@ class Settings {
 
   static Future<String> get serverUrl async {
     final sp = await SharedPreferences.getInstance();
-    return sp.getString(_kServer) ?? 'http://192.168.1.100:3000';
+    return sp.getString(_kServer) ?? 'https://bytevirt.meiyou.xyz:8443';
   }
 
   static Future<void> setServerUrl(String v) async {
@@ -35,7 +35,7 @@ class Settings {
 
   static Future<String> get apiToken async {
     final sp = await SharedPreferences.getInstance();
-    return sp.getString(_kToken) ?? '';
+    return sp.getString(_kToken) ?? 'watchdog-dev-token-2026';
   }
 
   static Future<void> setApiToken(String v) async {

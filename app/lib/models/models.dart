@@ -68,25 +68,60 @@ class Hotword {
       Hotword(id: json['id'] as String, word: json['word'] as String);
 }
 
+class ParsePerson {
+  final String name;
+  final double? pressureMpa;
+
+  const ParsePerson({required this.name, this.pressureMpa});
+
+  factory ParsePerson.fromJson(Map<String, dynamic> json) => ParsePerson(
+        name: (json['name'] as String?) ?? '',
+        pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),
+      );
+}
+
 class ParseResult {
   final String action; // enter / exit / unknown
-  final String? name;
-  final double? pressureMpa;
+  final List<ParsePerson> people;
   final String note;
 
   ParseResult({
     required this.action,
-    this.name,
-    this.pressureMpa,
+    required this.people,
     this.note = '',
   });
 
-  factory ParseResult.fromJson(Map<String, dynamic> json) => ParseResult(
-        action: (json['action'] as String?) ?? 'unknown',
-        name: json['name'] as String?,
-        pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),
-        note: (json['note'] as String?) ?? '',
-      );
+  ParseResult.single({
+    required this.action,
+    String? name,
+    double? pressureMpa,
+    this.note = '',
+  }) : people = [
+          if (name != null && name.trim().isNotEmpty)
+            ParsePerson(name: name, pressureMpa: pressureMpa),
+        ];
+
+  factory ParseResult.fromJson(Map<String, dynamic> json) {
+    final rawPeople = json['people'] as List?;
+    final people = <ParsePerson>[];
+    if (rawPeople != null) {
+      for (final p in rawPeople) {
+        final person = ParsePerson.fromJson(p as Map<String, dynamic>);
+        if (person.name.trim().isNotEmpty) people.add(person);
+      }
+    } else {
+      // 兼容旧格式（单人的 name/pressure_mpa 字段）
+      final name = (json['name'] as String?)?.trim() ?? '';
+      if (name.isNotEmpty) {
+        people.add(ParsePerson(name: name, pressureMpa: (json['pressure_mpa'] as num?)?.toDouble()));
+      }
+    }
+    return ParseResult(
+      action: (json['action'] as String?) ?? 'unknown',
+      people: people,
+      note: (json['note'] as String?) ?? '',
+    );
+  }
 }
 
 class CalcConfig {
