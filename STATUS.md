@@ -7,14 +7,14 @@
 | 模块 | 状态 |
 | --- | --- |
 | 后端（Express + node:sqlite） | ✅ 单测 34/34 通过（calc/db/API 集成/token 鉴权/操作日志），含请求日志、旧数据自动清理、场景列表 |
-| App（Flutter） | ✅ `flutter analyze` 0 问题，测试 47/47 通过（widget 27 + 姓名解析 7 + 本地解析器 13） |
+| App（Flutter） | ✅ `flutter analyze` 0 问题，测试 50/50 通过（widget 30 + 姓名解析 7 + 本地解析器 13） |
 | 操作日志 | ✅ 每次语音操作（录音→转写→解析→确认/出场）客户端+服务端双端埋点，同一 opId 串起全链路；设置页二级页面按操作分组查看（展开步骤+原始数据 JSON）；日志批量上报服务器（`POST /api/logs`），开发者可用 `GET /api/logs` 调试 |
 | 按人可调气瓶容量 | ✅ 确认页可改单人气瓶容量（默认取全局配置，1~20L 校验），可用时间实时重算；后端 `POST /api/entries` 支持 `volume_l`（可空） |
-| Android Release APK | ✅ 已配置正式签名（watchdog-release.keystore）+ minify/shrink，构建通过（52.1MB） |
+| Android Release APK | ✅ 已配置正式签名（watchdog-release.keystore）+ minify/shrink，构建通过（128.6MB，含 sherpa-onnx 原生库） |
 | Android 保活/常亮 | ✅ 精确闹钟 USE_EXACT_ALARM + 运行时通知权限申请 + 屏幕常亮（原生 FLAG_KEEP_SCREEN_ON，无第三方依赖） |
 | iOS 构建 | ⏸ 暂缓（集中开发 Android） |
 | 豆包 ASR / DeepSeek | ✅ key 已配置，端到端联调通过（wav 16kHz 实测识别正确） |
-| 端侧 ASR / 解析备份 | ✅ sherpa-onnx（Paraformer 中文小模型 int8，78MB，hf-mirror 国内直链）本机识别 + 纯 Dart 规则解析器；设置页两个联网开关可分别控制「云端优先失败自动切本地」或「强制本地」，断网/无信号时语音录入可用；模型首次使用时在设置页下载，之后完全离线 |
+| 端侧 ASR / 解析备份 | ✅ sherpa-onnx 流式 zipformer-transducer 中文模型（zh-14M int8，31MB，hf-mirror 国内直链）本机识别 + 纯 Dart 规则解析器；字级词表支持名单热词（modified_beam_search 上下文加权），断网/无信号时人名识别同样有热词加持；设置页两个联网开关可分别控制「云端优先失败自动切本地」或「强制本地」；模型首次使用时在设置页下载，之后完全离线（下载后自动清理旧版模型） |
 | 录音→转写→解析→进出场 全链路 | ✅ 本地端到端验证通过（/tmp/asr-test.wav 实测） |
 | 多设备同步 | ✅ 双客户端场景码隔离 + 轮询同步行为已验证（API 级） |
 | VPS 部署 | ✅ 已上线 bytevirt（Debian 11）：HTTPS 8443 + pm2 自启 + 证书自动续期，公网全链路验证通过 |
@@ -37,7 +37,7 @@ app/                     Flutter 客户端（org com.firewatch.watchdog，包名
   lib/pages/             board(看板+概览横幅) / home(语音) / roster(名单热词) / settings / entry_detail(人员详情) / op_log(操作日志)
   lib/api/api_client.dart 全部接口调用（带 X-Scene-Code / X-Api-Token / X-Device-Id / X-Op-Id）
   lib/state/app_controller.dart 5 秒轮询同步 + 每秒阈值检查 + TTS/通知调度 + 转写/解析云端优先失败自动切本地（两个联网开关控制）
-  lib/services/          audio(录音 wav 16kHz) / local_asr(sherpa-onnx 本地识别+模型下载) / local_parser(纯 Dart 规则解析) / tts(播报) / alarm(精确闹钟通知+警报音) / screen_on(常亮) / settings / op_log(日志本地缓冲+批量上报)
+  lib/services/          audio(录音 wav 16kHz) / local_asr(sherpa-onnx 流式 zipformer-zh 本地识别，名单热词加权+模型下载) / local_parser(纯 Dart 规则解析) / tts(播报) / alarm(精确闹钟通知+警报音) / screen_on(常亮) / settings / op_log(日志本地缓冲+批量上报)
   android/app/watchdog-release.keystore + key.properties  正式签名（勿提交 keystore 与密码）
   assets/sounds/alarm.wav 警报音（Android 另存于 res/raw/ 供通知使用）
 ```
@@ -111,11 +111,11 @@ cd app && flutter build apk --release                                       # �
 - 未报压力时后端 400 拒绝，App 提示补填
 - 倒计时阈值：剩余 warnMin 提醒、alarmMin 报警、超时报警；后台走本地精确闹钟通知（Android 14+ 用 USE_EXACT_ALARM，无需手动授权；设置页可见「精确闹钟被关闭」提示），前台 TTS+警报音
 - 屏幕常亮默认开启（原生 FLAG_KEEP_SCREEN_ON），设置页可关
-- 报「姓名，20兆帕」时按名单热词提升识别率
+- 报「姓名，20兆帕」时按名单热词提升识别率（云端注入 ASR，本地模式经 sherpa-onnx 热词文件加权，两侧均生效）
 
 ## 待办
 
-1. 真机录音链路验证（Release APK 已就绪，服务器已上线，需真机跑通 录音→转写→解析→看板；操作日志页 + 服务器 `GET /api/logs` 可直接观察全链路）
+1. 真机录音链路验证 ✅（Release APK 真机实测：本地模型下载/识别/热词注入全链路通过，操作日志页 + 服务器 `GET /api/logs` 可观察全链路）→ 待补：真人语音下名单人名的热词纠偏效果实测（环境音转写已通）
 2. 真机多设备同步 + 通知/报警实测（本地精确闹钟行为需 Android 13/14 真机确认）
 3. App 指向生产服务器（设置页填 https://bytevirt.meiyou.xyz:8443 + 场景码 + 令牌）
 4. iOS 构建验证（暂缓，集中 Android）
