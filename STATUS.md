@@ -14,7 +14,7 @@
 | Android 保活/常亮 | ✅ 精确闹钟 USE_EXACT_ALARM + 运行时通知权限申请 + 屏幕常亮（原生 FLAG_KEEP_SCREEN_ON，无第三方依赖） |
 | iOS 构建 | ⏸ 暂缓（集中开发 Android） |
 | 豆包 ASR / DeepSeek | ✅ key 已配置，端到端联调通过（wav 16kHz 实测识别正确） |
-| 端侧 ASR / 解析备份 | ✅ sherpa-onnx 流式 zipformer-transducer 中文模型（zh-14M int8，31MB，hf-mirror 国内直链）本机识别 + 纯 Dart 规则解析器；字级词表支持名单热词（modified_beam_search 上下文加权），断网/无信号时人名识别同样有热词加持；设置页两个联网开关可分别控制「云端优先失败自动切本地」或「强制本地」；模型首次使用时在设置页下载，之后完全离线（下载后自动清理旧版模型） |
+| 端侧 ASR / 解析备份 | ✅ sherpa-onnx 离线 zipformer-transducer 中文模型（multi-zh-hans int8，75MB，多方言，模型托管项目服务器国内直连下载）本机识别 + 纯 Dart 规则解析器；热词走 bbpe 字节编码（modified_beam_search 上下文加权），任意姓名/生僻字无 OOV；设置页两个联网开关可分别控制「云端优先失败自动切本地」或「强制本地」；模型首次使用时在设置页下载，之后完全离线（下载后自动清理旧版模型） |
 | 录音→转写→解析→进出场 全链路 | ✅ 本地端到端验证通过（/tmp/asr-test.wav 实测） |
 | 多设备同步 | ✅ 双客户端场景码隔离 + 轮询同步行为已验证（API 级） |
 | VPS 部署 | ✅ 已上线 bytevirt（Debian 11）：HTTPS 8443 + pm2 自启 + 证书自动续期，公网全链路验证通过 |
@@ -37,7 +37,7 @@ app/                     Flutter 客户端（org com.firewatch.watchdog，包名
   lib/pages/             board(看板+概览横幅) / home(语音) / roster(名单热词) / settings / entry_detail(人员详情) / op_log(操作日志)
   lib/api/api_client.dart 全部接口调用（带 X-Scene-Code / X-Api-Token / X-Device-Id / X-Op-Id）
   lib/state/app_controller.dart 5 秒轮询同步 + 每秒阈值检查 + TTS/通知调度 + 转写/解析云端优先失败自动切本地（两个联网开关控制）
-  lib/services/          audio(录音 wav 16kHz) / local_asr(sherpa-onnx 流式 zipformer-zh 本地识别，名单热词加权+模型下载) / local_parser(纯 Dart 规则解析) / tts(播报) / alarm(精确闹钟通知+警报音) / screen_on(常亮) / settings / op_log(日志本地缓冲+批量上报)
+  lib/services/          audio(录音 wav 16kHz) / local_asr(sherpa-onnx multi-zh-hans 本地识别，bbpe 热词加权+模型下载) / local_parser(纯 Dart 规则解析) / tts(播报) / alarm(精确闹钟通知+警报音) / screen_on(常亮) / settings / op_log(日志本地缓冲+批量上报)
   android/app/watchdog-release.keystore + key.properties  正式签名（勿提交 keystore 与密码）
   assets/sounds/alarm.wav 警报音（Android 另存于 res/raw/ 供通知使用）
 ```
