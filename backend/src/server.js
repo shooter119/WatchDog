@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { transcribe } = require('./asr');
-const { parseTextWithDeepSeek, reviseTextWithDeepSeek } = require('./parse');
+const { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek } = require('./parse');
 const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
@@ -210,6 +210,79 @@ app.post('/api/parse', async (req, res, next) => {
     res.json(parsed);
   } catch (e) {
     logOp(req, 'error', 'parse_err', `解析失败: ${e.message || e}`);
+    next(e);
+  }
+});
+
+const CHAT_SYSTEM_PROMPT = `你是"辅助"，消防救援现场安全管控系统里的 AI 智囊，常驻安全员的手持终端。
+安全员和消防员在火场里遇到困难时会向你提问，你要给出专业、务实、安全的解答。
+
+回答要求：
+1. 简洁直接，分条给出可立即执行的措施，不要长篇大论、不要空话套话
+2. 涉及火场风险判断时，安全永远第一：先提示评估风险、做好个人防护、必要时请求支援或撤离
+3. 不确定或超出知识范围时如实说明，严禁编造数据或器材参数
+4. 涉及医疗急救、危险化学品处置等专业操作，强调必须由持证专业人员执行
+5. 可从火场战术、器材使用、气瓶余量管理、破拆搜救、通讯协同等角度回答
+6. 回答结尾可以主动追问一句关键信息，帮助判断现场情况`;
+
+// 智能体问答限流：按场景内存计数（单实例部署），每分钟最多 10 次提问
+const chatRateBuckets = new Map();
+function chatRateLimited(scene) {
+  const minute = Math.floor(Date.now() / 60000);
+  const bucket = chatRateBuckets.get(scene);
+  if (!bucket || bucket.minute !== minute) {
+    chatRateBuckets.set(scene, { minute, count: 1 });
+    return false;
+  }
+  bucket.count++;
+  return bucket.count > 10;
+}
+
+// 智能体问答：带场景隔离的历史上下文，回复同时落库（user + assistant 成对写入）
+app.post('/api/chat', async (req, res, next) => {
+  try {
+    const { message } = req.body || {};
+    const clean = String(message || '').trim();
+    if (!clean) return res.status(400).json({ error: '缺少 message' });
+    if (clean.length > 2000) return res.status(400).json({ error: '问题过长（最多 2000 字）' });
+    if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置 DEEPSEEK_API_KEY' });
+    const scene = sceneKey(req);
+    if (chatRateLimited(scene)) return res.status(429).json({ error: '提问过于频繁，请稍后再试' });
+    const history = db.listChatMessages({ scene, limit: 40 });
+    const messages = [
+      { role: 'system', content: CHAT_SYSTEM_PROMPT },
+      ...history.map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user', content: clean },
+    ];
+    const t0 = Date.now();
+    logOp(req, 'info', 'chat_req', '收到问答请求', { text: clean.slice(0, 100), history: history.length });
+    const reply = await chatWithDeepSeek({
+      apiKey: CFG.llm.apiKey,
+      baseUrl: CFG.llm.baseUrl,
+      model: CFG.llm.model,
+      messages,
+    });
+    db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'user', content: clean });
+    db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'assistant', content: reply });
+    logOp(req, 'info', 'chat_done', '问答完成', { ms: Date.now() - t0, replyLen: reply.length });
+    res.json({ reply, created_at: Date.now() });
+  } catch (e) {
+    logOp(req, 'error', 'chat_err', `问答失败: ${e.message || e}`);
+    next(e);
+  }
+});
+
+app.get('/api/chat', (req, res) => {
+  const limit = Number(req.query.limit) || 100;
+  res.json(db.listChatMessages({ scene: sceneKey(req), limit }));
+});
+
+app.delete('/api/chat', (req, res, next) => {
+  try {
+    const n = db.clearChatMessages(sceneKey(req));
+    logOp(req, 'info', 'chat_cleared', '已清空问答记录', { deleted: n });
+    res.json({ ok: true, deleted: n });
+  } catch (e) {
     next(e);
   }
 });

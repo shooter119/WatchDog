@@ -181,7 +181,23 @@ class ParsePerson {
       );
 }
 
+/// 语音输入意图（App 依据它路由到对应界面）
+/// entry/exit → 语音页确认登记；note → 记入火场日志并跳日志页；
+/// ask → 跳智能体问答页并发送；ignore → 环境音，丢弃并提示重新录入
+class VoiceIntent {
+  static const String entry = 'entry';
+  static const String exit = 'exit';
+  static const String note = 'note';
+  static const String ask = 'ask';
+  static const String ignore = 'ignore';
+
+  static const List<String> all = [entry, exit, note, ask, ignore];
+
+  static String normalize(String? v) => all.contains(v) ? v! : note;
+}
+
 class ParseResult {
+  final String intent; // entry / exit / note / ask / ignore
   final String action; // enter / exit / unknown
   final List<ParsePerson> people;
   final String note;
@@ -190,9 +206,20 @@ class ParseResult {
     required this.action,
     required this.people,
     this.note = '',
-  });
+    String? intent,
+  }) : intent = intent != null && VoiceIntent.all.contains(intent)
+            ? intent
+            : _inferIntent(action, people);
+
+  /// 兼容旧服务端（无 intent 字段）：按 action/people 推导，避免破坏进出场流程
+  static String _inferIntent(String action, List<ParsePerson> people) {
+    if (action == 'exit') return VoiceIntent.exit;
+    if (action == 'enter' && people.isNotEmpty) return VoiceIntent.entry;
+    return VoiceIntent.note;
+  }
 
   Map<String, dynamic> toJson() => {
+        'intent': intent,
         'action': action,
         'people': people.map((p) => p.toJson()).toList(),
         'note': note,
@@ -203,7 +230,14 @@ class ParseResult {
     String? name,
     double? pressureMpa,
     this.note = '',
-  }) : people = [
+    String? intent,
+  })  : intent = intent != null && VoiceIntent.all.contains(intent)
+            ? intent
+            : _inferIntent(action, [
+                if (name != null && name.trim().isNotEmpty)
+                  ParsePerson(name: name, pressureMpa: pressureMpa),
+              ]),
+        people = [
           if (name != null && name.trim().isNotEmpty)
             ParsePerson(name: name, pressureMpa: pressureMpa),
         ];
@@ -224,11 +258,36 @@ class ParseResult {
       }
     }
     return ParseResult(
+      intent: (json['intent'] as String?) ?? '',
       action: (json['action'] as String?) ?? 'unknown',
       people: people,
       note: (json['note'] as String?) ?? '',
     );
   }
+}
+
+/// 智能体问答消息（user 提问 / assistant 回复）
+class ChatMessage {
+  final String id;
+  final String role; // user / assistant
+  final String content;
+  final int createdAt;
+
+  const ChatMessage({
+    required this.id,
+    required this.role,
+    required this.content,
+    required this.createdAt,
+  });
+
+  bool get isUser => role == 'user';
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+        id: json['id'] as String,
+        role: (json['role'] as String?) ?? 'user',
+        content: (json['content'] as String?) ?? '',
+        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class CalcConfig {

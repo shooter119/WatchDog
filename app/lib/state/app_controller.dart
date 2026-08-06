@@ -257,6 +257,27 @@ class AppController extends ChangeNotifier {
     return updated;
   }
 
+  /// 智能体问答：拉取历史（旧→新）
+  Future<List<ChatMessage>> fetchChatHistory() async {
+    final a = api;
+    if (a == null) throw StateError('未连接服务器');
+    return a.fetchChatMessages();
+  }
+
+  /// 智能体问答：提问并返回 AI 回复
+  Future<ChatMessage> askAssistant(String message, {String? opId}) async {
+    final op = opId ?? '';
+    OpLogService.instance.record(op, 'chat_ask', '向辅助提问', data: {'text': message});
+    return await api!.sendChatMessage(message, opId: op);
+  }
+
+  /// 清空本场景问答记录
+  Future<void> clearChatHistory() async {
+    final a = api;
+    if (a == null) return;
+    await a.clearChatMessages();
+  }
+
   Future<void> deleteNote(String id) async {
     await api!.deleteNote(id);
     notes = notes.where((n) => n.id != id).toList();

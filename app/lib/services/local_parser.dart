@@ -30,7 +30,7 @@ class LocalParser {
     final people = <ParsePerson>[];
     if (action == 'exit') {
       if (rosterMatches.isEmpty && _hasAllExit(clean)) {
-        return ParseResult(action: 'exit', people: []);
+        return ParseResult(action: 'exit', people: [], intent: VoiceIntent.exit);
       }
       for (final m in rosterMatches) {
         people.add(ParsePerson(name: m.name));
@@ -40,11 +40,20 @@ class LocalParser {
           people.add(ParsePerson(name: name));
         }
       }
-      return ParseResult(action: 'exit', people: people.take(10).toList());
+      return ParseResult(
+        action: 'exit',
+        people: people.take(10).toList(),
+        intent: _intentFor(clean, 'exit', people.take(10).toList(), firefighters),
+      );
     }
 
     if (pressures.isEmpty) {
-      return ParseResult(action: action, people: [], note: _buildNote(clean, pressures, const []));
+      return ParseResult(
+        action: action,
+        people: [],
+        note: _buildNote(clean, pressures, const []),
+        intent: _intentFor(clean, action, const [], firefighters),
+      );
     }
 
     final usedPressure = List<bool>.filled(pressures.length, false);
@@ -76,9 +85,43 @@ class LocalParser {
 
     final note = _buildNote(clean, pressures, people);
     if (people.isEmpty) {
-      return ParseResult(action: action, people: [], note: note);
+      return ParseResult(
+        action: action,
+        people: [],
+        note: note,
+        intent: _intentFor(clean, action, const [], firefighters),
+      );
     }
-    return ParseResult(action: action, people: people.take(10).toList(), note: note);
+    return ParseResult(
+      action: action,
+      people: people.take(10).toList(),
+      note: note,
+      intent: _intentFor(clean, action, people.take(10).toList(), firefighters),
+    );
+  }
+
+  static const _askWords = ['怎么办', '咋办', '怎么', '如何', '为什么', '为啥', '能不能', '可不可以', '是否', '什么', '多少', '哪里', '在哪', '怎样', '怎么办才好'];
+  static const _noiseWords = ['测试', '喂喂', '喂', '嗯', '哦', '啊', '咳咳', '哈哈', '试试', '语音', '说话'];
+  static const _fireWords = ['火', '救援', '救', '水带', '气瓶', '浓烟', '烟', '被困', '明火', '燃烧', '消防', '搜救', '灭火', '破拆', '内攻', '进场', '出场', '出来', '撤离', '兆帕', '个压', '压力'];
+
+  /// 规则版意图判断，对齐后端 guardrailIntent：宁记不错过
+  String _intentFor(String text, String action, List<ParsePerson> people, List<String> firefighters) {
+    if (action == 'exit') {
+      return people.isNotEmpty || _hasAllExit(text) ? VoiceIntent.exit : VoiceIntent.note;
+    }
+    if (action == 'enter') {
+      return people.isNotEmpty ? VoiceIntent.entry : VoiceIntent.note;
+    }
+    // 疑问句/求助口吻 → 提问
+    if (_askWords.any(text.contains)) return VoiceIntent.ask;
+    // 纯环境音：无名单姓名/压力/消防痕迹 → 丢弃；否则宁记不错过
+    final hasTrace = firefighters.any((n) => text.contains(n)) ||
+        _pressureRe.hasMatch(text) ||
+        _fireWords.any(text.contains);
+    if (!hasTrace && (text.length <= 6 || _noiseWords.any(text.contains))) {
+      return VoiceIntent.ignore;
+    }
+    return VoiceIntent.note;
   }
 
   String _detectAction(String text, {required bool hasValidPressure}) {

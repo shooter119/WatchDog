@@ -906,42 +906,64 @@ void main() {
       expect(tester.widget<TextField>(fields.at(5)).controller!.text, '9.0');
     });
 
-    testWidgets('非报数语音（unknown）自动记入火场日志并回到空闲态', (tester) async {
+    testWidgets('非报数语音（unknown）识别为日志意图，回调路由记入日志并回到空闲态', (tester) async {
       final api = _FakeApi(noteOnCall: 1);
       final c = _FakeController()..api = api;
+      String? routed;
       await tester.pumpWidget(MaterialApp(
         theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+        home: Scaffold(
+          body: HomePage(
+            controller: c,
+            audioService: _FakeAudio(),
+            onNoteIntent: (t) {
+              routed = t;
+              c.addNote(t);
+            },
+          ),
+        ),
       ));
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
       await tester.pump();
-      // 自动记入日志，分类按关键词识别（无关键词 → 其他）
+      await tester.pump();
+      // 意图路由回调收到文本（记日志由 main 层执行）
+      expect(routed, '张伟20兆帕，李娜22兆帕');
       expect(c.notes.single.text, '张伟20兆帕，李娜22兆帕');
       expect(c.notes.single.category, NoteCategory.other);
-      // 提示 + 回到空闲态
-      expect(find.text('已记入火场日志'), findsOneWidget);
+      // 回到空闲态
       expect(find.text('按住下方按钮说话'), findsOneWidget);
     });
 
-    testWidgets('出场但无人名且无全员语义（如搜救出宠物狗）不弹全员离场，自动记入日志', (tester) async {
-      final api = _FakeApi(exitAllOnCall: 1, transcribeText: '龙翔路站从燃烧建筑中搜救出一只宠物狗');
+    testWidgets('识别为日志意图（如搜救出物品）不弹全员离场，回调路由记入日志', (tester) async {
+      final api = _FakeApi(noteOnCall: 1, transcribeText: '龙翔路站从燃烧建筑中搜救出一只宠物狗');
       final c = _FakeController()..api = api;
+      String? routed;
       await tester.pumpWidget(MaterialApp(
         theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+        home: Scaffold(
+          body: HomePage(
+            controller: c,
+            audioService: _FakeAudio(),
+            onNoteIntent: (t) {
+              routed = t;
+              c.addNote(t);
+            },
+          ),
+        ),
       ));
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
       await tester.pump();
+      await tester.pump();
       // 不弹全员离场确认
       expect(find.text('全员离场确认'), findsNothing);
-      // 自动记入日志（分类：搜救）
+      // 意图路由回调收到文本（分类：搜救）
+      expect(routed, '龙翔路站从燃烧建筑中搜救出一只宠物狗');
       expect(c.notes.single.text, '龙翔路站从燃烧建筑中搜救出一只宠物狗');
       expect(c.notes.single.category, NoteCategory.rescue);
-      expect(find.text('已记入火场日志'), findsOneWidget);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
     });
 
@@ -1135,20 +1157,20 @@ void main() {
       expect(find.text('火场安全管控看板'), findsOneWidget);
       expect(find.text('日志'), findsOneWidget);
       expect(find.text('看板'), findsOneWidget);
-      expect(find.text('数据'), findsOneWidget);
+      expect(find.text('辅助'), findsOneWidget);
       expect(find.text('设置'), findsOneWidget);
       expect(find.byType(VoiceButton), findsOneWidget);
     });
 
-    testWidgets('点击日志/数据/设置可切换页面', (tester) async {
+    testWidgets('点击日志/辅助/设置可切换页面', (tester) async {
       await tester.pumpWidget(const WatchDogApp());
       await tester.pump();
       await tester.tap(find.text('日志'));
       await tester.pumpAndSettle();
       expect(find.text('火场日志'), findsOneWidget);
-      await tester.tap(find.text('数据'));
+      await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
-      expect(find.text('数据统计'), findsOneWidget);
+      expect(find.text('你好，我是辅助'), findsOneWidget);
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(find.text('服务端'), findsOneWidget);

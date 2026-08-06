@@ -8,6 +8,7 @@ import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import 'op_log_page.dart';
 import 'roster_page.dart';
+import 'stats_page.dart';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -377,6 +378,40 @@ class _SettingsPageState extends State<SettingsPage> {
                       Text('消防员与专业术语', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                       SizedBox(height: 2),
                       Text('提前录入，语音识别更准', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const SectionTitle(text: '数据统计'),
+          AppCard(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => StatsPage(controller: widget.controller)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceSubtle,
+                  ),
+                  child: const Icon(Icons.bar_chart_outlined, size: 20, color: AppColors.textPrimary),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('出场耗时与压力统计', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      SizedBox(height: 2),
+                      Text('查看火场作业数据', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
                     ],
                   ),
                 ),

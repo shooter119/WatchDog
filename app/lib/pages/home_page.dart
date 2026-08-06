@@ -12,13 +12,16 @@ import '../services/screen_on.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
-/// 语音录入主页面：按住说话 → 自动识别 → 确认进场 / 登记出场
+/// 语音录入主页面：按住说话 → 自动识别 → 确认进场 / 登记出场。
+/// 识别结果按 AI 意图分流：进出场本页确认；日志/提问/环境音交 main 统一路由。
 class HomePage extends StatefulWidget {
   final AppController controller;
   final bool autoRecord; // 底部导航语音按钮长按触发
   final VoidCallback? onAutoRecordConsumed;
   final ValueChanged<bool>? onRecordingChanged; // 录音状态上报（底部导航按钮）
   final ValueChanged<bool>? onProcessingChanged; // 识别/确认中状态上报（禁用底部按钮）
+  final ValueChanged<String>? onNoteIntent; // 识别为火场日志：记入并跳日志页
+  final ValueChanged<String>? onAskIntent; // 识别为提问：跳问答页并发送
   final AudioService? audioService; // 测试注入
 
   const HomePage({
@@ -28,6 +31,8 @@ class HomePage extends StatefulWidget {
     this.onAutoRecordConsumed,
     this.onRecordingChanged,
     this.onProcessingChanged,
+    this.onNoteIntent,
+    this.onAskIntent,
     this.audioService,
   });
 
@@ -198,27 +203,44 @@ class HomePageState extends State<HomePage> {
           ed.volumeCtrl.text = statedVol.toStringAsFixed(1);
         }
       }
-      // 智能分流：非报数内容（unknown / 进场但未识别到人员 / 出场但无人员且无全员语义）自动记入火场日志
-      final hasAllExitWords = _hasAllExitWords(text);
-      final isNote = parsed.action == 'unknown' ||
-          (parsed.action == 'enter' && parsed.people.isEmpty) ||
-          (parsed.action == 'exit' && parsed.people.isEmpty && !hasAllExitWords);
-      if (isNote) {
-        OpLogService.instance
-            .record(opId, 'note_auto', '非报数内容自动记入日志', data: {'text': text, 'action': parsed.action});
-        try {
-          await widget.controller.addNote(text, opId: opId);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('已记入火场日志'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        } catch (_) {
-          // 记日志失败不影响主流程，静默
-        }
+      // 意图路由：日志 → 交 main 记入并跳转；提问 → 跳问答页；环境音 → 提示重新录入
+      if (parsed.intent == VoiceIntent.note) {
+        OpLogService.instance.record(opId, 'note_auto', '识别为火场日志，跳转日志页', data: {'text': text});
+        setState(() {
+          _transcript = null;
+          _parsed = null;
+          _error = null;
+          _processing = false;
+        });
+        widget.onProcessingChanged?.call(false);
+        _endOp('note');
+        widget.onNoteIntent?.call(text);
+        return;
+      }
+      if (parsed.intent == VoiceIntent.ask) {
+        OpLogService.instance.record(opId, 'ask_auto', '识别为提问，跳转辅助问答', data: {'text': text});
+        setState(() {
+          _transcript = null;
+          _parsed = null;
+          _error = null;
+          _processing = false;
+        });
+        widget.onProcessingChanged?.call(false);
+        _endOp('ask');
+        widget.onAskIntent?.call(text);
+        return;
+      }
+      if (parsed.intent == VoiceIntent.ignore) {
+        OpLogService.instance.record(opId, 'ignore_auto', '环境音/无关内容，丢弃', data: {'text': text});
+        setState(() {
+          _transcript = null;
+          _parsed = null;
+          _error = '未识别到有效指令，请重新录入';
+          _processing = false;
+        });
+        widget.onProcessingChanged?.call(false);
+        _endOp('ignore');
+        return;
       }
       // 追加到已录入名单：同名人员更新压力（更正），其余新增一行
       for (final p in parsed.people) {
@@ -246,15 +268,6 @@ class HomePageState extends State<HomePage> {
         _processing = false;
       });
       widget.onProcessingChanged?.call(false);
-      if (isNote) {
-        setState(() {
-          _transcript = null;
-          _parsed = null;
-          _error = null;
-        });
-        _endOp('note');
-        return;
-      }
       if (parsed.action == 'exit') {
         if (parsed.people.isNotEmpty) {
           await _handleExit(parsed.people.map((p) => p.name).toList());
@@ -272,6 +285,16 @@ class HomePageState extends State<HomePage> {
       widget.onProcessingChanged?.call(false);
       _endOp('error');
     }
+  }
+
+  /// 问答页就地录音识别为进出场时：展示本页确认面板（不经语音页再录一次）
+  void applyVoiceResult(String text, ParseResult parsed) {
+    setState(() {
+      _transcript = text;
+      _parsed = parsed;
+      _error = null;
+      _inlineError = null;
+    });
   }
 
   /// 本次操作收尾：记录结束步 + 把待上传日志批量同步到服务器
@@ -305,11 +328,22 @@ class HomePageState extends State<HomePage> {
     if (!mounted) return;
     final done = names.where((n) => !notFound.contains(n)).join('、');
     if (exited > 0) {
+      // 进出场同步写火场日志：合并一条，只记名字+动作
+      final noteText = names.where((n) => !notFound.contains(n)).map((n) => '$n出场').join('、');
+      try {
+        await widget.controller.addNote(noteText, opId: _opId);
+        OpLogService.instance.record(_opId ?? '', 'exit_note', '出场事件已写入火场日志', data: {'text': noteText});
+      } catch (_) {
+        // 写日志失败不影响主流程
+      }
       widget.controller.tts.speak('$done 已登记出火场');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$done 已登记出火场'), duration: const Duration(seconds: 2)),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$done 已登记出火场'), duration: const Duration(seconds: 2)),
+        );
+      }
     }
+    if (!mounted) return;
     setState(() {
       _transcript = null;
       _parsed = null;
@@ -319,13 +353,7 @@ class HomePageState extends State<HomePage> {
     _endOp(exited > 0 ? 'exit_ok' : 'exit_none');
   }
 
-  /// 全员离场语义词：exit 且未提取到人名时，仅当文本含这些词才弹全员离场确认，
-  /// 防止"搜救出一只宠物狗"等含"出"字的日志被误当成全员离场
-  static const _allExitWords = ['全部', '全员', '所有', '全体', '大家', '一起', '收工', '撤离', '撤退', '全撤'];
-
-  static bool _hasAllExitWords(String text) => _allExitWords.any(text.contains);
-
-  /// 全员离场：识别到"全部人员离开火场"等指令且未提取到具体姓名时，
+  /// 全员离场确认：识别到"全部人员离开火场"等指令且未提取到具体姓名时，
   /// 弹框让用户确认（展示语音原文以便核对机器理解），确认后把当前所有在场人员统一登记离场
   Future<void> _confirmAllExit(String voiceText) async {
     final active = widget.controller.entries.where((e) => e.isActive).toList();
@@ -389,6 +417,14 @@ class HomePageState extends State<HomePage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已全员离场（$exited 人）'), duration: const Duration(seconds: 2)),
     );
+    // 进出场同步写火场日志：合并一条，只记名字+动作
+    final noteText = active.map((e) => '${e.name}出场').join('、');
+    try {
+      await widget.controller.addNote(noteText, opId: _opId);
+      OpLogService.instance.record(_opId ?? '', 'exit_all_note', '全员离场已写入火场日志', data: {'text': noteText});
+    } catch (_) {
+      // 写日志失败不影响主流程
+    }
     setState(() {
       _transcript = null;
       _parsed = null;
@@ -555,13 +591,23 @@ class HomePageState extends State<HomePage> {
       ..addAll(kept);
 
     if (done.isNotEmpty) {
+      // 进出场同步写火场日志：合并一条，只记名字+动作
+      final noteText = done.map((n) => '$n进场').join('、');
+      try {
+        await widget.controller.addNote(noteText, opId: _opId);
+        OpLogService.instance.record(_opId ?? '', 'enter_note', '进场事件已写入火场日志', data: {'text': noteText});
+      } catch (_) {
+        // 写日志失败不影响主流程
+      }
       widget.controller.tts.speak('${done.join('、')}，已开始倒计时');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${done.join('、')} 已入火场，开始倒计时'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${done.join('、')} 已入火场，开始倒计时'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
     final allDone = failed.isEmpty && _peopleEditors.isEmpty;
     if (mounted) {

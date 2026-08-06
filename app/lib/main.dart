@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'pages/board_page.dart';
+import 'pages/chat_page.dart';
 import 'pages/home_page.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
-import 'pages/stats_page.dart';
+import 'models/models.dart';
 import 'services/local_asr_service.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
@@ -26,9 +27,10 @@ class WatchDogApp extends StatefulWidget {
 class _WatchDogAppState extends State<WatchDogApp> {
   final AppController controller = AppController(localAsr: LocalAsrService());
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
-  int _tab = 1; // 规范 2.3：App 启动默认进入看板（tab 顺序：日志0/看板1/语音2/数据3/设置4）
+  final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
+  int _tab = 1; // 规范 2.3：App 启动默认进入看板（tab 顺序：日志0/看板1/语音2/辅助3/设置4）
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换语音页后自动开始录音
-  bool _recording = false; // 录音状态（HomePage 上报，驱动底部按钮停止图标+脉冲）
+  bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
   bool _processing = false; // 识别/确认中（禁用底部按钮，避免重复触发）
 
   @override
@@ -53,7 +55,11 @@ class _WatchDogAppState extends State<WatchDogApp> {
   /// 录音中点击按钮 = 停止录音（松手时机丢失/权限弹窗场景的兜底出口）
   void _voiceTap() {
     if (_recording) {
-      _homeKey.currentState?.finishRecording();
+      if (_tab == 3) {
+        _chatKey.currentState?.finishRecording();
+      } else {
+        _homeKey.currentState?.finishRecording();
+      }
     } else {
       _goVoice();
     }
@@ -62,6 +68,11 @@ class _WatchDogAppState extends State<WatchDogApp> {
   void _voiceLongPressStart(LongPressStartDetails _) {
     HapticFeedback.mediumImpact();
     if (_processing) return;
+    // 问答页就地录音：识别为提问直接发本页，其余按意图路由
+    if (_tab == 3) {
+      _chatKey.currentState?.beginRecording();
+      return;
+    }
     if (_tab != 2) {
       setState(() {
         _tab = 2;
@@ -73,7 +84,33 @@ class _WatchDogAppState extends State<WatchDogApp> {
   }
 
   void _voiceLongPressEnd(LongPressEndDetails _) {
-    _homeKey.currentState?.finishRecording();
+    if (_tab == 3) {
+      _chatKey.currentState?.finishRecording();
+    } else {
+      _homeKey.currentState?.finishRecording();
+    }
+  }
+
+  /// 语音识别为火场日志：自动记入 + 跳日志页
+  Future<void> _routeNote(String text) async {
+    try {
+      await controller.addNote(text);
+    } catch (_) {
+      // 记日志失败不影响跳转，日志页可见失败原因
+    }
+    _selectTab(0);
+  }
+
+  /// 语音识别为提问：跳问答页并自动发送
+  void _routeAsk(String text) {
+    _selectTab(3);
+    _chatKey.currentState?.submitQuestion(text);
+  }
+
+  /// 问答页就地录音识别为进出场：切语音页并展示确认面板
+  void _routeEntryExit(String text, ParseResult parsed) {
+    _selectTab(2);
+    _homeKey.currentState?.applyVoiceResult(text, parsed);
   }
 
   @override
@@ -95,8 +132,17 @@ class _WatchDogAppState extends State<WatchDogApp> {
               onAutoRecordConsumed: () => _pendingVoice = false,
               onRecordingChanged: (v) => setState(() => _recording = v),
               onProcessingChanged: (v) => setState(() => _processing = v),
+              onNoteIntent: _routeNote,
+              onAskIntent: _routeAsk,
             ),
-            StatsPage(controller: controller),
+            ChatPage(
+              key: _chatKey,
+              controller: controller,
+              onEntryExit: _routeEntryExit,
+              onNote: _routeNote,
+              onRecordingChanged: (v) => setState(() => _recording = v),
+              onProcessingChanged: (v) => setState(() => _processing = v),
+            ),
             SettingsPage(controller: controller),
           ];
           return Scaffold(
@@ -117,7 +163,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   }
 }
 
-/// 底部导航：日志 / 看板 / 中央凸起语音按钮 / 数据 / 设置（左右对称）
+/// 底部导航：日志 / 看板 / 中央凸起语音按钮 / 辅助 / 设置（左右对称）
 class _BottomNav extends StatelessWidget {
   final int index;
   final bool recording; // 录音中：按钮变停止图标 + 橙色脉冲 + 上方提示
@@ -195,7 +241,7 @@ class _BottomNav extends StatelessWidget {
                   Expanded(child: _NavItem(icon: Icons.note_alt_outlined, selectedIcon: Icons.note_alt, label: '日志', selected: index == 0, onTap: () => onSelect(0))),
                   Expanded(child: _NavItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: '看板', selected: index == 1, onTap: () => onSelect(1))),
                   const SizedBox(width: 96),
-                  Expanded(child: _NavItem(icon: Icons.bar_chart_outlined, selectedIcon: Icons.bar_chart, label: '数据', selected: index == 3, onTap: () => onSelect(3))),
+                  Expanded(child: _NavItem(icon: Icons.chat_bubble_outline_rounded, selectedIcon: Icons.chat_bubble_rounded, label: '辅助', selected: index == 3, onTap: () => onSelect(3))),
                   Expanded(child: _NavItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: '设置', selected: index == 4, onTap: () => onSelect(4))),
                 ],
               ),

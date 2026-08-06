@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS notes (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notes_scene ON notes(scene, created_at);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY,
+  scene TEXT NOT NULL DEFAULT 'default',
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_scene ON chat_messages(scene, created_at);
 `);
 
 // 动态耗气率迁移：entries 增加实测耗气率列（可空，无采样时为 null）
@@ -395,6 +404,32 @@ function purgeOldNotes(days = 30) {
   return db.prepare('DELETE FROM notes WHERE created_at < ?').run(cutoff).changes;
 }
 
+/** 智能体问答消息列表（按场景隔离，旧→新，便于按序恢复上下文） */
+function listChatMessages({ scene = 'default', limit = 100 } = {}) {
+  return db
+    .prepare('SELECT * FROM chat_messages WHERE scene = ? ORDER BY created_at ASC LIMIT ?')
+    .all(scene, Math.min(Number(limit) || 100, 500));
+}
+
+function createChatMessage({ id, scene = 'default', role, content }) {
+  const clean = String(content || '').slice(0, 4000);
+  db.prepare(
+    'INSERT INTO chat_messages (id, scene, role, content, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(id, scene, role, clean, Date.now());
+  return db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id);
+}
+
+/** 清空某场景的全部问答记录，返回删除条数 */
+function clearChatMessages(scene = 'default') {
+  return db.prepare('DELETE FROM chat_messages WHERE scene = ?').run(scene).changes;
+}
+
+/** 清理超过 days 天的问答记录（含全部场景），返回删除条数 */
+function purgeOldChatMessages(days = 30) {
+  const cutoff = Date.now() - days * 24 * 3600 * 1000;
+  return db.prepare('DELETE FROM chat_messages WHERE created_at < ?').run(cutoff).changes;
+}
+
 /**
  * 读取某用户在指定场景下的设置（按用户识别码 + 场景隔离）
  * 返回 { settings: {key: value}, updatedAt: 最近修改时间（无记录为 0） }
@@ -460,6 +495,10 @@ module.exports = {
   updateNote,
   deleteNote,
   purgeOldNotes,
+  listChatMessages,
+  createChatMessage,
+  clearChatMessages,
+  purgeOldChatMessages,
   getUserSettings,
   saveUserSettings,
 };

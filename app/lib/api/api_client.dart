@@ -222,6 +222,42 @@ class ApiClient {
     return CalcConfig.fromJson(jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
   }
 
+  /// 拉取智能体问答历史（旧→新，供聊天室恢复上下文）
+  Future<List<ChatMessage>> fetchChatMessages() async {
+    final res = await http.get(_uri('/api/chat'), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('获取问答记录失败(${res.statusCode})');
+    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    return list.map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// 发送提问，返回 AI 回复消息（服务端已把 user+assistant 成对落库）
+  Future<ChatMessage> sendChatMessage(String message, {String? opId}) async {
+    final res = await http
+        .post(
+          _uri('/api/chat'),
+          headers: _opHeaders(opId),
+          body: jsonEncode({'message': message}),
+        )
+        .timeout(const Duration(seconds: 60));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) {
+      throw ApiException((body as Map)['error']?.toString() ?? '提问失败(${res.statusCode})');
+    }
+    final m = body as Map;
+    return ChatMessage(
+      id: '',
+      role: 'assistant',
+      content: m['reply']?.toString() ?? '',
+      createdAt: (m['created_at'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  /// 清空本场景问答记录
+  Future<void> clearChatMessages() async {
+    final res = await http.delete(_uri('/api/chat'), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('清空问答记录失败(${res.statusCode})');
+  }
+
   /// 批量上报操作日志（每条带 op_id/stage/level/msg/data）
   Future<void> sendLogs(List<Map<String, dynamic>> logs) async {
     final res = await http

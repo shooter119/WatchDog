@@ -1,0 +1,542 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../models/models.dart';
+import '../services/audio_service.dart';
+import '../services/op_log_service.dart';
+import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
+
+/// 智能体问答页「辅助」：文字输入 + 就地语音提问，AI 解答火场困难。
+/// 语音识别结果按意图路由：提问留本页发送；进出场/日志交 main 跳转对应页面。
+class ChatPage extends StatefulWidget {
+  final AppController controller;
+  final void Function(String text, ParseResult parsed)? onEntryExit; // 语音识别为进出场：交语音页确认
+  final ValueChanged<String>? onNote; // 语音识别为日志：记入日志并跳日志页
+  final ValueChanged<bool>? onRecordingChanged;
+  final ValueChanged<bool>? onProcessingChanged;
+  final AudioService? audioService; // 测试注入
+
+  const ChatPage({
+    super.key,
+    required this.controller,
+    this.onEntryExit,
+    this.onNote,
+    this.onRecordingChanged,
+    this.onProcessingChanged,
+    this.audioService,
+  });
+
+  @override
+  State<ChatPage> createState() => ChatPageState();
+}
+
+class ChatPageState extends State<ChatPage> {
+  late final AudioService _audio = widget.audioService ?? AudioService();
+  final TextEditingController _input = TextEditingController();
+  final ScrollController _scroll = ScrollController();
+
+  List<ChatMessage> _messages = [];
+  bool _loading = true;
+  bool _sending = false;
+  bool _recording = false;
+  bool _processing = false;
+  String? _error;
+  String? _opId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _scroll.dispose();
+    _audio.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final history = await widget.controller.fetchChatHistory();
+      if (!mounted) return;
+      setState(() {
+        _messages = history;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '加载问答记录失败：$e';
+      });
+    }
+  }
+
+  /// 发送提问（文字输入或语音识别为提问时调用）
+  Future<void> submitQuestion(String text) async {
+    final clean = text.trim();
+    if (clean.isEmpty || _sending) return;
+    _input.clear();
+    final opId = 'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
+    OpLogService.instance.record(opId, 'chat_submit', '提交问题', data: {'text': clean});
+    setState(() {
+      _messages = [
+        ..._messages,
+        ChatMessage(id: 'local-$opId', role: 'user', content: clean, createdAt: DateTime.now().millisecondsSinceEpoch),
+      ];
+      _sending = true;
+      _error = null;
+    });
+    _scrollToBottom();
+    try {
+      final reply = await widget.controller.askAssistant(clean, opId: opId);
+      if (!mounted) return;
+      setState(() {
+        _messages = [..._messages, reply];
+        _sending = false;
+      });
+      _scrollToBottom();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _error = '辅助回复失败：$e';
+      });
+      OpLogService.instance.record(opId, 'chat_err', '回复失败: $e', level: 'error');
+    }
+    OpLogService.instance.flush(api: widget.controller.api);
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(0);
+      }
+    });
+  }
+
+  /// 就地语音提问（底部语音按钮在问答页长按时调用）
+  Future<void> beginRecording() async {
+    if (_recording || _processing || _sending) return;
+    _opId = 'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
+    OpLogService.instance.record(_opId!, 'record_start', '开始录音');
+    final ok = await _audio.hasPermission();
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('需要麦克风权限'), duration: Duration(seconds: 2)),
+        );
+      }
+      OpLogService.instance.record(_opId!, 'record_perm_denied', '缺少麦克风权限', level: 'warn');
+      _endOp('perm_denied');
+      return;
+    }
+    try {
+      await _audio.start();
+      if (!mounted) return;
+      setState(() => _recording = true);
+      widget.onRecordingChanged?.call(true);
+    } catch (e) {
+      OpLogService.instance.record(_opId!, 'record_start_err', '录音启动失败: $e', level: 'error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('录音启动失败：$e'), duration: const Duration(seconds: 2)),
+        );
+      }
+      _endOp('record_error');
+    }
+  }
+
+  /// 结束录音 → 转写 → 意图判断 → 路由
+  Future<void> finishRecording() async {
+    if (!_recording) return;
+    setState(() {
+      _recording = false;
+      _processing = true;
+    });
+    widget.onRecordingChanged?.call(false);
+    widget.onProcessingChanged?.call(true);
+    final opId = _opId ?? '';
+    try {
+      final bytes = await _audio.stop();
+      String text;
+      try {
+        text = await widget.controller.transcribeAudio(bytes, opId: opId);
+        OpLogService.instance.record(opId, 'transcribe_ok', '转写成功', data: {'text': text});
+      } catch (e) {
+        OpLogService.instance.record(opId, 'transcribe_err', '转写失败: $e', level: 'error');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('识别失败：$e'), duration: const Duration(seconds: 2)),
+          );
+        }
+        return;
+      }
+      if (text.trim().isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('未识别到语音，请再说一次'), duration: Duration(seconds: 2)),
+          );
+        }
+        OpLogService.instance.record(opId, 'transcribe_empty', '未识别到语音', level: 'warn');
+        return;
+      }
+      ParseResult parsed;
+      try {
+        parsed = await widget.controller.parseText(text, opId: opId);
+        OpLogService.instance.record(opId, 'parse_ok', '语义解析完成', data: {'text': text, 'intent': parsed.intent});
+      } catch (e) {
+        OpLogService.instance.record(opId, 'parse_err', '解析失败: $e', level: 'error');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('解析失败：$e'), duration: const Duration(seconds: 2)),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _processing = false);
+      widget.onProcessingChanged?.call(false);
+      _routeIntent(parsed, text, opId);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('录音结束失败：$e'), duration: const Duration(seconds: 2)),
+        );
+      }
+      setState(() => _processing = false);
+      widget.onProcessingChanged?.call(false);
+      _endOp('error');
+    }
+  }
+
+  void _routeIntent(ParseResult parsed, String text, String opId) {
+    switch (parsed.intent) {
+      case VoiceIntent.entry:
+      case VoiceIntent.exit:
+        _endOp(parsed.intent);
+        widget.onEntryExit?.call(text, parsed);
+      case VoiceIntent.note:
+        _endOp('note');
+        widget.onNote?.call(text);
+      case VoiceIntent.ask:
+        _endOp('ask');
+        submitQuestion(text);
+      case VoiceIntent.ignore:
+        _endOp('ignore');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('未识别到有效指令，请重新录入'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+    }
+  }
+
+  void _endOp(String outcome) {
+    final opId = _opId;
+    _opId = null;
+    if (opId == null) return;
+    OpLogService.instance.record(opId, 'op_end', '本次操作结束', data: {'outcome': outcome});
+    OpLogService.instance.flush(api: widget.controller.api);
+  }
+
+  Future<void> _confirmClear() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清空问答记录'),
+        content: const Text('将删除本场景下与「辅助」的全部对话历史，确定清空？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('清空')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await widget.controller.clearChatHistory();
+      if (!mounted) return;
+      setState(() => _messages = []);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('清空失败：$e'), duration: const Duration(seconds: 2)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        children: [
+          _buildHeader(context),
+          Expanded(child: _buildBody()),
+          _buildInputBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 14, 8, 12),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.actionPrimary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.assistant_rounded, size: 20, color: Colors.white),
+          ),
+          const SizedBox(width: 10),
+          const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('辅助', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              Text('火场困难，随时问我', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+            ],
+          ),
+          const Spacer(),
+          IconButton(
+            onPressed: _messages.isEmpty ? null : _confirmClear,
+            icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+            tooltip: '清空问答记录',
+            color: AppColors.textTertiary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_messages.isEmpty) {
+      return _buildWelcome();
+    }
+    return ListView.builder(
+      controller: _scroll,
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      itemCount: _messages.length + (_sending ? 1 : 0),
+      itemBuilder: (context, i) {
+        if (i == 0 && _sending) return const _ThinkingBubble();
+        final msg = _messages[_messages.length - i + (_sending ? 1 : 0)];
+        return _MessageBubble(message: msg);
+      },
+    );
+  }
+
+  Widget _buildWelcome() {
+    return ListView(
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: AppShadow.card,
+                ),
+                child: const Icon(Icons.assistant_rounded, size: 28, color: AppColors.actionPrimary),
+              ),
+              const SizedBox(height: 12),
+              const Text('你好，我是辅助', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              const Text(
+                '火场里遇到困难，按住底部语音按钮说话，\n或在这里输入问题，我来帮你支招。',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
+              ),
+              const SizedBox(height: 16),
+              const _SampleQuestion('气瓶压力下降太快怎么办？'),
+              const SizedBox(height: 8),
+              const _SampleQuestion('浓烟太大看不清路，有什么办法？'),
+              const SizedBox(height: 8),
+              const _SampleQuestion('破拆卷帘门有哪些注意事项？'),
+            ],
+          ),
+        ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: AppColors.alarm),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildInputBar() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(12, 8, 12, 8 + MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _input,
+              minLines: 1,
+              maxLines: 4,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (v) => submitQuestion(v),
+              decoration: const InputDecoration(
+                hintText: '输入你的问题…',
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: _sending ? null : () => submitQuestion(_input.text),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(48, 48),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+            ),
+            child: _sending
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.send_rounded, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MessageBubble extends StatelessWidget {
+  final ChatMessage message;
+  const _MessageBubble({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = message.isUser;
+    final time = DateTime.fromMillisecondsSinceEpoch(message.createdAt);
+    final timeText = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!isUser) ...[
+            Container(
+              width: 30,
+              height: 30,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: AppColors.actionPrimary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.assistant_rounded, size: 16, color: Colors.white),
+            ),
+          ],
+          Flexible(
+            child: Column(
+              crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: isUser ? AppColors.actionPrimary : AppColors.surface,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(AppRadius.md),
+                      topRight: const Radius.circular(AppRadius.md),
+                      bottomLeft: Radius.circular(isUser ? AppRadius.md : AppRadius.sm),
+                      bottomRight: Radius.circular(isUser ? AppRadius.sm : AppRadius.md),
+                    ),
+                    border: isUser ? null : Border.all(color: AppColors.border),
+                    boxShadow: AppShadow.card,
+                  ),
+                  child: Text(
+                    message.content,
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.5,
+                      color: isUser ? Colors.white : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
+                  child: Text(timeText, style: const TextStyle(fontSize: 10.5, color: AppColors.textTertiary)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThinkingBubble extends StatelessWidget {
+  const _ThinkingBubble();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
+          SizedBox(width: 8),
+          Text('辅助思考中…', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SampleQuestion extends StatelessWidget {
+  final String text;
+  const _SampleQuestion(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      onTap: () {
+        final page = context.findAncestorStateOfType<ChatPageState>();
+        page?.submitQuestion(text);
+      },
+      child: Text(text, style: const TextStyle(fontSize: 13.5, color: AppColors.textSecondary)),
+    );
+  }
+}
