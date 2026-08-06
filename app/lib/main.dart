@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'pages/board_page.dart';
 import 'pages/home_page.dart';
 import 'pages/settings_page.dart';
+import 'services/local_asr_service.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_widgets.dart';
@@ -21,7 +22,7 @@ class WatchDogApp extends StatefulWidget {
 }
 
 class _WatchDogAppState extends State<WatchDogApp> {
-  final AppController controller = AppController();
+  final AppController controller = AppController(localAsr: LocalAsrService());
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   int _tab = 0; // 规范 2.3：App 启动默认进入看板
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换语音页后自动开始录音

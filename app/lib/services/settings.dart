@@ -12,6 +12,8 @@ class Settings {
   static const _kTts = 'tts_enabled';
   static const _kAlarmSound = 'alarm_sound_enabled';
   static const _kKeepScreenOn = 'keep_screen_on';
+  static const _kAsrCloud = 'asr_cloud_enabled';
+  static const _kParseCloud = 'parse_cloud_enabled';
 
   static Future<String> get serverUrl async {
     final sp = await SharedPreferences.getInstance();
@@ -101,5 +103,23 @@ class Settings {
   static Future<void> setKeepScreenOn(bool v) async {
     final sp = await SharedPreferences.getInstance();
     await sp.setBool(_kKeepScreenOn, v);
+  }
+
+  /// 语音识别联网开关：开 = 云端优先、失败自动切本地；关 = 强制本地
+  static Future<bool> get asrCloudEnabled async =>
+      (await SharedPreferences.getInstance()).getBool(_kAsrCloud) ?? true;
+
+  static Future<void> setAsrCloudEnabled(bool v) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool(_kAsrCloud, v);
+  }
+
+  /// 语义解析联网开关：开 = 云端优先、失败自动切本地；关 = 强制本地
+  static Future<bool> get parseCloudEnabled async =>
+      (await SharedPreferences.getInstance()).getBool(_kParseCloud) ?? true;
+
+  static Future<void> setParseCloudEnabled(bool v) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool(_kParseCloud, v);
   }
 }

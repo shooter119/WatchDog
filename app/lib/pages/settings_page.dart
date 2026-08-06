@@ -28,6 +28,12 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _tts = true;
   bool _sound = true;
   bool _keepScreenOn = true;
+  bool _asrCloud = true;
+  bool _parseCloud = true;
+  bool? _modelInstalled;
+  bool _downloading = false;
+  double? _downloadProgress;
+  String? _downloadError;
 
   @override
   void initState() {
@@ -47,7 +53,44 @@ class _SettingsPageState extends State<SettingsPage> {
     _tts = await Settings.ttsEnabled;
     _sound = await Settings.alarmSoundEnabled;
     _keepScreenOn = await Settings.keepScreenOn;
+    _asrCloud = await Settings.asrCloudEnabled;
+    _parseCloud = await Settings.parseCloudEnabled;
+    _refreshModelStatus();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _refreshModelStatus() async {
+    final asr = widget.controller.localAsr;
+    if (asr == null) return;
+    final installed = await asr.isModelInstalled();
+    if (mounted) setState(() => _modelInstalled = installed);
+  }
+
+  Future<void> _downloadModel() async {
+    final asr = widget.controller.localAsr;
+    if (asr == null) return;
+    setState(() {
+      _downloading = true;
+      _downloadError = null;
+      _downloadProgress = null;
+    });
+    try {
+      await asr.downloadModel(onProgress: (received, total) {
+        if (mounted && total > 0) {
+          setState(() => _downloadProgress = received / total);
+        }
+      });
+    } catch (e) {
+      if (mounted) setState(() => _downloadError = '$e');
+    } finally {
+      await _refreshModelStatus();
+      if (mounted) {
+        setState(() {
+          _downloading = false;
+          _downloadProgress = null;
+        });
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -64,6 +107,8 @@ class _SettingsPageState extends State<SettingsPage> {
     await Settings.setTtsEnabled(_tts);
     await Settings.setAlarmSoundEnabled(_sound);
     await Settings.setKeepScreenOn(_keepScreenOn);
+    await Settings.setAsrCloudEnabled(_asrCloud);
+    await Settings.setParseCloudEnabled(_parseCloud);
     await ScreenOn.setKeepScreenOn(_keepScreenOn);
     await widget.controller.refreshConfig();
     widget.controller.startSync();
@@ -228,6 +273,37 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 16),
           _CollapsibleSection(
+            title: '语音识别',
+            initiallyExpanded: true,
+            child: AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: const Text('联网语音识别', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('开：豆包云端识别，失败自动切本地；关：强制本地识别'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _asrCloud,
+                    onChanged: (v) => setState(() => _asrCloud = v),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('联网语义解析', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('开：DeepSeek 云端解析，失败自动切本地；关：强制本地规则解析'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _parseCloud,
+                    onChanged: (v) => setState(() => _parseCloud = v),
+                  ),
+                  if (widget.controller.localAsr != null) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    _buildModelTile(),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _CollapsibleSection(
             title: '提醒方式',
             initiallyExpanded: true,
             child: AppCard(
@@ -320,6 +396,89 @@ class _SettingsPageState extends State<SettingsPage> {
           prefixIcon: icon != null ? Icon(icon) : null,
           suffixIcon: suffix,
         ),
+      ),
+    );
+  }
+
+  /// 本地语音模型：状态 + 下载/删除
+  Widget _buildModelTile() {
+    final installed = _modelInstalled;
+    if (_downloading) {
+      final pct = _downloadProgress == null ? null : (_downloadProgress! * 100).round();
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              pct == null ? '正在下载本地语音模型…' : '正在下载本地语音模型… $pct%',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 10),
+            LinearProgressIndicator(
+              value: _downloadProgress,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ],
+        ),
+      );
+    }
+    if (installed == null) {
+      return const ListTile(
+        dense: true,
+        leading: Icon(Icons.cloud_download_outlined, color: AppColors.textTertiary, size: 20),
+        title: Text('检查本地语音模型…', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+      );
+    }
+    if (installed) {
+      return ListTile(
+        dense: true,
+        leading: const Icon(Icons.check_circle_outline, color: AppColors.safe, size: 20),
+        title: const Text('本地语音模型已就绪（离线可用）', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        trailing: TextButton(
+          onPressed: () async {
+            await widget.controller.localAsr!.removeModel();
+            _refreshModelStatus();
+          },
+          child: const Text('删除'),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.offline_bolt_outlined, color: AppColors.caution, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  '本地语音模型未下载（约 78MB）\n下载后断网也能语音录入',
+                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
+                ),
+              ),
+            ],
+          ),
+          if (_downloadError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _downloadError!,
+              style: const TextStyle(fontSize: 12, color: AppColors.alarm, fontWeight: FontWeight.w600),
+            ),
+          ],
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 44,
+            child: FilledButton.tonalIcon(
+              onPressed: _downloadModel,
+              icon: const Icon(Icons.download_outlined, size: 20),
+              label: const Text('下载本地模型'),
+            ),
+          ),
+        ],
       ),
     );
   }

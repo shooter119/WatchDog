@@ -49,6 +49,10 @@ android {
             }
             isMinifyEnabled = true
             isShrinkResources = true
+            // 端侧 ASR（sherpa-onnx/onnxruntime）体积较大，正式包只保留真机架构
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

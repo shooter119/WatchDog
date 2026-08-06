@@ -5,15 +5,27 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/alarm_service.dart';
+import '../services/local_asr_service.dart';
+import '../services/local_parser.dart';
 import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/tts_service.dart';
 
 class AppController extends ChangeNotifier {
+  final LocalAsrService? localAsr;
+  final LocalParser localParser = LocalParser();
   ApiClient? api;
   final AlarmService alarm = AlarmService();
   final TtsService tts = TtsService();
+
+  /// 语音识别联网开关：开 = 云端优先失败自动切本地；关 = 强制本地
+  bool asrCloudEnabled = true;
+
+  /// 语义解析联网开关：开 = 云端优先失败自动切本地；关 = 强制本地
+  bool parseCloudEnabled = true;
+
+  AppController({this.localAsr});
 
   List<Entry> entries = [];
   List<Firefighter> firefighters = [];
@@ -55,6 +67,8 @@ class AppController extends ChangeNotifier {
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
     await ScreenOn.setKeepScreenOn(await Settings.keepScreenOn);
+    asrCloudEnabled = await Settings.asrCloudEnabled;
+    parseCloudEnabled = await Settings.parseCloudEnabled;
     // 本地设置为准：用户改的消耗率/容量/阈值立即生效，不被服务端配置覆盖
     calcConfig = CalcConfig(
       cylinderVolL: await Settings.cylinderVolL,
@@ -196,6 +210,56 @@ class AppController extends ChangeNotifier {
       hotwords = h;
       notifyListeners();
     } catch (_) {}
+  }
+
+  List<String> get _rosterNames => firefighters.map((f) => f.name).toList();
+
+  List<String> get _hotwordTerms => hotwords.map((h) => h.word).toList();
+
+  /// 转写：云端优先（开关开时），失败/关闭开关时强制本地 sherpa-onnx
+  Future<String> transcribeAudio(Uint8List bytes, {String? opId}) async {
+    if (asrCloudEnabled && api != null) {
+      try {
+        final text = await api!.transcribe(bytes, opId: opId);
+        if (text.trim().isNotEmpty) return text;
+      } catch (e) {
+        if (localAsr == null) rethrow;
+        OpLogService.instance.record(
+          opId ?? '',
+          'transcribe_fallback',
+          '云端转写失败，切换本地识别: $e',
+          level: 'warn',
+        );
+      }
+    }
+    return _localTranscribe(bytes, opId: opId);
+  }
+
+  Future<String> _localTranscribe(Uint8List bytes, {String? opId}) async {
+    final asr = localAsr;
+    if (asr == null) throw StateError('未配置本地语音识别');
+    final text = await asr.transcribe(bytes, hotwords: [..._rosterNames, ..._hotwordTerms]);
+    if (text.trim().isEmpty) {
+      throw StateError('本地识别未听清，请再说一遍');
+    }
+    return text;
+  }
+
+  /// 语义解析：云端优先（开关开时），失败/关闭开关时强制本地规则解析
+  Future<ParseResult> parseText(String text, {String? opId}) async {
+    if (parseCloudEnabled && api != null) {
+      try {
+        return await api!.parse(text, opId: opId);
+      } catch (e) {
+        OpLogService.instance.record(
+          opId ?? '',
+          'parse_fallback',
+          '云端解析失败，切换本地解析: $e',
+          level: 'warn',
+        );
+      }
+    }
+    return localParser.parse(text, firefighters: _rosterNames);
   }
 
   @override

@@ -144,7 +144,7 @@ class HomePageState extends State<HomePage> {
           .record(opId, 'record_stop', '录音结束', data: {'bytes': bytes.length, 'ms': sw.elapsedMilliseconds});
       String text;
       try {
-        text = await widget.controller.api!.transcribe(bytes, opId: opId);
+        text = await widget.controller.transcribeAudio(bytes, opId: opId);
         OpLogService.instance
             .record(opId, 'transcribe_ok', '转写成功', data: {'text': text, 'ms': sw.elapsedMilliseconds});
       } catch (e) {
@@ -164,7 +164,7 @@ class HomePageState extends State<HomePage> {
       }
       ParseResult parsed;
       try {
-        parsed = await widget.controller.api!.parse(text, opId: opId);
+        parsed = await widget.controller.parseText(text, opId: opId);
         OpLogService.instance.record(opId, 'parse_ok', '语义解析完成',
             data: {'text': text, 'parsed': parsed.toJson(), 'ms': sw.elapsedMilliseconds});
       } catch (e) {
