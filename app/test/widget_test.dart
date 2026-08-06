@@ -849,7 +849,7 @@ void main() {
     });
 
     testWidgets('全员离场指令需弹框确认，确认后全部登记离场', (tester) async {
-      final api = _FakeApi(exitAllOnCall: 1);
+      final api = _FakeApi(exitAllOnCall: 1, transcribeText: '全体人员撤出火场');
       final c = _FakeController(entries: [
         _entry(name: '张伟', remainingMin: 20),
         _entry(name: '李娜', remainingMin: 10),
@@ -873,7 +873,7 @@ void main() {
     });
 
     testWidgets('取消全员离场不登记出场', (tester) async {
-      final api = _FakeApi(exitAllOnCall: 1);
+      final api = _FakeApi(exitAllOnCall: 1, transcribeText: '全员撤离火场');
       final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])..api = api;
       await tester.pumpWidget(MaterialApp(
         theme: buildAppTheme(),
@@ -921,6 +921,26 @@ void main() {
       expect(c.notes.single.text, '张伟20兆帕，李娜22兆帕');
       expect(c.notes.single.category, NoteCategory.other);
       // 提示 + 回到空闲态
+      expect(find.text('已记入火场日志'), findsOneWidget);
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+
+    testWidgets('出场但无人名且无全员语义（如搜救出宠物狗）不弹全员离场，自动记入日志', (tester) async {
+      final api = _FakeApi(exitAllOnCall: 1, transcribeText: '龙翔路站从燃烧建筑中搜救出一只宠物狗');
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      // 不弹全员离场确认
+      expect(find.text('全员离场确认'), findsNothing);
+      // 自动记入日志（分类：搜救）
+      expect(c.notes.single.text, '龙翔路站从燃烧建筑中搜救出一只宠物狗');
+      expect(c.notes.single.category, NoteCategory.rescue);
       expect(find.text('已记入火场日志'), findsOneWidget);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
     });

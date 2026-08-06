@@ -198,9 +198,11 @@ class HomePageState extends State<HomePage> {
           ed.volumeCtrl.text = statedVol.toStringAsFixed(1);
         }
       }
-      // 智能分流：非报数内容（unknown / 进场但未识别到人员）自动记入火场日志
+      // 智能分流：非报数内容（unknown / 进场但未识别到人员 / 出场但无人员且无全员语义）自动记入火场日志
+      final hasAllExitWords = _hasAllExitWords(text);
       final isNote = parsed.action == 'unknown' ||
-          (parsed.action == 'enter' && parsed.people.isEmpty);
+          (parsed.action == 'enter' && parsed.people.isEmpty) ||
+          (parsed.action == 'exit' && parsed.people.isEmpty && !hasAllExitWords);
       if (isNote) {
         OpLogService.instance
             .record(opId, 'note_auto', '非报数内容自动记入日志', data: {'text': text, 'action': parsed.action});
@@ -316,6 +318,12 @@ class HomePageState extends State<HomePage> {
     });
     _endOp(exited > 0 ? 'exit_ok' : 'exit_none');
   }
+
+  /// 全员离场语义词：exit 且未提取到人名时，仅当文本含这些词才弹全员离场确认，
+  /// 防止"搜救出一只宠物狗"等含"出"字的日志被误当成全员离场
+  static const _allExitWords = ['全部', '全员', '所有', '全体', '大家', '一起', '收工', '撤离', '撤退', '全撤'];
+
+  static bool _hasAllExitWords(String text) => _allExitWords.any(text.contains);
 
   /// 全员离场：识别到"全部人员离开火场"等指令且未提取到具体姓名时，
   /// 弹框让用户确认，确认后把当前所有在场人员统一登记离场
