@@ -28,10 +28,8 @@ CREATE INDEX IF NOT EXISTS idx_entries_scene ON entries(scene, entry_at);
 
 CREATE TABLE IF NOT EXISTS firefighters (
   id TEXT PRIMARY KEY,
-  scene TEXT NOT NULL DEFAULT 'default',
-  name TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  UNIQUE(scene, name)
+  name TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS hotwords (
@@ -59,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_op ON logs(op_id);
 function hasColumn(table, column) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
 }
-for (const t of ['entries', 'firefighters']) {
+for (const t of ['entries']) {
   if (hasColumn(t, 'scene')) continue;
   db.exec(`ALTER TABLE ${t} RENAME TO ${t}_old;`);
   if (t === 'entries') {
@@ -96,6 +94,20 @@ for (const t of ['entries', 'firefighters']) {
   }
   db.exec(`DROP TABLE ${t}_old;`);
 }
+// 消防员全局化迁移：旧版按场景隔离，重建为全局唯一（按名去重，保留最早一条）
+if (hasColumn('firefighters', 'scene')) {
+  db.exec(`
+    CREATE TABLE firefighters_new (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL
+    );
+    INSERT INTO firefighters_new (id, name, created_at)
+      SELECT MIN(id), name, MIN(created_at) FROM firefighters GROUP BY name;
+    DROP TABLE firefighters;
+    ALTER TABLE firefighters_new RENAME TO firefighters;
+  `);
+}
 // 热词全局化迁移：旧版热词按场景隔离，重建为全局唯一（按词去重，保留最早一条）
 if (hasColumn('hotwords', 'scene')) {
   db.exec(`
@@ -113,7 +125,8 @@ if (hasColumn('hotwords', 'scene')) {
 // 迁移后确保唯一约束与索引
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_entries_scene ON entries(scene, entry_at);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_firefighters_scene_name ON firefighters(scene, name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_firefighters_name ON firefighters(name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hotwords_word ON hotwords(word);
 `);
 
 // 装机自带专业热词（全局生效）：仅当表为空时写入，避免覆盖用户已删除的词条
@@ -123,6 +136,32 @@ if (existingHotwords === 0) {
   const seedStmt = db.prepare('INSERT INTO hotwords (id, word, created_at) VALUES (?, ?, ?)');
   const seedAt = Date.now();
   DEFAULT_HOTWORDS.forEach((word, i) => seedStmt.run(randomUUID(), word, seedAt + i));
+}
+
+// 装机自带消防员名单（全局生效，龙游大队花名册 95 人：大队部+龙翔路+永安路+兴园）
+// 仅当表为空时写入，避免覆盖用户已删除的姓名
+const DEFAULT_FIREFIGHTERS = [
+  // 大队部
+  '李翔', '盛承华', '楼松超', '徐向相', '柯峰', '祝彪',
+  // 龙翔路消防救援站
+  '陆河圣', '洪辰', '沈松鹏', '金志明', '陈俊鹏', '叶华杰', '杨熙豪', '施豪杰', '袁超', '马李臣',
+  '邢中本', '何家琦', '余贤耀', '徐莘焕', '杨小杰', '祝徐迁', '方文斌', '徐昊扬', '郑丽文', '郑怡',
+  '郑涛', '占鑫涛', '叶健智', '胡海龙', '伊余健', '曹建罡', '马鑫', '徐康', '张烜烨', '李微',
+  '储嘉俊', '毛伟', '陈俊安', '赵建平', '吴拥军', '路康清', '毕灵珂', '刘羽杰', '陈鑫', '廖淑明', '毛泽旭',
+  // 永安路消防救援站
+  '林成成', '程晓波', '郭逸', '蓝程雄', '成帅', '姚肖江', '毕文龙', '周志峰', '吕文建', '刘林辉',
+  '齐征臣', '严仕华', '袁友顺', '劳凯董', '方罗进', '马俊', '刘振坤', '贺智成', '丁以强', '易子云',
+  '李瑞', '宋宇', '宁成鑫', '甲巴有拉', '吉布小夫', '方梦龙',
+  // 兴园消防救援站
+  '游方远', '巫垚东', '万自良', '戴晓明', '李志鹏', '徐小龙', '吴鹏晖', '叶程刚', '陈嘉豪', '姚顺',
+  '贺官', '孙国彬', '吴志云', '陈子俊', '何金伟', '周子俊', '何哲锴', '徐刚', '姜俊翰', '文闻',
+  '张文浩', '宋博韬',
+];
+const existingFirefighters = db.prepare('SELECT COUNT(*) AS n FROM firefighters').get().n;
+if (existingFirefighters === 0) {
+  const seedStmt = db.prepare('INSERT INTO firefighters (id, name, created_at) VALUES (?, ?, ?)');
+  const seedAt = Date.now();
+  DEFAULT_FIREFIGHTERS.forEach((name, i) => seedStmt.run(randomUUID(), name, seedAt + i));
 }
 
 function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}) {
@@ -163,12 +202,13 @@ function updateEntry(id, { name, pressureMpa, durationMin, exitAtMs }) {
   return getEntry(id);
 }
 
-function listFirefighters(scene = 'default') {
-  return db.prepare('SELECT id, name FROM firefighters WHERE scene = ? ORDER BY created_at ASC').all(scene);
+/** 消防员名单全局共享，不区分场景 */
+function listFirefighters() {
+  return db.prepare('SELECT id, name FROM firefighters ORDER BY created_at ASC').all();
 }
 
-function addFirefighter(id, name, scene = 'default') {
-  db.prepare('INSERT INTO firefighters (id, scene, name, created_at) VALUES (?, ?, ?, ?)').run(id, scene, name, Date.now());
+function addFirefighter(id, name) {
+  db.prepare('INSERT INTO firefighters (id, name, created_at) VALUES (?, ?, ?)').run(id, name, Date.now());
   return db.prepare('SELECT id, name FROM firefighters WHERE id = ?').get(id);
 }
 
@@ -199,12 +239,10 @@ function purgeOldExited(days = 7) {
   return r.changes;
 }
 
-/** 全部场景码（跨 entries/firefighters 去重，热词全局共享不产生场景） */
+/** 全部场景码（仅 entries 产生场景；消防员名单与热词全局共享） */
 function listScenes() {
   const rows = db
-    .prepare(
-      'SELECT scene FROM entries UNION SELECT scene FROM firefighters ORDER BY scene'
-    )
+    .prepare('SELECT scene FROM entries ORDER BY scene')
     .all();
   return rows.map((r) => r.scene);
 }

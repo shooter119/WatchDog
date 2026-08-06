@@ -88,7 +88,7 @@ function logOp(req, level, stage, msg, data = null) {
 }
 
 function hotwordList(scene) {
-  const firefighters = db.listFirefighters(scene).map((f) => f.name);
+  const firefighters = db.listFirefighters().map((f) => f.name);
   const terms = db.listHotwords().map((h) => h.word);
   const defaults = ['兆帕', '个压', '气瓶', '空气呼吸器', '余量', '进入火场', '出来了', '已出火场', '收到'];
   return [...new Set([...firefighters, ...terms, ...defaults])].filter(Boolean);
@@ -152,7 +152,7 @@ app.post('/api/transcribe', (req, res, next) => {
             baseUrl: CFG.llm.baseUrl,
             model: CFG.llm.model,
             text,
-            firefighters: db.listFirefighters(scene).map((f) => f.name),
+            firefighters: db.listFirefighters().map((f) => f.name),
             hotwords: db.listHotwords().map((h) => h.word),
           });
           if (corrected && corrected !== text) {
@@ -180,8 +180,7 @@ app.post('/api/parse', async (req, res, next) => {
     const { text } = req.body || {};
     if (!text || !String(text).trim()) return res.status(400).json({ error: '缺少 text' });
     if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置 DEEPSEEK_API_KEY' });
-    const scene = sceneKey(req);
-    const firefighters = db.listFirefighters(scene).map((f) => f.name);
+    const firefighters = db.listFirefighters().map((f) => f.name);
     const hotwords = db.listHotwords().map((h) => h.word);
     const t0 = Date.now();
     logOp(req, 'info', 'parse_req', '收到语义解析请求', { text: String(text).trim(), firefighters, hotwords });
@@ -322,14 +321,14 @@ app.post('/api/entries/:id/exit', (req, res, next) => {
   }
 });
 
-app.get('/api/firefighters', (req, res) => res.json(db.listFirefighters(sceneKey(req))));
+app.get('/api/firefighters', (req, res) => res.json(db.listFirefighters()));
 app.post('/api/firefighters', (req, res, next) => {
   try {
     const { name } = req.body || {};
     if (!name || !String(name).trim()) return res.status(400).json({ error: '缺少姓名' });
     const id = crypto.randomUUID();
     try {
-      res.status(201).json(db.addFirefighter(id, String(name).trim(), sceneKey(req)));
+      res.status(201).json(db.addFirefighter(id, String(name).trim()));
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该姓名已存在' });
       throw e;

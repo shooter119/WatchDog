@@ -45,14 +45,17 @@ test('markExited 后 activeOnly 不再返回', () => {
   assert.ok(db.listEntries({ scene: 's' })[0].exited_at);
 });
 
-test('消防员：新增/查重（场景内唯一，跨场景允许同名）/删除', () => {
-  db.addFirefighter('f1', '张伟', 's1');
-  db.addFirefighter('f2', '张伟', 's2');
-  assert.equal(db.listFirefighters('s1').length, 1);
-  assert.equal(db.listFirefighters('s2').length, 1);
-  assert.throws(() => db.addFirefighter('f3', '张伟', 's1'), /UNIQUE/);
+test('消防员：装机自带名单/新增/查重/删除（全局不区分场景）', () => {
+  const names = db.listFirefighters().map((f) => f.name);
+  assert.ok(names.includes('李翔'));
+  assert.ok(names.includes('游方远'));
+  assert.ok(!names.includes('徐琴琴'));
+  const before = names.length;
+  db.addFirefighter('f1', '测试员甲');
+  assert.throws(() => db.addFirefighter('f2', '测试员甲'), /UNIQUE/);
+  assert.equal(db.listFirefighters().length, before + 1);
   db.removeFirefighter('f1');
-  assert.equal(db.listFirefighters('s1').length, 0);
+  assert.equal(db.listFirefighters().length, before);
 });
 
 test('热词：装机自带种子/新增/查重/删除（全局不区分场景）', () => {
@@ -85,13 +88,11 @@ test('purgeOldExited 只清理超过期限的出场记录', () => {
   assert.ok(db.getEntry('p3'));
 });
 
-test('listScenes 跨表去重', () => {
+test('listScenes 仅由 entries 产生（名单/热词全局共享不产生场景）', () => {
   db.createEntry({ id: 's1', scene: 'x', name: 'n', pressureMpa: 20, entryAtMs: 1, exitAtMs: 2, durationMin: 1 });
-  db.addFirefighter('sf1', 'name', 'y');
-  db.addHotword('sh1', '词');
+  db.addFirefighter('sf1', '全局姓名');
+  db.addHotword('sh1', '全局词');
   const scenes = db.listScenes();
   assert.ok(scenes.includes('x'));
-  assert.ok(scenes.includes('y'));
-  // 热词全局共享、不再产生场景：'x' 仅由 entries 贡献，出现一次
-  assert.equal(scenes.filter((s) => s === 'x').length, 1);
+  assert.ok(!scenes.includes('y'));
 });

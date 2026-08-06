@@ -26,7 +26,7 @@ backend/                 Node.js 后端（Express + ws + node:sqlite，端口 30
   src/asr.js             豆包 Seed-ASR WebSocket 客户端（热词注入）
   src/parse.js           DeepSeek 语义解析（enter/exit + 姓名 + 压力）
   src/calc.js            可用时间 = 气瓶容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
-  src/db.js              SQLite（WAL），表：entries / firefighters / hotwords / logs（热词全局共享，其余带 scene）
+  src/db.js              SQLite（WAL），表：entries / firefighters / hotwords / logs（名单与热词全局共享、装机自带，其余带 scene）
   src/logger.js          统一日志（时间戳 + 级别）
   test/                  node:test 单测（calc / db / API 集成 / token 鉴权 / 操作日志），npm test 运行
   .env.example           环境变量模板
@@ -71,7 +71,7 @@ app/                     Flutter 客户端（org com.firewatch.watchdog，包名
 - `POST /api/transcribe`（raw 音频 ≤15MB，Content-Type: audio/wav | pcm | mp3 | ogg，未知按 wav；带 `X-Op-Id` 时服务端记录全链路日志）
 - `POST /api/parse`（{text} → enter/exit/unknown + name + pressure_mpa）
 - `POST /api/entries`（{name, pressure_mpa, volume_l?}，volume_l 可空即用全局容量，0~20L）、`POST /api/entries/:id/exit`
-- `GET/POST/DELETE /api/firefighters`（名单按场景隔离）、`/api/hotwords`（热词全局共享，装机自带专业词，注入 ASR 提升识别率）
+- `GET/POST/DELETE /api/firefighters`、`/api/hotwords`（名单/热词全局共享、装机自带，注入 ASR 提升识别率）
 - `POST /api/logs`（批量上报操作日志，单次 ≤100 条）、`GET /api/logs?limit=&op_id=&device=`（调试查询）、`DELETE /api/logs`（清空本场景日志）
 
 ## 豆包 ASR 协议要点（联调结论，改代码前必读）

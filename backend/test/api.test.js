@@ -208,9 +208,12 @@ test('消防员/热词 CRUD 与 409 查重', async () => {
   const w1 = await (await fetch(`${base}/api/hotwords`, { method: 'POST', headers: H, body: JSON.stringify({ word: '空气呼吸器' }) })).json();
   assert.equal(w1.word, '空气呼吸器');
 
+  // 装机自带名单（95 人）全局可见
+  let list = await (await fetch(`${base}/api/firefighters`, { headers: H })).json();
+  assert.ok(list.some((f) => f.name === '李翔'));
   await fetch(`${base}/api/firefighters/${f1.id}`, { method: 'DELETE', headers: H });
-  const list = await (await fetch(`${base}/api/firefighters`, { headers: H })).json();
-  assert.equal(list.length, 0);
+  list = await (await fetch(`${base}/api/firefighters`, { headers: H })).json();
+  assert.ok(!list.some((f) => f.name === '王强'));
 });
 
 test('GET /api/scenes 列出活跃场景', async () => {

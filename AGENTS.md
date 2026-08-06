@@ -22,7 +22,7 @@ backend/                 Node.js 后端（Express + ws + node:sqlite，端口 30
   src/asr.js             豆包 Seed-ASR WebSocket 客户端
   src/parse.js           DeepSeek 语义解析（enter/exit + 姓名 + 压力）
   src/calc.js            可用时间 = 容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
-  src/db.js              SQLite（WAL），表：entries / firefighters / hotwords / logs（热词全局共享，其余带 scene）
+  src/db.js              SQLite（WAL），表：entries / firefighters / hotwords / logs（名单与热词全局共享、装机自带，其余带 scene）
   src/logger.js          统一日志
   test/                  node:test 单测
 app/                     Flutter 客户端（org com.firewatch.watchdog）
