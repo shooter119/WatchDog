@@ -8,6 +8,15 @@ HOST="bytevirt"
 REMOTE_DIR="/opt/watchdog"
 BACKEND_DIR="$(cd "$(dirname "$0")/../backend" && pwd)"
 
+# 部署防呆：仅允许 log 分支上线，防止 main 旧代码回滚覆盖新功能
+CUR_BRANCH="$(git -C "$BACKEND_DIR" branch --show-current)"
+if [ "$CUR_BRANCH" != "log" ]; then
+  echo "仅允许 log 分支部署，当前分支: $CUR_BRANCH（如确认无误可临时加 --force 跳过）"
+  if [ "${1:-}" != "--force" ]; then
+    exit 1
+  fi
+fi
+
 echo "==> 同步代码到 $HOST:$REMOTE_DIR"
 ssh "$HOST" "mkdir -p $REMOTE_DIR/src"
 rsync -az --delete -e ssh "$BACKEND_DIR"/src/ "$HOST:$REMOTE_DIR/src/"
