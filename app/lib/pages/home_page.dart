@@ -47,6 +47,9 @@ class HomePageState extends State<HomePage> {
   // 确认编辑用：每次语音识别出的每个人员一组输入
   final List<_PersonEdit> _peopleEditors = [];
 
+  // 语音中说出的气瓶容积（如"钢瓶为9升"）：作为新录入的默认值
+  double? _statedVolumeL;
+
   // 表单内联校验错误（不遮挡确认卡片）
   String? _inlineError;
 
@@ -169,17 +172,34 @@ class HomePageState extends State<HomePage> {
         rethrow;
       }
       if (!mounted) return;
+      // 识别"钢瓶为9升"等容积表达：应用到全部待确认人员，并作为新录入默认值
+      final statedVol = _extractVolumeL(text);
+      if (statedVol != null) {
+        _statedVolumeL = statedVol;
+        OpLogService.instance
+            .record(opId, 'volume_detected', '识别到气瓶容积', data: {'text': text, 'volume_l': statedVol});
+        for (final ed in _peopleEditors) {
+          ed.volumeCtrl.text = statedVol.toStringAsFixed(1);
+        }
+      }
       // 追加到已录入名单：同名人员更新压力（更正），其余新增一行
       for (final p in parsed.people) {
-        final idx = _peopleEditors.indexWhere((ed) => ed.name == p.name && ed.name.isNotEmpty);
+        final idx = _peopleEditors
+            .indexWhere((ed) => (ed.name == p.name && ed.name.isNotEmpty) || ed.sourceName == p.name);
         if (idx >= 0) {
           if (p.pressureMpa != null) _peopleEditors[idx].pressureCtrl.text = p.pressureMpa.toString();
           continue;
         }
         final ed = _PersonEdit(onChanged: _onEditsChanged);
-        ed.nameCtrl.text = p.name;
+        // 非名单内姓名大概率是口误/识别错误：姓名栏留空，等用户手动补全
+        if (_isKnownName(p.name)) {
+          ed.nameCtrl.text = p.name;
+        } else {
+          ed.sourceName = p.name;
+        }
         if (p.pressureMpa != null) ed.pressureCtrl.text = p.pressureMpa.toString();
-        ed.volumeCtrl.text = widget.controller.calcConfig.cylinderVolL.toStringAsFixed(1);
+        final defaultVol = _statedVolumeL ?? widget.controller.calcConfig.cylinderVolL;
+        ed.volumeCtrl.text = defaultVol.toStringAsFixed(1);
         _peopleEditors.add(ed);
       }
       setState(() {
@@ -187,8 +207,12 @@ class HomePageState extends State<HomePage> {
         _parsed = parsed;
         _processing = false;
       });
-      if (parsed.action == 'exit' && parsed.people.isNotEmpty) {
-        await _handleExit(parsed.people.map((p) => p.name).toList());
+      if (parsed.action == 'exit') {
+        if (parsed.people.isNotEmpty) {
+          await _handleExit(parsed.people.map((p) => p.name).toList());
+        } else {
+          await _confirmAllExit();
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -246,6 +270,110 @@ class HomePageState extends State<HomePage> {
     _endOp(exited > 0 ? 'exit_ok' : 'exit_none');
   }
 
+  /// 全员离场：识别到"全部人员离开火场"等指令且未提取到具体姓名时，
+  /// 弹框让用户确认，确认后把当前所有在场人员统一登记离场
+  Future<void> _confirmAllExit() async {
+    final active = widget.controller.entries.where((e) => e.isActive).toList();
+    if (!mounted) return;
+    if (active.isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('全员离场'),
+          content: const Text('当前没有在场人员，无需全员离场'),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+          ],
+        ),
+      );
+      if (mounted) {
+        setState(() {
+          _transcript = null;
+          _parsed = null;
+          _error = null;
+        });
+      }
+      _endOp('exit_all_none');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('全员离场确认'),
+        content: Text('识别到全员离场指令，当前在场 ${active.length} 人：${active.map((e) => e.name).join('、')}\n确认全部登记离场？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认全员离场')),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      OpLogService.instance.record(_opId ?? '', 'exit_all_cancelled', '用户取消全员离场', level: 'info');
+      if (mounted) {
+        setState(() {
+          _transcript = null;
+          _parsed = null;
+          _error = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已取消全员离场'), duration: Duration(seconds: 2)),
+        );
+      }
+      _endOp('exit_all_cancel');
+      return;
+    }
+    var exited = 0;
+    for (final e in active) {
+      await widget.controller.markExited(e.id, opId: _opId);
+      OpLogService.instance
+          .record(_opId ?? '', 'exit_all_ok', '全员离场已登记「${e.name}」', data: {'entryId': e.id, 'name': e.name});
+      exited++;
+    }
+    if (!mounted) return;
+    widget.controller.tts.speak('全体人员已登记离场');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已全员离场（$exited 人）'), duration: const Duration(seconds: 2)),
+    );
+    setState(() {
+      _transcript = null;
+      _parsed = null;
+      _error = null;
+    });
+    _endOp('exit_all', data: {'count': exited});
+  }
+
+  /// 姓名是否在已知消防员名单内（名单为空时不拦截，避免误清空）
+  bool _isKnownName(String name) {
+    final roster = widget.controller.firefighters.map((f) => f.name).toSet();
+    if (roster.isEmpty) return true;
+    return roster.contains(name);
+  }
+
+  /// 从语音文本中提取气瓶容积升数（如"9升"/"九升"），未提及返回 null
+  double? _extractVolumeL(String text) {
+    final m = RegExp(r'([0-9]+(?:\.[0-9]+)?|[一二两三四五六七八九十]+)\s*(?:公升|升)').firstMatch(text);
+    if (m == null) return null;
+    final v = double.tryParse(m.group(1)!) ?? _cnNum(m.group(1)!);
+    if (v == null || v <= 0 || v > 20) return null;
+    return v;
+  }
+
+  double? _cnNum(String s) {
+    const digits = {
+      '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+      '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+    };
+    if (digits.containsKey(s)) return digits[s]!.toDouble();
+    if (s.contains('十')) {
+      final parts = s.split('十');
+      final tens = parts[0].isEmpty ? 1 : digits[parts[0]];
+      final ones = parts[1].isEmpty ? 0 : digits[parts[1]];
+      if (tens == null || ones == null) return null;
+      return (tens * 10 + ones).toDouble();
+    }
+    return null;
+  }
+
   /// 重新语音输入：清除本次转写/解析结果与错误状态
   void _retry() {
     setState(() {
@@ -266,7 +394,10 @@ class HomePageState extends State<HomePage> {
       _parsed = ParseResult(
         action: 'enter',
         people: _peopleEditors
-            .map((ed) => ParsePerson(name: ed.name, pressureMpa: ed.pressure))
+            .map((ed) => ParsePerson(
+                  name: ed.name.isEmpty ? (ed.sourceName ?? '') : ed.name,
+                  pressureMpa: ed.pressure,
+                ))
             .toList(),
       );
       _error = null;
@@ -642,7 +773,9 @@ class HomePageState extends State<HomePage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          '识别为出火场指令：${_parsed!.people.map((p) => p.name).join('、')}',
+                          _parsed!.people.isEmpty
+                              ? '识别为全员离场指令，正在等待确认'
+                              : '识别为出火场指令：${_parsed!.people.map((p) => p.name).join('、')}',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                         ),
                       ),
@@ -887,6 +1020,16 @@ class HomePageState extends State<HomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (name.isEmpty && ed.sourceName != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: boxStyle,
+            child: Text(
+              '「${ed.sourceName}」不在名单内，已清空姓名栏，请手动补全正确姓名',
+              style: style,
+            ),
+          ),
         if (dup.isNotEmpty)
           Container(
             width: double.infinity,
@@ -971,6 +1114,9 @@ class _PersonEdit {
   final TextEditingController pressureCtrl = TextEditingController();
   final TextEditingController volumeCtrl = TextEditingController();
   final VoidCallback onChanged;
+
+  /// 语音识别出的原始姓名：不在名单内时姓名栏被清空，保留原值用于提示
+  String? sourceName;
 
   _PersonEdit({required this.onChanged}) {
     nameCtrl.addListener(onChanged);

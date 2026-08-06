@@ -37,6 +37,7 @@ class AppController extends ChangeNotifier {
     await alarm.init();
     await refreshConfig();
     startSync();
+    loadRoster();
     // 启动后补传上次未上传完的操作日志（fire-and-forget）
     OpLogService.instance.flush(api: api);
   }

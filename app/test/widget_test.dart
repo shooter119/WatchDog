@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -22,8 +23,10 @@ import 'package:watchdog/main.dart' show WatchDogApp;
 
 /// 测试专用 Controller：拦截网络调用，本地模拟数据
 class _FakeController extends AppController {
-  _FakeController({List<Entry> entries = const []}) : super() {
+  _FakeController({List<Entry> entries = const [], List<Firefighter> firefighters = const []})
+      : super() {
     this.entries = entries;
+    this.firefighters = firefighters;
   }
   final exited = <String>[];
 
@@ -71,8 +74,13 @@ Entry _entry({
 
 /// 测试专用 ApiClient：固定返回 张伟+李娜 的转写/解析结果
 class _FakeApi extends ApiClient {
-  _FakeApi({this.multiPressure = true, this.rounds = const [], this.exitOnCall = 0})
-      : super(baseUrl: 'http://test', sceneCode: 'test');
+  _FakeApi({
+    this.multiPressure = true,
+    this.rounds = const [],
+    this.exitOnCall = 0,
+    this.exitAllOnCall = 0,
+    this.transcribeText,
+  }) : super(baseUrl: 'http://test', sceneCode: 'test');
   final bool multiPressure;
 
   /// 第 2、3... 次解析时返回的追加轮次（分批录入测试用）
@@ -80,15 +88,25 @@ class _FakeApi extends ApiClient {
 
   /// 第 N 次解析返回出场指令（1 起算，0 表示不触发）
   final int exitOnCall;
+
+  /// 第 N 次解析返回全员离场指令（people 为空，1 起算，0 表示不触发）
+  final int exitAllOnCall;
+
+  /// 自定义转写文本（默认 张伟+李娜）
+  final String? transcribeText;
   final created = <String>[];
   int _parseCalls = 0;
 
   @override
-  Future<String> transcribe(Uint8List audioBytes, {String? opId}) async => '张伟20兆帕，李娜22兆帕';
+  Future<String> transcribe(Uint8List audioBytes, {String? opId}) async =>
+      transcribeText ?? '张伟20兆帕，李娜22兆帕';
 
   @override
   Future<ParseResult> parse(String text, {String? opId}) async {
     final i = _parseCalls++;
+    if (exitAllOnCall > 0 && i + 1 == exitAllOnCall) {
+      return ParseResult(action: 'exit', people: []);
+    }
     if (exitOnCall > 0 && i + 1 == exitOnCall) {
       return ParseResult(action: 'exit', people: [ParsePerson(name: '张伟')]);
     }
@@ -590,6 +608,92 @@ void main() {
       await tester.tap(find.text('返回确认'));
       await tester.pump();
       expect(find.text('确认名单（2 人）：请下滑核对后一次性确认'), findsOneWidget);
+    });
+
+    testWidgets('非名单内姓名姓名栏留空并提示手动补全', (tester) async {
+      final api = _FakeApi();
+      final c = _FakeController(firefighters: [Firefighter(id: '1', name: '张伟')])..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+
+      final fields = find.byType(TextField);
+      expect(tester.widget<TextField>(fields.at(0)).controller!.text, '张伟'); // 名单内姓名保留
+      expect(tester.widget<TextField>(fields.at(3)).controller!.text, ''); // 李娜不在名单 → 姓名栏空白
+      expect(find.textContaining('「李娜」不在名单内'), findsOneWidget);
+
+      // 手动补全姓名后可正常确认
+      await tester.enterText(fields.at(3), '李娜');
+      await tester.pump();
+      final confirmBtn = find.text('全部确认进入火场（2 人）');
+      await tester.ensureVisible(confirmBtn);
+      await tester.pump();
+      await tester.tap(confirmBtn);
+      await tester.pumpAndSettle();
+      expect(api.created, ['张伟', '李娜']);
+    });
+
+    testWidgets('全员离场指令需弹框确认，确认后全部登记离场', (tester) async {
+      final api = _FakeApi(exitAllOnCall: 1);
+      final c = _FakeController(entries: [
+        _entry(name: '张伟', remainingMin: 20),
+        _entry(name: '李娜', remainingMin: 10),
+      ])
+        ..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      // finishRecording 内部会等待弹框确认，故不 await（由后续点击弹框按钮完成）
+      unawaited(state.finishRecording());
+      await tester.pumpAndSettle();
+      expect(find.text('全员离场确认'), findsOneWidget);
+      expect(find.textContaining('当前在场 2 人'), findsOneWidget);
+      await tester.tap(find.text('确认全员离场'));
+      await tester.pumpAndSettle();
+      expect(c.exited, ['e-张伟', 'e-李娜']);
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+
+    testWidgets('取消全员离场不登记出场', (tester) async {
+      final api = _FakeApi(exitAllOnCall: 1);
+      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      unawaited(state.finishRecording());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(c.exited, isEmpty);
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+
+    testWidgets('语音提到钢瓶容积时录入页容积字段随之更新', (tester) async {
+      final api = _FakeApi(transcribeText: '张伟20兆帕，李娜22兆帕，钢瓶9升');
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      final fields = find.byType(TextField);
+      // 每人 3 个输入框：姓名/压力/容积
+      expect(tester.widget<TextField>(fields.at(2)).controller!.text, '9.0');
+      expect(tester.widget<TextField>(fields.at(5)).controller!.text, '9.0');
     });
   });
 
