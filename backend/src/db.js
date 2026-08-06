@@ -62,8 +62,21 @@ CREATE TABLE IF NOT EXISTS user_settings (
 );
 CREATE INDEX IF NOT EXISTS idx_user_settings_scene ON user_settings(scene, user_id);
 
+CREATE TABLE IF NOT EXISTS pressure_samples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entry_id TEXT NOT NULL,
+  scene TEXT NOT NULL DEFAULT 'default',
+  name TEXT NOT NULL,
+  pressure_mpa REAL NOT NULL,
+  reported_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_samples_entry ON pressure_samples(entry_id, reported_at);
 `);
 
+// 动态耗气率迁移：entries 增加实测耗气率列（可空，无采样时为 null）
+if (!hasColumn('entries', 'consumption_actual_lpm')) {
+  db.exec('ALTER TABLE entries ADD COLUMN consumption_actual_lpm REAL');
+}
 
 // 旧库迁移：无 scene 列时重建表（新表场景内唯一，跨场景允许同名）
 function hasColumn(table, column) {
@@ -191,6 +204,9 @@ function createEntry({ id, scene = 'default', name, pressureMpa, durationMin, en
   db.prepare(
     'INSERT INTO entries (id, scene, name, pressure_mpa, duration_min, entry_at, exit_at, source, raw_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(id, scene, name, pressureMpa, durationMin, entryAtMs, exitAtMs, source, rawText, Date.now());
+  if (pressureMpa != null) {
+    addPressureSample({ entryId: id, scene, name, pressureMpa, reportedAtMs: entryAtMs });
+  }
   return getEntry(id);
 }
 
@@ -207,11 +223,32 @@ function findActiveByName(scene, name) {
 }
 
 /** 部分更新在场记录：传 null 的字段保持不变 */
-function updateEntry(id, { name, pressureMpa, durationMin, exitAtMs }) {
+function updateEntry(id, { name, pressureMpa, durationMin, exitAtMs, consumptionActualLpm }) {
   db.prepare(
-    'UPDATE entries SET name = COALESCE(?, name), pressure_mpa = COALESCE(?, pressure_mpa), duration_min = COALESCE(?, duration_min), exit_at = COALESCE(?, exit_at) WHERE id = ?'
-  ).run(name ?? null, pressureMpa ?? null, durationMin ?? null, exitAtMs ?? null, id);
+    'UPDATE entries SET name = COALESCE(?, name), pressure_mpa = COALESCE(?, pressure_mpa), duration_min = COALESCE(?, duration_min), exit_at = COALESCE(?, exit_at), consumption_actual_lpm = COALESCE(?, consumption_actual_lpm) WHERE id = ?'
+  ).run(name ?? null, pressureMpa ?? null, durationMin ?? null, exitAtMs ?? null, consumptionActualLpm ?? null, id);
   return getEntry(id);
+}
+
+/** 记录一次压力报数（进场/复核均写采样，用于动态耗气率差分） */
+function addPressureSample({ entryId, scene = 'default', name, pressureMpa, reportedAtMs }) {
+  db.prepare(
+    'INSERT INTO pressure_samples (entry_id, scene, name, pressure_mpa, reported_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(entryId, scene, name, pressureMpa, reportedAtMs);
+}
+
+/** 最近一次压力报数（无则 null） */
+function lastPressureSample(entryId) {
+  return db
+    .prepare('SELECT * FROM pressure_samples WHERE entry_id = ? ORDER BY reported_at DESC LIMIT 1')
+    .get(entryId);
+}
+
+/** 某条记录的完整报数历史（新→旧） */
+function listPressureSamples(entryId, { limit = 20 } = {}) {
+  return db
+    .prepare('SELECT * FROM pressure_samples WHERE entry_id = ? ORDER BY reported_at DESC LIMIT ?')
+    .all(entryId, limit);
 }
 
 /** 消防员名单全局共享，不区分场景 */
@@ -248,6 +285,12 @@ function purgeOldExited(days = 7) {
   const r = db
     .prepare('DELETE FROM entries WHERE exited_at IS NOT NULL AND exited_at < ?')
     .run(cutoff);
+  if (r.changes > 0) {
+    // 连带清理已删除记录的压力报数采样
+    db.prepare(
+      'DELETE FROM pressure_samples WHERE entry_id NOT IN (SELECT id FROM entries)'
+    ).run();
+  }
   return r.changes;
 }
 
@@ -349,6 +392,9 @@ module.exports = {
   markExited,
   findActiveByName,
   updateEntry,
+  addPressureSample,
+  lastPressureSample,
+  listPressureSamples,
   listFirefighters,
   addFirefighter,
   removeFirefighter,

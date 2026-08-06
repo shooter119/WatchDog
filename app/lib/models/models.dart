@@ -8,6 +8,8 @@ class Entry {
   final int? exitedAt;
   final String source;
   final String? rawText;
+  /// 实测耗气率 L/min（由两次压力报数差分得出，无采样时为 null）
+  final double? consumptionActualLpm;
 
   Entry({
     required this.id,
@@ -19,6 +21,7 @@ class Entry {
     this.exitedAt,
     required this.source,
     this.rawText,
+    this.consumptionActualLpm,
   });
 
   bool get isActive => exitedAt == null;
@@ -49,6 +52,7 @@ class Entry {
         exitedAt: (json['exited_at'] as num?)?.toInt(),
         source: (json['source'] as String?) ?? 'voice',
         rawText: json['raw_text'] as String?,
+        consumptionActualLpm: (json['consumption_actual_lpm'] as num?)?.toDouble(),
       );
 }
 

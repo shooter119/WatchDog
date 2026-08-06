@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import 'entry_detail_page.dart';
+import 'report_pressure_sheet.dart';
 
 /// 看板仪表盘：在场人员 + 倒计时 + 状态分级（规范 5.1）
 class BoardPage extends StatefulWidget {
@@ -60,6 +61,7 @@ class _BoardPageState extends State<BoardPage> {
                         entry: active[i],
                         config: cfg,
                         onTap: () => _openDetail(active[i]),
+                        onReport: () => _openReportSheet(active[i]),
                       ),
                     ),
                   ),
@@ -75,6 +77,18 @@ class _BoardPageState extends State<BoardPage> {
       MaterialPageRoute(
         builder: (_) => EntryDetailPage(controller: widget.controller, entryId: e.id),
       ),
+    );
+  }
+
+  void _openReportSheet(Entry e) {
+    showModalBottomSheet<double>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
+      builder: (_) => ReportPressureSheet(controller: widget.controller, entry: e),
     );
   }
 }
@@ -223,8 +237,9 @@ class _EntryCard extends StatelessWidget {
   final Entry entry;
   final CalcConfig config;
   final VoidCallback onTap;
+  final VoidCallback onReport;
 
-  const _EntryCard({required this.entry, required this.config, required this.onTap});
+  const _EntryCard({required this.entry, required this.config, required this.onTap, required this.onReport});
 
   @override
   Widget build(BuildContext context) {
@@ -270,6 +285,12 @@ class _EntryCard extends StatelessWidget {
                   Text('${e.pressureMpa} MPa', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
                   const SizedBox(width: 12),
                 ],
+                if (e.consumptionActualLpm != null) ...[
+                  Icon(Icons.local_fire_department_outlined, size: 14, color: subFg),
+                  const SizedBox(width: 4),
+                  Text('实测 ${e.consumptionActualLpm!.toStringAsFixed(1)} L/min', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 12),
+                ],
                 Icon(Icons.timer_outlined, size: 14, color: subFg),
                 const SizedBox(width: 4),
                 Text('${e.durationMin} 分钟上限', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -289,6 +310,11 @@ class _EntryCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text('剩余时间', style: TextStyle(color: subFg, fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+              const Spacer(),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: _ReportButton(fg: fg, onPressed: onReport),
               ),
             ],
           ),
@@ -315,5 +341,40 @@ class _EntryCard extends StatelessWidget {
     return h > 0
         ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')} 已进场'
         : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')} 已进场';
+  }
+}
+
+/// 卡片上的一键报数按钮：圆角胶囊 + 粗体「报数」
+class _ReportButton extends StatelessWidget {
+  final Color fg;
+  final VoidCallback onPressed;
+
+  const _ReportButton({required this.fg, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = fg.withValues(alpha: 0.16);
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        onTap: onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.speed, size: 18, color: fg),
+              const SizedBox(width: 6),
+              Text(
+                '报数',
+                style: TextStyle(color: fg, fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

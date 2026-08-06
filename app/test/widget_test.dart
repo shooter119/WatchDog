@@ -15,6 +15,7 @@ import 'package:watchdog/pages/same_name_dialog.dart';
 import 'package:watchdog/pages/settings_page.dart';
 import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
+import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/state/app_controller.dart';
 import 'package:watchdog/theme/app_theme.dart';
 import 'package:watchdog/theme/app_widgets.dart';
@@ -29,6 +30,9 @@ class _FakeController extends AppController {
     this.firefighters = firefighters;
   }
   final exited = <String>[];
+
+  @override
+  void startSync() {} // 测试环境不启动轮询定时器（否则每秒刷新导致 pumpAndSettle 无法收敛）
 
   @override
   Future<void> markExited(String id, {String? opId}) async {
@@ -385,7 +389,7 @@ void main() {
   });
 
   group('SettingsPage', () {
-    testWidgets('渲染四个分区与保存按钮', (tester) async {
+    testWidgets('渲染各分区，无保存按钮', (tester) async {
       final c = _FakeController();
       await tester.pumpWidget(MaterialApp(
         theme: buildAppTheme(),
@@ -397,8 +401,40 @@ void main() {
       expect(find.text('计算参数'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('名单与热词'), 200, scrollable: list);
       await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
-      await tester.scrollUntilVisible(find.text('保存设置'), 200, scrollable: list);
       expect(find.text('提醒方式'), findsOneWidget);
+      expect(find.text('保存设置'), findsNothing);
+    });
+
+    testWidgets('修改文本框后失焦即自动保存', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _FakeController();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: SettingsPage(controller: c)),
+      ));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextField, '消耗率'), '55');
+      // 模拟失焦（真实设备点击空白处/收起键盘）
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      expect(await Settings.consumptionLpm, 55);
+    });
+
+    testWidgets('切换开关立即保存', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _FakeController();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: SettingsPage(controller: c)),
+      ));
+      await tester.pumpAndSettle();
+      // 最后一个开关 = 屏幕常亮（SwitchListTile 无 onTap，需直接点 Switch）
+      final list = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
+      await tester.pump();
+      await tester.tap(find.byType(Switch).last);
+      await tester.pumpAndSettle();
+      expect(await Settings.keepScreenOn, isFalse);
     });
 
     testWidgets('操作日志入口可进入日志页', (tester) async {
@@ -713,12 +749,7 @@ void main() {
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(find.text('服务端'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('保存设置'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.text('保存设置'), findsOneWidget);
+      expect(find.text('计算参数'), findsOneWidget);
     });
   });
 }

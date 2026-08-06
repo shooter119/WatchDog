@@ -88,6 +88,40 @@ test('purgeOldExited 只清理超过期限的出场记录', () => {
   assert.ok(db.getEntry('p3'));
 });
 
+test('压力报数采样：进场自动写首条采样，可追加/取最近/取历史', () => {
+  const now = Date.now();
+  const e = db.createEntry({ id: 'samp1', scene: 's', name: '采样员', pressureMpa: 20, entryAtMs: now, exitAtMs: now + 60000, durationMin: 1 });
+  let samples = db.listPressureSamples('samp1');
+  assert.equal(samples.length, 1);
+  assert.equal(samples[0].pressure_mpa, 20);
+  db.addPressureSample({ entryId: 'samp1', scene: 's', name: '采样员', pressureMpa: 15, reportedAtMs: now + 5 * 60000 });
+  db.addPressureSample({ entryId: 'samp1', scene: 's', name: '采样员', pressureMpa: 10, reportedAtMs: now + 10 * 60000 });
+  samples = db.listPressureSamples('samp1');
+  assert.equal(samples.length, 3);
+  assert.equal(samples[0].pressure_mpa, 10);
+  const last = db.lastPressureSample('samp1');
+  assert.equal(last.pressure_mpa, 10);
+  assert.equal(db.lastPressureSample('nope'), undefined);
+});
+
+test('purgeOldExited 连带清理已删记录的压力采样', () => {
+  const old = Date.now() - 10 * 24 * 3600 * 1000;
+  db.createEntry({ id: 'samp2', scene: 's', name: '旧采样', pressureMpa: 20, entryAtMs: old, exitAtMs: old + 1000, durationMin: 1 });
+  db.addPressureSample({ entryId: 'samp2', scene: 's', name: '旧采样', pressureMpa: 15, reportedAtMs: old + 1000 });
+  db.markExited('samp2', old);
+  db.purgeOldExited(7);
+  assert.equal(db.getEntry('samp2'), undefined);
+  assert.equal(db.lastPressureSample('samp2'), undefined);
+  assert.equal(db.listPressureSamples('samp2').length, 0);
+});
+
+test('updateEntry 支持写入实测耗气率', () => {
+  const now = Date.now();
+  db.createEntry({ id: 'samp3', scene: 's', name: '耗气', pressureMpa: 20, entryAtMs: now, exitAtMs: now + 60000, durationMin: 34 });
+  const u = db.updateEntry('samp3', { consumptionActualLpm: 68 });
+  assert.equal(u.consumption_actual_lpm, 68);
+});
+
 test('listScenes 仅由 entries 产生（名单/热词全局共享不产生场景）', () => {
   db.createEntry({ id: 's1', scene: 'x', name: 'n', pressureMpa: 20, entryAtMs: 1, exitAtMs: 2, durationMin: 1 });
   db.addFirefighter('sf1', '全局姓名');

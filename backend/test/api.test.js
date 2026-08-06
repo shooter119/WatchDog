@@ -171,8 +171,53 @@ test('PATCH /api/entries/:id 改名与压力复核（重新倒计时）', async 
   await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: H });
 });
 
-test('POST/PATCH /api/entries 支持携带消耗率 consumption_lpm', async () => {
+test('压力报数复核：差分实测耗气率并据此重算倒计时', async () => {
+  const { DatabaseSync } = require('node:sqlite');
+  const raw = new DatabaseSync(path.join(tmpDir, 'watchdog.db'));
+
   const created = await (await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '动态耗气', pressure_mpa: 20 }),
+  })).json();
+  assert.equal(created.consumption_actual_lpm, null);
+
+  // 首次报数间隔太短（毫秒级），差分超范围 → 实测为空，按默认 40 L/min
+  const first = await (await fetch(`${base}/api/entries/${created.id}`, {
+    method: 'PATCH',
+    headers: H,
+    body: JSON.stringify({ pressure_mpa: 18 }),
+  })).json();
+  assert.equal(first.consumption_actual_lpm, null);
+  // 6.8 × 18 × 10 ÷ 40 = 30.6 → 31
+  assert.equal(first.duration_min, 31);
+
+  // 模拟真实时间流逝：20MPa 采样在 10 分钟前，18MPa 采样在 5 分钟前（差分 5 分钟掉 3MPa）
+  raw.prepare('UPDATE pressure_samples SET reported_at = ? WHERE entry_id = ? AND pressure_mpa = 20').run(Date.now() - 600000, created.id);
+  raw.prepare('UPDATE pressure_samples SET reported_at = ? WHERE entry_id = ? AND pressure_mpa = 18').run(Date.now() - 300000, created.id);
+  const second = await (await fetch(`${base}/api/entries/${created.id}`, {
+    method: 'PATCH',
+    headers: H,
+    body: JSON.stringify({ pressure_mpa: 15 }),
+  })).json();
+  // 5 分钟掉 3MPa → 3 × 6.8 × 10 ÷ 5 = 40.8 L/min（实测生效）
+  assert.equal(second.consumption_actual_lpm, 40.8);
+  // 6.8 × 15 × 10 ÷ 40.8 = 25 → 25
+  assert.equal(second.duration_min, 25);
+
+  // 第三次数值回升（换瓶）→ 差分无效，保留上次实测值
+  const third = await (await fetch(`${base}/api/entries/${created.id}`, {
+    method: 'PATCH',
+    headers: H,
+    body: JSON.stringify({ pressure_mpa: 20 }),
+  })).json();
+  assert.equal(third.consumption_actual_lpm, 40.8);
+  assert.equal(third.pressure_mpa, 20);
+
+  await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: H });
+});
+
+test('POST/PATCH /api/entries 支持携带消耗率 consumption_lpm', async () => {  const created = await (await fetch(`${base}/api/entries`, {
     method: 'POST',
     headers: H,
     body: JSON.stringify({ name: '消耗率测试', pressure_mpa: 20, consumption_lpm: 80 }),

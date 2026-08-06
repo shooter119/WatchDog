@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { transcribe } = require('./asr');
 const { parseTextWithDeepSeek, reviseTextWithDeepSeek } = require('./parse');
-const { durationMinutes, exitAtMs } = require('./calc');
+const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
 
@@ -305,14 +305,37 @@ app.patch('/api/entries/:id', (req, res, next) => {
       consumption = Number(consumption_lpm);
       if (!(consumption > 0) || consumption > 300) return res.status(400).json({ error: '消耗率数值异常' });
     }
-    const calcParam = { ...CFG.calc, consumptionLpm: consumption };
     const now = Date.now();
+    // 动态耗气率：每次压力报数存采样，与上次报数差分实测消耗率
+    let actualLpm = null;
+    if (p != null) {
+      const prev = db.lastPressureSample(entry.id);
+      if (prev && prev.reported_at < now) {
+        actualLpm = measuredConsumptionLpm({
+          cylinderVolL: CFG.calc.cylinderVolL,
+          prevPressureMpa: prev.pressure_mpa,
+          newPressureMpa: p,
+          intervalMs: now - prev.reported_at,
+        });
+      }
+      db.addPressureSample({ entryId: entry.id, scene: entry.scene, name: newName || entry.name, pressureMpa: p, reportedAtMs: now });
+    }
+    const effConsumption = actualLpm ?? consumption;
+    const calcParam = { ...CFG.calc, consumptionLpm: effConsumption };
     const updated = db.updateEntry(entry.id, {
       name: newName,
       pressureMpa: p,
-      // 压力视为现场复核读数，从此刻起重新倒计时
+      // 压力视为现场复核读数，从此刻起按实测（无实测用默认）消耗率重新倒计时
       durationMin: p != null ? Math.round(durationMinutes({ ...calcParam, pressureMpa: p })) : null,
       exitAtMs: p != null ? exitAtMs({ ...calcParam, pressureMpa: p, entryAtMs: now }) : null,
+      consumptionActualLpm: actualLpm,
+    });
+    logOp(req, 'info', 'entry_pressure_recheck', '压力报数复核', {
+      entryId: entry.id,
+      name: updated.name,
+      pressureMpa: p,
+      actualConsumptionLpm: actualLpm,
+      durationMin: updated.duration_min,
     });
     res.json(updated);
   } catch (e) {
