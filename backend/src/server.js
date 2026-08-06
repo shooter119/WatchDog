@@ -34,7 +34,7 @@ app.use(express.json({ limit: '5mb' }));
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Scene-Code, X-Api-Token');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Scene-Code, X-Api-Token, X-Device-Id, X-Op-Id');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -63,12 +63,26 @@ function sceneKey(req) {
 }
 
 function deviceKey(req) {
-  return (req.headers['x-device-id'] || '').toString().slice(0, 64) || null;
+  return (req.headers['x-device-id'] || '').toString().slice(0, 128) || null;
 }
 
 function opKey(req) {
   return (req.headers['x-op-id'] || '').toString().slice(0, 64) || null;
 }
+
+// 允许同步到服务器的用户设置键（与 App 端 Settings 同步白名单一致）
+const USER_SETTING_KEYS = [
+  'cylinder_vol_l',
+  'full_pressure_mpa',
+  'consumption_lpm',
+  'warn_min',
+  'alarm_min',
+  'tts_enabled',
+  'alarm_sound_enabled',
+  'keep_screen_on',
+  'asr_cloud_enabled',
+  'parse_cloud_enabled',
+];
 
 /** 服务端操作日志：与 App 端同 op_id，便于拼接完整链路 */
 function logOp(req, level, stage, msg, data = null) {
@@ -361,6 +375,42 @@ app.post('/api/hotwords', (req, res, next) => {
 app.delete('/api/hotwords/:id', (req, res) => {
   db.removeHotword(req.params.id);
   res.json({ ok: true });
+});
+
+// 用户设置云同步：以 X-Device-Id（Android ID 加盐哈希）识别用户，按场景隔离
+// GET 拉取；PUT 全量覆盖。仅接受白名单键，值限 number/boolean
+app.get('/api/user-settings', (req, res) => {
+  const user = deviceKey(req);
+  if (!user) return res.status(400).json({ error: '缺少 X-Device-Id 请求头' });
+  const { settings, updatedAt } = db.getUserSettings(user, sceneKey(req));
+  res.json({ settings, updated_at: updatedAt });
+});
+
+app.put('/api/user-settings', (req, res, next) => {
+  try {
+    const user = deviceKey(req);
+    if (!user) return res.status(400).json({ error: '缺少 X-Device-Id 请求头' });
+    const { settings } = req.body || {};
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return res.status(400).json({ error: '缺少 settings 对象' });
+    }
+    const clean = {};
+    for (const key of USER_SETTING_KEYS) {
+      const v = settings[key];
+      if (v === undefined) continue;
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        clean[key] = v;
+      } else if (typeof v === 'boolean') {
+        clean[key] = v;
+      }
+    }
+    if (Object.keys(clean).length === 0) return res.status(400).json({ error: '没有可同步的合法设置项' });
+    const { settings: saved, updatedAt } = db.saveUserSettings(user, sceneKey(req), clean);
+    logOp(req, 'info', 'user_settings_saved', '用户设置已同步', { keys: Object.keys(clean) });
+    res.json({ settings: saved, updated_at: updatedAt });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // 操作日志：App 批量上报（与场景码/令牌同规则鉴权）

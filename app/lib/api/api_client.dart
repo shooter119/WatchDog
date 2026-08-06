@@ -184,6 +184,32 @@ class ApiClient {
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('日志上报失败(${res.statusCode})');
   }
+
+  /// 拉取云端用户设置（按 X-Device-Id 识别用户，按场景隔离）
+  /// 返回 { settings: {...}, updatedAt: 服务器最近修改时间（无记录为 0） }
+  Future<Map<String, dynamic>> fetchUserSettings() async {
+    final res = await http
+        .get(_uri('/api/user-settings'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('获取云端设置失败(${res.statusCode})');
+    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    return {
+      'settings': body['settings'] is Map<String, dynamic> ? body['settings'] as Map<String, dynamic> : <String, dynamic>{},
+      'updatedAt': (body['updated_at'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  /// 推送本地用户设置到云端（全量覆盖白名单键）
+  Future<void> pushUserSettings(Map<String, dynamic> settings) async {
+    final res = await http
+        .put(
+          _uri('/api/user-settings'),
+          headers: _headers,
+          body: jsonEncode({'settings': settings}),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('同步设置失败(${res.statusCode})');
+  }
 }
 
 class ApiException implements Exception {

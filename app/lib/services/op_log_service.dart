@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
@@ -74,7 +77,9 @@ class OpLogService {
   Future<void> init() async {
     final sp = await SharedPreferences.getInstance();
     _syncEnabled = sp.getBool(_kSyncEnabled) ?? true;
-    _deviceId = sp.getString(_kDeviceId) ?? _generateDeviceId();
+    // 用户识别码：优先 Android ID 加盐哈希（重装不变）；拿不到时回退已存/随机 ID
+    final cached = sp.getString(_kDeviceId);
+    _deviceId = (await _deviceIdFromAndroid()) ?? cached ?? _generateRandomId();
     if (_deviceId != null) await sp.setString(_kDeviceId, _deviceId!);
     if (!_loaded) {
       final raw = sp.getString(_kLogs);
@@ -143,7 +148,23 @@ class OpLogService {
     } catch (_) {}
   }
 
-  String _generateDeviceId() {
+  /// 用户识别码：ANDROID_ID（SSAID，零权限、同一签名下重装不变）加盐哈希
+  /// 哈希后不可反推原始 ID；拿不到（异常/非 Android）时返回 null
+  Future<String?> _deviceIdFromAndroid() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      const channel = MethodChannel('watchdog/screen');
+      final androidId =
+          await channel.invokeMethod<String>('androidId').timeout(const Duration(seconds: 2));
+      if (androidId == null || androidId.isEmpty) return null;
+      final digest = sha256.convert(utf8.encode('watchdog-user-v1:$androidId'));
+      return 'dev-${digest.toString()}';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _generateRandomId() {
     final r = Random.secure();
     final hex = List.generate(16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
     return 'dev-$hex';

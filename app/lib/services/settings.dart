@@ -14,6 +14,76 @@ class Settings {
   static const _kKeepScreenOn = 'keep_screen_on';
   static const _kAsrCloud = 'asr_cloud_enabled';
   static const _kParseCloud = 'parse_cloud_enabled';
+  static const _kModifiedAt = 'settings_modified_at';
+
+  /// 可同步到服务器的个人设置键（与后端 user_settings 白名单一致，snake_case）
+  static const syncKeys = [
+    'cylinder_vol_l',
+    'full_pressure_mpa',
+    'consumption_lpm',
+    'warn_min',
+    'alarm_min',
+    'tts_enabled',
+    'alarm_sound_enabled',
+    'keep_screen_on',
+    'asr_cloud_enabled',
+    'parse_cloud_enabled',
+  ];
+
+  /// 本地设置最近修改时间戳（0 = 从未显式保存过）
+  static Future<int> get modifiedAt async =>
+      (await SharedPreferences.getInstance()).getInt(_kModifiedAt) ?? 0;
+
+  /// 标记本地设置被显式修改（保存设置时调用，作为云端同步的本地时间戳）
+  static Future<void> markModified(int ts) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setInt(_kModifiedAt, ts);
+  }
+
+  /// 收集全部可同步设置
+  static Future<Map<String, dynamic>> toSyncMap() async {
+    final sp = await SharedPreferences.getInstance();
+    return {
+      'cylinder_vol_l': sp.getDouble(_kVolume) ?? 6.8,
+      'full_pressure_mpa': sp.getDouble(_kFullPressure) ?? 30,
+      'consumption_lpm': sp.getDouble(_kConsumption) ?? 40,
+      'warn_min': sp.getInt(_kWarn) ?? 10,
+      'alarm_min': sp.getInt(_kAlarm) ?? 5,
+      'tts_enabled': sp.getBool(_kTts) ?? true,
+      'alarm_sound_enabled': sp.getBool(_kAlarmSound) ?? true,
+      'keep_screen_on': sp.getBool(_kKeepScreenOn) ?? true,
+      'asr_cloud_enabled': sp.getBool(_kAsrCloud) ?? true,
+      'parse_cloud_enabled': sp.getBool(_kParseCloud) ?? true,
+    };
+  }
+
+  /// 应用云端设置（按类型与合理范围校验），updatedAt 同步为本地修改时间戳
+  static Future<void> applyFromServer(Map<String, dynamic> map, {required int updatedAt}) async {
+    final sp = await SharedPreferences.getInstance();
+    num? numOf(String k) => map[k] is num ? map[k] as num : null;
+    bool? boolOf(String k) => map[k] is bool ? map[k] as bool : null;
+    final vol = numOf('cylinder_vol_l');
+    if (vol != null && vol > 0 && vol <= 20) await sp.setDouble(_kVolume, vol.toDouble());
+    final full = numOf('full_pressure_mpa');
+    if (full != null && full > 0 && full <= 40) await sp.setDouble(_kFullPressure, full.toDouble());
+    final cons = numOf('consumption_lpm');
+    if (cons != null && cons > 0 && cons <= 300) await sp.setDouble(_kConsumption, cons.toDouble());
+    final warn = numOf('warn_min');
+    if (warn != null && warn >= 0) await sp.setInt(_kWarn, warn.toInt());
+    final alarm = numOf('alarm_min');
+    if (alarm != null && alarm >= 0) await sp.setInt(_kAlarm, alarm.toInt());
+    final tts = boolOf('tts_enabled');
+    if (tts != null) await sp.setBool(_kTts, tts);
+    final sound = boolOf('alarm_sound_enabled');
+    if (sound != null) await sp.setBool(_kAlarmSound, sound);
+    final keepOn = boolOf('keep_screen_on');
+    if (keepOn != null) await sp.setBool(_kKeepScreenOn, keepOn);
+    final asrCloud = boolOf('asr_cloud_enabled');
+    if (asrCloud != null) await sp.setBool(_kAsrCloud, asrCloud);
+    final parseCloud = boolOf('parse_cloud_enabled');
+    if (parseCloud != null) await sp.setBool(_kParseCloud, parseCloud);
+    await sp.setInt(_kModifiedAt, updatedAt);
+  }
 
   static Future<String> get serverUrl async {
     final sp = await SharedPreferences.getInstance();

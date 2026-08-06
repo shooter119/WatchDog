@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/screen_on.dart';
@@ -24,6 +26,14 @@ class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _consumption = TextEditingController();
   final TextEditingController _warn = TextEditingController();
   final TextEditingController _alarm = TextEditingController();
+  final FocusNode _serverFocus = FocusNode();
+  final FocusNode _sceneFocus = FocusNode();
+  final FocusNode _tokenFocus = FocusNode();
+  final FocusNode _volumeFocus = FocusNode();
+  final FocusNode _fullFocus = FocusNode();
+  final FocusNode _consumptionFocus = FocusNode();
+  final FocusNode _warnFocus = FocusNode();
+  final FocusNode _alarmFocus = FocusNode();
   bool _tokenVisible = false;
   bool _tts = true;
   bool _sound = true;
@@ -34,11 +44,28 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _downloading = false;
   double? _downloadProgress;
   String? _downloadError;
+  bool _loaded = false;
 
   @override
   void initState() {
     super.initState();
+    // 任一输入框失焦且全部输入框均无焦点（点空白处/收起键盘）→ 自动保存
+    for (final n in [
+      _serverFocus, _sceneFocus, _tokenFocus, _volumeFocus,
+      _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus,
+    ]) {
+      n.addListener(() {
+        if (_loaded && !n.hasFocus && _allInputsUnfocused()) _autoSave();
+      });
+    }
     _load();
+  }
+
+  bool _allInputsUnfocused() {
+    return [
+      _serverFocus, _sceneFocus, _tokenFocus, _volumeFocus,
+      _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus,
+    ].every((n) => !n.hasFocus);
   }
 
   Future<void> _load() async {
@@ -55,6 +82,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _keepScreenOn = await Settings.keepScreenOn;
     _asrCloud = await Settings.asrCloudEnabled;
     _parseCloud = await Settings.parseCloudEnabled;
+    _loaded = true;
     _refreshModelStatus();
     if (mounted) setState(() {});
   }
@@ -93,7 +121,8 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _save() async {
+  /// 自动保存：文本框失焦（点空白/收起键盘/焦点转移）或开关切换时立即保存本地并触发云端同步（静默）
+  Future<void> _autoSave() async {
     await Settings.setServerUrl(_server.text.trim());
     await Settings.setSceneCode(_scene.text.trim());
     await Settings.setApiToken(_token.text.trim());
@@ -109,12 +138,15 @@ class _SettingsPageState extends State<SettingsPage> {
     await Settings.setKeepScreenOn(_keepScreenOn);
     await Settings.setAsrCloudEnabled(_asrCloud);
     await Settings.setParseCloudEnabled(_parseCloud);
-    await ScreenOn.setKeepScreenOn(_keepScreenOn);
+    try {
+      await ScreenOn.setKeepScreenOn(_keepScreenOn);
+    } catch (_) {
+      // 平台通道失败（如无宿主环境）不阻断保存
+    }
+    await Settings.markModified(DateTime.now().millisecondsSinceEpoch);
     await widget.controller.refreshConfig();
     widget.controller.startSync();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('设置已保存')));
-    }
+    widget.controller.syncSettings();
   }
 
   @override
@@ -127,6 +159,14 @@ class _SettingsPageState extends State<SettingsPage> {
     _consumption.dispose();
     _warn.dispose();
     _alarm.dispose();
+    _serverFocus.dispose();
+    _sceneFocus.dispose();
+    _tokenFocus.dispose();
+    _volumeFocus.dispose();
+    _fullFocus.dispose();
+    _consumptionFocus.dispose();
+    _warnFocus.dispose();
+    _alarmFocus.dispose();
     super.dispose();
   }
 
@@ -134,8 +174,8 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-        children: [
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+          children: [
           Row(
             children: [
               const Text('设置', style: AppTextStyles.h1),
@@ -154,14 +194,15 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _field(_server, '服务器地址', '默认 https://bytevirt.meiyou.xyz:8443', icon: Icons.dns_outlined, keyboard: TextInputType.url),
-                  _field(_scene, '场景码', '多设备同步用同一场景码', icon: Icons.tag),
+                  _field(_server, '服务器地址', '默认 https://bytevirt.meiyou.xyz:8443', icon: Icons.dns_outlined, keyboard: TextInputType.url, focusNode: _serverFocus),
+                  _field(_scene, '场景码', '多设备同步用同一场景码', icon: Icons.tag, focusNode: _sceneFocus),
                   _field(
                     _token,
                     '访问令牌',
                     '与服务器 API_TOKEN 一致',
                     icon: Icons.key_outlined,
                     obscure: !_tokenVisible,
+                    focusNode: _tokenFocus,
                     suffix: IconButton(
                       icon: Icon(_tokenVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
                       onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
@@ -181,21 +222,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   Row(
                     children: [
-                      Expanded(child: _field(_volume, '气瓶容量', '6.8 L', icon: Icons.local_fire_department_outlined)),
+                      Expanded(child: _field(_volume, '气瓶容量', '6.8 L', icon: Icons.local_fire_department_outlined, focusNode: _volumeFocus)),
                       const SizedBox(width: 10),
-                      Expanded(child: _field(_full, '满压', '30 MPa', icon: Icons.speed)),
+                      Expanded(child: _field(_full, '满压', '30 MPa', icon: Icons.speed, focusNode: _fullFocus)),
                     ],
                   ),
                   Row(
                     children: [
-                      Expanded(child: _field(_consumption, '消耗率', '40 L/min', icon: Icons.water_drop_outlined)),
+                      Expanded(child: _field(_consumption, '消耗率', '40 L/min', icon: Icons.water_drop_outlined, focusNode: _consumptionFocus)),
                       const SizedBox(width: 10),
-                      Expanded(child: _field(_warn, '提醒剩余', '10 min', icon: Icons.notifications_active_outlined)),
+                      Expanded(child: _field(_warn, '提醒剩余', '10 min', icon: Icons.notifications_active_outlined, focusNode: _warnFocus)),
                     ],
                   ),
                   Row(
                     children: [
-                      Expanded(child: _field(_alarm, '报警剩余', '5 min', icon: Icons.warning_amber_rounded)),
+                      Expanded(child: _field(_alarm, '报警剩余', '5 min', icon: Icons.warning_amber_rounded, focusNode: _alarmFocus)),
                       const SizedBox(width: 10),
                       const Expanded(child: SizedBox()),
                     ],
@@ -284,7 +325,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     subtitle: const Text('开：豆包云端识别，失败自动切本地；关：强制本地识别'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _asrCloud,
-                    onChanged: (v) => setState(() => _asrCloud = v),
+                    onChanged: (v) {
+                      setState(() => _asrCloud = v);
+                      _autoSave();
+                    },
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
@@ -292,7 +336,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     subtitle: const Text('开：DeepSeek 云端解析，失败自动切本地；关：强制本地规则解析'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _parseCloud,
-                    onChanged: (v) => setState(() => _parseCloud = v),
+                    onChanged: (v) {
+                      setState(() => _parseCloud = v);
+                      _autoSave();
+                    },
                   ),
                   if (widget.controller.localAsr != null) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -315,7 +362,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     subtitle: const Text('确认/提醒/报警时播报中文语音'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _tts,
-                    onChanged: (v) => setState(() => _tts = v),
+                    onChanged: (v) {
+                      setState(() => _tts = v);
+                      _autoSave();
+                    },
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
@@ -323,7 +373,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     subtitle: const Text('前台警报音 + 后台本地通知'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _sound,
-                    onChanged: (v) => setState(() => _sound = v),
+                    onChanged: (v) {
+                      setState(() => _sound = v);
+                      _autoSave();
+                    },
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
@@ -331,7 +384,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     subtitle: const Text('看板页保持屏幕常亮，适合火场值守'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _keepScreenOn,
-                    onChanged: (v) => setState(() => _keepScreenOn = v),
+                    onChanged: (v) {
+                      setState(() => _keepScreenOn = v);
+                      _autoSave();
+                    },
                   ),
                   if (!widget.controller.alarm.exactAlarmAvailable) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
@@ -347,15 +403,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 52,
-            child: FilledButton.icon(
-              onPressed: _save,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('保存设置', style: TextStyle(fontSize: 16)),
             ),
           ),
           const SizedBox(height: 28),
@@ -379,6 +426,7 @@ class _SettingsPageState extends State<SettingsPage> {
     TextEditingController c,
     String label,
     String hint, {
+    FocusNode? focusNode,
     IconData? icon,
     TextInputType? keyboard,
     bool obscure = false,
@@ -388,6 +436,7 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
         controller: c,
+        focusNode: focusNode,
         keyboardType: keyboard,
         obscureText: obscure,
         decoration: InputDecoration(

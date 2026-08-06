@@ -51,7 +51,19 @@ CREATE TABLE IF NOT EXISTS logs (
 );
 CREATE INDEX IF NOT EXISTS idx_logs_scene ON logs(scene, created_at);
 CREATE INDEX IF NOT EXISTS idx_logs_op ON logs(op_id);
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id TEXT NOT NULL,
+  scene TEXT NOT NULL DEFAULT 'default',
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, scene, key)
+);
+CREATE INDEX IF NOT EXISTS idx_user_settings_scene ON user_settings(scene, user_id);
+
 `);
+
 
 // 旧库迁移：无 scene 列时重建表（新表场景内唯一，跨场景允许同名）
 function hasColumn(table, column) {
@@ -293,6 +305,43 @@ function purgeOldLogs(days = 30) {
   return db.prepare('DELETE FROM logs WHERE created_at < ?').run(cutoff).changes;
 }
 
+/**
+ * 读取某用户在指定场景下的设置（按用户识别码 + 场景隔离）
+ * 返回 { settings: {key: value}, updatedAt: 最近修改时间（无记录为 0） }
+ */
+function getUserSettings(userId, scene = 'default') {
+  const rows = db
+    .prepare('SELECT key, value, updated_at FROM user_settings WHERE user_id = ? AND scene = ?')
+    .all(userId, scene);
+  const settings = {};
+  let updatedAt = 0;
+  for (const r of rows) {
+    try {
+      settings[r.key] = JSON.parse(r.value);
+    } catch {
+      settings[r.key] = r.value;
+    }
+    if (r.updated_at > updatedAt) updatedAt = r.updated_at;
+  }
+  return { settings, updatedAt };
+}
+
+/**
+ * 保存某用户在指定场景下的设置（按 key upsert），返回与 getUserSettings 同结构
+ */
+function saveUserSettings(userId, scene = 'default', settings = {}) {
+  const upsert = db.prepare(`
+    INSERT INTO user_settings (user_id, scene, key, value, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, scene, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `);
+  const now = Date.now();
+  for (const [key, value] of Object.entries(settings)) {
+    upsert.run(userId, scene, String(key).slice(0, 64), JSON.stringify(value), now);
+  }
+  return getUserSettings(userId, scene);
+}
+
 module.exports = {
   listEntries,
   getEntry,
@@ -312,4 +361,6 @@ module.exports = {
   listLogs,
   clearLogs,
   purgeOldLogs,
+  getUserSettings,
+  saveUserSettings,
 };

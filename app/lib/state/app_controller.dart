@@ -50,8 +50,29 @@ class AppController extends ChangeNotifier {
     await refreshConfig();
     startSync();
     loadRoster();
+    // 启动后同步个人设置（服务器较新拉取、本地较新推送）
+    syncSettings();
     // 启动后补传上次未上传完的操作日志（fire-and-forget）
     OpLogService.instance.flush(api: api);
+  }
+
+  /// 用户设置云同步：服务器较新则拉取覆盖本地并生效，本地较新则推送，一致跳过
+  Future<void> syncSettings() async {
+    final a = api;
+    if (a == null) return;
+    try {
+      final remote = await a.fetchUserSettings();
+      final remoteAt = remote['updatedAt'] as int;
+      final localAt = await Settings.modifiedAt;
+      if (remoteAt > localAt) {
+        await Settings.applyFromServer(remote['settings'] as Map<String, dynamic>, updatedAt: remoteAt);
+        await refreshConfig();
+      } else if (remoteAt < localAt) {
+        await a.pushUserSettings(await Settings.toSyncMap());
+      }
+    } catch (_) {
+      // 网络失败静默，下次启动或保存设置时再试
+    }
   }
 
   Future<void> refreshConfig() async {

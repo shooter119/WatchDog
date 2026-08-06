@@ -17,6 +17,7 @@ dependencies:
   audioplayers: ^6.1.0
   flutter_local_notifications: ^19.2.0
   timezone: ^0.10.0
+  crypto: ^3.0.3
   sherpa_onnx: ^1.13.4
 
 dev_dependencies:
