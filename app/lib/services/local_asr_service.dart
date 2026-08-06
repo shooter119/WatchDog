@@ -10,6 +10,7 @@ import 'package:sherpa_onnx/sherpa_onnx.dart';
 /// 热词走 bbpe 字节编码（名单/术语写入 hotwords 文件，modified_beam_search 上下文加权），
 /// 字节级词表对任意姓名无 OOV，生僻字人名同样生效。
 /// 模型文件托管在项目服务器（https://bytevirt.meiyou.xyz:8443/models/），国内直连下载。
+/// 注：streaming 系列模型 + bbpe 热词在 sherpa-onnx 1.13.4 存在 CreateOnlineRecognizer 崩溃，暂用离线版。
 class LocalAsrService {
   static const modelName = 'multi-zh-hans-2023-9-2';
   static const _encoderFile = 'encoder-epoch-20-avg-1.int8.onnx';
@@ -21,11 +22,13 @@ class LocalAsrService {
   static const _downloadBase =
       'https://bytevirt.meiyou.xyz:8443/models/$modelName';
 
-  /// 旧模型目录（14M 小模型精度差 / Paraformer 不支持热词 / x-asr 词表稀疏），下载新模型后清理
+  /// 旧模型目录（streaming 系列含崩溃 bug / 14M 小模型精度差 / Paraformer 不支持热词 / x-asr 词表稀疏），下载新模型后清理
   static const _legacyModelDirs = [
     'paraformer-zh-small-2024-03-09',
     'x-asr-zipformer-transducer-zh-en-int8-2026-06-03',
     'streaming-zipformer-zh-14M-2023-02-23',
+    'streaming-zipformer-zh-int8-2025-06-30',
+    'streaming-zipformer-multi-zh-hans-int8-2023-12-13',
   ];
 
   OfflineRecognizer? _recognizer;
