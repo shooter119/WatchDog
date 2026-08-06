@@ -277,7 +277,7 @@ class _EntryCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  StatusBadge(status: status, onColorCard: true, fontSize: 11, height: 34),
+                  StatusBadge(status: status, onColorCard: true, fontSize: 13, height: 34),
                   const SizedBox(width: 8),
                   _UpdatePressureButton(fg: fg, onPressed: onReport),
                 ],
