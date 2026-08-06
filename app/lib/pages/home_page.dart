@@ -259,7 +259,7 @@ class HomePageState extends State<HomePage> {
         if (parsed.people.isNotEmpty) {
           await _handleExit(parsed.people.map((p) => p.name).toList());
         } else {
-          await _confirmAllExit();
+          await _confirmAllExit(text);
         }
       }
     } catch (e) {
@@ -326,8 +326,8 @@ class HomePageState extends State<HomePage> {
   static bool _hasAllExitWords(String text) => _allExitWords.any(text.contains);
 
   /// 全员离场：识别到"全部人员离开火场"等指令且未提取到具体姓名时，
-  /// 弹框让用户确认，确认后把当前所有在场人员统一登记离场
-  Future<void> _confirmAllExit() async {
+  /// 弹框让用户确认（展示语音原文以便核对机器理解），确认后把当前所有在场人员统一登记离场
+  Future<void> _confirmAllExit(String voiceText) async {
     final active = widget.controller.entries.where((e) => e.isActive).toList();
     if (!mounted) return;
     if (active.isEmpty) {
@@ -355,7 +355,7 @@ class HomePageState extends State<HomePage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('全员离场确认'),
-        content: Text('识别到全员离场指令，当前在场 ${active.length} 人：${active.map((e) => e.name).join('、')}\n确认全部登记离场？'),
+        content: Text('识别到全员离场指令，当前在场 ${active.length} 人：${active.map((e) => e.name).join('、')}\n\n语音原文：「$voiceText」\n\n确认全部登记离场？'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认全员离场')),
@@ -677,7 +677,6 @@ class HomePageState extends State<HomePage> {
                 ConnectionStatus(
                   syncing: widget.controller.syncing,
                   offline: widget.controller.syncError != null,
-                  lastSyncedAt: widget.controller.lastSyncedAt,
                   onRetry: widget.controller.startSync,
                 ),
               ],

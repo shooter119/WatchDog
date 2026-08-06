@@ -92,6 +92,22 @@ function looksMultiPerson(text) {
   return false;
 }
 
+/// 确定性校验 LLM 解析结果（guardrail）：
+/// LLM 是概率模型，可能把"搜救出宠物狗"误判为出场指令。这里用文本证据强制把关，
+/// 无证据的 exit 一律降级 unknown——宁可为日志，不误登记离场。
+const EXIT_ACTION_WORDS = ['出来', '撤离', '撤出', '收工', '退场', '离开', '撤退', '出去', '出火场', '退回'];
+const TAKE_OUT_WORDS = ['搜救出', '取出', '救出', '搬出', '抱出', '抢出', '卸出', '拎出', '转移出'];
+
+function guardrailAction(text, parsed) {
+  if (parsed.action !== 'exit') return parsed.action;
+  // 从火场拿出物品（搜救出宠物狗/取出煤气罐）绝不是出场指令
+  if (TAKE_OUT_WORDS.some((w) => text.includes(w))) return 'unknown';
+  // exit 必须有明确出场证据：具体人名，或强出场动作词；两者皆无视为 LLM 幻觉
+  const hasPeople = Array.isArray(parsed.people) && parsed.people.length > 0;
+  if (hasPeople) return parsed.action;
+  return EXIT_ACTION_WORDS.some((w) => text.includes(w)) ? parsed.action : 'unknown';
+}
+
 async function parseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighters = [], hotwords = [] }) {
   const names = firefighters.length > 0 ? '名单：' + firefighters.join('、') : '名单：无';
   const terms = hotwords.length > 0 ? '专业术语：' + hotwords.join('、') : '';
@@ -123,7 +139,7 @@ async function parseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighter
   }
 
   return {
-    action: parsed.action || 'unknown',
+    action: guardrailAction(text, parsed),
     people,
     note: parsed.note || '',
   };
@@ -148,4 +164,4 @@ async function reviseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighte
   return corrected || text;
 }
 
-module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, looksMultiPerson };
+module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, looksMultiPerson, guardrailAction };

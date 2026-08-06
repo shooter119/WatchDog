@@ -1,7 +1,7 @@
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseTextWithDeepSeek, reviseTextWithDeepSeek } = require('../src/parse');
+const { parseTextWithDeepSeek, reviseTextWithDeepSeek, guardrailAction } = require('../src/parse');
 
 afterEach(() => {
   delete globalThis.fetch;
@@ -74,4 +74,30 @@ test('parseTextWithDeepSeek 修正后文本仍可正常解析', async () => {
   });
   assert.equal(parsed.action, 'enter');
   assert.deepEqual(parsed.people, [{ name: '李翔', pressure_mpa: 20 }]);
+});
+
+// guardrail：LLM 误判"搜救出宠物狗"为 exit 时强制降级
+test('guardrailAction 搜救出宠物狗误判 exit 时降级 unknown', () => {
+  assert.equal(
+    guardrailAction('龙翔路站从燃烧建筑中搜救出一只宠物狗', { action: 'exit', people: [] }),
+    'unknown',
+  );
+});
+
+test('guardrailAction 取出煤气罐等物品动作误判 exit 时降级 unknown', () => {
+  assert.equal(guardrailAction('龙翔路站从火场中取出一个煤气罐', { action: 'exit', people: [] }), 'unknown');
+});
+
+test('guardrailAction exit 无人名且无出场证据（LLM 幻觉）降级 unknown', () => {
+  assert.equal(guardrailAction('龙翔路站攻坚组进入火场内部', { action: 'exit', people: [] }), 'unknown');
+});
+
+test('guardrailAction 明确的出场指令保留 exit', () => {
+  assert.equal(guardrailAction('张伟和李娜出来了', { action: 'exit', people: [{ name: '张伟' }, { name: '李娜' }] }), 'exit');
+  assert.equal(guardrailAction('全部人员撤出火场', { action: 'exit', people: [] }), 'exit');
+  assert.equal(guardrailAction('收工', { action: 'exit', people: [] }), 'exit');
+});
+
+test('guardrailAction 正常进场不受影响', () => {
+  assert.equal(guardrailAction('张伟，20兆帕', { action: 'enter', people: [{ name: '张伟', pressure_mpa: 20 }] }), 'enter');
 });
