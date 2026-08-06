@@ -39,3 +39,11 @@ deploy/                  部署脚本与配置
 - `backend/.env`（VOLC_APP_ID / VOLC_ACCESS_TOKEN / DEEPSEEK_API_KEY / API_TOKEN）不入库，只维护 `.env.example`。
 - `app/android/key.properties` 与 `watchdog-release.keystore` 不入库（正式签名）。
 - 涉及真实 key 的临时调试脚本不入库（如 `backend/asr-debug.js`）。
+
+## 部署（bytevirt VPS）
+
+- 线上地址：`https://bytevirt.meiyou.xyz:8443`（nginx 反代到本地 3100 端口，`/api/` 前缀）。
+- 一键部署：`deploy/deploy.sh`（rsync 同步 backend/src + 配置，pm2 重启，nginx 校验，健康检查）。
+- pm2 应用名 `watchdog-api`，环境变量读 `/opt/watchdog/.env`（服务器上手动维护，不入库）。
+- 后端本地端口 3100（生产），本地开发 3000；改端口/依赖需同步 `deploy/ecosystem.config.cjs` 与 nginx 配置。
+- 平台决策：iOS 暂缓，集中开发 Android；改动部署相关代码后建议跑一遍 deploy.sh 验证。
