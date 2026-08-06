@@ -390,22 +390,14 @@ class _PulseGlowState extends State<PulseGlow> with SingleTickerProviderStateMix
 class ConnectionStatus extends StatelessWidget {
   final bool syncing;
   final bool offline;
-  final int? lastSyncedAt; // 最近一次成功同步时间（毫秒时间戳）
   final VoidCallback? onRetry;
 
   const ConnectionStatus({
     super.key,
     required this.syncing,
     required this.offline,
-    this.lastSyncedAt,
     this.onRetry,
   });
-
-  static String _fmtTime(int ts) {
-    final d = DateTime.fromMillisecondsSinceEpoch(ts);
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -444,24 +436,12 @@ class ConnectionStatus extends StatelessWidget {
         ],
       );
     } else {
-      final last = lastSyncedAt;
-      inner = Column(
+      inner = const Row(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
-              SizedBox(width: 6),
-              Text('已连接', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-          ),
-          if (last != null)
-            Text(
-              '上次同步 ${_fmtTime(last)}',
-              style: const TextStyle(color: AppColors.textTertiary, fontSize: 10.5, height: 1.3),
-            ),
+          Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
+          SizedBox(width: 6),
+          Text('已连接', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
         ],
       );
     }

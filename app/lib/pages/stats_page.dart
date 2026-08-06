@@ -17,7 +17,6 @@ class StatsPage extends StatefulWidget {
 
 class _StatsPageState extends State<StatsPage> {
   String _range = '今天'; // 今天 / 本周 / 本月 / 全部
-  String? _personFilter; // null = 全部人员
   bool _sortByDuration = false; // false = 按次数排，true = 按时长排
 
   static const _ranges = ['今天', '本周', '本月', '全部'];
@@ -47,7 +46,6 @@ class _StatsPageState extends State<StatsPage> {
     final start = _rangeStartMs();
     return widget.controller.entries
         .where((e) => start == null || e.entryAt >= start)
-        .where((e) => _personFilter == null || e.name == _personFilter)
         .map((e) => (e: e, durationMs: _durationMsOf(e, nowMs)))
         .toList();
   }
@@ -94,7 +92,6 @@ class _StatsPageState extends State<StatsPage> {
                 ConnectionStatus(
                   syncing: widget.controller.syncing,
                   offline: widget.controller.syncError != null,
-                  lastSyncedAt: widget.controller.lastSyncedAt,
                   onRetry: widget.controller.startSync,
                 ),
               ],
@@ -157,81 +154,36 @@ class _StatsPageState extends State<StatsPage> {
     );
   }
 
-  /// 时间范围 + 人员筛选
+  /// 时间范围筛选
   Widget _buildFilters() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final r in _ranges)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(r),
-                        selected: _range == r,
-                        onSelected: (_) => setState(() => _range = r),
-                        showCheckmark: false,
-                        selectedColor: AppColors.actionPrimary,
-                        labelStyle: TextStyle(
-                          fontSize: 13,
-                          fontWeight: _range == r ? FontWeight.w800 : FontWeight.w600,
-                          color: _range == r ? Colors.white : AppColors.textSecondary,
-                        ),
-                        backgroundColor: AppColors.surface,
-                        side: BorderSide(color: _range == r ? AppColors.actionPrimary : AppColors.border),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // 人员筛选下拉（全部 + 本次出场过的人）
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _personFilter ?? '全部',
-                isDense: true,
-                icon: const Icon(Icons.expand_more, size: 18, color: AppColors.textTertiary),
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final r in _ranges)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(r),
+                  selected: _range == r,
+                  onSelected: (_) => setState(() => _range = r),
+                  showCheckmark: false,
+                  selectedColor: AppColors.actionPrimary,
+                  labelStyle: TextStyle(
+                    fontSize: 13,
+                    fontWeight: _range == r ? FontWeight.w800 : FontWeight.w600,
+                    color: _range == r ? Colors.white : AppColors.textSecondary,
+                  ),
+                  backgroundColor: AppColors.surface,
+                  side: BorderSide(color: _range == r ? AppColors.actionPrimary : AppColors.border),
                 ),
-                items: [
-                  const DropdownMenuItem(value: '全部', child: Text('全部人员')),
-                  for (final name in _personNames())
-                    DropdownMenuItem(value: name, child: Text(name)),
-                ],
-                onChanged: (v) => setState(() => _personFilter = v == '全部' ? null : v),
               ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
-  }
-
-  List<String> _personNames() {
-    final names = <String>{};
-    for (final e in widget.controller.entries) {
-      names.add(e.name);
-    }
-    for (final f in widget.controller.firefighters) {
-      names.add(f.name);
-    }
-    return names.toList()..sort();
   }
 
   /// 汇总卡片：当前在场 / 进场人次 / 累计时长

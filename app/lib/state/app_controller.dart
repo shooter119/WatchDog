@@ -41,7 +41,6 @@ class AppController extends ChangeNotifier {
 
   bool syncing = false;
   String? syncError;
-  int? lastSyncedAt; // 最近一次成功同步时间（连接状态展示用）
   Timer? _pollTimer;
   Timer? _tickTimer;
   final Map<String, int> _announced = {};
@@ -125,7 +124,6 @@ class AppController extends ChangeNotifier {
         // 日志拉取失败不影响主流程（entries 已成功）
       }
       syncError = null;
-      lastSyncedAt = DateTime.now().millisecondsSinceEpoch;
       await _rescheduleNotifications();
     } catch (e) {
       syncError = e.toString();

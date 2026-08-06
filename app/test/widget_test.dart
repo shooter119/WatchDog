@@ -1096,13 +1096,6 @@ void main() {
       await tester.tap(find.text('按次数'));
       await tester.pump();
       expect(find.text('按总时长'), findsOneWidget);
-      // 人员筛选
-      await tester.tap(find.byType(DropdownButton<String>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('张伟').last);
-      await tester.pumpAndSettle();
-      expect(find.text('2 人次'), findsOneWidget);
-      expect(find.text('李娜'), findsNothing);
     });
 
     testWidgets('无记录时显示空态', (tester) async {
@@ -1132,7 +1125,6 @@ void main() {
       ));
       await tester.pump();
       expect(tester.takeException(), isNull);
-      expect(find.text('全部人员'), findsOneWidget);
     });
   });
 

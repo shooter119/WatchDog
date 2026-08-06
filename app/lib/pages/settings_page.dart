@@ -198,7 +198,6 @@ class _SettingsPageState extends State<SettingsPage> {
               ConnectionStatus(
                 syncing: widget.controller.syncing,
                 offline: widget.controller.syncError != null,
-                lastSyncedAt: widget.controller.lastSyncedAt,
                 onRetry: () => widget.controller.startSync(),
               ),
             ],

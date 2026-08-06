@@ -61,7 +61,6 @@ class _BoardPageState extends State<BoardPage> {
                 ConnectionStatus(
                   syncing: widget.controller.syncing,
                   offline: offline,
-                  lastSyncedAt: widget.controller.lastSyncedAt,
                   onRetry: () => widget.controller.startSync(),
                 ),
               ],
