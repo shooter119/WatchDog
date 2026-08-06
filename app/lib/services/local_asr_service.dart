@@ -7,12 +7,11 @@ import 'package:sherpa_onnx/sherpa_onnx.dart';
 
 /// 本地语音识别服务：sherpa-onnx（Paraformer 中文小模型 int8，约 78MB）。
 /// 模型文件首次使用时下载到应用支持目录，之后完全离线可识别。
-/// 支持热词（名单/术语写入 hotwords 文件，识别时上下文加权）。
+/// 注意：Paraformer 离线模型仅支持 greedy_search，不支持热词加权。
 class LocalAsrService {
   static const modelName = 'paraformer-zh-small-2024-03-09';
   static const _modelFile = 'model.int8.onnx';
   static const _tokensFile = 'tokens.txt';
-  static const _hotwordsFile = 'hotwords.txt';
 
   static const _mirrorBase =
       'https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main';
@@ -20,7 +19,6 @@ class LocalAsrService {
       'https://huggingface.co/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main';
 
   OfflineRecognizer? _recognizer;
-  String? _recognizerHotwordsSignature;
   bool _initializing = false;
   Future<void>? _pendingInit;
 
@@ -111,11 +109,8 @@ class LocalAsrService {
   }
 
   /// 本地识别：wav 字节 → 文本。首次调用会加载模型（约 1-2 秒）。
-  Future<String> transcribe(
-    Uint8List wavBytes, {
-    List<String> hotwords = const [],
-  }) async {
-    await _ensureInitialized(hotwords: hotwords);
+  Future<String> transcribe(Uint8List wavBytes) async {
+    await _ensureInitialized();
     final recognizer = _recognizer!;
 
     final wave = _parseWav(wavBytes);
@@ -129,19 +124,19 @@ class LocalAsrService {
     }
   }
 
-  Future<void> _ensureInitialized({required List<String> hotwords}) async {
+  Future<void> _ensureInitialized() async {
     if (_initializing) {
       if (_pendingInit != null) {
         await _pendingInit;
       }
       return;
     }
-    if (_recognizer != null && _signatureFor(hotwords) == _recognizerHotwordsSignature) {
+    if (_recognizer != null) {
       return;
     }
     _initializing = true;
     try {
-      _pendingInit = _init(hotwords: hotwords);
+      _pendingInit = _init();
       await _pendingInit;
     } finally {
       _initializing = false;
@@ -149,7 +144,8 @@ class LocalAsrService {
     }
   }
 
-  Future<void> _init({required List<String> hotwords}) async {
+  Future<void> _init() async {
+    initBindings();
     final dir = await _modelDir();
     final modelPath = '${dir.path}/$_modelFile';
     final tokensPath = '${dir.path}/$_tokensFile';
@@ -158,33 +154,16 @@ class LocalAsrService {
     }
     _recognizer?.free();
 
-    final words = <String>{
-      ...hotwords,
-      '兆帕',
-      '个压',
-      '气瓶',
-      '空气呼吸器',
-      '进场',
-      '出来',
-      '退场',
-    }.toList();
-    final hotwordsPath = '${dir.path}/$_hotwordsFile';
-    await File(hotwordsPath).writeAsString('${words.join('\n')}\n');
-
     final config = OfflineRecognizerConfig(
       model: OfflineModelConfig(
         paraformer: OfflineParaformerModelConfig(model: modelPath),
         tokens: tokensPath,
         numThreads: 2,
       ),
-      hotwordsFile: hotwordsPath,
-      hotwordsScore: 1.5,
+      decodingMethod: 'greedy_search',
     );
     _recognizer = OfflineRecognizer(config);
-    _recognizerHotwordsSignature = _signatureFor(hotwords);
   }
-
-  String _signatureFor(List<String> hotwords) => hotwords.join('|');
 }
 
 class _WavData {
