@@ -36,10 +36,8 @@ CREATE TABLE IF NOT EXISTS firefighters (
 
 CREATE TABLE IF NOT EXISTS hotwords (
   id TEXT PRIMARY KEY,
-  scene TEXT NOT NULL DEFAULT 'default',
-  word TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  UNIQUE(scene, word)
+  word TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS logs (
@@ -61,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_op ON logs(op_id);
 function hasColumn(table, column) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
 }
-for (const t of ['entries', 'firefighters', 'hotwords']) {
+for (const t of ['entries', 'firefighters']) {
   if (hasColumn(t, 'scene')) continue;
   db.exec(`ALTER TABLE ${t} RENAME TO ${t}_old;`);
   if (t === 'entries') {
@@ -98,12 +96,34 @@ for (const t of ['entries', 'firefighters', 'hotwords']) {
   }
   db.exec(`DROP TABLE ${t}_old;`);
 }
+// 热词全局化迁移：旧版热词按场景隔离，重建为全局唯一（按词去重，保留最早一条）
+if (hasColumn('hotwords', 'scene')) {
+  db.exec(`
+    CREATE TABLE hotwords_new (
+      id TEXT PRIMARY KEY,
+      word TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL
+    );
+    INSERT INTO hotwords_new (id, word, created_at)
+      SELECT MIN(id), word, MIN(created_at) FROM hotwords GROUP BY word;
+    DROP TABLE hotwords;
+    ALTER TABLE hotwords_new RENAME TO hotwords;
+  `);
+}
 // 迁移后确保唯一约束与索引
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_entries_scene ON entries(scene, entry_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_firefighters_scene_name ON firefighters(scene, name);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_hotwords_scene_word ON hotwords(scene, word);
 `);
+
+// 装机自带专业热词（全局生效）：仅当表为空时写入，避免覆盖用户已删除的词条
+const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救'];
+const existingHotwords = db.prepare('SELECT COUNT(*) AS n FROM hotwords').get().n;
+if (existingHotwords === 0) {
+  const seedStmt = db.prepare('INSERT INTO hotwords (id, word, created_at) VALUES (?, ?, ?)');
+  const seedAt = Date.now();
+  DEFAULT_HOTWORDS.forEach((word, i) => seedStmt.run(randomUUID(), word, seedAt + i));
+}
 
 function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}) {
   let sql = 'SELECT * FROM entries WHERE scene = ?';
@@ -156,12 +176,13 @@ function removeFirefighter(id) {
   db.prepare('DELETE FROM firefighters WHERE id = ?').run(id);
 }
 
-function listHotwords(scene = 'default') {
-  return db.prepare('SELECT id, word FROM hotwords WHERE scene = ? ORDER BY created_at ASC').all(scene);
+/** 热词全局共享，不区分场景 */
+function listHotwords() {
+  return db.prepare('SELECT id, word FROM hotwords ORDER BY created_at ASC').all();
 }
 
-function addHotword(id, word, scene = 'default') {
-  db.prepare('INSERT INTO hotwords (id, scene, word, created_at) VALUES (?, ?, ?, ?)').run(id, scene, word, Date.now());
+function addHotword(id, word) {
+  db.prepare('INSERT INTO hotwords (id, word, created_at) VALUES (?, ?, ?)').run(id, word, Date.now());
   return db.prepare('SELECT id, word FROM hotwords WHERE id = ?').get(id);
 }
 
@@ -178,11 +199,11 @@ function purgeOldExited(days = 7) {
   return r.changes;
 }
 
-/** 全部场景码（跨 entries/firefighters/hotwords 去重） */
+/** 全部场景码（跨 entries/firefighters 去重，热词全局共享不产生场景） */
 function listScenes() {
   const rows = db
     .prepare(
-      'SELECT scene FROM entries UNION SELECT scene FROM firefighters UNION SELECT scene FROM hotwords ORDER BY scene'
+      'SELECT scene FROM entries UNION SELECT scene FROM firefighters ORDER BY scene'
     )
     .all();
   return rows.map((r) => r.scene);

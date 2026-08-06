@@ -89,7 +89,7 @@ function logOp(req, level, stage, msg, data = null) {
 
 function hotwordList(scene) {
   const firefighters = db.listFirefighters(scene).map((f) => f.name);
-  const terms = db.listHotwords(scene).map((h) => h.word);
+  const terms = db.listHotwords().map((h) => h.word);
   const defaults = ['兆帕', '个压', '气瓶', '空气呼吸器', '余量', '进入火场', '出来了', '已出火场', '收到'];
   return [...new Set([...firefighters, ...terms, ...defaults])].filter(Boolean);
 }
@@ -153,7 +153,7 @@ app.post('/api/transcribe', (req, res, next) => {
             model: CFG.llm.model,
             text,
             firefighters: db.listFirefighters(scene).map((f) => f.name),
-            hotwords: db.listHotwords(scene).map((h) => h.word),
+            hotwords: db.listHotwords().map((h) => h.word),
           });
           if (corrected && corrected !== text) {
             finalText = corrected;
@@ -182,7 +182,7 @@ app.post('/api/parse', async (req, res, next) => {
     if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置 DEEPSEEK_API_KEY' });
     const scene = sceneKey(req);
     const firefighters = db.listFirefighters(scene).map((f) => f.name);
-    const hotwords = db.listHotwords(scene).map((h) => h.word);
+    const hotwords = db.listHotwords().map((h) => h.word);
     const t0 = Date.now();
     logOp(req, 'info', 'parse_req', '收到语义解析请求', { text: String(text).trim(), firefighters, hotwords });
     const parsed = await parseTextWithDeepSeek({
@@ -343,14 +343,14 @@ app.delete('/api/firefighters/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/hotwords', (req, res) => res.json(db.listHotwords(sceneKey(req))));
+app.get('/api/hotwords', (req, res) => res.json(db.listHotwords()));
 app.post('/api/hotwords', (req, res, next) => {
   try {
     const { word } = req.body || {};
     if (!word || !String(word).trim()) return res.status(400).json({ error: '缺少词条' });
     const id = crypto.randomUUID();
     try {
-      res.status(201).json(db.addHotword(id, String(word).trim(), sceneKey(req)));
+      res.status(201).json(db.addHotword(id, String(word).trim()));
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该词条已存在' });
       throw e;

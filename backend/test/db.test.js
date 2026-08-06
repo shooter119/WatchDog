@@ -55,11 +55,18 @@ test('消防员：新增/查重（场景内唯一，跨场景允许同名）/删
   assert.equal(db.listFirefighters('s1').length, 0);
 });
 
-test('热词：新增/查重/删除', () => {
-  db.addHotword('h1', '进入火场', 's1');
-  assert.throws(() => db.addHotword('h2', '进入火场', 's1'), /UNIQUE/);
+test('热词：装机自带种子/新增/查重/删除（全局不区分场景）', () => {
+  const words = db.listHotwords().map((h) => h.word);
+  assert.ok(words.includes('龙游大队'));
+  assert.ok(words.includes('内攻'));
+  assert.ok(!words.includes('到场'));
+  const before = words.length;
+  db.addHotword('h1', '进入火场');
+  assert.throws(() => db.addHotword('h2', '进入火场'), /UNIQUE/);
+  // 全局共享：任意场景读到同一列表
+  assert.equal(db.listHotwords().length, before + 1);
   db.removeHotword('h1');
-  assert.equal(db.listHotwords('s1').length, 0);
+  assert.equal(db.listHotwords().length, before);
 });
 
 test('purgeOldExited 只清理超过期限的出场记录', () => {
@@ -81,10 +88,10 @@ test('purgeOldExited 只清理超过期限的出场记录', () => {
 test('listScenes 跨表去重', () => {
   db.createEntry({ id: 's1', scene: 'x', name: 'n', pressureMpa: 20, entryAtMs: 1, exitAtMs: 2, durationMin: 1 });
   db.addFirefighter('sf1', 'name', 'y');
-  db.addHotword('sh1', '词', 'x');
+  db.addHotword('sh1', '词');
   const scenes = db.listScenes();
   assert.ok(scenes.includes('x'));
   assert.ok(scenes.includes('y'));
-  // 跨表去重：'x' 同时有 entries 与 hotwords，只出现一次
+  // 热词全局共享、不再产生场景：'x' 仅由 entries 贡献，出现一次
   assert.equal(scenes.filter((s) => s === 'x').length, 1);
 });
