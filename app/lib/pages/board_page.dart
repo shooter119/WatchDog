@@ -6,6 +6,22 @@ import '../theme/app_widgets.dart';
 import 'entry_detail_page.dart';
 import 'report_pressure_sheet.dart';
 
+/// 危险等级：超时(0) → 报警(1) → 注意(2) → 安全(3)
+int _severity(String status) => switch (status) {
+      'timeout' => 0,
+      'alarm' => 1,
+      'warn' => 2,
+      _ => 3,
+    };
+
+/// 剩余时间格式（MM:SS / 已超时）
+String _fmtRemaining(int ms) {
+  if (ms <= 0) return '已超时';
+  final m = (ms / 60000).floor();
+  final s = (ms % 60000) ~/ 1000;
+  return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+}
+
 /// 看板仪表盘：在场人员 + 倒计时 + 状态分级（规范 5.1）
 class BoardPage extends StatefulWidget {
   final AppController controller;
@@ -20,9 +36,16 @@ class BoardPage extends StatefulWidget {
 class _BoardPageState extends State<BoardPage> {
   @override
   Widget build(BuildContext context) {
-    final active = widget.controller.entries.where((e) => e.isActive).toList()
-      ..sort((a, b) => a.exitAt.compareTo(b.exitAt));
     final cfg = widget.controller.calcConfig;
+    String statusOf(Entry e) => e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+    // 显式危险等级排序：超时 → 报警 → 注意 → 安全，同等级按剩余时间升序
+    final active = widget.controller.entries.where((e) => e.isActive).toList()
+      ..sort((a, b) {
+        final sa = _severity(statusOf(a));
+        final sb = _severity(statusOf(b));
+        return sa != sb ? sa.compareTo(sb) : a.exitAt.compareTo(b.exitAt);
+      });
+    final danger = active.where((e) => statusOf(e) != 'normal').toList();
     final offline = widget.controller.syncError != null;
 
     return SafeArea(
@@ -38,6 +61,7 @@ class _BoardPageState extends State<BoardPage> {
                 ConnectionStatus(
                   syncing: widget.controller.syncing,
                   offline: offline,
+                  lastSyncedAt: widget.controller.lastSyncedAt,
                   onRetry: () => widget.controller.startSync(),
                 ),
               ],
@@ -45,14 +69,20 @@ class _BoardPageState extends State<BoardPage> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _OverviewBanner(entries: active, config: cfg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _OverviewBanner(entries: active, config: cfg),
+                if (danger.isNotEmpty) _DangerAlertBar(entries: danger, config: cfg),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           Expanded(
             child: active.isEmpty
                 ? _EmptyBoard(onGoVoice: widget.onGoVoice)
                 : RefreshIndicator(
-                    onRefresh: () async => widget.controller.startSync(),
+                    onRefresh: _onRefresh,
                     child: ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
@@ -69,6 +99,20 @@ class _BoardPageState extends State<BoardPage> {
         ],
       ),
     );
+  }
+
+  /// 下拉刷新：等待实际同步完成；失败时明确反馈
+  Future<void> _onRefresh() async {
+    await widget.controller.refreshNow();
+    if (!mounted) return;
+    if (widget.controller.syncError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('同步失败，当前使用本地数据'),
+          backgroundColor: AppColors.caution,
+        ),
+      );
+    }
   }
 
   void _openDetail(Entry e) {
@@ -105,7 +149,10 @@ class _OverviewBanner extends StatelessWidget {
     final dangerCount = entries
         .where((e) => e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin) != 'normal')
         .length;
-    final earliest = entries.isEmpty ? null : entries.first;
+    // 最早到期 = 剩余时间最短者（与排序无关）
+    final earliest = entries.isEmpty
+        ? null
+        : entries.reduce((a, b) => a.exitAt <= b.exitAt ? a : b);
     final earliestStatus = earliest?.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin);
 
     return Container(
@@ -178,12 +225,54 @@ class _OverviewBanner extends StatelessWidget {
     );
   }
 
-  String _earliestText(Entry e) {
-    final ms = e.remainingMs;
-    if (ms <= 0) return '已超时';
-    final m = (ms / 60000).floor();
-    final s = (ms % 60000) ~/ 1000;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  String _earliestText(Entry e) => _fmtRemaining(e.remainingMs);
+}
+
+/// 危险提示条：有人处于 注意/报警/超时 时，在概览卡下高优先级提示（颜色取最严重状态）
+class _DangerAlertBar extends StatelessWidget {
+  final List<Entry> entries;
+  final CalcConfig config;
+
+  const _DangerAlertBar({required this.entries, required this.config});
+
+  @override
+  Widget build(BuildContext context) {
+    final statuses = entries
+        .map((e) => e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin))
+        .toList();
+    final worst = statuses.reduce((a, b) => _severity(a) <= _severity(b) ? a : b);
+    final color = switch (worst) {
+      'timeout' => AppColors.timeout,
+      'alarm' => AppColors.alarm,
+      _ => AppColors.caution,
+    };
+    final earliest = entries.reduce((a, b) => a.exitAt <= b.exitAt ? a : b);
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        boxShadow: AppShadow.card,
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${entries.length} 人需要关注 · 最早到期 ${_fmtRemaining(earliest.remainingMs)}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -277,7 +366,7 @@ class _EntryCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  StatusBadge(status: status, onColorCard: true, fontSize: 13, height: 34),
+                  StatusBadge(status: status, onColorCard: true, fontSize: 13, height: 44),
                   const SizedBox(width: 8),
                   _UpdatePressureButton(fg: fg, onPressed: onReport),
                 ],
@@ -362,7 +451,7 @@ class _EntryCard extends StatelessWidget {
   }
 }
 
-/// 卡片顶行的快速更新压力按钮：紧凑胶囊，独立响应点击（父子手势由 InkWll 优先胜出）
+/// 卡片顶行的快速更新压力按钮：44px 触控区（戴手套可点），紧凑胶囊，独立响应点击
 class _UpdatePressureButton extends StatelessWidget {
   final Color fg;
   final VoidCallback onPressed;
@@ -378,8 +467,8 @@ class _UpdatePressureButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.pill),
         onTap: onPressed,
         child: Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

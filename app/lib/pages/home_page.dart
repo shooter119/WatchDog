@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import '../services/audio_service.dart';
 import '../services/op_log_service.dart';
+import '../services/screen_on.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
@@ -16,6 +17,8 @@ class HomePage extends StatefulWidget {
   final AppController controller;
   final bool autoRecord; // 底部导航语音按钮长按触发
   final VoidCallback? onAutoRecordConsumed;
+  final ValueChanged<bool>? onRecordingChanged; // 录音状态上报（底部导航按钮）
+  final ValueChanged<bool>? onProcessingChanged; // 识别/确认中状态上报（禁用底部按钮）
   final AudioService? audioService; // 测试注入
 
   const HomePage({
@@ -23,6 +26,8 @@ class HomePage extends StatefulWidget {
     required this.controller,
     this.autoRecord = false,
     this.onAutoRecordConsumed,
+    this.onRecordingChanged,
+    this.onProcessingChanged,
     this.audioService,
   });
 
@@ -35,6 +40,7 @@ class HomePageState extends State<HomePage> {
 
   bool _recording = false;
   bool _processing = false;
+  bool _permDenied = false; // 权限被拒（用于错误视图显示"去系统设置"）
   String? _transcript;
   ParseResult? _parsed;
   String? _error;
@@ -104,12 +110,18 @@ class HomePageState extends State<HomePage> {
       _inlineError = null;
       _transcript = null;
       _parsed = null;
+      _permDenied = false;
     });
     // 不清空已录入人员：支持多人分批次语音录入，最后一次性统一确认
     final ok = await _audio.hasPermission();
     if (!ok) {
       OpLogService.instance.record(_opId!, 'record_perm_denied', '缺少麦克风权限', level: 'warn');
-      if (mounted) setState(() => _error = '需要麦克风权限');
+      if (mounted) {
+        setState(() {
+          _error = '需要麦克风权限';
+          _permDenied = true;
+        });
+      }
       _endOp('perm_denied');
       return;
     }
@@ -117,6 +129,7 @@ class HomePageState extends State<HomePage> {
       await _audio.start();
       if (!mounted) return;
       setState(() => _recording = true);
+      widget.onRecordingChanged?.call(true);
       _ampSub = _audio.amplitudeStream().listen((a) {
         if (mounted) setState(() => _amp = a);
       });
@@ -135,6 +148,8 @@ class HomePageState extends State<HomePage> {
       _processing = true;
       _amp = 0.15;
     });
+    widget.onRecordingChanged?.call(false);
+    widget.onProcessingChanged?.call(true);
     _ampSub?.cancel();
     final opId = _opId ?? '';
     try {
@@ -159,6 +174,7 @@ class HomePageState extends State<HomePage> {
             _error = '未识别到语音，请再说一次';
           });
         }
+        widget.onProcessingChanged?.call(false);
         _endOp('no_speech');
         return;
       }
@@ -207,6 +223,7 @@ class HomePageState extends State<HomePage> {
         _parsed = parsed;
         _processing = false;
       });
+      widget.onProcessingChanged?.call(false);
       if (parsed.action == 'exit') {
         if (parsed.people.isNotEmpty) {
           await _handleExit(parsed.people.map((p) => p.name).toList());
@@ -221,6 +238,7 @@ class HomePageState extends State<HomePage> {
           _error = '$e';
         });
       }
+      widget.onProcessingChanged?.call(false);
       _endOp('error');
     }
   }
@@ -382,7 +400,9 @@ class HomePageState extends State<HomePage> {
       _error = null;
       _inlineError = null;
       _processing = false;
+      _permDenied = false;
     });
+    widget.onProcessingChanged?.call(false);
     _clearEditors();
   }
 
@@ -433,6 +453,7 @@ class HomePageState extends State<HomePage> {
     }
 
     setState(() => _processing = true);
+    widget.onProcessingChanged?.call(true);
     final results = <({_PersonEdit ed, _SubmitResult result})>[];
     for (final ed in _peopleEditors) {
       final result = await _submitPerson(ed.name, ed.pressure!, ed.volume!);
@@ -494,6 +515,7 @@ class HomePageState extends State<HomePage> {
         _processing = false;
       });
     }
+    widget.onProcessingChanged?.call(false);
     if (!allDone && failed.isNotEmpty && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -596,6 +618,7 @@ class HomePageState extends State<HomePage> {
                 ConnectionStatus(
                   syncing: widget.controller.syncing,
                   offline: widget.controller.syncError != null,
+                  lastSyncedAt: widget.controller.lastSyncedAt,
                   onRetry: widget.controller.startSync,
                 ),
               ],
@@ -685,6 +708,14 @@ class HomePageState extends State<HomePage> {
                 style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 14),
+              if (_permDenied) ...[
+                FilledButton.icon(
+                  onPressed: () => ScreenOn.openAppSettings(),
+                  icon: const Icon(Icons.settings_outlined),
+                  label: const Text('去系统设置'),
+                ),
+                const SizedBox(height: 8),
+              ],
               OutlinedButton.icon(
                 onPressed: _retry,
                 icon: const Icon(Icons.replay),
@@ -837,21 +868,20 @@ class HomePageState extends State<HomePage> {
                       label: const Text('确认进入火场，开始倒计时', style: TextStyle(fontSize: 16)),
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
-                    height: 48,
+                    height: 44,
                     child: OutlinedButton.icon(
                       onPressed: _processing ? null : beginRecording,
                       icon: const Icon(Icons.mic_none),
                       label: const Text('继续语音添加'),
                     ),
                   ),
-                  const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
-                    height: 48,
-                    child: OutlinedButton.icon(
+                    height: 44,
+                    child: TextButton.icon(
                       onPressed: _retry,
                       icon: const Icon(Icons.replay),
                       label: const Text('重新语音输入'),
@@ -920,21 +950,20 @@ class HomePageState extends State<HomePage> {
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
-            height: 48,
+            height: 44,
             child: OutlinedButton.icon(
               onPressed: _processing ? null : beginRecording,
               icon: const Icon(Icons.mic_none),
               label: const Text('继续语音添加'),
             ),
           ),
-          const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
-            height: 48,
-            child: OutlinedButton.icon(
+            height: 44,
+            child: TextButton.icon(
               onPressed: _retry,
               icon: const Icon(Icons.replay),
               label: const Text('重新语音输入'),

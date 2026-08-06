@@ -390,14 +390,22 @@ class _PulseGlowState extends State<PulseGlow> with SingleTickerProviderStateMix
 class ConnectionStatus extends StatelessWidget {
   final bool syncing;
   final bool offline;
+  final int? lastSyncedAt; // 最近一次成功同步时间（毫秒时间戳）
   final VoidCallback? onRetry;
 
   const ConnectionStatus({
     super.key,
     required this.syncing,
     required this.offline,
+    this.lastSyncedAt,
     this.onRetry,
   });
+
+  static String _fmtTime(int ts) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ts);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(d.hour)}:${two(d.minute)}:${two(d.second)}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -416,21 +424,44 @@ class ConnectionStatus extends StatelessWidget {
         ],
       );
     } else if (offline) {
-      inner = const Row(
+      inner = Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.offline),
-          SizedBox(width: 6),
-          Text('云端断开', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+          const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.offline),
+              SizedBox(width: 6),
+              Text('云端断开', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          if (onRetry != null)
+            const Text(
+              '当前使用本地数据 · 点击重试',
+              style: TextStyle(color: AppColors.textTertiary, fontSize: 10.5, height: 1.3),
+            ),
         ],
       );
     } else {
-      inner = const Row(
+      final last = lastSyncedAt;
+      inner = Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
-          SizedBox(width: 6),
-          Text('已连接', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+          const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
+              SizedBox(width: 6),
+              Text('已连接', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          if (last != null)
+            Text(
+              '上次同步 ${_fmtTime(last)}',
+              style: const TextStyle(color: AppColors.textTertiary, fontSize: 10.5, height: 1.3),
+            ),
         ],
       );
     }
@@ -450,10 +481,11 @@ class ConnectionStatus extends StatelessWidget {
   }
 }
 
-/// 中央语音按钮：橙色圆形凸起，白色麦克风图标
+/// 中央语音按钮：橙色圆形凸起，白色麦克风图标；录音中变停止图标 + 脉冲
 class VoiceButton extends StatelessWidget {
   final double size;
   final bool recording;
+  final bool enabled; // 识别/确认中禁用，避免重复触发
   final VoidCallback? onTap;
   final GestureLongPressStartCallback? onLongPressStart;
   final GestureLongPressEndCallback? onLongPressEnd;
@@ -462,6 +494,7 @@ class VoiceButton extends StatelessWidget {
     super.key,
     this.size = 88,
     this.recording = false,
+    this.enabled = true,
     this.onTap,
     this.onLongPressStart,
     this.onLongPressEnd,
@@ -471,9 +504,9 @@ class VoiceButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final glow = AppColors.voice.withValues(alpha: recording ? 0.55 : 0.35);
     return GestureDetector(
-      onTap: onTap,
-      onLongPressStart: onLongPressStart,
-      onLongPressEnd: onLongPressEnd,
+      onTap: enabled ? onTap : null,
+      onLongPressStart: enabled ? onLongPressStart : null,
+      onLongPressEnd: enabled ? onLongPressEnd : null,
       child: SizedBox(
         width: size + 16,
         height: size + 16,
@@ -486,7 +519,7 @@ class VoiceButton extends StatelessWidget {
               height: size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.voice,
+                color: enabled ? AppColors.voice : AppColors.voice.withValues(alpha: 0.55),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
                 boxShadow: [
                   BoxShadow(color: glow, blurRadius: recording ? 28 : 18, spreadRadius: recording ? 6 : 2),

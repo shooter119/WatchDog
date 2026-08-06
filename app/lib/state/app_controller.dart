@@ -40,6 +40,7 @@ class AppController extends ChangeNotifier {
 
   bool syncing = false;
   String? syncError;
+  int? lastSyncedAt; // 最近一次成功同步时间（连接状态展示用）
   Timer? _pollTimer;
   Timer? _tickTimer;
   final Map<String, int> _announced = {};
@@ -118,6 +119,7 @@ class AppController extends ChangeNotifier {
     try {
       entries = await api!.fetchEntries();
       syncError = null;
+      lastSyncedAt = DateTime.now().millisecondsSinceEpoch;
       await _rescheduleNotifications();
     } catch (e) {
       syncError = e.toString();
@@ -126,6 +128,9 @@ class AppController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// 下拉刷新：等待一次实际同步完成（与轮询互斥），供刷新控件与失败反馈使用
+  Future<void> refreshNow() => sync();
 
   /// 新条目到达时调度本地通知；exitAt 变化（改名/压力复核）时重新调度
   final Map<String, int> _scheduled = {};

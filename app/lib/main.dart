@@ -26,6 +26,8 @@ class _WatchDogAppState extends State<WatchDogApp> {
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   int _tab = 0; // 规范 2.3：App 启动默认进入看板
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换语音页后自动开始录音
+  bool _recording = false; // 录音状态（HomePage 上报，驱动底部按钮停止图标+脉冲）
+  bool _processing = false; // 识别/确认中（禁用底部按钮，避免重复触发）
 
   @override
   void initState() {
@@ -46,8 +48,18 @@ class _WatchDogAppState extends State<WatchDogApp> {
 
   void _goVoice() => _selectTab(1);
 
+  /// 录音中点击按钮 = 停止录音（松手时机丢失/权限弹窗场景的兜底出口）
+  void _voiceTap() {
+    if (_recording) {
+      _homeKey.currentState?.finishRecording();
+    } else {
+      _goVoice();
+    }
+  }
+
   void _voiceLongPressStart(LongPressStartDetails _) {
     HapticFeedback.mediumImpact();
+    if (_processing) return;
     if (_tab != 1) {
       setState(() {
         _tab = 1;
@@ -78,6 +90,8 @@ class _WatchDogAppState extends State<WatchDogApp> {
               controller: controller,
               autoRecord: _pendingVoice,
               onAutoRecordConsumed: () => _pendingVoice = false,
+              onRecordingChanged: (v) => setState(() => _recording = v),
+              onProcessingChanged: (v) => setState(() => _processing = v),
             ),
             SettingsPage(controller: controller),
           ];
@@ -85,8 +99,10 @@ class _WatchDogAppState extends State<WatchDogApp> {
             body: IndexedStack(index: _tab, children: pages),
             bottomNavigationBar: _BottomNav(
               index: _tab,
+              recording: _recording,
+              processing: _processing,
               onSelect: _selectTab,
-              onVoiceTap: _goVoice,
+              onVoiceTap: _voiceTap,
               onVoiceLongPressStart: _voiceLongPressStart,
               onVoiceLongPressEnd: _voiceLongPressEnd,
             ),
@@ -100,6 +116,8 @@ class _WatchDogAppState extends State<WatchDogApp> {
 /// 底部导航：看板 / 中央凸起语音按钮 / 设置（规范 2.2）
 class _BottomNav extends StatelessWidget {
   final int index;
+  final bool recording; // 录音中：按钮变停止图标 + 橙色脉冲 + 上方提示
+  final bool processing; // 识别/确认中：禁用语音按钮
   final ValueChanged<int> onSelect;
   final VoidCallback onVoiceTap;
   final GestureLongPressStartCallback onVoiceLongPressStart;
@@ -107,6 +125,8 @@ class _BottomNav extends StatelessWidget {
 
   const _BottomNav({
     required this.index,
+    required this.recording,
+    required this.processing,
     required this.onSelect,
     required this.onVoiceTap,
     required this.onVoiceLongPressStart,
@@ -132,12 +152,34 @@ class _BottomNav extends StatelessWidget {
             child: Center(
               child: VoiceButton(
                 size: 80,
+                recording: recording,
+                enabled: !processing,
                 onTap: onVoiceTap,
                 onLongPressStart: onVoiceLongPressStart,
                 onLongPressEnd: onVoiceLongPressEnd,
               ),
             ),
           ),
+          if (recording)
+            Positioned(
+              left: 0,
+              right: 0,
+              top: -92,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: AppColors.voice,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    boxShadow: AppShadow.float,
+                  ),
+                  child: const Text(
+                    '正在聆听，松开结束',
+                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             left: 0,
             right: 0,

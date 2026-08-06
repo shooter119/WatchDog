@@ -23,7 +23,8 @@ ThemeData buildAppTheme() {
     splashFactory: InkRipple.splashFactory,
     colorScheme: scheme,
     scaffoldBackgroundColor: AppColors.background,
-    fontFamily: null,
+    fontFamily: 'PingFang SC',
+    fontFamilyFallback: const ['Noto Sans CJK SC', 'Microsoft YaHei'],
     appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.surface,
       foregroundColor: AppColors.textPrimary,

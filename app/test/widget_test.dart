@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -191,6 +191,11 @@ Future<void> _pumpBoard(WidgetTester tester, List<Entry> entries) async {
 }
 
 void main() {
+  // 测试环境无 Android 原生响应：mock 屏幕常亮通道，避免保存链路挂起/遗留定时器
+  const screenChannel = MethodChannel('watchdog/screen');
+  TestWidgetsFlutterBinding.ensureInitialized().defaultBinaryMessenger
+      .setMockMethodCallHandler(screenChannel, (call) async => null);
+
   group('同名已在场确认弹窗', () {
     testWidgets('弹窗说明并支持合并 / 另建记录 / 取消', (tester) async {
       final existing = _entry(name: '张伟', remainingMin: 20);
@@ -304,6 +309,39 @@ void main() {
       await _pumpBoard(tester, []);
       expect(find.text('--'), findsOneWidget);
     });
+
+    testWidgets('有危险人员时显示高优先级提示条', (tester) async {
+      await _pumpBoard(tester, [
+        _entry(name: '张伟', remainingMin: 30),
+        _entry(name: '李娜', remainingMin: 8),
+        _entry(name: '王强', remainingMin: 3),
+      ]);
+      expect(
+        find.textContaining('2 人需要关注 · 最早到期'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('无危险人员时不显示提示条', (tester) async {
+      await _pumpBoard(tester, [_entry(name: '张伟', remainingMin: 30)]);
+      expect(find.textContaining('人需要关注'), findsNothing);
+    });
+
+    testWidgets('危险等级排序：报警在前、注意在后、同等级按剩余时间升序', (tester) async {
+      await _pumpBoard(tester, [
+        _entry(name: '安全甲', remainingMin: 40),
+        _entry(name: '注意乙', remainingMin: 9),
+        _entry(name: '注意丙', remainingMin: 7),
+        _entry(name: '报警丁', remainingMin: 4),
+      ]);
+      // 报警丁(alarm) → 注意丙(warn, 7min) → 注意乙(warn, 9min)：危险等级优先，同级按剩余时间升序
+      final yNames = [for (final n in ['报警丁', '注意丙', '注意乙']) tester.getTopLeft(find.text(n)).dy];
+      expect(yNames[0] < yNames[1], isTrue);
+      expect(yNames[1] < yNames[2], isTrue);
+      // 安全卡片排在最后（列表外需滚动可见）
+      await tester.scrollUntilVisible(find.text('安全甲'), 120);
+      expect(find.text('安全甲'), findsOneWidget);
+    });
   });
 
   group('更新压力（动态耗气率）', () {
@@ -327,7 +365,7 @@ void main() {
           .getSize(find.ancestor(of: find.text('更新压力'), matching: find.byType(Material)).first)
           .height;
       expect(badgeH, btnH);
-      expect(btnH, 34.0);
+      expect(btnH, 44.0);
     });
 
     testWidgets('ReportPressureSheet 档位 3MPa 步进、禁用高于当前压力、点选提交', (tester) async {

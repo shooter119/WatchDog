@@ -45,6 +45,8 @@ class _SettingsPageState extends State<SettingsPage> {
   double? _downloadProgress;
   String? _downloadError;
   bool _loaded = false;
+  bool _saving = false; // 防止失焦时 8 个输入框监听器并发触发多次保存
+  _SaveState _saveState = _SaveState.idle; // 自动保存状态提示
 
   @override
   void initState() {
@@ -121,32 +123,43 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// 自动保存：文本框失焦（点空白/收起键盘/焦点转移）或开关切换时立即保存本地并触发云端同步（静默）
+  /// 自动保存：文本框失焦（点空白/收起键盘/焦点转移）或开关切换时立即保存本地并触发云端同步（静默）。
+  /// 保存期间显示"保存中"，完成后显示"已保存"，异常显示"保存失败"。
   Future<void> _autoSave() async {
-    await Settings.setServerUrl(_server.text.trim());
-    await Settings.setSceneCode(_scene.text.trim());
-    await Settings.setApiToken(_token.text.trim());
-    await Settings.setCylinderVolL(double.tryParse(_volume.text) ?? 6.8);
-    await Settings.setFullPressureMpa(double.tryParse(_full.text) ?? 30);
-    await Settings.setConsumptionLpm(double.tryParse(_consumption.text) ?? 40);
-    await Settings.setThresholds(
-      int.tryParse(_warn.text) ?? 10,
-      int.tryParse(_alarm.text) ?? 5,
-    );
-    await Settings.setTtsEnabled(_tts);
-    await Settings.setAlarmSoundEnabled(_sound);
-    await Settings.setKeepScreenOn(_keepScreenOn);
-    await Settings.setAsrCloudEnabled(_asrCloud);
-    await Settings.setParseCloudEnabled(_parseCloud);
+    if (_saving) return; // 已有保存在进行中（失焦会触发 8 个监听器，只保存一次）
+    _saving = true;
+    if (mounted) setState(() => _saveState = _SaveState.saving);
     try {
-      await ScreenOn.setKeepScreenOn(_keepScreenOn);
-    } catch (_) {
-      // 平台通道失败（如无宿主环境）不阻断保存
+      await Settings.setServerUrl(_server.text.trim());
+      await Settings.setSceneCode(_scene.text.trim());
+      await Settings.setApiToken(_token.text.trim());
+      await Settings.setCylinderVolL(double.tryParse(_volume.text) ?? 6.8);
+      await Settings.setFullPressureMpa(double.tryParse(_full.text) ?? 30);
+      await Settings.setConsumptionLpm(double.tryParse(_consumption.text) ?? 40);
+      await Settings.setThresholds(
+        int.tryParse(_warn.text) ?? 10,
+        int.tryParse(_alarm.text) ?? 5,
+      );
+      await Settings.setTtsEnabled(_tts);
+      await Settings.setAlarmSoundEnabled(_sound);
+      await Settings.setKeepScreenOn(_keepScreenOn);
+      await Settings.setAsrCloudEnabled(_asrCloud);
+      await Settings.setParseCloudEnabled(_parseCloud);
+      try {
+        await ScreenOn.setKeepScreenOn(_keepScreenOn);
+      } catch (_) {
+        // 平台通道失败（如无宿主环境）不阻断保存
+      }
+      await Settings.markModified(DateTime.now().millisecondsSinceEpoch);
+      await widget.controller.refreshConfig();
+      widget.controller.startSync();
+      widget.controller.syncSettings();
+      if (mounted) setState(() => _saveState = _SaveState.saved);
+    } catch (e) {
+      if (mounted) setState(() => _saveState = _SaveState.failed);
+    } finally {
+      _saving = false;
     }
-    await Settings.markModified(DateTime.now().millisecondsSinceEpoch);
-    await widget.controller.refreshConfig();
-    widget.controller.startSync();
-    widget.controller.syncSettings();
   }
 
   @override
@@ -179,10 +192,13 @@ class _SettingsPageState extends State<SettingsPage> {
           Row(
             children: [
               const Text('设置', style: AppTextStyles.h1),
+              const SizedBox(width: 10),
+              _SaveStatusBadge(state: _saveState),
               const Spacer(),
               ConnectionStatus(
                 syncing: widget.controller.syncing,
                 offline: widget.controller.syncError != null,
+                lastSyncedAt: widget.controller.lastSyncedAt,
                 onRetry: () => widget.controller.startSync(),
               ),
             ],
@@ -528,6 +544,51 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+}
+
+/// 自动保存状态
+enum _SaveState { idle, saving, saved, failed }
+
+/// 保存状态轻量提示：保存中 / 已保存 / 保存失败（失焦自动保存的即时反馈）
+class _SaveStatusBadge extends StatelessWidget {
+  final _SaveState state;
+
+  const _SaveStatusBadge({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (state) {
+      _SaveState.idle => const SizedBox.shrink(),
+      _SaveState.saving => const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 5),
+            Text('保存中', style: TextStyle(fontSize: 11, color: AppColors.textTertiary, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      _SaveState.saved => const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle_outline, size: 14, color: AppColors.safe),
+            SizedBox(width: 5),
+            Text('已保存', style: TextStyle(fontSize: 11, color: AppColors.safe, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      _SaveState.failed => const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 14, color: AppColors.alarm),
+            SizedBox(width: 5),
+            Text('保存失败', style: TextStyle(fontSize: 11, color: AppColors.alarm, fontWeight: FontWeight.w600)),
+          ],
+        ),
+    };
   }
 }
 
