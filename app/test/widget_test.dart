@@ -21,6 +21,7 @@ import 'package:watchdog/theme/app_theme.dart';
 import 'package:watchdog/theme/app_widgets.dart';
 
 import 'package:watchdog/main.dart' show WatchDogApp;
+import 'package:watchdog/pages/report_pressure_sheet.dart';
 
 /// 测试专用 Controller：拦截网络调用，本地模拟数据
 class _FakeController extends AppController {
@@ -30,6 +31,7 @@ class _FakeController extends AppController {
     this.firefighters = firefighters;
   }
   final exited = <String>[];
+  final reported = <double>[];
 
   @override
   void startSync() {} // 测试环境不启动轮询定时器（否则每秒刷新导致 pumpAndSettle 无法收敛）
@@ -41,6 +43,12 @@ class _FakeController extends AppController {
         .map((e) => e.id == id ? _exitedCopy(e) : e)
         .toList();
     notifyListeners();
+  }
+
+  @override
+  Future<Entry> reportPressure({required String id, required double pressureMpa, String? opId}) async {
+    reported.add(pressureMpa);
+    return entries.firstWhere((e) => e.id == id);
   }
 
   static Entry _exitedCopy(Entry e) => Entry(
@@ -60,6 +68,7 @@ Entry _entry({
   required String name,
   required int remainingMin,
   double pressureMpa = 20,
+  double? consumptionActualLpm,
 }) {
   final now = DateTime.now().millisecondsSinceEpoch;
   final duration = 40;
@@ -73,6 +82,7 @@ Entry _entry({
     exitAt: now + remainingMs,
     source: 'voice',
     rawText: '张三，20兆帕',
+    consumptionActualLpm: consumptionActualLpm,
   );
 }
 
@@ -291,6 +301,44 @@ void main() {
     testWidgets('最早到期为空时显示 --', (tester) async {
       await _pumpBoard(tester, []);
       expect(find.text('--'), findsOneWidget);
+    });
+  });
+
+  group('报数（动态耗气率）', () {
+    testWidgets('卡片展示报数按钮与实测耗气率', (tester) async {
+      final c = _FakeController(entries: [
+        _entry(name: '张伟', remainingMin: 20, pressureMpa: 20, consumptionActualLpm: 40.8),
+      ]);
+      await _pumpBoard(tester, c.entries);
+      expect(find.text('报数'), findsOneWidget);
+      expect(find.text('实测 40.8 L/min'), findsOneWidget);
+    });
+
+    testWidgets('ReportPressureSheet 档位 3MPa 步进、禁用高于当前压力、点选提交', (tester) async {
+      final c = _FakeController(entries: [_entry(name: '李娜', remainingMin: 20, pressureMpa: 20)]);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(
+          body: ReportPressureSheet(controller: c, entry: c.entries.first),
+        ),
+      ));
+      // 档位齐全：30 到 6，每档差 3
+      for (final lv in [30, 27, 24, 21, 18, 15, 12, 9, 6]) {
+        expect(find.text('$lv'), findsOneWidget, reason: '档位 $lv 应存在');
+      }
+      // 未选中时确认按钮禁用态文案
+      expect(find.text('选择压力档位'), findsOneWidget);
+      // 点选禁用档位（30 > 当前 20）无效
+      await tester.tap(find.text('30'));
+      await tester.pump();
+      expect(find.text('选择压力档位'), findsOneWidget);
+      // 点选 15 后确认提交
+      await tester.tap(find.text('15'));
+      await tester.pump();
+      expect(find.text('确认报数 15 MPa'), findsOneWidget);
+      await tester.tap(find.text('确认报数 15 MPa'));
+      await tester.pumpAndSettle();
+      expect(c.reported, [15.0]);
     });
   });
 
