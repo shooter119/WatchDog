@@ -198,6 +198,26 @@ class HomePageState extends State<HomePage> {
           ed.volumeCtrl.text = statedVol.toStringAsFixed(1);
         }
       }
+      // 智能分流：非报数内容（unknown / 进场但未识别到人员）自动记入火场日志
+      final isNote = parsed.action == 'unknown' ||
+          (parsed.action == 'enter' && parsed.people.isEmpty);
+      if (isNote) {
+        OpLogService.instance
+            .record(opId, 'note_auto', '非报数内容自动记入日志', data: {'text': text, 'action': parsed.action});
+        try {
+          await widget.controller.addNote(text, opId: opId);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('已记入火场日志'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } catch (_) {
+          // 记日志失败不影响主流程，静默
+        }
+      }
       // 追加到已录入名单：同名人员更新压力（更正），其余新增一行
       for (final p in parsed.people) {
         final idx = _peopleEditors
@@ -224,6 +244,15 @@ class HomePageState extends State<HomePage> {
         _processing = false;
       });
       widget.onProcessingChanged?.call(false);
+      if (isNote) {
+        setState(() {
+          _transcript = null;
+          _parsed = null;
+          _error = null;
+        });
+        _endOp('note');
+        return;
+      }
       if (parsed.action == 'exit') {
         if (parsed.people.isNotEmpty) {
           await _handleExit(parsed.people.map((p) => p.name).toList());
@@ -404,6 +433,28 @@ class HomePageState extends State<HomePage> {
     });
     widget.onProcessingChanged?.call(false);
     _clearEditors();
+  }
+
+  /// 兜底：把当前转写内容转为火场日志（识别为报数但实际是记录时使用）
+  Future<void> _saveAsNote() async {
+    final text = _transcript;
+    if (text == null || text.isEmpty) return;
+    try {
+      await widget.controller.addNote(text, opId: _opId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('已转为日志记录'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      _retry();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = '转为日志失败：$e');
+      }
+    }
   }
 
   /// 从空闲态回到待确认名单（出场/取消录音后仍有已录入人员时）
@@ -880,6 +931,15 @@ class HomePageState extends State<HomePage> {
                   ),
                   SizedBox(
                     width: double.infinity,
+                    height: 40,
+                    child: TextButton.icon(
+                      onPressed: _processing ? null : _saveAsNote,
+                      icon: const Icon(Icons.edit_note, size: 18),
+                      label: const Text('转为日志记录'),
+                    ),
+                  ),
+                  SizedBox(
+                    width: double.infinity,
                     height: 44,
                     child: TextButton.icon(
                       onPressed: _retry,
@@ -958,6 +1018,15 @@ class HomePageState extends State<HomePage> {
               onPressed: _processing ? null : beginRecording,
               icon: const Icon(Icons.mic_none),
               label: const Text('继续语音添加'),
+            ),
+          ),
+          SizedBox(
+            width: double.infinity,
+            height: 40,
+            child: TextButton.icon(
+              onPressed: _processing ? null : _saveAsNote,
+              icon: const Icon(Icons.edit_note, size: 18),
+              label: const Text('转为日志记录'),
             ),
           ),
           SizedBox(

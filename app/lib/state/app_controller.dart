@@ -30,6 +30,7 @@ class AppController extends ChangeNotifier {
   List<Entry> entries = [];
   List<Firefighter> firefighters = [];
   List<Hotword> hotwords = [];
+  List<Note> notes = [];
   CalcConfig calcConfig = CalcConfig(
     cylinderVolL: 6.8,
     fullPressureMpa: 30,
@@ -118,6 +119,11 @@ class AppController extends ChangeNotifier {
     syncing = true;
     try {
       entries = await api!.fetchEntries();
+      try {
+        notes = await api!.fetchNotes();
+      } catch (_) {
+        // 日志拉取失败不影响主流程（entries 已成功）
+      }
       syncError = null;
       lastSyncedAt = DateTime.now().millisecondsSinceEpoch;
       await _rescheduleNotifications();
@@ -234,6 +240,29 @@ class AppController extends ChangeNotifier {
   Future<void> markExited(String id, {String? opId}) async {
     await api!.markExited(id, opId: opId);
     await sync();
+  }
+
+  /// 新增火场随手记（语音分流自动入日志 / 手动添加）
+  Future<Note> addNote(String text, {String? category, String? opId}) async {
+    final cat = category ?? NoteCategory.fromText(text);
+    final note = await api!.createNote(text: text, category: cat, opId: opId);
+    notes = [note, ...notes];
+    notifyListeners();
+    return note;
+  }
+
+  /// 编辑日志条目：text/category 传 null 表示不改
+  Future<Note> updateNote(String id, {String? text, String? category}) async {
+    final updated = await api!.updateNote(id: id, text: text, category: category);
+    notes = notes.map((n) => n.id == id ? updated : n).toList();
+    notifyListeners();
+    return updated;
+  }
+
+  Future<void> deleteNote(String id) async {
+    await api!.deleteNote(id);
+    notes = notes.where((n) => n.id != id).toList();
+    notifyListeners();
   }
 
   Future<void> loadRoster() async {

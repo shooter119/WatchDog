@@ -400,6 +400,74 @@ app.delete('/api/hotwords/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// 火场随手记：按场景隔离，App 语音/手动记录时间节点，供复盘（新→旧）
+const NOTE_CATEGORIES = ['力量部署', '搜救', '出水', '撤离', '异常', '其他'];
+function cleanCategory(c) {
+  const v = String(c || '').trim();
+  return NOTE_CATEGORIES.includes(v) ? v : '其他';
+}
+
+app.get('/api/notes', (req, res) => {
+  res.json(
+    db.listNotes({
+      scene: sceneKey(req),
+      limit: Number(req.query.limit) || 500,
+    })
+  );
+});
+
+app.post('/api/notes', (req, res, next) => {
+  try {
+    const { text, category } = req.body || {};
+    const clean = String(text || '').trim();
+    if (!clean) return res.status(400).json({ error: '缺少日志内容' });
+    if (clean.length > 2000) return res.status(400).json({ error: '日志内容过长（最多 2000 字）' });
+    const note = db.createNote({
+      id: crypto.randomUUID(),
+      scene: sceneKey(req),
+      text: clean,
+      category: cleanCategory(category),
+    });
+    logOp(req, 'info', 'note_created', '已记录随手记', { noteId: note.id, category: note.category, text: clean.slice(0, 100) });
+    res.status(201).json(note);
+  } catch (e) {
+    logOp(req, 'error', 'note_err', `记录随手记失败: ${e.message || e}`);
+    next(e);
+  }
+});
+
+app.patch('/api/notes/:id', (req, res, next) => {
+  try {
+    const note = db.getNote(req.params.id);
+    if (!note) return res.status(404).json({ error: '日志不存在' });
+    const { text, category } = req.body || {};
+    const clean = text != null ? String(text).trim() : null;
+    if (text != null && !clean) return res.status(400).json({ error: '日志内容不能为空' });
+    if (clean != null && clean.length > 2000) return res.status(400).json({ error: '日志内容过长（最多 2000 字）' });
+    const updated = db.updateNote(note.id, {
+      text: clean,
+      category: category != null ? cleanCategory(category) : null,
+    });
+    logOp(req, 'info', 'note_updated', '已编辑随手记', { noteId: note.id, category: updated.category });
+    res.json(updated);
+  } catch (e) {
+    logOp(req, 'error', 'note_err', `编辑随手记失败: ${e.message || e}`);
+    next(e);
+  }
+});
+
+app.delete('/api/notes/:id', (req, res, next) => {
+  try {
+    const n = db.deleteNote(req.params.id);
+    if (n === 0) return res.status(404).json({ error: '日志不存在' });
+    logOp(req, 'info', 'note_deleted', '已删除随手记', { noteId: req.params.id });
+    res.json({ ok: true });
+  } catch (e) {
+    logOp(req, 'error', 'note_err', `删除随手记失败: ${e.message || e}`);
+    next(e);
+  }
+});
+
 // 用户设置云同步：以 X-Device-Id（Android ID 加盐哈希）识别用户，按场景隔离
 // GET 拉取；PUT 全量覆盖。仅接受白名单键，值限 number/boolean
 app.get('/api/user-settings', (req, res) => {
@@ -515,6 +583,12 @@ if (require.main === module) {
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的操作日志`);
     } catch (e) {
       logger.error('清理旧日志失败', e.message);
+    }
+    try {
+      const n = db.purgeOldNotes(logPurgeDays);
+      if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的随手记`);
+    } catch (e) {
+      logger.error('清理旧随手记失败', e.message);
     }
   };
   doPurge();

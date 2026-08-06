@@ -157,6 +157,51 @@ class ApiClient {
     return list.map((e) => Hotword.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Future<List<Note>> fetchNotes() async {
+    final res = await http.get(_uri('/api/notes'), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('获取日志失败(${res.statusCode})');
+    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    return list.map((e) => Note.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<Note> createNote({required String text, String? category, String? opId}) async {
+    final res = await http
+        .post(
+          _uri('/api/notes'),
+          headers: _opHeaders(opId),
+          body: jsonEncode({'text': text, if (category != null) 'category': category}),
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 201) {
+      throw ApiException((body as Map)['error']?.toString() ?? '记录日志失败(${res.statusCode})');
+    }
+    return Note.fromJson(body as Map<String, dynamic>);
+  }
+
+  Future<Note> updateNote({required String id, String? text, String? category}) async {
+    final res = await http
+        .patch(
+          _uri('/api/notes/$id'),
+          headers: _headers,
+          body: jsonEncode({
+            if (text != null) 'text': text,
+            if (category != null) 'category': category,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) {
+      throw ApiException((body as Map)['error']?.toString() ?? '编辑日志失败(${res.statusCode})');
+    }
+    return Note.fromJson(body as Map<String, dynamic>);
+  }
+
+  Future<void> deleteNote(String id) async {
+    final res = await http.delete(_uri('/api/notes/$id'), headers: _headers).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) throw ApiException('删除日志失败(${res.statusCode})');
+  }
+
   Future<void> addHotword(String word) async {
     final res = await http
         .post(_uri('/api/hotwords'), headers: _headers, body: jsonEncode({'word': word}))

@@ -56,6 +56,54 @@ class Entry {
       );
 }
 
+/// 火场随手记分类（与后端白名单一致）
+class NoteCategory {
+  static const String deploy = '力量部署';
+  static const String rescue = '搜救';
+  static const String water = '出水';
+  static const String withdraw = '撤离';
+  static const String abnormal = '异常';
+  static const String other = '其他';
+
+  static const List<String> all = [deploy, rescue, water, withdraw, abnormal, other];
+
+  /// 颜色映射由主题层负责（app_theme.dart），此处仅定义分类
+  static String fromText(String text) {
+    final t = text.trim();
+    if (t.contains('部署') || t.contains('到场') || t.contains('力量') || t.contains('指挥')) return deploy;
+    if (t.contains('搜救') || t.contains('搜寻') || t.contains('被困') || t.contains('内攻') || t.contains('侦查')) return rescue;
+    if (t.contains('出水') || t.contains('供水') || t.contains('水带') || t.contains('破拆')) return water;
+    if (t.contains('撤离') || t.contains('撤出') || t.contains('撤退') || t.contains('收队')) return withdraw;
+    if (t.contains('异常') || t.contains('被困') || t.contains('受伤') || t.contains('倒塌') || t.contains('爆炸') || t.contains('复燃')) return abnormal;
+    return other;
+  }
+}
+
+/// 火场随手记条目：语音/手动记录的时间节点，供复盘
+class Note {
+  final String id;
+  final String text;
+  final String category;
+  final int createdAt;
+  final int updatedAt;
+
+  const Note({
+    required this.id,
+    required this.text,
+    required this.category,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory Note.fromJson(Map<String, dynamic> json) => Note(
+        id: json['id'] as String,
+        text: (json['text'] as String?) ?? '',
+        category: (json['category'] as String?) ?? NoteCategory.other,
+        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+        updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
+      );
+}
+
 class Firefighter {
   final String id;
   final String name;

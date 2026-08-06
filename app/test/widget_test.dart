@@ -10,9 +10,11 @@ import 'package:watchdog/models/models.dart';
 import 'package:watchdog/pages/board_page.dart';
 import 'package:watchdog/pages/entry_detail_page.dart';
 import 'package:watchdog/pages/home_page.dart';
+import 'package:watchdog/pages/notes_page.dart';
 import 'package:watchdog/pages/op_log_page.dart';
 import 'package:watchdog/pages/same_name_dialog.dart';
 import 'package:watchdog/pages/settings_page.dart';
+import 'package:watchdog/pages/stats_page.dart';
 import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
 import 'package:watchdog/services/settings.dart';
@@ -25,10 +27,14 @@ import 'package:watchdog/pages/report_pressure_sheet.dart';
 
 /// 测试专用 Controller：拦截网络调用，本地模拟数据
 class _FakeController extends AppController {
-  _FakeController({List<Entry> entries = const [], List<Firefighter> firefighters = const []})
-      : super() {
+  _FakeController({
+    List<Entry> entries = const [],
+    List<Firefighter> firefighters = const [],
+    List<Note> notes = const [],
+  }) : super() {
     this.entries = entries;
     this.firefighters = firefighters;
+    this.notes = notes;
   }
   final exited = <String>[];
   final reported = <double>[];
@@ -49,6 +55,42 @@ class _FakeController extends AppController {
   Future<Entry> updatePressure({required String id, required double pressureMpa, String? opId}) async {
     reported.add(pressureMpa);
     return entries.firstWhere((e) => e.id == id);
+  }
+
+  @override
+  Future<Note> addNote(String text, {String? category, String? opId}) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final note = Note(
+      id: 'n-${notes.length}',
+      text: text,
+      category: category ?? NoteCategory.fromText(text),
+      createdAt: now,
+      updatedAt: now,
+    );
+    notes = [note, ...notes];
+    notifyListeners();
+    return note;
+  }
+
+  @override
+  Future<Note> updateNote(String id, {String? text, String? category}) async {
+    final old = notes.firstWhere((n) => n.id == id);
+    final updated = Note(
+      id: id,
+      text: text ?? old.text,
+      category: category ?? old.category,
+      createdAt: old.createdAt,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    notes = notes.map((n) => n.id == id ? updated : n).toList();
+    notifyListeners();
+    return updated;
+  }
+
+  @override
+  Future<void> deleteNote(String id) async {
+    notes = notes.where((n) => n.id != id).toList();
+    notifyListeners();
   }
 
   static Entry _exitedCopy(Entry e) => Entry(
@@ -93,6 +135,7 @@ class _FakeApi extends ApiClient {
     this.rounds = const [],
     this.exitOnCall = 0,
     this.exitAllOnCall = 0,
+    this.noteOnCall = 0,
     this.transcribeText,
   }) : super(baseUrl: 'http://test', sceneCode: 'test');
   final bool multiPressure;
@@ -106,6 +149,9 @@ class _FakeApi extends ApiClient {
   /// 第 N 次解析返回全员离场指令（people 为空，1 起算，0 表示不触发）
   final int exitAllOnCall;
 
+  /// 第 N 次解析返回 unknown（非报数内容，1 起算，0 表示不触发）
+  final int noteOnCall;
+
   /// 自定义转写文本（默认 张伟+李娜）
   final String? transcribeText;
   final created = <String>[];
@@ -118,6 +164,9 @@ class _FakeApi extends ApiClient {
   @override
   Future<ParseResult> parse(String text, {String? opId}) async {
     final i = _parseCalls++;
+    if (noteOnCall > 0 && i + 1 == noteOnCall) {
+      return ParseResult(action: 'unknown', people: []);
+    }
     if (exitAllOnCall > 0 && i + 1 == exitAllOnCall) {
       return ParseResult(action: 'exit', people: []);
     }
@@ -856,21 +905,218 @@ void main() {
       expect(tester.widget<TextField>(fields.at(2)).controller!.text, '9.0');
       expect(tester.widget<TextField>(fields.at(5)).controller!.text, '9.0');
     });
+
+    testWidgets('非报数语音（unknown）自动记入火场日志并回到空闲态', (tester) async {
+      final api = _FakeApi(noteOnCall: 1);
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      // 自动记入日志，分类按关键词识别（无关键词 → 其他）
+      expect(c.notes.single.text, '张伟20兆帕，李娜22兆帕');
+      expect(c.notes.single.category, NoteCategory.other);
+      // 提示 + 回到空闲态
+      expect(find.text('已记入火场日志'), findsOneWidget);
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+
+    testWidgets('确认页「转为日志记录」兜底按钮生效', (tester) async {
+      final api = _FakeApi();
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      // 确认页出现"转为日志记录"按钮
+      final saveAsNote = find.text('转为日志记录');
+      await tester.ensureVisible(saveAsNote);
+      await tester.pump();
+      await tester.tap(saveAsNote);
+      await tester.pumpAndSettle();
+      expect(c.notes.single.text, '张伟20兆帕，李娜22兆帕');
+      expect(c.notes.single.category, NoteCategory.other);
+      // 名单未提交（api.created 为空）且回到空闲态
+      expect(api.created, isEmpty);
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+  });
+
+  group('NotesPage 火场日志', () {
+    testWidgets('时间线渲染分类标签与内容，分类筛选生效', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final c = _FakeController(notes: [
+        Note(id: 'n1', text: '北侧出水正常', category: NoteCategory.water, createdAt: now - 3600000, updatedAt: now - 3600000),
+        Note(id: 'n2', text: '二楼发现被困人员', category: NoteCategory.rescue, createdAt: now - 1800000, updatedAt: now - 1800000),
+      ]);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: NotesPage(controller: c)),
+      ));
+      await tester.pump();
+      expect(find.text('火场日志'), findsOneWidget);
+      expect(find.text('北侧出水正常'), findsOneWidget);
+      expect(find.text('二楼发现被困人员'), findsOneWidget);
+      // 分类 chips：出水 + 搜救
+      expect(find.text('出水'), findsWidgets);
+      expect(find.text('搜救'), findsWidgets);
+      // 筛选"搜救"后只显示搜救条目
+      await tester.tap(find.widgetWithText(FilterChip, '搜救'));
+      await tester.pump();
+      expect(find.text('北侧出水正常'), findsNothing);
+      expect(find.text('二楼发现被困人员'), findsOneWidget);
+    });
+
+    testWidgets('写日志弹窗：输入内容+选分类后保存', (tester) async {
+      final c = _FakeController();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: AnimatedBuilder(
+          animation: c,
+          builder: (context, _) => Scaffold(body: NotesPage(controller: c)),
+        ),
+      ));
+      await tester.pump();
+      await tester.tap(find.text('写日志'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '水带铺设完成');
+      await tester.tap(find.widgetWithText(ChoiceChip, '出水'));
+      await tester.pump();
+      await tester.tap(find.text('保存到日志'));
+      await tester.pumpAndSettle();
+      expect(c.notes.single.text, '水带铺设完成');
+      expect(c.notes.single.category, NoteCategory.water);
+      expect(find.text('水带铺设完成'), findsOneWidget);
+    });
+
+    testWidgets('点击条目编辑文本并保存修改', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final c = _FakeController(notes: [
+        Note(id: 'n1', text: '一楼火势较大', category: NoteCategory.other, createdAt: now, updatedAt: now),
+      ]);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: NotesPage(controller: c)),
+      ));
+      await tester.pump();
+      await tester.tap(find.text('一楼火势较大'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '一楼火势已控制');
+      await tester.tap(find.text('保存修改'));
+      await tester.pumpAndSettle();
+      expect(c.notes.single.text, '一楼火势已控制');
+    });
+
+    testWidgets('编辑弹窗内删除条目需确认', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final c = _FakeController(notes: [
+        Note(id: 'n1', text: '测试删除', category: NoteCategory.other, createdAt: now, updatedAt: now),
+      ]);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: NotesPage(controller: c)),
+      ));
+      await tester.pump();
+      await tester.tap(find.text('测试删除'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除这条日志'));
+      await tester.pumpAndSettle();
+      // 二次确认对话框
+      expect(find.text('删除日志'), findsOneWidget);
+      await tester.tap(find.text('删除'));
+      await tester.pumpAndSettle();
+      expect(c.notes, isEmpty);
+    });
+  });
+
+  group('StatsPage 数据统计', () {
+    testWidgets('汇总卡片与每人排行：次数/总时长/平均时长', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final e1 = Entry(
+        id: 'e1', name: '张伟', pressureMpa: 20, durationMin: 34,
+        entryAt: now - 100 * 60000, exitAt: now - 20 * 60000, exitedAt: now - 20 * 60000,
+        source: 'voice',
+      ); // 张伟第 1 次：80 分钟
+      final e2 = Entry(
+        id: 'e2', name: '张伟', pressureMpa: 20, durationMin: 34,
+        entryAt: now - 10 * 60000, exitAt: now - 5 * 60000, exitedAt: now - 5 * 60000,
+        source: 'voice',
+      ); // 张伟第 2 次：5 分钟
+      final e3 = Entry(
+        id: 'e3', name: '李娜', pressureMpa: 20, durationMin: 34,
+        entryAt: now - 60 * 60000, exitAt: now + 40 * 60000, exitedAt: null,
+        source: 'voice',
+      ); // 李娜 1 次在场：累计 60 分钟
+      final c = _FakeController(entries: [e1, e2, e3]);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: StatsPage(controller: c)),
+      ));
+      await tester.pump();
+      expect(find.text('数据统计'), findsOneWidget);
+      // 汇总：当前在场 1 人（李娜）、3 人次、累计 145 分钟
+      expect(find.text('1 人'), findsOneWidget);
+      expect(find.text('3 人次'), findsOneWidget);
+      expect(find.text('2 小时 25 分'), findsOneWidget);
+      // 排行按次数降序：张伟(2) 在前
+      expect(find.text('张伟'), findsOneWidget);
+      expect(find.text('2 次 · 1 小时 25 分'), findsOneWidget);
+      expect(find.text('平均 42 分钟'), findsOneWidget);
+      expect(find.text('李娜'), findsOneWidget);
+      expect(find.text('1 次 · 1 小时'), findsOneWidget);
+      // 切换按时长排序：李娜(60) 仍少于 张伟(85)，顺序不变
+      await tester.tap(find.text('按次数'));
+      await tester.pump();
+      expect(find.text('按总时长'), findsOneWidget);
+      // 人员筛选
+      await tester.tap(find.byType(DropdownButton<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('张伟').last);
+      await tester.pumpAndSettle();
+      expect(find.text('2 人次'), findsOneWidget);
+      expect(find.text('李娜'), findsNothing);
+    });
+
+    testWidgets('无记录时显示空态', (tester) async {
+      final c = _FakeController();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: StatsPage(controller: c)),
+      ));
+      await tester.pump();
+      expect(find.text('所选范围内暂无进出记录'), findsOneWidget);
+    });
   });
 
   group('main.dart 导航', () {
-    testWidgets('默认进入看板，底部三入口存在', (tester) async {
+    testWidgets('默认进入看板，底部五个入口对称存在', (tester) async {
       await tester.pumpWidget(const WatchDogApp());
       await tester.pump();
       expect(find.text('火场安全管控看板'), findsOneWidget);
+      expect(find.text('日志'), findsOneWidget);
       expect(find.text('看板'), findsOneWidget);
+      expect(find.text('数据'), findsOneWidget);
       expect(find.text('设置'), findsOneWidget);
       expect(find.byType(VoiceButton), findsOneWidget);
     });
 
-    testWidgets('点击设置可切换页面', (tester) async {
+    testWidgets('点击日志/数据/设置可切换页面', (tester) async {
       await tester.pumpWidget(const WatchDogApp());
       await tester.pump();
+      await tester.tap(find.text('日志'));
+      await tester.pumpAndSettle();
+      expect(find.text('火场日志'), findsOneWidget);
+      await tester.tap(find.text('数据'));
+      await tester.pumpAndSettle();
+      expect(find.text('数据统计'), findsOneWidget);
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(find.text('服务端'), findsOneWidget);

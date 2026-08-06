@@ -71,6 +71,16 @@ CREATE TABLE IF NOT EXISTS pressure_samples (
   reported_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_samples_entry ON pressure_samples(entry_id, reported_at);
+
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  scene TEXT NOT NULL DEFAULT 'default',
+  text TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT '其他',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_scene ON notes(scene, created_at);
 `);
 
 // 动态耗气率迁移：entries 增加实测耗气率列（可空，无采样时为 null）
@@ -348,6 +358,43 @@ function purgeOldLogs(days = 30) {
   return db.prepare('DELETE FROM logs WHERE created_at < ?').run(cutoff).changes;
 }
 
+/** 火场随手记列表（按场景隔离，新→旧） */
+function listNotes({ scene = 'default', limit = 500 } = {}) {
+  return db
+    .prepare('SELECT * FROM notes WHERE scene = ? ORDER BY created_at DESC LIMIT ?')
+    .all(scene, Math.min(Number(limit) || 500, 2000));
+}
+
+function getNote(id) {
+  return db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
+}
+
+function createNote({ id, scene = 'default', text, category = '其他' }) {
+  const now = Date.now();
+  db.prepare(
+    'INSERT INTO notes (id, scene, text, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(id, scene, text, category, now, now);
+  return getNote(id);
+}
+
+/** 编辑日志条目：传 null 的字段保持不变 */
+function updateNote(id, { text, category }) {
+  db.prepare(
+    'UPDATE notes SET text = COALESCE(?, text), category = COALESCE(?, category), updated_at = ? WHERE id = ?'
+  ).run(text ?? null, category ?? null, Date.now(), id);
+  return getNote(id);
+}
+
+function deleteNote(id) {
+  return db.prepare('DELETE FROM notes WHERE id = ?').run(id).changes;
+}
+
+/** 清理超过 days 天的日志条目（含全部场景），返回删除条数 */
+function purgeOldNotes(days = 30) {
+  const cutoff = Date.now() - days * 24 * 3600 * 1000;
+  return db.prepare('DELETE FROM notes WHERE created_at < ?').run(cutoff).changes;
+}
+
 /**
  * 读取某用户在指定场景下的设置（按用户识别码 + 场景隔离）
  * 返回 { settings: {key: value}, updatedAt: 最近修改时间（无记录为 0） }
@@ -407,6 +454,12 @@ module.exports = {
   listLogs,
   clearLogs,
   purgeOldLogs,
+  listNotes,
+  getNote,
+  createNote,
+  updateNote,
+  deleteNote,
+  purgeOldNotes,
   getUserSettings,
   saveUserSettings,
 };
