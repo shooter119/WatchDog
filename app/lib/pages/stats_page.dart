@@ -163,25 +163,34 @@ class _StatsPageState extends State<StatsPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
-          for (final r in _ranges)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: ChoiceChip(
-                label: Text(r),
-                selected: _range == r,
-                onSelected: (_) => setState(() => _range = r),
-                showCheckmark: false,
-                selectedColor: AppColors.actionPrimary,
-                labelStyle: TextStyle(
-                  fontSize: 13,
-                  fontWeight: _range == r ? FontWeight.w800 : FontWeight.w600,
-                  color: _range == r ? Colors.white : AppColors.textSecondary,
-                ),
-                backgroundColor: AppColors.surface,
-                side: BorderSide(color: _range == r ? AppColors.actionPrimary : AppColors.border),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final r in _ranges)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(r),
+                        selected: _range == r,
+                        onSelected: (_) => setState(() => _range = r),
+                        showCheckmark: false,
+                        selectedColor: AppColors.actionPrimary,
+                        labelStyle: TextStyle(
+                          fontSize: 13,
+                          fontWeight: _range == r ? FontWeight.w800 : FontWeight.w600,
+                          color: _range == r ? Colors.white : AppColors.textSecondary,
+                        ),
+                        backgroundColor: AppColors.surface,
+                        side: BorderSide(color: _range == r ? AppColors.actionPrimary : AppColors.border),
+                      ),
+                    ),
+                ],
               ),
             ),
-          const Spacer(),
+          ),
+          const SizedBox(width: 8),
           // 人员筛选下拉（全部 + 本次出场过的人）
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10),

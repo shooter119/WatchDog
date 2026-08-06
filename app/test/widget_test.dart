@@ -1094,6 +1094,26 @@ void main() {
       await tester.pump();
       expect(find.text('所选范围内暂无进出记录'), findsOneWidget);
     });
+
+    testWidgets('窄屏（411dp）筛选行不溢出', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+      addTearDown(tester.view.reset);
+      final e = Entry(
+        id: 'e1', name: '张伟', pressureMpa: 20, durationMin: 34,
+        entryAt: DateTime.now().millisecondsSinceEpoch - 30 * 60000,
+        exitAt: DateTime.now().millisecondsSinceEpoch + 30 * 60000,
+        exitedAt: null, source: 'voice',
+      );
+      final c = _FakeController(entries: [e]);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: StatsPage(controller: c)),
+      ));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('全部人员'), findsOneWidget);
+    });
   });
 
   group('main.dart 导航', () {
