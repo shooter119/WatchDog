@@ -5,29 +5,30 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
 
-/// 本地语音识别服务：sherpa-onnx 流式 zipformer-transducer 中文模型（zh-14M int8，约 31MB）。
-/// 支持热词（名单/术语写入 hotwords 文件，modified_beam_search 解码时上下文加权）。
-/// 模型文件首次使用时下载到应用支持目录，之后完全离线可识别。
+/// 本地语音识别服务：sherpa-onnx 离线 zipformer-transducer 中文模型（multi-zh-hans int8，约 75MB）。
+/// 多方言（普通话/粤语/上海话等）大模型，识别精度显著高于 14M 小模型；
+/// 热词走 bbpe 字节编码（名单/术语写入 hotwords 文件，modified_beam_search 上下文加权），
+/// 字节级词表对任意姓名无 OOV，生僻字人名同样生效。
+/// 模型文件托管在项目服务器（https://bytevirt.meiyou.xyz:8443/models/），国内直连下载。
 class LocalAsrService {
-  static const modelName = 'streaming-zipformer-zh-14M-2023-02-23';
-  static const _encoderFile = 'encoder-epoch-99-avg-1.int8.onnx';
-  static const _decoderFile = 'decoder-epoch-99-avg-1.onnx';
-  static const _joinerFile = 'joiner-epoch-99-avg-1.int8.onnx';
+  static const modelName = 'multi-zh-hans-2023-9-2';
+  static const _encoderFile = 'encoder-epoch-20-avg-1.int8.onnx';
+  static const _decoderFile = 'decoder-epoch-20-avg-1.onnx';
+  static const _joinerFile = 'joiner-epoch-20-avg-1.int8.onnx';
   static const _tokensFile = 'tokens.txt';
   static const _hotwordsFile = 'hotwords.txt';
 
-  static const _mirrorBase =
-      'https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/resolve/main';
-  static const _originBase =
-      'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/resolve/main';
+  static const _downloadBase =
+      'https://bytevirt.meiyou.xyz:8443/models/$modelName';
 
-  /// 旧模型目录（Paraformer 不支持热词 / x-asr 中文词表稀疏），下载新模型后清理
+  /// 旧模型目录（14M 小模型精度差 / Paraformer 不支持热词 / x-asr 词表稀疏），下载新模型后清理
   static const _legacyModelDirs = [
     'paraformer-zh-small-2024-03-09',
     'x-asr-zipformer-transducer-zh-en-int8-2026-06-03',
+    'streaming-zipformer-zh-14M-2023-02-23',
   ];
 
-  OnlineRecognizer? _recognizer;
+  OfflineRecognizer? _recognizer;
   String? _recognizerHotwordsSignature;
   bool _initializing = false;
   Future<void>? _pendingInit;
@@ -53,7 +54,7 @@ class LocalAsrService {
     final dir = await _modelDir();
     for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile]) {
       await _downloadFile(
-        url: '$_mirrorBase/$name',
+        url: '$_downloadBase/$name',
         path: '${dir.path}/$name',
         onProgress: onProgress,
       );
@@ -79,7 +80,7 @@ class LocalAsrService {
     required void Function(int received, int total)? onProgress,
   }) async {
     final part = '$path.part';
-    final urls = [url, url.replaceFirst(_mirrorBase, _originBase)];
+    final urls = [url, url];
     Object? lastError;
     for (final u in urls) {
       try {
@@ -140,19 +141,7 @@ class LocalAsrService {
     final wave = _parseWav(wavBytes);
     final stream = recognizer.createStream();
     try {
-      // 流式模型：按 0.5s 分块喂入，全部结束后收尾取结果
-      const chunkSamples = 8000;
-      for (var i = 0; i < wave.samples.length; i += chunkSamples) {
-        final end = (i + chunkSamples) > wave.samples.length
-            ? wave.samples.length
-            : i + chunkSamples;
-        stream.acceptWaveform(
-          samples: wave.samples.sublist(i, end),
-          sampleRate: wave.sampleRate,
-        );
-        recognizer.decode(stream);
-      }
-      stream.inputFinished();
+      stream.acceptWaveform(samples: wave.samples, sampleRate: wave.sampleRate);
       recognizer.decode(stream);
       return recognizer.getResult(stream).text.trim();
     } finally {
@@ -207,24 +196,23 @@ class LocalAsrService {
     final hotwordsPath = '${dir.path}/$_hotwordsFile';
     await File(hotwordsPath).writeAsString('${words.join('\n')}\n');
 
-    final config = OnlineRecognizerConfig(
-      model: OnlineModelConfig(
-        transducer: OnlineTransducerModelConfig(
+    final config = OfflineRecognizerConfig(
+      model: OfflineModelConfig(
+        transducer: OfflineTransducerModelConfig(
           encoder: encoderPath,
           decoder: decoderPath,
           joiner: joinerPath,
         ),
         tokens: tokensPath,
         numThreads: 2,
-        modelingUnit: 'cjkchar',
+        modelingUnit: 'bbpe',
       ),
       decodingMethod: 'modified_beam_search',
       maxActivePaths: 4,
-      enableEndpoint: false,
       hotwordsFile: hotwordsPath,
       hotwordsScore: 1.5,
     );
-    _recognizer = OnlineRecognizer(config);
+    _recognizer = OfflineRecognizer(config);
     _recognizerHotwordsSignature = _signatureFor(hotwords);
   }
 

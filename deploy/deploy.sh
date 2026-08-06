@@ -17,6 +17,13 @@ echo "==> 同步部署配置（ecosystem + nginx）"
 scp "$(dirname "$0")/ecosystem.config.cjs" "$HOST:$REMOTE_DIR/ecosystem.config.cjs"
 scp "$(dirname "$0")/nginx-watchdog.conf" "$HOST:/etc/nginx/conf.d/watchdog.conf"
 
+echo "==> 同步端侧 ASR 模型（deploy/models/，onnx 不入库）"
+MODELS_DIR="$(dirname "$0")/models"
+if [ -d "$MODELS_DIR" ]; then
+  ssh "$HOST" "mkdir -p $REMOTE_DIR/models"
+  rsync -az -e ssh "$MODELS_DIR"/ "$HOST:$REMOTE_DIR/models/"
+fi
+
 echo "==> 安装依赖并重启"
 ssh "$HOST" "cd $REMOTE_DIR && npm install --omit=dev --silent && pm2 restart watchdog-api --update-env && pm2 save && nginx -t && systemctl reload nginx"
 
