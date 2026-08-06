@@ -232,7 +232,9 @@ class _EmptyBoard extends StatelessWidget {
   }
 }
 
-/// 人员状态卡片：整块状态色，倒计时为视觉重心（规范 4.2）
+/// 人员状态卡片：整块状态色，第一层只保留 姓名/状态/剩余时间/持续时长/更新压力
+/// 两个时间左右式同排：剩余时间为视觉重心（大字号），持续时长在右侧（小一号）
+/// 单卡约 110dp 高，一屏可容纳 4 名同时进场的队员
 class _EntryCard extends StatelessWidget {
   final Entry entry;
   final CalcConfig config;
@@ -250,88 +252,104 @@ class _EntryCard extends StatelessWidget {
     final subFg = fg.withValues(alpha: 0.75);
 
     final card = Container(
-      padding: const EdgeInsets.all(16),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: s.color,
         borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1),
         boxShadow: AppShadow.card,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Flexible(
-                child: Text(
-                  e.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 22, height: 1.25, fontWeight: FontWeight.w800, color: fg),
-                ),
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      e.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 20, height: 1.25, fontWeight: FontWeight.w800, color: fg),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  StatusBadge(status: status, onColorCard: true, fontSize: 11, height: 34),
+                  const SizedBox(width: 8),
+                  _UpdatePressureButton(fg: fg, onPressed: onReport),
+                ],
               ),
-              const SizedBox(width: 8),
-              StatusBadge(status: status, onColorCard: true),
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // 剩余时间：主指标，大字号靠左
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          CountdownText(ms: e.remainingMs, color: fg, size: 44, timeoutText: '已超时'),
+                          const SizedBox(width: 6),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text('剩余时间', style: TextStyle(color: subFg, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(width: 1, height: 30, color: subFg.withValues(alpha: 0.4)),
+                  const SizedBox(width: 10),
+                  // 持续时长：进入现场内部时长，次指标靠右
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text('持续时长', style: TextStyle(color: subFg, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _elapsedTime(e),
+                            style: TextStyle(
+                              fontSize: 26,
+                              height: 1.0,
+                              fontWeight: FontWeight.w800,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                              color: fg,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Row(
-              children: [
-                if (e.pressureMpa != null) ...[
-                  Icon(Icons.speed, size: 14, color: subFg),
-                  const SizedBox(width: 4),
-                  Text('${e.pressureMpa} MPa', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 12),
-                ],
-                if (e.consumptionActualLpm != null) ...[
-                  Icon(Icons.local_fire_department_outlined, size: 14, color: subFg),
-                  const SizedBox(width: 4),
-                  Text('实测 ${e.consumptionActualLpm!.toStringAsFixed(1)} L/min', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 12),
-                ],
-                Icon(Icons.timer_outlined, size: 14, color: subFg),
-                const SizedBox(width: 4),
-                Text('${e.durationMin} 分钟上限', style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 12),
-                Icon(Icons.schedule, size: 14, color: subFg),
-                const SizedBox(width: 4),
-                Text(_elapsedTime(e), style: TextStyle(color: subFg, fontSize: 13, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              CountdownText(ms: e.remainingMs, color: fg, size: 56, timeoutText: '已超时'),
-              const SizedBox(width: 10),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text('剩余时间', style: TextStyle(color: subFg, fontSize: 12, fontWeight: FontWeight.w600)),
-              ),
-              const Spacer(),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: _ReportButton(fg: fg, onPressed: onReport),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
 
     final wrapped = s.danger ? PulseGlow(color: s.color, child: card) : card;
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: wrapped,
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: wrapped,
     );
   }
 
+  /// 进入现场后的持续时长（MM:SS / H:MM:SS）
   String _elapsedTime(Entry e) {
     final ms = DateTime.now().millisecondsSinceEpoch - e.entryAt;
     final totalSec = ms.clamp(0, 1 << 62) ~/ 1000;
@@ -339,37 +357,37 @@ class _EntryCard extends StatelessWidget {
     final m = (totalSec % 3600) ~/ 60;
     final s = totalSec % 60;
     return h > 0
-        ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')} 已进场'
-        : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')} 已进场';
+        ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
+        : '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 }
 
-/// 卡片上的一键报数按钮：圆角胶囊 + 粗体「报数」
-class _ReportButton extends StatelessWidget {
+/// 卡片顶行的快速更新压力按钮：紧凑胶囊，独立响应点击（父子手势由 InkWll 优先胜出）
+class _UpdatePressureButton extends StatelessWidget {
   final Color fg;
   final VoidCallback onPressed;
 
-  const _ReportButton({required this.fg, required this.onPressed});
+  const _UpdatePressureButton({required this.fg, required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
-    final bg = fg.withValues(alpha: 0.16);
     return Material(
-      color: bg,
+      color: fg.withValues(alpha: 0.16),
       borderRadius: BorderRadius.circular(AppRadius.pill),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.pill),
         onTap: onPressed,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.speed, size: 18, color: fg),
-              const SizedBox(width: 6),
+              Icon(Icons.speed, size: 16, color: fg),
+              const SizedBox(width: 4),
               Text(
-                '报数',
-                style: TextStyle(color: fg, fontSize: 15, fontWeight: FontWeight.w800),
+                '更新压力',
+                style: TextStyle(color: fg, fontSize: 13, fontWeight: FontWeight.w800),
               ),
             ],
           ),

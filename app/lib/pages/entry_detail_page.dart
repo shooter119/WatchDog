@@ -269,6 +269,17 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             children: [
               _infoTile(Icons.water_drop_outlined, '消耗率', '${cfg.consumptionLpm} L/min'),
               _infoTile(
+                Icons.local_fire_department_outlined,
+                '实测消耗率',
+                e.consumptionActualLpm != null ? '${e.consumptionActualLpm!.toStringAsFixed(1)} L/min' : '--',
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _infoTile(Icons.timer_outlined, '分钟上限', '${e.durationMin} 分钟'),
+              _infoTile(
                 Icons.mic_none,
                 '来源',
                 e.source == 'voice' ? '语音录入' : '手动',

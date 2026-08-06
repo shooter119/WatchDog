@@ -160,12 +160,14 @@ class StatusBadge extends StatelessWidget {
   final String status;
   final bool onColorCard; // 是否位于整块状态色卡片上（浅色底/深色底自适应）
   final double fontSize;
+  final double? height; // 与同行控件对齐时指定固定高度（内容居中）
 
   const StatusBadge({
     super.key,
     required this.status,
     this.onColorCard = false,
     this.fontSize = 12,
+    this.height,
   });
 
   @override
@@ -174,6 +176,8 @@ class StatusBadge extends StatelessWidget {
     final fg = onColorCard ? s.fg : s.color;
     final bg = onColorCard ? s.fg.withValues(alpha: 0.22) : s.color.withValues(alpha: 0.14);
     return Container(
+      height: height,
+      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: bg,
@@ -189,7 +193,7 @@ class StatusBadge extends StatelessWidget {
             style: TextStyle(
               color: fg,
               fontSize: fontSize,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],

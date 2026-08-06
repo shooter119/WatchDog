@@ -217,10 +217,10 @@ class AppController extends ChangeNotifier {
     return e;
   }
 
-  /// 报数：对在场人员提交一次压力读数（动态耗气率的采样点，服务端差分重算倒计时）
-  Future<Entry> reportPressure({required String id, required double pressureMpa, String? opId}) async {
+  /// 更新压力：对在场人员提交一次压力读数（动态耗气率的采样点，服务端差分重算倒计时）
+  Future<Entry> updatePressure({required String id, required double pressureMpa, String? opId}) async {
     final op = opId ?? '';
-    OpLogService.instance.record(op, 'pressure_report', '报数 ${pressureMpa}MPa', data: {'entryId': id});
+    OpLogService.instance.record(op, 'pressure_report', '更新压力 ${pressureMpa}MPa', data: {'entryId': id});
     final e = await api!.updateEntry(id: id, pressureMpa: pressureMpa, opId: op);
     await sync();
     return e;

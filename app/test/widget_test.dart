@@ -46,7 +46,7 @@ class _FakeController extends AppController {
   }
 
   @override
-  Future<Entry> reportPressure({required String id, required double pressureMpa, String? opId}) async {
+  Future<Entry> updatePressure({required String id, required double pressureMpa, String? opId}) async {
     reported.add(pressureMpa);
     return entries.firstWhere((e) => e.id == id);
   }
@@ -306,14 +306,28 @@ void main() {
     });
   });
 
-  group('报数（动态耗气率）', () {
-    testWidgets('卡片展示报数按钮与实测耗气率', (tester) async {
+  group('更新压力（动态耗气率）', () {
+    testWidgets('卡片只保留姓名/状态/倒计时/更新压力，次级信息移出', (tester) async {
       final c = _FakeController(entries: [
         _entry(name: '张伟', remainingMin: 20, pressureMpa: 20, consumptionActualLpm: 40.8),
       ]);
       await _pumpBoard(tester, c.entries);
-      expect(find.text('报数'), findsOneWidget);
-      expect(find.text('实测 40.8 L/min'), findsOneWidget);
+      expect(find.text('更新压力'), findsOneWidget);
+      expect(find.text('张伟'), findsOneWidget);
+      expect(find.text('剩余时间'), findsOneWidget);
+      expect(find.text('持续时长'), findsOneWidget);
+      // 次级信息不再出现在卡片首层
+      expect(find.textContaining('实测'), findsNothing);
+      expect(find.textContaining('MPa'), findsNothing);
+      expect(find.textContaining('分钟上限'), findsNothing);
+      expect(find.textContaining('已进场'), findsNothing);
+      // 状态徽章与更新压力按钮等高对齐
+      final badgeH = tester.getSize(find.byType(StatusBadge)).height;
+      final btnH = tester
+          .getSize(find.ancestor(of: find.text('更新压力'), matching: find.byType(Material)).first)
+          .height;
+      expect(badgeH, btnH);
+      expect(btnH, 34.0);
     });
 
     testWidgets('ReportPressureSheet 档位 3MPa 步进、禁用高于当前压力、点选提交', (tester) async {
@@ -337,10 +351,32 @@ void main() {
       // 点选 15 后确认提交
       await tester.tap(find.text('15'));
       await tester.pump();
-      expect(find.text('确认报数 15 MPa'), findsOneWidget);
-      await tester.tap(find.text('确认报数 15 MPa'));
+      expect(find.text('确认更新 15 MPa'), findsOneWidget);
+      await tester.tap(find.text('确认更新 15 MPa'));
       await tester.pumpAndSettle();
       expect(c.reported, [15.0]);
+    });
+
+    testWidgets('手动输入压力值可直接提交，与档位互斥', (tester) async {
+      final c = _FakeController(entries: [_entry(name: '李娜', remainingMin: 20, pressureMpa: 20)]);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(
+          body: ReportPressureSheet(controller: c, entry: c.entries.first),
+        ),
+      ));
+      // 输入 13.5 → 提交按钮启用并显示该值
+      await tester.enterText(find.byType(TextField), '13.5');
+      await tester.pump();
+      expect(find.text('确认更新 13.5 MPa'), findsOneWidget);
+      // 档位互斥：手动输入后点档位 9，文本框被清空、档位生效
+      await tester.tap(find.text('9'));
+      await tester.pump();
+      expect(find.text('确认更新 9 MPa'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+      await tester.tap(find.text('确认更新 9 MPa'));
+      await tester.pumpAndSettle();
+      expect(c.reported, [9.0]);
     });
   });
 
