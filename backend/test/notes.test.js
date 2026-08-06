@@ -39,6 +39,14 @@ test('火场随手记 CRUD 全链路：创建→列表→编辑→删除', async
   assert.ok(created.created_at > 0);
   assert.equal(created.updated_at, created.created_at);
 
+  // 重命名后的"部署"分类在白名单内
+  const deployCat = await (await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ text: '支队全勤指挥部到达现场', category: '部署' }),
+  })).json();
+  assert.equal(deployCat.category, '部署');
+
   // 非法分类回落为"其他"
   const badCat = await (await fetch(`${base}/api/notes`, {
     method: 'POST',
@@ -49,8 +57,8 @@ test('火场随手记 CRUD 全链路：创建→列表→编辑→删除', async
 
   // 列表新→旧
   const list = await (await fetch(`${base}/api/notes`, { headers: H })).json();
-  assert.equal(list.length, 2);
-  assert.equal(list[0].id, badCat.id);
+  assert.equal(list.length, 3);
+  assert.ok(list.some((n) => n.id === deployCat.id && n.category === '部署'));
 
   // 编辑文本与分类
   const updated = await (await fetch(`${base}/api/notes/${created.id}`, {
@@ -74,7 +82,7 @@ test('火场随手记 CRUD 全链路：创建→列表→编辑→删除', async
   res = await fetch(`${base}/api/notes/${created.id}`, { method: 'DELETE', headers: H });
   assert.equal(res.status, 404);
   const afterDel = await (await fetch(`${base}/api/notes`, { headers: H })).json();
-  assert.equal(afterDel.length, 1);
+  assert.equal(afterDel.length, 2);
 });
 
 test('场景隔离：不同场景码的随手记互不可见', async () => {

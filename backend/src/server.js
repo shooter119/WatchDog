@@ -401,7 +401,7 @@ app.delete('/api/hotwords/:id', (req, res) => {
 });
 
 // 火场随手记：按场景隔离，App 语音/手动记录时间节点，供复盘（新→旧）
-const NOTE_CATEGORIES = ['力量部署', '搜救', '出水', '撤离', '异常', '其他'];
+const NOTE_CATEGORIES = ['部署', '搜救', '出水', '撤离', '异常', '其他'];
 function cleanCategory(c) {
   const v = String(c || '').trim();
   return NOTE_CATEGORIES.includes(v) ? v : '其他';
