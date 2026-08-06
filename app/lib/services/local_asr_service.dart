@@ -5,20 +5,30 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
 
-/// 本地语音识别服务：sherpa-onnx（Paraformer 中文小模型 int8，约 78MB）。
+/// 本地语音识别服务：sherpa-onnx 流式 zipformer-transducer 中文模型（zh-14M int8，约 31MB）。
+/// 支持热词（名单/术语写入 hotwords 文件，modified_beam_search 解码时上下文加权）。
 /// 模型文件首次使用时下载到应用支持目录，之后完全离线可识别。
-/// 注意：Paraformer 离线模型仅支持 greedy_search，不支持热词加权。
 class LocalAsrService {
-  static const modelName = 'paraformer-zh-small-2024-03-09';
-  static const _modelFile = 'model.int8.onnx';
+  static const modelName = 'streaming-zipformer-zh-14M-2023-02-23';
+  static const _encoderFile = 'encoder-epoch-99-avg-1.int8.onnx';
+  static const _decoderFile = 'decoder-epoch-99-avg-1.onnx';
+  static const _joinerFile = 'joiner-epoch-99-avg-1.int8.onnx';
   static const _tokensFile = 'tokens.txt';
+  static const _hotwordsFile = 'hotwords.txt';
 
   static const _mirrorBase =
-      'https://hf-mirror.com/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main';
+      'https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/resolve/main';
   static const _originBase =
-      'https://huggingface.co/csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09/resolve/main';
+      'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23/resolve/main';
 
-  OfflineRecognizer? _recognizer;
+  /// 旧模型目录（Paraformer 不支持热词 / x-asr 中文词表稀疏），下载新模型后清理
+  static const _legacyModelDirs = [
+    'paraformer-zh-small-2024-03-09',
+    'x-asr-zipformer-transducer-zh-en-int8-2026-06-03',
+  ];
+
+  OnlineRecognizer? _recognizer;
+  String? _recognizerHotwordsSignature;
   bool _initializing = false;
   Future<void>? _pendingInit;
 
@@ -29,27 +39,38 @@ class LocalAsrService {
     return dir;
   }
 
-  /// 模型是否已安装（两个文件齐全）
+  /// 模型是否已安装（四个文件齐全）
   Future<bool> isModelInstalled() async {
     final dir = await _modelDir();
-    final modelOk = await File('${dir.path}/$_modelFile').exists();
-    final tokensOk = await File('${dir.path}/$_tokensFile').exists();
-    return modelOk && tokensOk;
+    for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile]) {
+      if (!await File('${dir.path}/$name').exists()) return false;
+    }
+    return true;
   }
 
-  /// 下载模型（model.int8.onnx + tokens.txt），带进度回调
+  /// 下载模型（encoder + decoder + joiner + tokens），带进度回调
   Future<void> downloadModel({void Function(int received, int total)? onProgress}) async {
     final dir = await _modelDir();
-    await _downloadFile(
-      url: '$_mirrorBase/$_modelFile',
-      path: '${dir.path}/$_modelFile',
-      onProgress: onProgress,
-    );
-    await _downloadFile(
-      url: '$_mirrorBase/$_tokensFile',
-      path: '${dir.path}/$_tokensFile',
-      onProgress: onProgress,
-    );
+    for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile]) {
+      await _downloadFile(
+        url: '$_mirrorBase/$name',
+        path: '${dir.path}/$name',
+        onProgress: onProgress,
+      );
+    }
+    await _cleanupLegacyModels();
+  }
+
+  Future<void> _cleanupLegacyModels() async {
+    final base = await getApplicationSupportDirectory();
+    for (final name in _legacyModelDirs) {
+      try {
+        final dir = Directory('${base.path}/asr_models/$name');
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _downloadFile({
@@ -109,14 +130,29 @@ class LocalAsrService {
   }
 
   /// 本地识别：wav 字节 → 文本。首次调用会加载模型（约 1-2 秒）。
-  Future<String> transcribe(Uint8List wavBytes) async {
-    await _ensureInitialized();
+  Future<String> transcribe(
+    Uint8List wavBytes, {
+    List<String> hotwords = const [],
+  }) async {
+    await _ensureInitialized(hotwords: hotwords);
     final recognizer = _recognizer!;
 
     final wave = _parseWav(wavBytes);
     final stream = recognizer.createStream();
     try {
-      stream.acceptWaveform(samples: wave.samples, sampleRate: wave.sampleRate);
+      // 流式模型：按 0.5s 分块喂入，全部结束后收尾取结果
+      const chunkSamples = 8000;
+      for (var i = 0; i < wave.samples.length; i += chunkSamples) {
+        final end = (i + chunkSamples) > wave.samples.length
+            ? wave.samples.length
+            : i + chunkSamples;
+        stream.acceptWaveform(
+          samples: wave.samples.sublist(i, end),
+          sampleRate: wave.sampleRate,
+        );
+        recognizer.decode(stream);
+      }
+      stream.inputFinished();
       recognizer.decode(stream);
       return recognizer.getResult(stream).text.trim();
     } finally {
@@ -124,19 +160,19 @@ class LocalAsrService {
     }
   }
 
-  Future<void> _ensureInitialized() async {
+  Future<void> _ensureInitialized({required List<String> hotwords}) async {
     if (_initializing) {
       if (_pendingInit != null) {
         await _pendingInit;
       }
       return;
     }
-    if (_recognizer != null) {
+    if (_recognizer != null && _signatureFor(hotwords) == _recognizerHotwordsSignature) {
       return;
     }
     _initializing = true;
     try {
-      _pendingInit = _init();
+      _pendingInit = _init(hotwords: hotwords);
       await _pendingInit;
     } finally {
       _initializing = false;
@@ -144,26 +180,54 @@ class LocalAsrService {
     }
   }
 
-  Future<void> _init() async {
+  Future<void> _init({required List<String> hotwords}) async {
     initBindings();
     final dir = await _modelDir();
-    final modelPath = '${dir.path}/$_modelFile';
+    final encoderPath = '${dir.path}/$_encoderFile';
+    final decoderPath = '${dir.path}/$_decoderFile';
+    final joinerPath = '${dir.path}/$_joinerFile';
     final tokensPath = '${dir.path}/$_tokensFile';
-    if (!await File(modelPath).exists() || !await File(tokensPath).exists()) {
-      throw LocalAsrNotInstalledException();
+    for (final p in [encoderPath, decoderPath, joinerPath, tokensPath]) {
+      if (!await File(p).exists()) {
+        throw LocalAsrNotInstalledException();
+      }
     }
     _recognizer?.free();
 
-    final config = OfflineRecognizerConfig(
-      model: OfflineModelConfig(
-        paraformer: OfflineParaformerModelConfig(model: modelPath),
+    final words = <String>{
+      ...hotwords,
+      '兆帕',
+      '个压',
+      '气瓶',
+      '空气呼吸器',
+      '进场',
+      '出来',
+      '退场',
+    }.toList();
+    final hotwordsPath = '${dir.path}/$_hotwordsFile';
+    await File(hotwordsPath).writeAsString('${words.join('\n')}\n');
+
+    final config = OnlineRecognizerConfig(
+      model: OnlineModelConfig(
+        transducer: OnlineTransducerModelConfig(
+          encoder: encoderPath,
+          decoder: decoderPath,
+          joiner: joinerPath,
+        ),
         tokens: tokensPath,
         numThreads: 2,
       ),
-      decodingMethod: 'greedy_search',
+      decodingMethod: 'modified_beam_search',
+      maxActivePaths: 4,
+      enableEndpoint: false,
+      hotwordsFile: hotwordsPath,
+      hotwordsScore: 1.5,
     );
-    _recognizer = OfflineRecognizer(config);
+    _recognizer = OnlineRecognizer(config);
+    _recognizerHotwordsSignature = _signatureFor(hotwords);
   }
+
+  String _signatureFor(List<String> hotwords) => hotwords.join('|');
 }
 
 class _WavData {

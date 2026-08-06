@@ -503,7 +503,7 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(width: 10),
               const Expanded(
                 child: Text(
-                  '本地语音模型未下载（约 78MB）\n下载后断网也能语音录入',
+                  '本地语音模型未下载（约 31MB）\n下载后断网也能语音录入',
                   style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
                 ),
               ),

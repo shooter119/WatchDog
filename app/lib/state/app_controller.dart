@@ -244,6 +244,8 @@ class AppController extends ChangeNotifier {
 
   List<String> get _rosterNames => firefighters.map((f) => f.name).toList();
 
+  List<String> get _hotwordTerms => hotwords.map((h) => h.word).toList();
+
   /// 转写：云端优先（开关开时），失败/关闭开关时强制本地 sherpa-onnx
   Future<String> transcribeAudio(Uint8List bytes, {String? opId}) async {
     if (asrCloudEnabled && api != null) {
@@ -266,7 +268,7 @@ class AppController extends ChangeNotifier {
   Future<String> _localTranscribe(Uint8List bytes, {String? opId}) async {
     final asr = localAsr;
     if (asr == null) throw StateError('未配置本地语音识别');
-    final text = await asr.transcribe(bytes);
+    final text = await asr.transcribe(bytes, hotwords: [..._rosterNames, ..._hotwordTerms]);
     if (text.trim().isEmpty) {
       throw StateError('本地识别未听清，请再说一遍');
     }
