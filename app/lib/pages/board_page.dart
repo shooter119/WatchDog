@@ -59,7 +59,6 @@ class _BoardPageState extends State<BoardPage> {
                 const Text('火场安全管控看板', style: AppTextStyles.h1),
                 const Spacer(),
                 ConnectionStatus(
-                  syncing: widget.controller.syncing,
                   offline: offline,
                   onRetry: () => widget.controller.startSync(),
                 ),

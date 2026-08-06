@@ -90,7 +90,6 @@ class _StatsPageState extends State<StatsPage> {
                 const Text('数据统计', style: AppTextStyles.h1),
                 const Spacer(),
                 ConnectionStatus(
-                  syncing: widget.controller.syncing,
                   offline: widget.controller.syncError != null,
                   onRetry: widget.controller.startSync,
                 ),

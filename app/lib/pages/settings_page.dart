@@ -196,7 +196,6 @@ class _SettingsPageState extends State<SettingsPage> {
               _SaveStatusBadge(state: _saveState),
               const Spacer(),
               ConnectionStatus(
-                syncing: widget.controller.syncing,
                 offline: widget.controller.syncError != null,
                 onRetry: () => widget.controller.startSync(),
               ),
