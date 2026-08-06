@@ -28,6 +28,9 @@ class AppColors {
   static const voice = Color(0xFFFF9500); // color.action.voice
   static const actionPrimary = Color(0xFF111111); // color.action.primary
   static const onStatus = Color(0xFFFFFFFF); // 红色卡片上的倒计时与按钮文字
+
+  // 连接
+  static const online = Color(0xFF20A83A); // color.connection.online
 }
 
 /// 8px 基础间距系统（space.1~space.10）
@@ -395,9 +398,35 @@ class ConnectionStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!offline) return const SizedBox.shrink();
+    final inner = offline
+        ? const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.alarm),
+                  SizedBox(width: 6),
+                  Text('已中断', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                ],
+              ),
+              Text(
+                '当前使用本地数据 · 点击重试',
+                style: TextStyle(color: AppColors.textTertiary, fontSize: 10.5, height: 1.3),
+              ),
+            ],
+          )
+        : const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
+              SizedBox(width: 6),
+              Text('已连接', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+            ],
+          );
     return GestureDetector(
-      onTap: onRetry,
+      onTap: offline ? onRetry : null,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -405,24 +434,7 @@ class ConnectionStatus extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.pill),
           border: Border.all(color: AppColors.border),
         ),
-        child: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.alarm),
-                SizedBox(width: 6),
-                Text('已中断', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-              ],
-            ),
-            Text(
-              '当前使用本地数据 · 点击重试',
-              style: TextStyle(color: AppColors.textTertiary, fontSize: 10.5, height: 1.3),
-            ),
-          ],
-        ),
+        child: inner,
       ),
     );
   }
