@@ -17,6 +17,7 @@ class LocalAsrService {
   static const _decoderFile = 'decoder-epoch-20-avg-1.onnx';
   static const _joinerFile = 'joiner-epoch-20-avg-1.int8.onnx';
   static const _tokensFile = 'tokens.txt';
+  static const _bpeVocabFile = 'bpe.vocab';
   static const _hotwordsFile = 'hotwords.txt';
 
   static const _downloadBase =
@@ -43,19 +44,19 @@ class LocalAsrService {
     return dir;
   }
 
-  /// 模型是否已安装（四个文件齐全）
+  /// 模型是否已安装（五个文件齐全）
   Future<bool> isModelInstalled() async {
     final dir = await _modelDir();
-    for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile]) {
+    for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile, _bpeVocabFile]) {
       if (!await File('${dir.path}/$name').exists()) return false;
     }
     return true;
   }
 
-  /// 下载模型（encoder + decoder + joiner + tokens），带进度回调
+  /// 下载模型（encoder + decoder + joiner + tokens + bpe.vocab），带进度回调
   Future<void> downloadModel({void Function(int received, int total)? onProgress}) async {
     final dir = await _modelDir();
-    for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile]) {
+    for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile, _bpeVocabFile]) {
       await _downloadFile(
         url: '$_downloadBase/$name',
         path: '${dir.path}/$name',
@@ -179,7 +180,8 @@ class LocalAsrService {
     final decoderPath = '${dir.path}/$_decoderFile';
     final joinerPath = '${dir.path}/$_joinerFile';
     final tokensPath = '${dir.path}/$_tokensFile';
-    for (final p in [encoderPath, decoderPath, joinerPath, tokensPath]) {
+    final bpeVocabPath = '${dir.path}/$_bpeVocabFile';
+    for (final p in [encoderPath, decoderPath, joinerPath, tokensPath, bpeVocabPath]) {
       if (!await File(p).exists()) {
         throw LocalAsrNotInstalledException();
       }
@@ -209,6 +211,7 @@ class LocalAsrService {
         tokens: tokensPath,
         numThreads: 2,
         modelingUnit: 'bbpe',
+        bpeVocab: bpeVocabPath,
       ),
       decodingMethod: 'modified_beam_search',
       maxActivePaths: 4,
