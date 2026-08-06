@@ -20,6 +20,7 @@ ThemeData buildAppTheme() {
 
   return ThemeData(
     useMaterial3: true,
+    splashFactory: InkRipple.splashFactory,
     colorScheme: scheme,
     scaffoldBackgroundColor: AppColors.background,
     fontFamily: null,

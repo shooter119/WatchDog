@@ -219,7 +219,9 @@ class _SettingsPageState extends State<SettingsPage> {
             child: AppCard(
               padding: const EdgeInsets.all(16),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const _GroupLabel('气瓶参数'),
                   Row(
                     children: [
                       Expanded(child: _field(_volume, '气瓶容量', '6.8 L', icon: Icons.local_fire_department_outlined, focusNode: _volumeFocus)),
@@ -227,89 +229,17 @@ class _SettingsPageState extends State<SettingsPage> {
                       Expanded(child: _field(_full, '满压', '30 MPa', icon: Icons.speed, focusNode: _fullFocus)),
                     ],
                   ),
+                  _field(_consumption, '消耗率', '40 L/min', icon: Icons.water_drop_outlined, focusNode: _consumptionFocus),
+                  const _GroupLabel('提醒阈值'),
                   Row(
                     children: [
-                      Expanded(child: _field(_consumption, '消耗率', '40 L/min', icon: Icons.water_drop_outlined, focusNode: _consumptionFocus)),
-                      const SizedBox(width: 10),
                       Expanded(child: _field(_warn, '提醒剩余', '10 min', icon: Icons.notifications_active_outlined, focusNode: _warnFocus)),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(child: _field(_alarm, '报警剩余', '5 min', icon: Icons.warning_amber_rounded, focusNode: _alarmFocus)),
                       const SizedBox(width: 10),
-                      const Expanded(child: SizedBox()),
+                      Expanded(child: _field(_alarm, '报警剩余', '5 min', icon: Icons.warning_amber_rounded, focusNode: _alarmFocus)),
                     ],
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const SectionTitle(text: '名单与热词'),
-          AppCard(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => RosterPage(controller: widget.controller)),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceSubtle,
-                  ),
-                  child: const Icon(Icons.group_outlined, size: 20, color: AppColors.textPrimary),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('消防员与专业术语', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                      SizedBox(height: 2),
-                      Text('提前录入，语音识别更准', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => OpLogPage(controller: widget.controller)),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceSubtle,
-                  ),
-                  child: const Icon(Icons.receipt_long_outlined, size: 20, color: AppColors.textPrimary),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('操作日志', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                      SizedBox(height: 2),
-                      Text('语音录入全流程记录，可同步到服务器调试', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -403,6 +333,74 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const SectionTitle(text: '名单与热词'),
+          AppCard(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => RosterPage(controller: widget.controller)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceSubtle,
+                  ),
+                  child: const Icon(Icons.group_outlined, size: 20, color: AppColors.textPrimary),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('消防员与专业术语', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      SizedBox(height: 2),
+                      Text('提前录入，语音识别更准', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const SectionTitle(text: '操作日志'),
+          AppCard(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => OpLogPage(controller: widget.controller)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceSubtle,
+                  ),
+                  child: const Icon(Icons.receipt_long_outlined, size: 20, color: AppColors.textPrimary),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('语音录入全流程记录', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      SizedBox(height: 2),
+                      Text('可同步到服务器排查问题', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              ],
             ),
           ),
           const SizedBox(height: 28),
@@ -528,6 +526,29 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 卡片内子分组小标题（如"气瓶参数"、"提醒阈值"）
+class _GroupLabel extends StatelessWidget {
+  final String text;
+
+  const _GroupLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 10),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }

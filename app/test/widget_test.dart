@@ -196,6 +196,7 @@ void main() {
       final existing = _entry(name: '张伟', remainingMin: 20);
       SameNameChoice? result;
       await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
         home: Scaffold(
           body: Builder(
             builder: (ctx) => Center(
@@ -234,6 +235,7 @@ void main() {
       }
 
       await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
         home: Scaffold(
           body: Builder(
             key: ctxKey,
@@ -447,9 +449,10 @@ void main() {
       final list = find.byType(Scrollable).first;
       expect(find.text('服务端'), findsOneWidget);
       expect(find.text('计算参数'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('名单与热词'), 200, scrollable: list);
       await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
       expect(find.text('提醒方式'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('名单与热词'), 200, scrollable: list);
+      await tester.scrollUntilVisible(find.text('操作日志'), 200, scrollable: list);
       expect(find.text('保存设置'), findsNothing);
     });
 
@@ -495,7 +498,7 @@ void main() {
       await tester.pumpAndSettle();
       final list = find.byType(Scrollable).first;
       await tester.scrollUntilVisible(find.text('操作日志'), 200, scrollable: list);
-      await tester.tap(find.text('操作日志'));
+      await tester.tap(find.text('语音录入全流程记录'));
       await tester.pumpAndSettle();
       expect(find.byType(OpLogPage), findsOneWidget);
       expect(find.text('同步到服务器'), findsOneWidget);
