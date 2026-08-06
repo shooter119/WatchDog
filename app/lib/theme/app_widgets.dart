@@ -385,46 +385,60 @@ class _PulseGlowState extends State<PulseGlow> with SingleTickerProviderStateMix
   }
 }
 
-/// 连接状态：正常/同步中不显示任何提示；仅断线时显示红色云图标 + 「已中断」，点击可重试
+/// 连接状态：同步中显示橙色云图标 + 「连接中」；正常显示绿色云图标 + 「已连接」；断线显示红色云图标 + 「已中断」，点击可重试
 class ConnectionStatus extends StatelessWidget {
+  final bool syncing;
   final bool offline;
   final VoidCallback? onRetry;
 
   const ConnectionStatus({
     super.key,
+    required this.syncing,
     required this.offline,
     this.onRetry,
   });
 
   @override
   Widget build(BuildContext context) {
-    final inner = offline
-        ? const Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.alarm),
-                  SizedBox(width: 6),
-                  Text('已中断', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-                ],
-              ),
-              Text(
-                '当前使用本地数据 · 点击重试',
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 10.5, height: 1.3),
-              ),
-            ],
-          )
-        : const Row(
+    final Widget inner;
+    if (syncing) {
+      inner = const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_sync_outlined, size: 16, color: AppColors.voice),
+          SizedBox(width: 6),
+          Text('连接中', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
+      );
+    } else if (offline) {
+      inner = const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
+              Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.alarm),
               SizedBox(width: 6),
-              Text('已连接', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+              Text('已中断', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
             ],
-          );
+          ),
+          Text(
+            '当前使用本地数据 · 点击重试',
+            style: TextStyle(color: AppColors.textTertiary, fontSize: 10.5, height: 1.3),
+          ),
+        ],
+      );
+    } else {
+      inner = const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
+          SizedBox(width: 6),
+          Text('已连接', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
+      );
+    }
     return GestureDetector(
       onTap: offline ? onRetry : null,
       child: Container(

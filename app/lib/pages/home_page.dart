@@ -675,6 +675,7 @@ class HomePageState extends State<HomePage> {
                 const Text('语音录入', style: AppTextStyles.h1),
                 const Spacer(),
                 ConnectionStatus(
+                  syncing: widget.controller.syncing,
                   offline: widget.controller.syncError != null,
                   onRetry: widget.controller.startSync,
                 ),
