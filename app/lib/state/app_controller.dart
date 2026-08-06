@@ -54,12 +54,15 @@ class AppController extends ChangeNotifier {
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
     await ScreenOn.setKeepScreenOn(await Settings.keepScreenOn);
-    try {
-      final cfg = await api!.fetchConfig();
-      calcConfig = cfg;
-    } catch (_) {
-      // 服务不可达时用本地默认参数
-    }
+    // 本地设置为准：用户改的消耗率/容量/阈值立即生效，不被服务端配置覆盖
+    calcConfig = CalcConfig(
+      cylinderVolL: await Settings.cylinderVolL,
+      fullPressureMpa: await Settings.fullPressureMpa,
+      consumptionLpm: await Settings.consumptionLpm,
+      warnMin: await Settings.warnMin,
+      alarmMin: await Settings.alarmMin,
+    );
+    notifyListeners();
   }
 
   void startSync() {
@@ -159,6 +162,7 @@ class AppController extends ChangeNotifier {
       rawText: rawText,
       force: force,
       volumeL: volumeL,
+      consumptionLpm: calcConfig.consumptionLpm,
       opId: opId,
     );
     await sync();
@@ -167,7 +171,12 @@ class AppController extends ChangeNotifier {
 
   /// 合并：同名已在场的记录按本次复核压力重新倒计时（保留原记录，不重复计数）
   Future<Entry> mergeEntryPressure({required String id, required double pressureMpa, String? opId}) async {
-    final e = await api!.updateEntry(id: id, pressureMpa: pressureMpa, opId: opId);
+    final e = await api!.updateEntry(
+      id: id,
+      pressureMpa: pressureMpa,
+      consumptionLpm: calcConfig.consumptionLpm,
+      opId: opId,
+    );
     await sync();
     return e;
   }

@@ -136,21 +136,21 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   Row(
                     children: [
-                      Expanded(child: _field(_volume, '气瓶容量 (L)', '6.8', icon: Icons.local_fire_department_outlined)),
+                      Expanded(child: _field(_volume, '气瓶容量', '6.8 L', icon: Icons.local_fire_department_outlined)),
                       const SizedBox(width: 10),
-                      Expanded(child: _field(_full, '满压 (MPa)', '30', icon: Icons.speed)),
+                      Expanded(child: _field(_full, '满压', '30 MPa', icon: Icons.speed)),
                     ],
                   ),
                   Row(
                     children: [
-                      Expanded(child: _field(_consumption, '消耗率 (L/min)', '40', icon: Icons.water_drop_outlined)),
+                      Expanded(child: _field(_consumption, '消耗率', '40 L/min', icon: Icons.water_drop_outlined)),
                       const SizedBox(width: 10),
-                      Expanded(child: _field(_warn, '提醒剩余 (min)', '10', icon: Icons.notifications_active_outlined)),
+                      Expanded(child: _field(_warn, '提醒剩余', '10 min', icon: Icons.notifications_active_outlined)),
                     ],
                   ),
                   Row(
                     children: [
-                      Expanded(child: _field(_alarm, '报警剩余 (min)', '5', icon: Icons.warning_amber_rounded)),
+                      Expanded(child: _field(_alarm, '报警剩余', '5 min', icon: Icons.warning_amber_rounded)),
                       const SizedBox(width: 10),
                       const Expanded(child: SizedBox()),
                     ],

@@ -208,7 +208,7 @@ app.get('/api/entries', (req, res) => {
 
 app.post('/api/entries', (req, res, next) => {
   try {
-    const { name, pressure_mpa, source = 'voice', raw_text = null, force = false, volume_l } = req.body || {};
+    const { name, pressure_mpa, source = 'voice', raw_text = null, force = false, volume_l, consumption_lpm } = req.body || {};
     const scene = sceneKey(req);
     const cleanName = String(name || '').trim();
     if (!cleanName) return res.status(400).json({ error: '缺少姓名' });
@@ -222,6 +222,14 @@ app.post('/api/entries', (req, res, next) => {
       vol = Number(volume_l);
       if (!(vol > 0) || vol > 20) return res.status(400).json({ error: '气瓶容量数值异常' });
     }
+
+    // 消耗率：App 端可携带本地设置值（不传则用服务端默认）
+    let consumption = CFG.calc.consumptionLpm;
+    if (consumption_lpm != null && consumption_lpm !== '') {
+      consumption = Number(consumption_lpm);
+      if (!(consumption > 0) || consumption > 300) return res.status(400).json({ error: '消耗率数值异常' });
+    }
+    const calcParam = { ...CFG.calc, consumptionLpm: consumption };
 
     // 同名在场记录：防止同一人重复登记（改名合并走 PATCH，重复进场须 force）
     const existing = db.findActiveByName(scene, cleanName);
@@ -237,7 +245,7 @@ app.post('/api/entries', (req, res, next) => {
     }
 
     const now = Date.now();
-    const durationMin = Math.round(durationMinutes({ ...CFG.calc, pressureMpa: p, cylinderVolL: vol || CFG.calc.cylinderVolL }));
+    const durationMin = Math.round(durationMinutes({ ...calcParam, pressureMpa: p, cylinderVolL: vol || calcParam.cylinderVolL }));
     const entry = db.createEntry({
       id: crypto.randomUUID(),
       scene,
@@ -245,7 +253,7 @@ app.post('/api/entries', (req, res, next) => {
       pressureMpa: p,
       durationMin,
       entryAtMs: now,
-      exitAtMs: exitAtMs({ ...CFG.calc, pressureMpa: p, entryAtMs: now, cylinderVolL: vol || CFG.calc.cylinderVolL }),
+      exitAtMs: exitAtMs({ ...calcParam, pressureMpa: p, entryAtMs: now, cylinderVolL: vol || calcParam.cylinderVolL }),
       source,
       rawText: raw_text,
     });
@@ -253,7 +261,8 @@ app.post('/api/entries', (req, res, next) => {
       entryId: entry.id,
       name: cleanName,
       pressureMpa: p,
-      volumeL: vol || CFG.calc.cylinderVolL,
+      volumeL: vol || calcParam.cylinderVolL,
+      consumptionLpm: consumption,
       durationMin,
       force,
       rawText: raw_text,
@@ -270,7 +279,7 @@ app.patch('/api/entries/:id', (req, res, next) => {
   try {
     const entry = db.getEntry(req.params.id);
     if (!entry) return res.status(404).json({ error: '记录不存在' });
-    const { name, pressure_mpa } = req.body || {};
+    const { name, pressure_mpa, consumption_lpm } = req.body || {};
     const newName = name != null ? String(name).trim() : null;
     if (name != null && !newName) return res.status(400).json({ error: '姓名不能为空' });
     let p = null;
@@ -278,13 +287,19 @@ app.patch('/api/entries/:id', (req, res, next) => {
       p = Number(pressure_mpa);
       if (!(p > 0) || p > 40) return res.status(400).json({ error: '压力数值异常' });
     }
+    let consumption = CFG.calc.consumptionLpm;
+    if (consumption_lpm != null && consumption_lpm !== '') {
+      consumption = Number(consumption_lpm);
+      if (!(consumption > 0) || consumption > 300) return res.status(400).json({ error: '消耗率数值异常' });
+    }
+    const calcParam = { ...CFG.calc, consumptionLpm: consumption };
     const now = Date.now();
     const updated = db.updateEntry(entry.id, {
       name: newName,
       pressureMpa: p,
       // 压力视为现场复核读数，从此刻起重新倒计时
-      durationMin: p != null ? Math.round(durationMinutes({ ...CFG.calc, pressureMpa: p })) : null,
-      exitAtMs: p != null ? exitAtMs({ ...CFG.calc, pressureMpa: p, entryAtMs: now }) : null,
+      durationMin: p != null ? Math.round(durationMinutes({ ...calcParam, pressureMpa: p })) : null,
+      exitAtMs: p != null ? exitAtMs({ ...calcParam, pressureMpa: p, entryAtMs: now }) : null,
     });
     res.json(updated);
   } catch (e) {

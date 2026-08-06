@@ -71,6 +71,7 @@ class ApiClient {
     String? rawText,
     bool force = false,
     double? volumeL,
+    double? consumptionLpm,
     String? opId,
   }) async {
     final res = await http
@@ -84,6 +85,7 @@ class ApiClient {
             'raw_text': rawText,
             if (force) 'force': true,
             if (volumeL != null) 'volume_l': volumeL,
+            if (consumptionLpm != null) 'consumption_lpm': consumptionLpm,
           }),
         )
         .timeout(const Duration(seconds: 15));
@@ -101,7 +103,7 @@ class ApiClient {
   }
 
   /// 更新在场记录（改名 / 按现场复核压力重新倒计时）
-  Future<Entry> updateEntry({required String id, String? name, double? pressureMpa, String? opId}) async {
+  Future<Entry> updateEntry({required String id, String? name, double? pressureMpa, double? consumptionLpm, String? opId}) async {
     final res = await http
         .patch(
           _uri('/api/entries/$id'),
@@ -109,6 +111,7 @@ class ApiClient {
           body: jsonEncode({
             if (name != null) 'name': name,
             if (pressureMpa != null) 'pressure_mpa': pressureMpa,
+            if (consumptionLpm != null) 'consumption_lpm': consumptionLpm,
           }),
         )
         .timeout(const Duration(seconds: 15));

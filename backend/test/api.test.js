@@ -171,6 +171,34 @@ test('PATCH /api/entries/:id 改名与压力复核（重新倒计时）', async 
   await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: H });
 });
 
+test('POST/PATCH /api/entries 支持携带消耗率 consumption_lpm', async () => {
+  const created = await (await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '消耗率测试', pressure_mpa: 20, consumption_lpm: 80 }),
+  })).json();
+  // 6.8L × 20MPa × 10 ÷ 80L/min = 17 分钟
+  assert.equal(created.duration_min, 17);
+
+  // 消耗率异常拒绝
+  const bad = await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '消耗率异常', pressure_mpa: 20, consumption_lpm: -5 }),
+  });
+  assert.equal(bad.status, 400);
+
+  // PATCH 复核压力同样按携带的消耗率重算：6.8 × 10 × 10 ÷ 80 = 8.5 → 9
+  const rechecked = await (await fetch(`${base}/api/entries/${created.id}`, {
+    method: 'PATCH',
+    headers: H,
+    body: JSON.stringify({ pressure_mpa: 10, consumption_lpm: 80 }),
+  })).json();
+  assert.equal(rechecked.duration_min, 9);
+
+  await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: H });
+});
+
 test('消防员/热词 CRUD 与 409 查重', async () => {
   const f1 = await (await fetch(`${base}/api/firefighters`, { method: 'POST', headers: H, body: JSON.stringify({ name: '王强' }) })).json();
   assert.equal(f1.name, '王强');

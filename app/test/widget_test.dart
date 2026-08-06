@@ -71,21 +71,38 @@ Entry _entry({
 
 /// 测试专用 ApiClient：固定返回 张伟+李娜 的转写/解析结果
 class _FakeApi extends ApiClient {
-  _FakeApi({this.multiPressure = true}) : super(baseUrl: 'http://test', sceneCode: 'test');
+  _FakeApi({this.multiPressure = true, this.rounds = const [], this.exitOnCall = 0})
+      : super(baseUrl: 'http://test', sceneCode: 'test');
   final bool multiPressure;
+
+  /// 第 2、3... 次解析时返回的追加轮次（分批录入测试用）
+  final List<List<ParsePerson>> rounds;
+
+  /// 第 N 次解析返回出场指令（1 起算，0 表示不触发）
+  final int exitOnCall;
   final created = <String>[];
+  int _parseCalls = 0;
 
   @override
   Future<String> transcribe(Uint8List audioBytes, {String? opId}) async => '张伟20兆帕，李娜22兆帕';
 
   @override
-  Future<ParseResult> parse(String text, {String? opId}) async => ParseResult(
-        action: 'enter',
-        people: [
-          ParsePerson(name: '张伟', pressureMpa: multiPressure ? 20 : null),
-          ParsePerson(name: '李娜', pressureMpa: multiPressure ? 22 : null),
-        ],
-      );
+  Future<ParseResult> parse(String text, {String? opId}) async {
+    final i = _parseCalls++;
+    if (exitOnCall > 0 && i + 1 == exitOnCall) {
+      return ParseResult(action: 'exit', people: [ParsePerson(name: '张伟')]);
+    }
+    if (i >= 1 && i - 1 < rounds.length) {
+      return ParseResult(action: 'enter', people: rounds[i - 1]);
+    }
+    return ParseResult(
+      action: 'enter',
+      people: [
+        ParsePerson(name: '张伟', pressureMpa: multiPressure ? 20 : null),
+        ParsePerson(name: '李娜', pressureMpa: multiPressure ? 22 : null),
+      ],
+    );
+  }
 
   @override
   Future<Entry> createEntry({
@@ -95,6 +112,7 @@ class _FakeApi extends ApiClient {
     String? rawText,
     bool force = false,
     double? volumeL,
+    double? consumptionLpm,
     String? opId,
   }) async {
     created.add(name);
@@ -516,6 +534,62 @@ void main() {
       await tester.pumpAndSettle();
       expect(api.created, ['李娜']);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+
+    testWidgets('再次录音保留已录入人员并去重追加，可统一确认', (tester) async {
+      final api = _FakeApi(rounds: [
+        [ParsePerson(name: '张伟', pressureMpa: 15), ParsePerson(name: '王强', pressureMpa: 24)],
+      ]);
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      expect(find.text('确认名单（2 人）：请下滑核对后一次性确认'), findsOneWidget);
+
+      // 第二轮：张伟同名更正压力（15），王强追加 → 名单共 3 人
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      expect(find.text('确认名单（3 人）：请下滑核对后一次性确认'), findsOneWidget);
+      final fields = find.byType(TextField);
+      expect(tester.widget<TextField>(fields.at(1)).controller!.text, '15.0');
+
+      // 一次确认全部进场
+      final confirmBtn = find.text('全部确认进入火场（3 人）');
+      await tester.ensureVisible(confirmBtn);
+      await tester.pump();
+      await tester.tap(confirmBtn);
+      await tester.pumpAndSettle();
+      expect(api.created, ['张伟', '李娜', '王强']);
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+
+    testWidgets('出场指令不清空待确认名单，可从空闲态回到确认页', (tester) async {
+      final api = _FakeApi(exitOnCall: 2);
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
+      ));
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      // 第一轮：张伟+李娜 待确认
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      expect(find.text('确认名单（2 人）：请下滑核对后一次性确认'), findsOneWidget);
+      // 第二轮说出场指令（张伟不在场 → 提示未找到，不销毁名单）
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      expect(find.textContaining('未找到在场人员'), findsOneWidget);
+      await tester.tap(find.text('返回确认'));
+      await tester.pump();
+      expect(find.text('确认名单（2 人）：请下滑核对后一次性确认'), findsOneWidget);
     });
   });
 

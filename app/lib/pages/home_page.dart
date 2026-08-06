@@ -102,7 +102,7 @@ class HomePageState extends State<HomePage> {
       _transcript = null;
       _parsed = null;
     });
-    _clearEditors();
+    // 不清空已录入人员：支持多人分批次语音录入，最后一次性统一确认
     final ok = await _audio.hasPermission();
     if (!ok) {
       OpLogService.instance.record(_opId!, 'record_perm_denied', '缺少麦克风权限', level: 'warn');
@@ -169,8 +169,13 @@ class HomePageState extends State<HomePage> {
         rethrow;
       }
       if (!mounted) return;
-      _clearEditors();
+      // 追加到已录入名单：同名人员更新压力（更正），其余新增一行
       for (final p in parsed.people) {
+        final idx = _peopleEditors.indexWhere((ed) => ed.name == p.name && ed.name.isNotEmpty);
+        if (idx >= 0) {
+          if (p.pressureMpa != null) _peopleEditors[idx].pressureCtrl.text = p.pressureMpa.toString();
+          continue;
+        }
         final ed = _PersonEdit(onChanged: _onEditsChanged);
         ed.nameCtrl.text = p.name;
         if (p.pressureMpa != null) ed.pressureCtrl.text = p.pressureMpa.toString();
@@ -236,7 +241,7 @@ class HomePageState extends State<HomePage> {
       _transcript = null;
       _parsed = null;
       _error = notFound.isEmpty ? null : '未找到在场人员「${notFound.join('、')}」';
-      _clearEditors();
+      // 保留已录入未确认的人员，出场指令不清空分批名单
     });
     _endOp(exited > 0 ? 'exit_ok' : 'exit_none');
   }
@@ -251,6 +256,21 @@ class HomePageState extends State<HomePage> {
       _processing = false;
     });
     _clearEditors();
+  }
+
+  /// 从空闲态回到待确认名单（出场/取消录音后仍有已录入人员时）
+  void _showPendingConfirm() {
+    if (_peopleEditors.isEmpty) return;
+    setState(() {
+      _transcript = '已录入 ${_peopleEditors.length} 人，待统一确认';
+      _parsed = ParseResult(
+        action: 'enter',
+        people: _peopleEditors
+            .map((ed) => ParsePerson(name: ed.name, pressureMpa: ed.pressure))
+            .toList(),
+      );
+      _error = null;
+    });
   }
 
   /// 校验单个人员：返回错误文案，null 表示通过
@@ -483,6 +503,17 @@ class HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 8),
             const Text('或：出火场人员姓名', style: TextStyle(color: AppColors.textTertiary, fontSize: 14)),
+            if (_peopleEditors.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                '已录入 ${_peopleEditors.length} 人，本次语音将追加到名单',
+                style: const TextStyle(
+                  color: AppColors.voice,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ],
         ),
       );
@@ -528,10 +559,10 @@ class HomePageState extends State<HomePage> {
                 icon: const Icon(Icons.replay),
                 label: const Text('重新语音输入'),
               ),
-              if (_parsed != null && _peopleEditors.isNotEmpty) ...[
+              if (_peopleEditors.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: () => setState(() => _error = null),
+                  onPressed: _showPendingConfirm,
                   child: const Text('返回确认'),
                 ),
               ],
@@ -563,6 +594,14 @@ class HomePageState extends State<HomePage> {
             _example('例：「张伟，20兆帕」 → 单人进场，可用34分钟'),
             const SizedBox(height: 4),
             _example('例：「李娜出来了」 → 登记出火场'),
+            if (_peopleEditors.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: _showPendingConfirm,
+                icon: const Icon(Icons.fact_check_outlined),
+                label: Text('继续确认已录入的 ${_peopleEditors.length} 人'),
+              ),
+            ],
           ],
         ),
       );
@@ -670,6 +709,16 @@ class HomePageState extends State<HomePage> {
                     width: double.infinity,
                     height: 48,
                     child: OutlinedButton.icon(
+                      onPressed: _processing ? null : beginRecording,
+                      icon: const Icon(Icons.mic_none),
+                      label: const Text('继续语音添加'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
                       onPressed: _retry,
                       icon: const Icon(Icons.replay),
                       label: const Text('重新语音输入'),
@@ -743,6 +792,16 @@ class HomePageState extends State<HomePage> {
             width: double.infinity,
             height: 48,
             child: OutlinedButton.icon(
+              onPressed: _processing ? null : beginRecording,
+              icon: const Icon(Icons.mic_none),
+              label: const Text('继续语音添加'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
               onPressed: _retry,
               icon: const Icon(Icons.replay),
               label: const Text('重新语音输入'),
@@ -778,7 +837,7 @@ class HomePageState extends State<HomePage> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               isDense: true,
-              labelText: '压力 (MPa)',
+              labelText: '压力',
               suffixText: 'MPa',
             ),
             style: const TextStyle(fontSize: 16),
