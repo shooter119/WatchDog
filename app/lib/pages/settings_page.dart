@@ -4,6 +4,7 @@ import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+import 'op_log_page.dart';
 import 'roster_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -108,7 +109,7 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _field(_server, '服务器地址', 'http://你的VPS:3000', icon: Icons.dns_outlined, keyboard: TextInputType.url),
+                  _field(_server, '服务器地址', '默认 https://bytevirt.meiyou.xyz:8443', icon: Icons.dns_outlined, keyboard: TextInputType.url),
                   _field(_scene, '场景码', '多设备同步用同一场景码', icon: Icons.tag),
                   _field(
                     _token,
@@ -185,6 +186,39 @@ class _SettingsPageState extends State<SettingsPage> {
                       Text('消防员与专业术语', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                       SizedBox(height: 2),
                       Text('提前录入，语音识别更准', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          AppCard(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => OpLogPage(controller: widget.controller)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceSubtle,
+                  ),
+                  child: const Icon(Icons.receipt_long_outlined, size: 20, color: AppColors.textPrimary),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('操作日志', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      SizedBox(height: 2),
+                      Text('语音录入全流程记录，可同步到服务器调试', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
                     ],
                   ),
                 ),

@@ -2,12 +2,14 @@
 
 消防救援现场安全管控 App：安全员语音录入（姓名+气瓶压力）→ 云端 ASR + LLM 解析 → 自动计算可用时间并倒计时，看板实时显示在场人员，多设备云端同步。
 
-## 当前状态（更新于 2026-08-05）
+## 当前状态（更新于 2026-08-06）
 
 | 模块 | 状态 |
 | --- | --- |
-| 后端（Express + node:sqlite） | ✅ 单测 21/21 通过（calc/db/API 集成/token 鉴权），含请求日志、旧数据自动清理、场景列表 |
-| App（Flutter） | ✅ UI v0.1 重构完成，`flutter analyze` 0 问题，widget 测试 13/13 通过 |
+| 后端（Express + node:sqlite） | ✅ 单测 34/34 通过（calc/db/API 集成/token 鉴权/操作日志），含请求日志、旧数据自动清理、场景列表 |
+| App（Flutter） | ✅ `flutter analyze` 0 问题，测试 34/34 通过（widget 27 + 姓名解析 7） |
+| 操作日志 | ✅ 每次语音操作（录音→转写→解析→确认/出场）客户端+服务端双端埋点，同一 opId 串起全链路；设置页二级页面按操作分组查看（展开步骤+原始数据 JSON）；日志批量上报服务器（`POST /api/logs`），开发者可用 `GET /api/logs` 调试 |
+| 按人可调气瓶容量 | ✅ 确认页可改单人气瓶容量（默认取全局配置，1~20L 校验），可用时间实时重算；后端 `POST /api/entries` 支持 `volume_l`（可空） |
 | Android Release APK | ✅ 已配置正式签名（watchdog-release.keystore）+ minify/shrink，构建通过（52.1MB） |
 | Android 保活/常亮 | ✅ 精确闹钟 USE_EXACT_ALARM + 运行时通知权限申请 + 屏幕常亮（原生 FLAG_KEEP_SCREEN_ON，无第三方依赖） |
 | iOS 构建 | ⏸ 暂缓（集中开发 Android） |
@@ -20,24 +22,34 @@
 
 ```
 backend/                 Node.js 后端（Express + ws + node:sqlite，端口 3000）
-  src/server.js          全部 REST API + Token/场景码校验 + CORS + 请求日志 + 定时清理旧记录
+  src/server.js          全部 REST API + Token/场景码校验 + CORS + 请求日志 + 定时清理旧记录 + 操作日志埋点（同 opId 与 App 对齐）
   src/asr.js             豆包 Seed-ASR WebSocket 客户端（热词注入）
   src/parse.js           DeepSeek 语义解析（enter/exit + 姓名 + 压力）
   src/calc.js            可用时间 = 气瓶容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
-  src/db.js              SQLite（WAL），表：entries / firefighters / hotwords，均带 scene
+  src/db.js              SQLite（WAL），表：entries / firefighters / hotwords / logs，均带 scene
   src/logger.js          统一日志（时间戳 + 级别）
-  test/                  node:test 单测（calc / db / API 集成 / token 鉴权），npm test 运行
+  test/                  node:test 单测（calc / db / API 集成 / token 鉴权 / 操作日志），npm test 运行
   .env.example           环境变量模板
 app/                     Flutter 客户端（org com.firewatch.watchdog，包名 watchdog）
   lib/main.dart          三 Tab + 中央语音按钮：看板 / 语音录入 / 设置（UI 规范 v0.1）
   lib/theme/             设计 Token（颜色/间距/圆角/字级/阴影）+ 通用组件（卡片/徽章/倒计时/脉冲/连接状态/语音按钮）
-  lib/pages/             board(看板+概览横幅) / home(语音) / roster(名单热词) / settings / entry_detail(人员详情)
-  lib/api/api_client.dart 全部接口调用（带 X-Scene-Code / X-Api-Token）
+  lib/pages/             board(看板+概览横幅) / home(语音) / roster(名单热词) / settings / entry_detail(人员详情) / op_log(操作日志)
+  lib/api/api_client.dart 全部接口调用（带 X-Scene-Code / X-Api-Token / X-Device-Id / X-Op-Id）
   lib/state/app_controller.dart 5 秒轮询同步 + 每秒阈值检查 + TTS/通知调度
-  lib/services/          audio(录音 wav 16kHz) / tts(播报) / alarm(精确闹钟通知+警报音) / screen_on(常亮) / settings
+  lib/services/          audio(录音 wav 16kHz) / tts(播报) / alarm(精确闹钟通知+警报音) / screen_on(常亮) / settings / op_log(日志本地缓冲+批量上报)
   android/app/watchdog-release.keystore + key.properties  正式签名（勿提交 keystore 与密码）
   assets/sounds/alarm.wav 警报音（Android 另存于 res/raw/ 供通知使用）
 ```
+
+## 操作日志（调试链路）
+
+每次语音操作（长按说话）生成一个 `opId`，贯穿客户端与服务端全部步骤，双方日志落同一张 `logs` 表：
+
+- 客户端步骤：`record_start` → `record_stop`（时长/字节）→ `transcribe_ok/err`（文本+耗时）→ `parse_ok/err`（解析 JSON+耗时）→ `confirm_enter`（姓名/压力/容量/结果）→ `op_end`（结果汇总）；出火场走 `exit_ok / exit_skip`
+- 服务端步骤（X-Op-Id 头透传）：`transcribe_received`（音频大小/格式/热词数）→ `asr_done`（ASR 原文+耗时）→ `revise_done`（修正前后文本）→ `transcribe_resp`；`parse_req/parse_done`；`entry_created / entry_conflict / entry_exited`
+- App 内：设置 → 操作日志，按操作分组查看，可展开每步明细（含原始 JSON）；同步开关默认开，每次操作结束自动批量上传（断网时积压待传，启动时补传）
+- 服务器调试：`curl -H 'X-Scene-Code: <场景码>' -H 'X-Api-Token: <令牌>' 'https://bytevirt.meiyou.xyz:8443/api/logs?limit=100'`（可按 `?op_id=` / `?device=` 过滤；`DELETE /api/logs` 清空）
+- 日志保留 30 天自动清理（`LOG_PURGE_DAYS` 可调），本地最多保留 200 步
 
 ## 环境变量（backend/.env）
 
@@ -50,15 +62,17 @@ app/                     Flutter 客户端（org com.firewatch.watchdog，包名
 | WARN_MIN=10 / ALARM_MIN=5 | 提醒阈值 |
 | PORT=3000 / API_TOKEN | API_TOKEN 设置后所有接口须带 X-Api-Token |
 | PURGE_EXITED_DAYS=7 | 自动清理已出场超过 N 天的记录（启动时 + 每 24h） |
+| LOG_PURGE_DAYS=30 | 自动清理超过 N 天的操作日志（与出场记录同周期） |
 | LOG_LEVEL=info | debug 输出更多细节 |
 
 ## API 清单
 
 - `GET /api/health`（免 token）、`GET /api/config`、`GET /api/scenes`（活跃场景列表）
-- `POST /api/transcribe`（raw 音频 ≤15MB，Content-Type: audio/wav | pcm | mp3 | ogg，未知按 wav）
+- `POST /api/transcribe`（raw 音频 ≤15MB，Content-Type: audio/wav | pcm | mp3 | ogg，未知按 wav；带 `X-Op-Id` 时服务端记录全链路日志）
 - `POST /api/parse`（{text} → enter/exit/unknown + name + pressure_mpa）
-- `GET/POST /api/entries`、`POST /api/entries/:id/exit`
+- `POST /api/entries`（{name, pressure_mpa, volume_l?}，volume_l 可空即用全局容量，0~20L）、`POST /api/entries/:id/exit`
 - `GET/POST/DELETE /api/firefighters`、`/api/hotwords`（名单/热词按场景隔离，热词注入 ASR 提升识别率）
+- `POST /api/logs`（批量上报操作日志，单次 ≤100 条）、`GET /api/logs?limit=&op_id=&device=`（调试查询）、`DELETE /api/logs`（清空本场景日志）
 
 ## 豆包 ASR 协议要点（联调结论，改代码前必读）
 
@@ -91,6 +105,7 @@ cd app && flutter build apk --release                                       # �
 ## 产品规则（重要）
 
 - 语音识别到「进入火场」后停在确认页，压力**必填**才能登记（不默认满压）
+- 确认页每人的气瓶容量可单独修改（默认取设置里的全局容量 6.8L），改动后可用时间实时重算；容量留空或 1~20L 外时不允许提交
 - 长按说话、松手自动转写；识别到「出火场」自动登记出火场
 - 未报压力时后端 400 拒绝，App 提示补填
 - 倒计时阈值：剩余 warnMin 提醒、alarmMin 报警、超时报警；后台走本地精确闹钟通知（Android 14+ 用 USE_EXACT_ALARM，无需手动授权；设置页可见「精确闹钟被关闭」提示），前台 TTS+警报音
@@ -99,7 +114,7 @@ cd app && flutter build apk --release                                       # �
 
 ## 待办
 
-1. 真机录音链路验证（Release APK 已就绪，服务器已上线，需真机跑通 录音→转写→解析→看板）
+1. 真机录音链路验证（Release APK 已就绪，服务器已上线，需真机跑通 录音→转写→解析→看板；操作日志页 + 服务器 `GET /api/logs` 可直接观察全链路）
 2. 真机多设备同步 + 通知/报警实测（本地精确闹钟行为需 Android 13/14 真机确认）
 3. App 指向生产服务器（设置页填 https://bytevirt.meiyou.xyz:8443 + 场景码 + 令牌）
 4. iOS 构建验证（暂缓，集中 Android）

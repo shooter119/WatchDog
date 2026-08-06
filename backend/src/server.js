@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { transcribe } = require('./asr');
-const { parseTextWithDeepSeek } = require('./parse');
+const { parseTextWithDeepSeek, reviseTextWithDeepSeek } = require('./parse');
 const { durationMinutes, exitAtMs } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
@@ -62,6 +62,31 @@ function sceneKey(req) {
   return (req.headers['x-scene-code'] || 'default').toString().slice(0, 64);
 }
 
+function deviceKey(req) {
+  return (req.headers['x-device-id'] || '').toString().slice(0, 64) || null;
+}
+
+function opKey(req) {
+  return (req.headers['x-op-id'] || '').toString().slice(0, 64) || null;
+}
+
+/** 服务端操作日志：与 App 端同 op_id，便于拼接完整链路 */
+function logOp(req, level, stage, msg, data = null) {
+  try {
+    db.addLog({
+      scene: sceneKey(req),
+      device: deviceKey(req),
+      opId: opKey(req),
+      level,
+      stage,
+      msg,
+      data,
+    });
+  } catch (e) {
+    logger.warn('写入操作日志失败', e.message || e);
+  }
+}
+
 function hotwordList(scene) {
   const firefighters = db.listFirefighters(scene).map((f) => f.name);
   const terms = db.listHotwords(scene).map((h) => h.word);
@@ -105,6 +130,8 @@ app.post('/api/transcribe', (req, res, next) => {
       const ct = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
       const fmt = ct.replace(/^audio\//, '');
       const format = ['wav', 'pcm', 'mp3', 'ogg'].includes(fmt) ? fmt : 'wav';
+      const t0 = Date.now();
+      logOp(req, 'info', 'transcribe_received', '收到语音转写请求', { bytes: audio.length, format, hotwords: hotwords.length });
       const text = await transcribe({
         appId: CFG.asr.appId,
         accessToken: CFG.asr.accessToken,
@@ -113,8 +140,35 @@ app.post('/api/transcribe', (req, res, next) => {
         format,
         hotwords,
       });
-      res.json({ text, hotwordCount: hotwords.length });
+      logOp(req, 'info', 'asr_done', 'ASR 识别完成', { text, ms: Date.now() - t0 });
+      // ASR 文本修正：结合名单与热词纠正同音字/专有名词（如"理想"→"李翔"）。
+      // 仅当 LLM 已配置且 ASR 有结果时执行；修正失败回退原文，不阻塞语音录入。
+      let revised = false;
+      let finalText = text;
+      if (text && CFG.llm.apiKey) {
+        try {
+          const corrected = await reviseTextWithDeepSeek({
+            apiKey: CFG.llm.apiKey,
+            baseUrl: CFG.llm.baseUrl,
+            model: CFG.llm.model,
+            text,
+            firefighters: db.listFirefighters(scene).map((f) => f.name),
+            hotwords: db.listHotwords(scene).map((h) => h.word),
+          });
+          if (corrected && corrected !== text) {
+            finalText = corrected;
+            revised = true;
+          }
+          logOp(req, 'info', 'revise_done', '文本修正完成', { before: text, after: finalText, revised });
+        } catch (e) {
+          logger.warn('文本修正失败，回退原始转写', e.message || e);
+          logOp(req, 'warn', 'revise_failed', `文本修正失败，回退原始转写: ${e.message || e}`);
+        }
+      }
+      res.json({ text: finalText, revised, hotwordCount: hotwords.length });
+      logOp(req, 'info', 'transcribe_resp', '转写响应', { text: finalText, revised, ms: Date.now() - t0 });
     } catch (e) {
+      logOp(req, 'error', 'transcribe_err', `转写失败: ${e.message || e}`);
       next(e);
     }
   });
@@ -129,6 +183,8 @@ app.post('/api/parse', async (req, res, next) => {
     const scene = sceneKey(req);
     const firefighters = db.listFirefighters(scene).map((f) => f.name);
     const hotwords = db.listHotwords(scene).map((h) => h.word);
+    const t0 = Date.now();
+    logOp(req, 'info', 'parse_req', '收到语义解析请求', { text: String(text).trim(), firefighters, hotwords });
     const parsed = await parseTextWithDeepSeek({
       apiKey: CFG.llm.apiKey,
       baseUrl: CFG.llm.baseUrl,
@@ -137,8 +193,10 @@ app.post('/api/parse', async (req, res, next) => {
       firefighters,
       hotwords,
     });
+    logOp(req, 'info', 'parse_done', '语义解析完成', { parsed, ms: Date.now() - t0 });
     res.json(parsed);
   } catch (e) {
+    logOp(req, 'error', 'parse_err', `解析失败: ${e.message || e}`);
     next(e);
   }
 });
@@ -150,7 +208,7 @@ app.get('/api/entries', (req, res) => {
 
 app.post('/api/entries', (req, res, next) => {
   try {
-    const { name, pressure_mpa, source = 'voice', raw_text = null, force = false } = req.body || {};
+    const { name, pressure_mpa, source = 'voice', raw_text = null, force = false, volume_l } = req.body || {};
     const scene = sceneKey(req);
     const cleanName = String(name || '').trim();
     if (!cleanName) return res.status(400).json({ error: '缺少姓名' });
@@ -158,12 +216,20 @@ app.post('/api/entries', (req, res, next) => {
     const p = Number(pressure_mpa);
     if (!(p > 0) || p > 40) return res.status(400).json({ error: '压力数值异常' });
 
+    // 气瓶容量：可空（用全局默认），提供时须在合理范围（防止误填导致倒计时异常）
+    let vol = null;
+    if (volume_l != null && volume_l !== '') {
+      vol = Number(volume_l);
+      if (!(vol > 0) || vol > 20) return res.status(400).json({ error: '气瓶容量数值异常' });
+    }
+
     // 同名在场记录：防止同一人重复登记（改名合并走 PATCH，重复进场须 force）
     const existing = db.findActiveByName(scene, cleanName);
     if (existing && !force) {
       const at = new Date(existing.entry_at);
       const hh = String(at.getHours()).padStart(2, '0');
       const mm = String(at.getMinutes()).padStart(2, '0');
+      logOp(req, 'warn', 'entry_conflict', `「${cleanName}」已在火场内，拒绝重复进场`, { entryId: existing.id });
       return res.status(409).json({
         error: `「${existing.name}」已在火场内（${hh}:${mm} 进入，尚未出场）。请选择改名合并或确认重复进场`,
         entry: existing,
@@ -171,7 +237,7 @@ app.post('/api/entries', (req, res, next) => {
     }
 
     const now = Date.now();
-    const durationMin = Math.round(durationMinutes({ ...CFG.calc, pressureMpa: p }));
+    const durationMin = Math.round(durationMinutes({ ...CFG.calc, pressureMpa: p, cylinderVolL: vol || CFG.calc.cylinderVolL }));
     const entry = db.createEntry({
       id: crypto.randomUUID(),
       scene,
@@ -179,12 +245,22 @@ app.post('/api/entries', (req, res, next) => {
       pressureMpa: p,
       durationMin,
       entryAtMs: now,
-      exitAtMs: exitAtMs({ ...CFG.calc, pressureMpa: p, entryAtMs: now }),
+      exitAtMs: exitAtMs({ ...CFG.calc, pressureMpa: p, entryAtMs: now, cylinderVolL: vol || CFG.calc.cylinderVolL }),
       source,
+      rawText: raw_text,
+    });
+    logOp(req, 'info', 'entry_created', '登记进场成功', {
+      entryId: entry.id,
+      name: cleanName,
+      pressureMpa: p,
+      volumeL: vol || CFG.calc.cylinderVolL,
+      durationMin,
+      force,
       rawText: raw_text,
     });
     res.status(201).json(entry);
   } catch (e) {
+    logOp(req, 'error', 'entry_err', `登记进场失败: ${e.message || e}`);
     next(e);
   }
 });
@@ -219,9 +295,14 @@ app.patch('/api/entries/:id', (req, res, next) => {
 app.post('/api/entries/:id/exit', (req, res, next) => {
   try {
     const entry = db.getEntry(req.params.id);
-    if (!entry) return res.status(404).json({ error: '记录不存在' });
+    if (!entry) {
+      logOp(req, 'warn', 'exit_missing', `登记出火场失败：记录不存在`, { id: req.params.id });
+      return res.status(404).json({ error: '记录不存在' });
+    }
+    logOp(req, 'info', 'entry_exited', `登记出火场`, { entryId: entry.id, name: entry.name });
     res.json(db.markExited(entry.id, Date.now()));
   } catch (e) {
+    logOp(req, 'error', 'exit_err', `登记出火场失败: ${e.message || e}`);
     next(e);
   }
 });
@@ -268,8 +349,65 @@ app.delete('/api/hotwords/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// 操作日志：App 批量上报（与场景码/令牌同规则鉴权）
+app.post('/api/logs', (req, res, next) => {
+  try {
+    const { logs } = req.body || {};
+    if (!Array.isArray(logs)) return res.status(400).json({ error: '缺少 logs 数组' });
+    if (logs.length === 0) return res.json({ ok: true, count: 0 });
+    if (logs.length > 100) return res.status(400).json({ error: '单次最多上报 100 条日志' });
+    const scene = sceneKey(req);
+    const device = deviceKey(req);
+    const levels = ['info', 'warn', 'error'];
+    let inserted = 0;
+    for (const item of logs) {
+      if (!item || typeof item !== 'object') continue;
+      const stage = String(item.stage || '').slice(0, 64);
+      if (!stage) continue;
+      const level = levels.includes(item.level) ? item.level : 'info';
+      const data = item.data;
+      db.addLog({
+        scene,
+        device: device || String(item.device || '').slice(0, 64) || null,
+        opId: String(item.op_id || '').slice(0, 64) || null,
+        level,
+        stage,
+        msg: item.msg == null ? '' : String(item.msg),
+        data: data === undefined || data === null ? null : JSON.stringify(data).length > 8192 ? { truncated: true, data: JSON.stringify(data).slice(0, 8192) } : data,
+      });
+      inserted++;
+    }
+    res.json({ ok: true, count: inserted });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 操作日志查询/清空（调试用：可按 op_id/device 过滤，新→旧）
+app.get('/api/logs', (req, res) => {
+  res.json(
+    db.listLogs({
+      scene: sceneKey(req),
+      limit: Number(req.query.limit) || 200,
+      opId: String(req.query.op_id || ''),
+      device: String(req.query.device || ''),
+    })
+  );
+});
+
+app.delete('/api/logs', (req, res) => {
+  const n = db.clearLogs({
+    scene: sceneKey(req),
+    opId: String(req.query.op_id || '') || null,
+  });
+  res.json({ ok: true, deleted: n });
+});
+
 app.use((err, req, res, next) => {
   logger.error(req.method, req.path, err.stack || err);
+  if (req.headers['x-op-id']) {
+    logOp(req, 'error', 'http_err', `${req.method} ${req.path} 失败: ${err.message || err}`);
+  }
   const status = err.status || 500;
   res.status(status).json({ error: status === 500 ? '服务器内部错误' : err.message });
 });
@@ -277,12 +415,19 @@ app.use((err, req, res, next) => {
 // 仅作为入口运行时监听端口；被测试 require 时导出 app
 if (require.main === module) {
   const purgeDays = Number(process.env.PURGE_EXITED_DAYS || 7);
+  const logPurgeDays = Number(process.env.LOG_PURGE_DAYS || 30);
   const doPurge = () => {
     try {
       const n = db.purgeOldExited(purgeDays);
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${purgeDays} 天的出场记录`);
     } catch (e) {
       logger.error('清理旧记录失败', e.message);
+    }
+    try {
+      const n = db.purgeOldLogs(logPurgeDays);
+      if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的操作日志`);
+    } catch (e) {
+      logger.error('清理旧日志失败', e.message);
     }
   };
   doPurge();

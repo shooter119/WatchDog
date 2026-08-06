@@ -74,6 +74,11 @@ class ParsePerson {
 
   const ParsePerson({required this.name, this.pressureMpa});
 
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        if (pressureMpa != null) 'pressure_mpa': pressureMpa,
+      };
+
   factory ParsePerson.fromJson(Map<String, dynamic> json) => ParsePerson(
         name: (json['name'] as String?) ?? '',
         pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),
@@ -90,6 +95,12 @@ class ParseResult {
     required this.people,
     this.note = '',
   });
+
+  Map<String, dynamic> toJson() => {
+        'action': action,
+        'people': people.map((p) => p.toJson()).toList(),
+        'note': note,
+      };
 
   ParseResult.single({
     required this.action,
@@ -148,6 +159,7 @@ class CalcConfig {
       );
 
   /// 可用时间（分钟） = 容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
-  double durationMinFor(double pressureMpa) =>
-      cylinderVolL * pressureMpa * 10 / consumptionLpm;
+  /// [cylinderVolL] 可指定单人气瓶容量（默认全局配置）
+  double durationMinFor(double pressureMpa, {double? cylinderVolL}) =>
+      (cylinderVolL ?? this.cylinderVolL) * pressureMpa * 10 / consumptionLpm;
 }

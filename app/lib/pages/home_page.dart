@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 
@@ -6,6 +7,7 @@ import '../api/api_client.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import '../services/audio_service.dart';
+import '../services/op_log_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
@@ -39,12 +41,11 @@ class HomePageState extends State<HomePage> {
   StreamSubscription<double>? _ampSub;
   double _amp = 0.15;
 
+  // 本次语音操作 ID：贯穿 录音→转写→解析→确认/出场，客户端与服务端日志以此对齐
+  String? _opId;
+
   // 确认编辑用：每次语音识别出的每个人员一组输入
   final List<_PersonEdit> _peopleEditors = [];
-
-  // 多人逐人确认：当前确认到第几人 + 已确认姓名
-  int _confirmIndex = 0;
-  final List<String> _confirmedNames = [];
 
   // 表单内联校验错误（不遮挡确认卡片）
   String? _inlineError;
@@ -87,14 +88,14 @@ class HomePageState extends State<HomePage> {
       ed.dispose();
     }
     _peopleEditors.clear();
-    _confirmIndex = 0;
-    _confirmedNames.clear();
   }
 
   /// 开始录音（长按触发）
   Future<void> beginRecording() async {
     widget.onAutoRecordConsumed?.call();
     if (_recording || _processing) return;
+    _opId = 'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
+    OpLogService.instance.record(_opId!, 'record_start', '开始录音');
     setState(() {
       _error = null;
       _inlineError = null;
@@ -104,7 +105,9 @@ class HomePageState extends State<HomePage> {
     _clearEditors();
     final ok = await _audio.hasPermission();
     if (!ok) {
+      OpLogService.instance.record(_opId!, 'record_perm_denied', '缺少麦克风权限', level: 'warn');
       if (mounted) setState(() => _error = '需要麦克风权限');
+      _endOp('perm_denied');
       return;
     }
     try {
@@ -115,7 +118,9 @@ class HomePageState extends State<HomePage> {
         if (mounted) setState(() => _amp = a);
       });
     } catch (e) {
+      OpLogService.instance.record(_opId!, 'record_start_err', '录音启动失败: $e', level: 'error');
       if (mounted) setState(() => _error = '录音启动失败: $e');
+      _endOp('record_error');
     }
   }
 
@@ -128,25 +133,48 @@ class HomePageState extends State<HomePage> {
       _amp = 0.15;
     });
     _ampSub?.cancel();
+    final opId = _opId ?? '';
     try {
+      final sw = Stopwatch()..start();
       final bytes = await _audio.stop();
-      final text = await widget.controller.api!.transcribe(bytes);
+      OpLogService.instance
+          .record(opId, 'record_stop', '录音结束', data: {'bytes': bytes.length, 'ms': sw.elapsedMilliseconds});
+      String text;
+      try {
+        text = await widget.controller.api!.transcribe(bytes, opId: opId);
+        OpLogService.instance
+            .record(opId, 'transcribe_ok', '转写成功', data: {'text': text, 'ms': sw.elapsedMilliseconds});
+      } catch (e) {
+        OpLogService.instance.record(opId, 'transcribe_err', '转写失败: $e', level: 'error');
+        rethrow;
+      }
       if (text.isEmpty) {
+        OpLogService.instance.record(opId, 'transcribe_empty', '未识别到语音，请再说一次', level: 'warn');
         if (mounted) {
           setState(() {
             _processing = false;
             _error = '未识别到语音，请再说一次';
           });
         }
+        _endOp('no_speech');
         return;
       }
-      final parsed = await widget.controller.api!.parse(text);
+      ParseResult parsed;
+      try {
+        parsed = await widget.controller.api!.parse(text, opId: opId);
+        OpLogService.instance.record(opId, 'parse_ok', '语义解析完成',
+            data: {'text': text, 'parsed': parsed.toJson(), 'ms': sw.elapsedMilliseconds});
+      } catch (e) {
+        OpLogService.instance.record(opId, 'parse_err', '解析失败: $e', level: 'error');
+        rethrow;
+      }
       if (!mounted) return;
       _clearEditors();
       for (final p in parsed.people) {
         final ed = _PersonEdit(onChanged: _onEditsChanged);
         ed.nameCtrl.text = p.name;
         if (p.pressureMpa != null) ed.pressureCtrl.text = p.pressureMpa.toString();
+        ed.volumeCtrl.text = widget.controller.calcConfig.cylinderVolL.toStringAsFixed(1);
         _peopleEditors.add(ed);
       }
       setState(() {
@@ -164,7 +192,18 @@ class HomePageState extends State<HomePage> {
           _error = '$e';
         });
       }
+      _endOp('error');
     }
+  }
+
+  /// 本次操作收尾：记录结束步 + 把待上传日志批量同步到服务器
+  void _endOp(String outcome, {String level = 'info', Map<String, dynamic>? data}) {
+    final opId = _opId;
+    _opId = null;
+    if (opId == null) return;
+    OpLogService.instance
+        .record(opId, 'op_end', '本次操作结束', level: level, data: {'outcome': outcome, ...?data});
+    OpLogService.instance.flush(api: widget.controller.api);
   }
 
   Future<void> _handleExit(List<String> names) async {
@@ -174,10 +213,14 @@ class HomePageState extends State<HomePage> {
       final active = widget.controller.entries.where((e) => e.isActive && e.name == name).toList();
       if (active.isEmpty) {
         notFound.add(name);
+        OpLogService.instance
+            .record(_opId ?? '', 'exit_skip', '未找到在场人员「$name」', level: 'warn');
         continue;
       }
       for (final e in active) {
-        await widget.controller.markExited(e.id);
+        await widget.controller.markExited(e.id, opId: _opId);
+        OpLogService.instance
+            .record(_opId ?? '', 'exit_ok', '已登记「$name」出火场', data: {'entryId': e.id, 'name': name});
       }
       exited++;
     }
@@ -195,6 +238,7 @@ class HomePageState extends State<HomePage> {
       _error = notFound.isEmpty ? null : '未找到在场人员「${notFound.join('、')}」';
       _clearEditors();
     });
+    _endOp(exited > 0 ? 'exit_ok' : 'exit_none');
   }
 
   /// 重新语音输入：清除本次转写/解析结果与错误状态
@@ -215,66 +259,105 @@ class HomePageState extends State<HomePage> {
     final p = ed.pressure;
     if (p == null) return '「${ed.name}」缺少气瓶压力';
     if (p <= 0 || p > 40) return '「${ed.name}」压力数值异常';
+    final v = ed.volume;
+    if (v == null || v <= 0 || v > 20) return '「${ed.name}」气瓶容量数值异常（1~20L）';
     return null;
   }
 
-  /// 确认进场：单人直接提交；多人逐人确认（同名在场时弹窗二选一），全部确认完才清空表单
-  Future<void> _confirmEnter() async {
+  /// 一次性确认全部人员进场：先整体校验（错误全部列出），再逐个提交。
+  /// 成功者移除，失败/取消者保留在表单中供修正后再次确认。
+  Future<void> _confirmAll() async {
     if (_peopleEditors.isEmpty) {
       setState(() => _error = '未识别到人员信息，请重新语音输入');
       return;
     }
-    final ed = _peopleEditors[_confirmIndex];
-    final problem = _validatePerson(ed);
-    if (problem != null) {
-      setState(() => _inlineError = problem);
+    final problems = <String>[];
+    for (final (i, ed) in _peopleEditors.indexed) {
+      final problem = _validatePerson(ed);
+      if (problem != null) problems.add('${i + 1}. $problem');
+    }
+    if (problems.isNotEmpty) {
+      setState(() => _inlineError = problems.join('\n'));
       return;
     }
 
     setState(() => _processing = true);
-    final result = await _submitPerson(ed.name, ed.pressure!);
-    if (!mounted) return;
-    if (result == _SubmitResult.cancelled || result == _SubmitResult.error) {
-      setState(() => _processing = false);
-      return;
+    final results = <({_PersonEdit ed, _SubmitResult result})>[];
+    for (final ed in _peopleEditors) {
+      final result = await _submitPerson(ed.name, ed.pressure!, ed.volume!);
+      if (!mounted) return;
+      if (result == _SubmitResult.created || result == _SubmitResult.merged) {
+        OpLogService.instance.record(_opId ?? '', 'confirm_enter', '已登记「${ed.name}」进场', data: {
+          'name': ed.name,
+          'pressure_mpa': ed.pressure,
+          'volume_l': ed.volume,
+          'result': result == _SubmitResult.created ? 'created' : 'merged',
+        });
+      } else if (result == _SubmitResult.error) {
+        OpLogService.instance.record(_opId ?? '', 'confirm_err', '「${ed.name}」登记进场失败', level: 'error');
+      }
+      results.add((ed: ed, result: result));
+      if (result == _SubmitResult.cancelled) break;
     }
-    _confirmedNames.add(ed.name);
-    final isLast = _confirmIndex >= _peopleEditors.length - 1;
-    if (!isLast) {
-      setState(() {
-        _processing = false;
-        _confirmIndex++;
-      });
+    if (!mounted) return;
+
+    final done = <String>[];
+    final failed = <String>[];
+    final kept = <_PersonEdit>[];
+    for (final r in results) {
+      final ok =
+          r.result == _SubmitResult.created || r.result == _SubmitResult.merged;
+      if (ok) {
+        done.add(r.ed.name);
+        r.ed.dispose();
+      } else {
+        failed.add(r.ed.name);
+        kept.add(r.ed);
+      }
+    }
+    // 取消中断后未提交的剩余行一并保留
+    for (var i = results.length; i < _peopleEditors.length; i++) {
+      kept.add(_peopleEditors[i]);
+    }
+    _peopleEditors
+      ..clear()
+      ..addAll(kept);
+
+    if (done.isNotEmpty) {
+      widget.controller.tts.speak('${done.join('、')}，已开始倒计时');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已登记「${ed.name}」，请确认第 ${_confirmIndex + 1} 位'),
+          content: Text('${done.join('、')} 已入火场，开始倒计时'),
           duration: const Duration(seconds: 2),
         ),
       );
-      return;
     }
-    final names = List.of(_confirmedNames);
-    _confirmedNames.clear();
-    widget.controller.tts.speak('${names.join('、')}，已开始倒计时');
-    setState(() {
-      _transcript = null;
-      _parsed = null;
-      _error = null;
-      _inlineError = null;
-      _processing = false;
-      _confirmIndex = 0;
-      _clearEditors();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${names.join('、')} 已入火场，开始倒计时'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    final allDone = failed.isEmpty && _peopleEditors.isEmpty;
+    if (mounted) {
+      setState(() {
+        if (allDone) {
+          _transcript = null;
+          _parsed = null;
+        }
+        _inlineError = null;
+        _processing = false;
+      });
+    }
+    if (!allDone && failed.isNotEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('未登记：${failed.join('、')}，请修正后再次确认'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+    if (allDone) {
+      _endOp('enter_ok', data: {'names': done});
+    }
   }
 
   /// 提交单个人：本地预检同名 → 弹窗合并/另建；服务端 409 时兜底再弹一次
-  Future<_SubmitResult> _submitPerson(String name, double p) async {
+  Future<_SubmitResult> _submitPerson(String name, double p, double volumeL) async {
     final existing = widget.controller.entries
         .where((e) => e.isActive && e.name == name)
         .toList();
@@ -284,9 +367,9 @@ class HomePageState extends State<HomePage> {
       if (choice == SameNameChoice.merge) {
         return await _tryMerge(existing.first, p);
       }
-      return await _tryCreate(name, p, force: true);
+      return await _tryCreate(name, p, force: true, volumeL: volumeL);
     }
-    return await _tryCreate(name, p);
+    return await _tryCreate(name, p, volumeL: volumeL);
   }
 
   Future<SameNameChoice?> _askSameName(Entry existing, double p) {
@@ -302,37 +385,33 @@ class HomePageState extends State<HomePage> {
   void _removeEditorAt(int index) {
     final ed = _peopleEditors.removeAt(index);
     ed.dispose();
-    if (_confirmIndex >= _peopleEditors.length) {
-      _confirmIndex = _peopleEditors.isEmpty ? 0 : _peopleEditors.length - 1;
+    if (_peopleEditors.isEmpty) {
+      _retry();
+      return;
     }
     if (mounted) setState(() {});
   }
 
-  /// 逐人确认中移除当前人员；全部移除后回到初始状态
-  void _removeCurrentPerson() {
-    _removeEditorAt(_confirmIndex);
-    if (_peopleEditors.isEmpty) {
-      _retry();
-    }
-  }
-
   Future<_SubmitResult> _tryMerge(Entry existing, double p) async {
     try {
-      await widget.controller.mergeEntryPressure(id: existing.id, pressureMpa: p);
+      await widget.controller.mergeEntryPressure(id: existing.id, pressureMpa: p, opId: _opId);
       return _SubmitResult.merged;
     } catch (e) {
+      OpLogService.instance.record(_opId ?? '', 'merge_err', '合并压力失败: $e', level: 'error');
       if (mounted) setState(() => _error = '$e');
       return _SubmitResult.error;
     }
   }
 
-  Future<_SubmitResult> _tryCreate(String name, double p, {bool force = false}) async {
+  Future<_SubmitResult> _tryCreate(String name, double p, {bool force = false, double? volumeL}) async {
     try {
       await widget.controller.createEntryFromVoice(
         name: name,
         pressureMpa: p,
         rawText: _transcript,
         force: force,
+        volumeL: volumeL,
+        opId: _opId,
       );
       return _SubmitResult.created;
     } on EntryConflictException catch (e) {
@@ -343,8 +422,9 @@ class HomePageState extends State<HomePage> {
       if (choice == SameNameChoice.merge) {
         return await _tryMerge(e.existing, p);
       }
-      return await _tryCreate(name, p, force: true);
+      return await _tryCreate(name, p, force: true, volumeL: volumeL);
     } catch (e) {
+      OpLogService.instance.record(_opId ?? '', 'create_err', '登记进场失败: $e', level: 'error');
       if (mounted) setState(() => _error = '$e');
       return _SubmitResult.error;
     }
@@ -478,7 +558,7 @@ class HomePageState extends State<HomePage> {
             const SizedBox(height: 24),
             const Text('按住下方按钮说话', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
             const SizedBox(height: 10),
-            _example('例：「张伟20兆帕，李娜22兆帕」 → 多人逐人确认进场'),
+            _example('例：「张伟20兆帕，李娜22兆帕」 → 多人一次确认进场'),
             const SizedBox(height: 4),
             _example('例：「张伟，20兆帕」 → 单人进场，可用34分钟'),
             const SizedBox(height: 4),
@@ -561,7 +641,7 @@ class HomePageState extends State<HomePage> {
               ),
             )
           else if (_peopleEditors.length > 1)
-            _buildWizardCard(context, cfg)
+            _buildMultiCard(context, cfg)
           else
             AppCard(
               padding: const EdgeInsets.fromLTRB(12, 14, 12, 16),
@@ -580,7 +660,7 @@ class HomePageState extends State<HomePage> {
                     width: double.infinity,
                     height: 52,
                     child: FilledButton.icon(
-                      onPressed: _confirmEnter,
+                      onPressed: _confirmAll,
                       icon: const Icon(Icons.check_circle_outline),
                       label: const Text('确认进入火场，开始倒计时', style: TextStyle(fontSize: 16)),
                     ),
@@ -603,9 +683,8 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  /// 多人逐人确认卡片：进度 + 当前人员信息 + 逐人确认
-  Widget _buildWizardCard(BuildContext context, CalcConfig cfg) {
-    final ed = _peopleEditors[_confirmIndex];
+  /// 多人一次性确认卡片：全部人员平铺列出（可下滑核对），一个按钮全部提交
+  Widget _buildMultiCard(BuildContext context, CalcConfig cfg) {
     return AppCard(
       padding: const EdgeInsets.fromLTRB(12, 14, 12, 16),
       child: Column(
@@ -616,17 +695,32 @@ class HomePageState extends State<HomePage> {
               const Icon(Icons.fact_check_outlined, size: 16, color: AppColors.voice),
               const SizedBox(width: 6),
               Text(
-                '逐人确认：第 ${_confirmIndex + 1} / ${_peopleEditors.length} 人',
+                '确认名单（${_peopleEditors.length} 人）：请下滑核对后一次性确认',
                 style: const TextStyle(color: AppColors.textTertiary, fontSize: 12, letterSpacing: 0.5),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          _wizardProgress(),
-          const SizedBox(height: 14),
-          _personEditorRow(_confirmIndex, ed),
-          const SizedBox(height: 8),
-          _personHints(ed, cfg),
+          for (final (i, ed) in _peopleEditors.indexed) ...[
+            _personEditorRow(i, ed),
+            const SizedBox(height: 2),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _processing ? null : () => _removeEditorAt(i),
+                icon: const Icon(Icons.person_remove_outlined, size: 16),
+                label: const Text('移除该人员'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: const Size(0, 36),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            _personHints(ed, cfg),
+            if (i < _peopleEditors.length - 1) const Divider(height: 24),
+          ],
           if (_inlineError != null) ...[
             const SizedBox(height: 8),
             _inlineErrorBox(_inlineError!),
@@ -636,84 +730,22 @@ class HomePageState extends State<HomePage> {
             width: double.infinity,
             height: 52,
             child: FilledButton.icon(
-              onPressed: _processing ? null : _confirmEnter,
+              onPressed: _processing ? null : _confirmAll,
               icon: const Icon(Icons.check_circle_outline),
               label: Text(
-                '确认「${ed.name.isEmpty ? '第${_confirmIndex + 1}人' : ed.name}」进入火场',
+                '全部确认进入火场（${_peopleEditors.length} 人）',
                 style: const TextStyle(fontSize: 16),
               ),
             ),
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _processing ? null : _removeCurrentPerson,
-                  icon: const Icon(Icons.person_remove_outlined, size: 18),
-                  label: const Text('移除该人员'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _retry,
-                  icon: const Icon(Icons.replay),
-                  label: const Text('重新语音输入'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 逐人确认进度：已确认（绿）/ 当前（橙）/ 待确认（灰）
-  Widget _wizardProgress() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final (i, ed) in _peopleEditors.indexed)
-          _wizardChip(i: i, name: ed.name.isEmpty ? '未识别姓名' : ed.name),
-      ],
-    );
-  }
-
-  Widget _wizardChip({required int i, required String name}) {
-    final done = i < _confirmIndex;
-    final current = i == _confirmIndex;
-    final c = done
-        ? AppColors.safe
-        : (current ? AppColors.voice : AppColors.textTertiary);
-    final bg = done
-        ? AppColors.safe.withValues(alpha: 0.12)
-        : (current ? AppColors.voice.withValues(alpha: 0.14) : AppColors.surfaceSubtle);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(color: c.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            done
-                ? Icons.check_circle
-                : (current ? Icons.radio_button_checked : Icons.radio_button_unchecked),
-            size: 14,
-            color: c,
-          ),
-          const SizedBox(width: 5),
-          Text(
-            '${i + 1}.$name',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: done || current ? AppColors.textPrimary : AppColors.textSecondary,
-              fontWeight: current ? FontWeight.w700 : FontWeight.w600,
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: _retry,
+              icon: const Icon(Icons.replay),
+              label: const Text('重新语音输入'),
             ),
           ),
         ],
@@ -773,16 +805,17 @@ class HomePageState extends State<HomePage> {
           fontSize: 13,
           color: AppColors.alarm,
           fontWeight: FontWeight.w700,
-          height: 1.4,
+          height: 1.5,
         ),
       ),
     );
   }
 
-  /// 单行人员的提示：在场同名警告 + 可用时间
+  /// 单行人员的提示：在场同名警告 + 可用时间（容量可改，实时重算）
   Widget _personHints(_PersonEdit ed, CalcConfig cfg) {
     final name = ed.name;
     final p = ed.pressure;
+    final v = ed.volume ?? cfg.cylinderVolL;
     final dup = name.isNotEmpty
         ? widget.controller.entries.where((e) => e.isActive && e.name == name).toList()
         : <Entry>[];
@@ -808,12 +841,39 @@ class HomePageState extends State<HomePage> {
         if (p != null && p > 0 && p <= 40)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: boxStyle,
-            child: Text(
-              '可用时间 ${cfg.durationMinFor(p).round()} 分钟（${cfg.cylinderVolL}L × $p MPa ÷ ${cfg.consumptionLpm}L/min）',
-              textAlign: TextAlign.center,
-              style: style,
+            child: Row(
+              children: [
+                const Icon(Icons.gas_meter_outlined, size: 16, color: AppColors.textTertiary),
+                const SizedBox(width: 6),
+                const Text('容量', style: TextStyle(fontSize: 12.5, color: AppColors.textTertiary, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 4),
+                SizedBox(
+                  width: 62,
+                  height: 34,
+                  child: TextField(
+                    controller: ed.volumeCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Text('L', style: TextStyle(fontSize: 12.5, color: AppColors.textTertiary, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '可用时间 ${cfg.durationMinFor(p, cylinderVolL: v).round()} 分钟',
+                    style: style,
+                  ),
+                ),
+              ],
             ),
           )
         else
@@ -846,26 +906,32 @@ class HomePageState extends State<HomePage> {
 /// 单人提交结果
 enum _SubmitResult { created, merged, cancelled, error }
 
-/// 单个人员的姓名/压力编辑组（随输入实时刷新提示）
+/// 单个人员的姓名/压力/容量编辑组（随输入实时刷新提示）
 class _PersonEdit {
   final TextEditingController nameCtrl = TextEditingController();
   final TextEditingController pressureCtrl = TextEditingController();
+  final TextEditingController volumeCtrl = TextEditingController();
   final VoidCallback onChanged;
 
   _PersonEdit({required this.onChanged}) {
     nameCtrl.addListener(onChanged);
     pressureCtrl.addListener(onChanged);
+    volumeCtrl.addListener(onChanged);
   }
 
   String get name => nameCtrl.text.trim();
 
   double? get pressure => double.tryParse(pressureCtrl.text.trim());
 
+  double? get volume => double.tryParse(volumeCtrl.text.trim());
+
   void dispose() {
     nameCtrl.removeListener(onChanged);
     pressureCtrl.removeListener(onChanged);
+    volumeCtrl.removeListener(onChanged);
     nameCtrl.dispose();
     pressureCtrl.dispose();
+    volumeCtrl.dispose();
   }
 }
 

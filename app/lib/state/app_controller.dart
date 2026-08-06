@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/alarm_service.dart';
+import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/tts_service.dart';
@@ -36,13 +37,20 @@ class AppController extends ChangeNotifier {
     await alarm.init();
     await refreshConfig();
     startSync();
+    // 启动后补传上次未上传完的操作日志（fire-and-forget）
+    OpLogService.instance.flush(api: api);
   }
 
   Future<void> refreshConfig() async {
     final serverUrl = await Settings.serverUrl;
     final sceneCode = await Settings.sceneCode;
     final token = await Settings.apiToken;
-    api = ApiClient(baseUrl: serverUrl, sceneCode: sceneCode, apiToken: token);
+    api = ApiClient(
+      baseUrl: serverUrl,
+      sceneCode: sceneCode,
+      apiToken: token,
+      deviceId: await OpLogService.instance.deviceId,
+    );
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
     await ScreenOn.setKeepScreenOn(await Settings.keepScreenOn);
@@ -141,6 +149,8 @@ class AppController extends ChangeNotifier {
     required double pressureMpa,
     String? rawText,
     bool force = false,
+    double? volumeL,
+    String? opId,
   }) async {
     final e = await api!.createEntry(
       name: name,
@@ -148,20 +158,22 @@ class AppController extends ChangeNotifier {
       source: 'voice',
       rawText: rawText,
       force: force,
+      volumeL: volumeL,
+      opId: opId,
     );
     await sync();
     return e;
   }
 
   /// 合并：同名已在场的记录按本次复核压力重新倒计时（保留原记录，不重复计数）
-  Future<Entry> mergeEntryPressure({required String id, required double pressureMpa}) async {
-    final e = await api!.updateEntry(id: id, pressureMpa: pressureMpa);
+  Future<Entry> mergeEntryPressure({required String id, required double pressureMpa, String? opId}) async {
+    final e = await api!.updateEntry(id: id, pressureMpa: pressureMpa, opId: opId);
     await sync();
     return e;
   }
 
-  Future<void> markExited(String id) async {
-    await api!.markExited(id);
+  Future<void> markExited(String id, {String? opId}) async {
+    await api!.markExited(id, opId: opId);
     await sync();
   }
 

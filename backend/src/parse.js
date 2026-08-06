@@ -21,7 +21,16 @@ const SYSTEM_PROMPT = `你是消防救援现场安全管控系统的语音指令
 8. 无法确定姓名的人员不要放入 people，放入 note 说明
 9. 人数上限 10 人，超出部分在 note 中说明`;
 
-function callDeepSeek({ apiKey, baseUrl, model, systemPrompt, userPrompt }) {
+const REVISE_SYSTEM_PROMPT = `你是消防救援现场语音识别文本修正器。安全员的喊话被语音识别成文本后，可能存在同音字、错别字或专有名词错误。
+
+修正规则：
+1. 只修正识别错误（同音字、错别字、专有名词），不得改写内容、不得增删信息、不得调整语序、不得润色
+2. 名单中的姓名被识别成同音字时必须修正为名单中的准确姓名（例如名单有"李翔"，识别成"理想"应修正为"李翔"）
+3. 数字、压力数值、单位（兆帕/个压）必须原样保留
+4. 文本过短或无法判断错误时，原样返回
+5. 只输出 JSON：{"corrected": "修正后的文本"}`;
+
+function callDeepSeek({ apiKey, baseUrl, model, systemPrompt, userPrompt, timeoutMs = 30000 }) {
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
   return fetch(url, {
     method: 'POST',
@@ -39,6 +48,7 @@ function callDeepSeek({ apiKey, baseUrl, model, systemPrompt, userPrompt }) {
       response_format: { type: 'json_object' },
       max_tokens: 1024,
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   })
     .then(async (res) => {
       if (!res.ok) {
@@ -119,4 +129,23 @@ async function parseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighter
   };
 }
 
-module.exports = { parseTextWithDeepSeek, looksMultiPerson };
+/// 修正 ASR 原始文本：结合消防员名单与热词纠正同音字/错别字/专有名词。
+/// 返回修正后的文本；调用方应捕获异常并回退原始文本。
+async function reviseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighters = [], hotwords = [] }) {
+  const names = firefighters.length > 0 ? '名单：' + firefighters.join('、') : '名单：无';
+  const terms = hotwords.length > 0 ? '专业术语：' + hotwords.join('、') : '';
+  const userPrompt = `现场已知消防员${names}${terms ? '\n' + terms : ''}\n\n语音识别原始文本："${text}"`;
+
+  const parsed = await callDeepSeek({
+    apiKey,
+    baseUrl,
+    model,
+    systemPrompt: REVISE_SYSTEM_PROMPT,
+    userPrompt,
+    timeoutMs: 15000,
+  });
+  const corrected = parsed && typeof parsed.corrected === 'string' ? parsed.corrected.trim() : '';
+  return corrected || text;
+}
+
+module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, looksMultiPerson };

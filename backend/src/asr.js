@@ -176,25 +176,25 @@ function transcribe({ appId, accessToken, resourceId, audioBuffer, format = 'wav
       ws.send(buildFrame(header, gzPayload));
 
       // 音频分包发送（每包 200ms），最后发空 LAST 包（flags=NEG_SEQUENCE）
+      // 不再人为限速（旧实现每 100ms 发一包，3 秒语音要 1.5 秒纯发送），
+      // 改为连续发送；仅当 ws 缓冲过大（大文件/弱网）时才让出事件循环。
       const chunkBytes = Math.max(1, Math.round((rate * bits / 8) * channel * 0.2));
-      let offset = 0;
-      const sendNext = () => {
-        if (settled) return;
-        if (offset >= audioBuffer.length) {
-          ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NEG_SEQUENCE, JSON_SER, NO_COMPRESSION), Buffer.alloc(0)), (err) => {
-            if (err) finish(err);
-          });
-          return;
-        }
+      const frames = [];
+      for (let offset = 0; offset < audioBuffer.length; offset += chunkBytes) {
         const end = Math.min(offset + chunkBytes, audioBuffer.length);
-        const audioGz = zlib.gzipSync(audioBuffer.subarray(offset, end));
-        ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NO_SEQUENCE, JSON_SER, GZIP), audioGz), (err) => {
-          if (err) finish(err);
+        frames.push(buildFrame(buildHeader(MT_AUDIO_ONLY, NO_SEQUENCE, JSON_SER, GZIP), zlib.gzipSync(audioBuffer.subarray(offset, end))));
+      }
+      frames.push(buildFrame(buildHeader(MT_AUDIO_ONLY, NEG_SEQUENCE, JSON_SER, NO_COMPRESSION), Buffer.alloc(0)));
+      const sendAll = (i) => {
+        if (settled) return;
+        if (i >= frames.length) return;
+        ws.send(frames[i], (err) => {
+          if (err) { finish(err); return; }
+          if (ws.bufferedAmount > 512 * 1024) setTimeout(() => sendAll(i + 1), 10);
+          else sendAll(i + 1);
         });
-        offset = end;
-        setTimeout(sendNext, 100);
       };
-      sendNext();
+      sendAll(0);
     });
 
     let lastJson = null;

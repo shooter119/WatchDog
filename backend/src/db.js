@@ -1,4 +1,5 @@
 const { DatabaseSync } = require('node:sqlite');
+const { randomUUID } = require('node:crypto');
 const path = require('path');
 const fs = require('fs');
 
@@ -40,6 +41,20 @@ CREATE TABLE IF NOT EXISTS hotwords (
   created_at INTEGER NOT NULL,
   UNIQUE(scene, word)
 );
+
+CREATE TABLE IF NOT EXISTS logs (
+  id TEXT PRIMARY KEY,
+  scene TEXT NOT NULL DEFAULT 'default',
+  device TEXT,
+  op_id TEXT,
+  level TEXT NOT NULL DEFAULT 'info',
+  stage TEXT NOT NULL,
+  msg TEXT NOT NULL DEFAULT '',
+  data TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_logs_scene ON logs(scene, created_at);
+CREATE INDEX IF NOT EXISTS idx_logs_op ON logs(op_id);
 `);
 
 // 旧库迁移：无 scene 列时重建表（新表场景内唯一，跨场景允许同名）
@@ -173,6 +188,52 @@ function listScenes() {
   return rows.map((r) => r.scene);
 }
 
+/** 追加一条操作日志（App 上报或服务端埋点共用） */
+function addLog({ scene = 'default', device = null, opId = null, level = 'info', stage = '', msg = '', data = null }) {
+  db.prepare(
+    'INSERT INTO logs (id, scene, device, op_id, level, stage, msg, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(randomUUID(), scene, device, opId, level, stage, String(msg).slice(0, 2000), data == null ? null : JSON.stringify(data), Date.now());
+}
+
+/** 查询操作日志（按场景隔离，可按 op_id/device 过滤，新→旧） */
+function listLogs({ scene = 'default', limit = 200, opId = null, device = null } = {}) {
+  let sql = 'SELECT * FROM logs WHERE scene = ?';
+  const args = [scene];
+  if (opId) {
+    sql += ' AND op_id = ?';
+    args.push(opId);
+  }
+  if (device) {
+    sql += ' AND device = ?';
+    args.push(device);
+  }
+  sql += ' ORDER BY created_at DESC LIMIT ?';
+  args.push(Math.min(Number(limit) || 200, 1000));
+  return db.prepare(sql).all(...args).map((r) => {
+    let data = null;
+    if (r.data) {
+      try {
+        data = JSON.parse(r.data);
+      } catch {
+        data = r.data;
+      }
+    }
+    return { ...r, data };
+  });
+}
+
+/** 清空某场景的日志（可限定 op_id），返回删除条数 */
+function clearLogs({ scene = 'default', opId = null } = {}) {
+  if (opId) return db.prepare('DELETE FROM logs WHERE scene = ? AND op_id = ?').run(scene, opId).changes;
+  return db.prepare('DELETE FROM logs WHERE scene = ?').run(scene).changes;
+}
+
+/** 清理超过 days 天的日志，返回删除条数 */
+function purgeOldLogs(days = 30) {
+  const cutoff = Date.now() - days * 24 * 3600 * 1000;
+  return db.prepare('DELETE FROM logs WHERE created_at < ?').run(cutoff).changes;
+}
+
 module.exports = {
   listEntries,
   getEntry,
@@ -188,4 +249,8 @@ module.exports = {
   removeHotword,
   purgeOldExited,
   listScenes,
+  addLog,
+  listLogs,
+  clearLogs,
+  purgeOldLogs,
 };
