@@ -216,6 +216,7 @@ class LocalAsrService {
         ),
         tokens: tokensPath,
         numThreads: 2,
+        modelingUnit: 'cjkchar',
       ),
       decodingMethod: 'modified_beam_search',
       maxActivePaths: 4,
