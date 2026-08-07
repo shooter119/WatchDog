@@ -1631,6 +1631,7 @@ void main() {
       expect(find.byType(TextField), findsOneWidget);
       expect(find.byType(VoiceButton), findsNothing);
       expect(find.text('语音'), findsOneWidget);
+      expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
       await tester.tap(find.byTooltip('返回看板'));
       await tester.pumpAndSettle();
       expect(find.text('火场安全管控看板'), findsOneWidget);
@@ -1669,8 +1670,11 @@ void main() {
         expect(tester.takeException(), isNull, reason: '$width 宽度溢出');
         final button = tester.getRect(find.byType(VoiceButton));
         // 语音按钮水平居中且在屏幕范围内
-        expect(button.center.dx, closeTo(width / 2, 2),
-            reason: '$width 语音按钮未居中');
+        expect(
+          button.center.dx,
+          closeTo(width / 2, 2),
+          reason: '$width 语音按钮未居中',
+        );
         expect(button.left, greaterThanOrEqualTo(0));
         expect(button.right, lessThanOrEqualTo(width));
         // 四个导航入口均可见且不重叠
@@ -1721,6 +1725,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       final pressedSize = tester.getSize(find.byType(VoiceButton));
       expect(pressedSize, const Size(72, 72));
+      expect(
+        tester.getSize(find.byKey(const Key('voice-button-surface'))),
+        const Size(64, 64),
+        reason: '视觉圆面应与 72px 命中区分离',
+      );
       await gesture.up();
       await tester.pump(const Duration(milliseconds: 200));
       expect(taps, 2, reason: '松手触发一次 tap');

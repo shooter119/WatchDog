@@ -189,7 +189,8 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+          // 与日志/统计页一致，为悬浮语音按钮保留末尾安全距离。
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
           children: [
           Row(
             children: [

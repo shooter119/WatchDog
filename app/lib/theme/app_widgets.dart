@@ -616,18 +616,21 @@ class _VoiceButtonState extends State<VoiceButton>
   @override
   Widget build(BuildContext context) {
     final size = widget.size;
-    final glowAlpha = widget.recording ? 0.5 : 0.35;
+    final hitSize = math.max(size + 8, 44.0);
+    final glowColor = widget.processing
+        ? AppColors.textTertiary.withValues(alpha: 0.2)
+        : AppColors.voice.withValues(alpha: widget.recording ? 0.5 : 0.35);
     final hint = widget.processing
         ? '识别处理中，请稍候'
         : widget.recording
-            ? '松开结束录音'
-            : '长按开始录音，点击进入语音页';
+        ? '松开结束录音'
+        : '长按开始录音，点击进入语音页';
     return Semantics(
       label: widget.processing
           ? '识别处理中'
           : widget.recording
-              ? '停止录音'
-              : '语音录入',
+          ? '停止录音'
+          : '语音录入',
       button: true,
       enabled: !_disabled,
       hint: hint,
@@ -636,89 +639,101 @@ class _VoiceButtonState extends State<VoiceButton>
         onTap: _disabled ? null : widget.onTap,
         onLongPressStart: _disabled ? null : widget.onLongPressStart,
         onLongPressEnd: _disabled ? null : widget.onLongPressEnd,
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
+        onTapDown: _disabled ? null : (_) => setState(() => _pressed = true),
+        onTapUp: _disabled ? null : (_) => setState(() => _pressed = false),
+        onTapCancel: _disabled ? null : () => setState(() => _pressed = false),
         child: SizedBox(
-          width: size + 8,
-          height: size + 8,
-          child: AnimatedScale(
-            scale: _pressed && !_disabled ? 0.94 : 1,
-            duration: const Duration(milliseconds: 110),
-            curve: Curves.easeOut,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOut,
+          width: hitSize,
+          height: hitSize,
+          child: Center(
+            child: SizedBox(
               width: size,
               height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _fill,
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.55),
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.voice.withValues(alpha: glowAlpha),
-                    blurRadius: widget.recording ? 22 : 16,
-                    spreadRadius: widget.recording ? 4 : 2,
+              child: AnimatedScale(
+                scale: _pressed && !_disabled ? 0.94 : 1,
+                duration: const Duration(milliseconds: 110),
+                curve: Curves.easeOut,
+                child: AnimatedContainer(
+                  key: const Key('voice-button-surface'),
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.easeOut,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _fill,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: glowColor,
+                        blurRadius: widget.processing
+                            ? 10
+                            : widget.recording
+                            ? 22
+                            : 16,
+                        spreadRadius: widget.processing
+                            ? 1
+                            : widget.recording
+                            ? 4
+                            : 2,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: ClipOval(
-                child: widget.processing
-                    ? const Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.4,
-                            color: Colors.white,
-                          ),
-                        ),
-                      )
-                    : Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          if (widget.recording)
-                            Positioned(
-                              top: size * 0.15,
-                              left: 0,
-                              right: 0,
-                              child: Center(
-                                child: NavIcon(
+                  child: ClipOval(
+                    child: widget.processing
+                        ? const Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: Colors.white,
+                              ),
+                            ),
+                          )
+                        : Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              if (widget.recording)
+                                Positioned(
+                                  top: size * 0.15,
+                                  left: 0,
+                                  right: 0,
+                                  child: Center(
+                                    child: NavIcon(
+                                      glyph: NavGlyph.voice,
+                                      color: Colors.white,
+                                      size: size * 0.32,
+                                    ),
+                                  ),
+                                )
+                              else
+                                NavIcon(
                                   glyph: NavGlyph.voice,
                                   color: Colors.white,
-                                  size: size * 0.32,
+                                  size: size * 0.46,
                                 ),
-                              ),
-                            )
-                          else
-                            NavIcon(
-                              glyph: NavGlyph.voice,
-                              color: Colors.white,
-                              size: size * 0.46,
-                            ),
-                          if (widget.recording)
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              bottom: size * 0.13,
-                              height: size * 0.26,
-                              child: AnimatedBuilder(
-                                animation: _wave,
-                                builder: (context, _) => CustomPaint(
-                                  painter: _WavePainter(
-                                    size: size,
-                                    t: _wave.value,
-                                    color: Colors.white,
+                              if (widget.recording)
+                                Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  bottom: size * 0.13,
+                                  height: size * 0.26,
+                                  child: AnimatedBuilder(
+                                    animation: _wave,
+                                    builder: (context, _) => CustomPaint(
+                                      painter: _WavePainter(
+                                        t: _wave.value,
+                                        color: Colors.white,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ),
-                        ],
-                      ),
+                            ],
+                          ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -730,11 +745,10 @@ class _VoiceButtonState extends State<VoiceButton>
 
 /// 录音态按钮内部短波形：三根圆头竖条，高度随相位起伏，始终限制在按钮内
 class _WavePainter extends CustomPainter {
-  final double size; // 按钮直径
   final double t; // 0..1 循环相位
   final Color color;
 
-  const _WavePainter({required this.size, required this.t, required this.color});
+  const _WavePainter({required this.t, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -743,12 +757,12 @@ class _WavePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeWidth = 0; // 用圆角矩形绘制，strokeWidth 置 0
     const bars = 3;
-    final barW = this.size * 0.07;
-    final gap = this.size * 0.05;
+    final barW = size.width * 0.07;
+    final gap = size.width * 0.05;
     final totalW = bars * barW + (bars - 1) * gap;
-    final maxH = this.size * 0.26;
-    final bottomY = this.size - this.size * 0.13;
-    var x = (this.size - totalW) / 2;
+    final maxH = size.height * 0.78;
+    final bottomY = size.height * 0.9;
+    var x = (size.width - totalW) / 2;
     for (var i = 0; i < bars; i++) {
       final phase = math.sin(2 * math.pi * t - i * 1.9);
       final h = maxH * (0.38 + 0.62 * (0.5 + 0.5 * phase));
@@ -763,5 +777,5 @@ class _WavePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_WavePainter oldDelegate) =>
-      oldDelegate.size != size || oldDelegate.t != t || oldDelegate.color != color;
+      oldDelegate.t != t || oldDelegate.color != color;
 }

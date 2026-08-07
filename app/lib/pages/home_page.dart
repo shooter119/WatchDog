@@ -730,16 +730,15 @@ class HomePageState extends State<HomePage> {
             const SizedBox(height: 8),
             Expanded(child: _buildResultCard(context, cfg)),
             const SizedBox(height: 12),
-            Text(
-              _recording
-                  ? '正在聆听，松开结束'
-                  : (_processing ? '识别中…' : '按住下方按钮说话，例：「张伟，20兆帕」'),
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: _recording ? FontWeight.w700 : FontWeight.w500,
-                color: _recording ? AppColors.voice : AppColors.textSecondary,
+            if (!_recording && !_processing)
+              const Text(
+                '按住下方按钮说话，例：「张伟，20兆帕」',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                ),
               ),
-            ),
             const SizedBox(height: 24),
           ],
         ),
@@ -753,7 +752,7 @@ class HomePageState extends State<HomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _PulseMic(size: 90 + _amp * 140, intensity: _amp),
+            _PulseMic(intensity: _amp),
             const SizedBox(height: 24),
             const Text(
               '请清晰说出：姓名 + 气瓶压力',
@@ -1312,39 +1311,40 @@ class _IndexBadge extends StatelessWidget {
   }
 }
 
-/// 录音时随振幅缩放的核心圆（橙色脉冲）
+/// 录音时随振幅轻微呼吸的核心圆。
+/// 视觉始终限制在固定容器内，不使用大范围向外扩散的声波。
 class _PulseMic extends StatelessWidget {
-  final double size;
   final double intensity;
 
-  const _PulseMic({required this.size, required this.intensity});
+  const _PulseMic({required this.intensity});
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.voice;
     return SizedBox(
-      width: 220,
-      height: 220,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          PulseRing(color: c.withValues(alpha: 0.5), ringSize: 150 + intensity * 50),
-          PulseRing(color: c.withValues(alpha: 0.3), ringSize: 170 + intensity * 40),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: c.withValues(alpha: 0.15 + intensity * 0.35),
-              border: Border.all(
-                color: c.withValues(alpha: 0.4 + intensity * 0.5),
-                width: 2,
-              ),
+      width: 112,
+      height: 112,
+      child: AnimatedScale(
+        scale: 0.96 + intensity.clamp(0, 1) * 0.04,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOut,
+        child: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.voice.withValues(alpha: 0.1),
+            border: Border.all(
+              color: AppColors.voice.withValues(alpha: 0.58),
+              width: 2,
             ),
-            child: Icon(Icons.mic_rounded, size: 48, color: c),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.voice.withValues(alpha: 0.12),
+                blurRadius: 16,
+                spreadRadius: 2,
+              ),
+            ],
           ),
-        ],
+          child: const Icon(Icons.mic_rounded, size: 46, color: AppColors.voice),
+        ),
       ),
     );
   }

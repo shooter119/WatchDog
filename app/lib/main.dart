@@ -532,11 +532,12 @@ class _TextInputToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final icon = textMode ? Icons.mic_rounded : Icons.keyboard_alt_outlined;
     final label = textMode ? '语音' : '文字';
-    final color = textMode ? AppColors.textPrimary : AppColors.textTertiary;
+    const color = AppColors.textTertiary;
     return Semantics(
       label: textMode ? '切换为语音输入' : '切换为文字输入',
       button: true,
-      selected: textMode,
+      excludeSemantics: true,
+      onTap: onTap,
       child: InkWell(
         onTap: onTap,
         child: Center(
@@ -544,27 +545,24 @@ class _TextInputToggle extends StatelessWidget {
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOut,
             margin: const EdgeInsets.symmetric(vertical: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 3),
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
             decoration: BoxDecoration(
-              color: textMode ? AppColors.surfaceSubtle : Colors.transparent,
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(AppRadius.pill),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  textMode ? Icons.keyboard_alt_rounded : icon,
-                  size: 24,
-                  color: color,
-                ),
-                const SizedBox(height: 4),
+                Icon(icon, size: 24, color: color),
+                const SizedBox(height: 3),
                 Text(
                   label,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 12,
-                    height: 1.2,
-                    fontWeight: textMode ? FontWeight.w700 : FontWeight.w500,
+                    height: 1.15,
+                    fontWeight: FontWeight.w500,
                     color: color,
                   ),
                 ),
@@ -598,6 +596,8 @@ class _NavItem extends StatelessWidget {
       selected: selected,
       button: true,
       container: true,
+      excludeSemantics: true,
+      onTap: onTap,
       child: InkWell(
         onTap: onTap,
         child: Center(
@@ -605,7 +605,8 @@ class _NavItem extends StatelessWidget {
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOut,
             margin: const EdgeInsets.symmetric(vertical: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
             decoration: BoxDecoration(
               color: selected ? AppColors.surfaceSubtle : Colors.transparent,
               borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -615,12 +616,12 @@ class _NavItem extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 NavIcon(glyph: glyph, color: color, size: 24),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   label,
                   style: TextStyle(
                     fontSize: 12,
-                    height: 1.2,
+                    height: 1.15,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     color: color,
                   ),

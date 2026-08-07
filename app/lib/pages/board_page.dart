@@ -84,7 +84,9 @@ class _BoardPageState extends State<BoardPage> {
                     onRefresh: _onRefresh,
                     child: ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                      // 中央语音按钮向内容区悬浮，保留足够尾部空间，
+                      // 确保最后一张人员卡片可完整滚动到按钮上方。
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                       itemCount: active.length,
                       itemBuilder: (context, i) => _EntryCard(
                         entry: active[i],

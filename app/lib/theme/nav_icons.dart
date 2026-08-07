@@ -26,7 +26,9 @@ class NavIcon extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(painter: NavIconPainter(glyph: glyph, color: color)),
+      child: CustomPaint(
+        painter: NavIconPainter(glyph: glyph, color: color),
+      ),
     );
   }
 }
@@ -115,36 +117,51 @@ class NavIconPainter extends CustomPainter {
     canvas.drawLine(const Offset(8.5, 21), const Offset(15.5, 21), paint);
   }
 
-  /// 辅助：正面消防机器人（头盔穹顶 + 侧护耳 + 面罩圆头 + 肩部）
+  /// 辅助：正面消防机器人（顶部天线 + 防护头罩 + 双传感器 + 肩部）
   void _paintAssist(Canvas canvas, Paint paint) {
-    final dome = Path()
-      ..moveTo(4.5, 12)
-      ..arcToPoint(
-        const Offset(19.5, 12),
-        radius: const Radius.circular(7.5),
-        clockwise: true,
-      );
-    canvas.drawPath(dome, paint);
-    canvas.drawLine(const Offset(19.5, 12), const Offset(19.5, 15.5), paint);
+    canvas.drawLine(const Offset(12, 3.5), const Offset(12, 2), paint);
+    canvas.drawCircle(const Offset(12, 1.3), 0.8, _fillPaint(color));
+
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTRB(4.5, 13, 6.5, 17),
+        const Rect.fromLTRB(5, 4, 19, 16.5),
+        const Radius.circular(3.2),
+      ),
+      paint,
+    );
+
+    // 两侧防护件，保持与主体留出一线空隙，避免小尺寸糊成实心块。
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTRB(3.2, 8.5, 5, 13.5),
         const Radius.circular(0.9),
       ),
       paint,
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTRB(17.5, 13, 19.5, 17),
+        const Rect.fromLTRB(19, 8.5, 20.8, 13.5),
         const Radius.circular(0.9),
       ),
       paint,
     );
-    canvas.drawCircle(const Offset(12, 8.5), 3.3, paint);
+
+    // 防护面罩与双传感器：这是与普通人物头像区分的识别锚点。
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTRB(7.5, 7.2, 16.5, 11.4),
+        const Radius.circular(1.8),
+      ),
+      paint,
+    );
+    canvas.drawCircle(const Offset(10.2, 9.3), 0.75, _fillPaint(color));
+    canvas.drawCircle(const Offset(13.8, 9.3), 0.75, _fillPaint(color));
+    canvas.drawLine(const Offset(10, 13.5), const Offset(14, 13.5), paint);
+
     final shoulder = Path()
-      ..moveTo(5.5, 19)
-      ..cubicTo(6.3, 16, 9.4, 14.5, 12, 14.5)
-      ..cubicTo(14.6, 14.5, 17.7, 16, 18.5, 19);
+      ..moveTo(5, 20)
+      ..cubicTo(6, 17.3, 8.6, 16.2, 12, 16.2)
+      ..cubicTo(15.4, 16.2, 18, 17.3, 19, 20);
     canvas.drawPath(shoulder, paint);
   }
 
