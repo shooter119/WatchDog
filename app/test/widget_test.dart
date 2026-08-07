@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:watchdog/api/api_client.dart';
 import 'package:watchdog/models/models.dart';
 import 'package:watchdog/pages/board_page.dart';
+import 'package:watchdog/pages/chat_page.dart';
 import 'package:watchdog/pages/entry_detail_page.dart';
 import 'package:watchdog/pages/home_page.dart';
 import 'package:watchdog/pages/notes_page.dart';
@@ -137,6 +138,7 @@ class _FakeApi extends ApiClient {
     this.exitAllOnCall = 0,
     this.noteOnCall = 0,
     this.transcribeText,
+    this.chatHistory = const [],
   }) : super(baseUrl: 'http://test', sceneCode: 'test');
   final bool multiPressure;
 
@@ -154,6 +156,9 @@ class _FakeApi extends ApiClient {
 
   /// 自定义转写文本（默认 张伟+李娜）
   final String? transcribeText;
+
+  /// 智能体问答历史（旧→新）
+  final List<ChatMessage> chatHistory;
   final created = <String>[];
   int _parseCalls = 0;
 
@@ -207,6 +212,20 @@ class _FakeApi extends ApiClient {
       exitAt: now + ((volumeL ?? 6.8) * pressureMpa * 10 / 40 * 60000).round(),
       source: source,
       rawText: rawText,
+    );
+  }
+
+  @override
+  Future<List<ChatMessage>> fetchChatMessages() async => chatHistory;
+
+  @override
+  Future<ChatMessage> sendChatMessage(String message, {String? opId}) async {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    return ChatMessage(
+      id: 'r-${chatHistory.length}',
+      role: 'assistant',
+      content: '回答：$message',
+      createdAt: DateTime.now().millisecondsSinceEpoch,
     );
   }
 }
@@ -1150,6 +1169,89 @@ void main() {
     });
   });
 
+  group('ChatPage 辅助问答', () {
+    testWidgets('有历史消息时发送问题：气泡列表不越界并显示回复', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final api = _FakeApi(chatHistory: [
+        ChatMessage(id: 'h1', role: 'user', content: '之前的问题', createdAt: now - 3600000),
+        ChatMessage(id: 'h2', role: 'assistant', content: '之前的回答', createdAt: now - 3500000),
+      ]);
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(
+          body: ChatPage(controller: c, audioService: _FakeAudio()),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('之前的问题'), findsOneWidget);
+      expect(find.text('之前的回答'), findsOneWidget);
+
+      // 发送问题（发送中列表含 thinking 气泡，历史非空 → 曾触发索引越界崩溃）
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      unawaited(state.submitQuestion('如何破拆卷帘门？'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 5));
+      expect(find.text('辅助思考中…'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      // 用户消息与 AI 回复都渲染，无异常
+      expect(find.text('如何破拆卷帘门？'), findsOneWidget);
+      expect(find.text('回答：如何破拆卷帘门？'), findsOneWidget);
+      expect(find.text('辅助思考中…'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('无历史时点示例问题直接发送', (tester) async {
+      final api = _FakeApi();
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(
+          body: ChatPage(controller: c, audioService: _FakeAudio()),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('你好，我是辅助'), findsOneWidget);
+      await tester.tap(find.text('气瓶压力下降太快怎么办？'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 5));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(find.text('气瓶压力下降太快怎么办？'), findsOneWidget);
+      expect(find.text('回答：气瓶压力下降太快怎么办？'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('连续多轮问答后列表完整渲染', (tester) async {
+      final api = _FakeApi();
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(
+          body: ChatPage(controller: c, audioService: _FakeAudio()),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump();
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      for (var i = 1; i <= 3; i++) {
+        unawaited(state.submitQuestion('第 $i 问'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 5));
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      }
+      expect(find.text('第 1 问'), findsOneWidget);
+      expect(find.text('回答：第 3 问'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('main.dart 导航', () {
     testWidgets('默认进入看板，底部五个入口对称存在', (tester) async {
       await tester.pumpWidget(const WatchDogApp());
@@ -1171,6 +1273,10 @@ void main() {
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
       expect(find.text('你好，我是辅助'), findsOneWidget);
+      // 辅助页底部变聊天操作条：输入框 + 语音 + 发送，无凸起按钮
+      expect(find.byType(TextField), findsOneWidget);
+      expect(find.text('语音'), findsOneWidget);
+      expect(find.byType(VoiceButton), findsNothing);
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(find.text('服务端'), findsOneWidget);

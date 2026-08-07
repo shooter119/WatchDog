@@ -8,6 +8,7 @@ import '../services/audio_service.dart';
 import '../services/op_log_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+import '../api/api_client.dart' show ApiClient;
 
 /// 智能体问答页「辅助」：文字输入 + 就地语音提问，AI 解答火场困难。
 /// 语音识别结果按意图路由：提问留本页发送；进出场/日志交 main 跳转对应页面。
@@ -17,6 +18,7 @@ class ChatPage extends StatefulWidget {
   final ValueChanged<String>? onNote; // 语音识别为日志：记入日志并跳日志页
   final ValueChanged<bool>? onRecordingChanged;
   final ValueChanged<bool>? onProcessingChanged;
+  final ValueChanged<bool>? onSendingChanged; // 问答请求中（驱动底部发送按钮禁用态）
   final AudioService? audioService; // 测试注入
 
   const ChatPage({
@@ -26,6 +28,7 @@ class ChatPage extends StatefulWidget {
     this.onNote,
     this.onRecordingChanged,
     this.onProcessingChanged,
+    this.onSendingChanged,
     this.audioService,
   });
 
@@ -35,7 +38,6 @@ class ChatPage extends StatefulWidget {
 
 class ChatPageState extends State<ChatPage> {
   late final AudioService _audio = widget.audioService ?? AudioService();
-  final TextEditingController _input = TextEditingController();
   final ScrollController _scroll = ScrollController();
 
   List<ChatMessage> _messages = [];
@@ -49,12 +51,24 @@ class ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_onConfigChanged);
     _loadHistory();
+  }
+
+  /// 配置就绪（api 从空变为可用）后自动重试加载历史：
+  /// 首次打开辅助页时尚未配置服务器 → 加载失败 → 设置页保存配置后无需重启即可恢复
+  ApiClient? _lastRetryApi; // 已重试过的 api 实例（避免每秒 notify 重复请求）
+  void _onConfigChanged() {
+    final a = widget.controller.api;
+    if (_error != null && a != null && !identical(a, _lastRetryApi)) {
+      _lastRetryApi = a;
+      _loadHistory();
+    }
   }
 
   @override
   void dispose() {
-    _input.dispose();
+    widget.controller.removeListener(_onConfigChanged);
     _scroll.dispose();
     _audio.dispose();
     super.dispose();
@@ -67,6 +81,7 @@ class ChatPageState extends State<ChatPage> {
       setState(() {
         _messages = history;
         _loading = false;
+        _error = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -81,7 +96,6 @@ class ChatPageState extends State<ChatPage> {
   Future<void> submitQuestion(String text) async {
     final clean = text.trim();
     if (clean.isEmpty || _sending) return;
-    _input.clear();
     final opId = 'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     OpLogService.instance.record(opId, 'chat_submit', '提交问题', data: {'text': clean});
     setState(() {
@@ -92,6 +106,7 @@ class ChatPageState extends State<ChatPage> {
       _sending = true;
       _error = null;
     });
+    widget.onSendingChanged?.call(true);
     _scrollToBottom();
     try {
       final reply = await widget.controller.askAssistant(clean, opId: opId);
@@ -100,6 +115,7 @@ class ChatPageState extends State<ChatPage> {
         _messages = [..._messages, reply];
         _sending = false;
       });
+      widget.onSendingChanged?.call(false);
       _scrollToBottom();
     } catch (e) {
       if (!mounted) return;
@@ -107,6 +123,7 @@ class ChatPageState extends State<ChatPage> {
         _sending = false;
         _error = '辅助回复失败：$e';
       });
+      widget.onSendingChanged?.call(false);
       OpLogService.instance.record(opId, 'chat_err', '回复失败: $e', level: 'error');
     }
     OpLogService.instance.flush(api: widget.controller.api);
@@ -280,7 +297,6 @@ class ChatPageState extends State<ChatPage> {
         children: [
           _buildHeader(context),
           Expanded(child: _buildBody()),
-          _buildInputBar(),
         ],
       ),
     );
@@ -331,16 +347,32 @@ class ChatPageState extends State<ChatPage> {
     if (_messages.isEmpty) {
       return _buildWelcome();
     }
-    return ListView.builder(
-      controller: _scroll,
-      reverse: true,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      itemCount: _messages.length + (_sending ? 1 : 0),
-      itemBuilder: (context, i) {
-        if (i == 0 && _sending) return const _ThinkingBubble();
-        final msg = _messages[_messages.length - i + (_sending ? 1 : 0)];
-        return _MessageBubble(message: msg);
-      },
+    return Column(
+      children: [
+        if (_error != null)
+          Container(
+            width: double.infinity,
+            color: AppColors.alarm.withValues(alpha: 0.08),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              _error!,
+              style: const TextStyle(fontSize: 12, color: AppColors.alarm),
+            ),
+          ),
+        Expanded(
+          child: ListView.builder(
+            controller: _scroll,
+            reverse: true,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            itemCount: _messages.length + (_sending ? 1 : 0),
+            itemBuilder: (context, i) {
+              if (i == 0 && _sending) return const _ThinkingBubble();
+              final msg = _messages[_messages.length - 1 - i + (_sending ? 1 : 0)];
+              return _MessageBubble(message: msg);
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -392,46 +424,6 @@ class ChatPageState extends State<ChatPage> {
             ),
           ),
       ],
-    );
-  }
-
-  Widget _buildInputBar() {
-    return Container(
-      padding: EdgeInsets.fromLTRB(12, 8, 12, 8 + MediaQuery.of(context).padding.bottom),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _input,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (v) => submitQuestion(v),
-              decoration: const InputDecoration(
-                hintText: '输入你的问题…',
-                isDense: true,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton(
-            onPressed: _sending ? null : () => submitQuestion(_input.text),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(48, 48),
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
-            ),
-            child: _sending
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.send_rounded, size: 20),
-          ),
-        ],
-      ),
     );
   }
 }
