@@ -217,8 +217,6 @@ class ChatPageState extends State<ChatPage> {
         return;
       }
       if (!mounted) return;
-      setState(() => _processing = false);
-      widget.onProcessingChanged?.call(false);
       _routeIntent(parsed, text, opId);
     } catch (e) {
       if (mounted) {
@@ -226,9 +224,10 @@ class ChatPageState extends State<ChatPage> {
           SnackBar(content: Text('录音结束失败：$e'), duration: const Duration(seconds: 2)),
         );
       }
-      setState(() => _processing = false);
-      widget.onProcessingChanged?.call(false);
       _endOp('error');
+    } finally {
+      if (mounted) setState(() => _processing = false);
+      widget.onProcessingChanged?.call(false);
     }
   }
 
@@ -297,6 +296,16 @@ class ChatPageState extends State<ChatPage> {
         children: [
           _buildHeader(context),
           Expanded(child: _buildBody()),
+          Container(
+            width: double.infinity,
+            color: AppColors.surface,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: const Text(
+              '辅助建议仅供参考，现场以指挥员口令和现行规程为准。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+            ),
+          ),
         ],
       ),
     );
