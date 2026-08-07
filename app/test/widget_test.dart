@@ -1314,7 +1314,14 @@ void main() {
       // 辅助页底部变聊天操作条：输入框 + 语音 + 发送，无凸起按钮
       expect(find.byType(TextField), findsOneWidget);
       expect(find.text('语音'), findsOneWidget);
+      expect(find.text('文字'), findsOneWidget);
       expect(find.byType(VoiceButton), findsNothing);
+      // 辅助页底部不再有 4 个导航入口，通过顶部返回按钮回看板
+      expect(find.text('看板'), findsNothing);
+      expect(find.text('设置'), findsNothing);
+      await tester.tap(find.byTooltip('返回看板'));
+      await tester.pumpAndSettle();
+      expect(find.text('火场安全管控看板'), findsOneWidget);
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(find.text('服务端'), findsOneWidget);

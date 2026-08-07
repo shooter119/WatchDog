@@ -30,6 +30,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
   final TextEditingController _chatInput =
       TextEditingController(); // 辅助页输入条（全局底部聊天操作条）
+  final FocusNode _chatInputFocus = FocusNode(); // 辅助页文字输入切换按钮聚焦目标
   int _tab = 1; // 规范 2.3：App 启动默认进入看板（tab 顺序：日志0/看板1/语音2/辅助3/设置4）
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换语音页后自动开始录音
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
@@ -45,6 +46,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   @override
   void dispose() {
     _chatInput.dispose();
+    _chatInputFocus.dispose();
     controller.dispose();
     super.dispose();
   }
@@ -150,6 +152,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
             ChatPage(
               key: _chatKey,
               controller: controller,
+              onBack: () => _selectTab(1),
               onEntryExit: _routeEntryExit,
               onNote: _routeNote,
               onRecordingChanged: (v) => setState(() => _recording = v),
@@ -166,6 +169,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
               processing: _processing,
               chatMode: _tab == 3,
               chatController: _chatInput,
+              chatInputFocus: _chatInputFocus,
               chatSending: _chatSending,
               onChatSubmit: _chatSubmit,
               onChatMicTap: _voiceTap,
@@ -191,6 +195,7 @@ class _BottomNav extends StatelessWidget {
   final bool processing; // 识别/确认中：禁用语音按钮
   final bool chatMode; // 辅助页：底部变身聊天操作条（语音+输入+发送）
   final TextEditingController chatController;
+  final FocusNode chatInputFocus; // 文字输入切换按钮的聚焦目标
   final bool chatSending; // 问答请求中：发送按钮转圈
   final ValueChanged<String> onChatSubmit;
   final VoidCallback onChatMicTap;
@@ -207,6 +212,7 @@ class _BottomNav extends StatelessWidget {
     required this.processing,
     required this.chatMode,
     required this.chatController,
+    required this.chatInputFocus,
     required this.chatSending,
     required this.onChatSubmit,
     required this.onChatMicTap,
@@ -233,6 +239,7 @@ class _BottomNav extends StatelessWidget {
           children: [
             _ChatActionBar(
               controller: chatController,
+              focusNode: chatInputFocus,
               sending: chatSending,
               recording: recording,
               onSend: () => onChatSubmit(chatController.text),
@@ -245,21 +252,9 @@ class _BottomNav extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: _NavItem(
-                      icon: Icons.view_timeline_outlined,
-                      selectedIcon: Icons.view_timeline,
-                      label: '日志',
-                      selected: index == 0,
-                      onTap: () => onSelect(0),
-                    ),
-                  ),
-                  Expanded(
-                    child: _NavItem(
-                      icon: Icons.dashboard_outlined,
-                      selectedIcon: Icons.dashboard,
-                      label: '看板',
-                      selected: index == 1,
-                      onTap: () => onSelect(1),
+                    child: _TextInputToggle(
+                      selected: chatInputFocus.hasFocus,
+                      onTap: () => chatInputFocus.requestFocus(),
                     ),
                   ),
                   _VoiceNavEntry(
@@ -269,24 +264,7 @@ class _BottomNav extends StatelessWidget {
                     onLongPressStart: onVoiceLongPressStart,
                     onLongPressEnd: onVoiceLongPressEnd,
                   ),
-                  Expanded(
-                    child: _NavItem(
-                      icon: Icons.support_agent_outlined,
-                      selectedIcon: Icons.support_agent,
-                      label: '辅助',
-                      selected: index == 3,
-                      onTap: () => onSelect(3),
-                    ),
-                  ),
-                  Expanded(
-                    child: _NavItem(
-                      icon: Icons.tune_outlined,
-                      selectedIcon: Icons.tune,
-                      label: '设置',
-                      selected: index == 4,
-                      onTap: () => onSelect(4),
-                    ),
-                  ),
+                  const Expanded(child: SizedBox()),
                 ],
               ),
             ),
@@ -403,6 +381,7 @@ class _BottomNav extends StatelessWidget {
 /// 辅助页聊天操作条：语音（长按录音）+ 输入框 + 发送
 class _ChatActionBar extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final bool sending;
   final bool recording;
   final VoidCallback onSend;
@@ -412,6 +391,7 @@ class _ChatActionBar extends StatelessWidget {
 
   const _ChatActionBar({
     required this.controller,
+    this.focusNode,
     required this.sending,
     required this.recording,
     required this.onSend,
@@ -462,6 +442,7 @@ class _ChatActionBar extends StatelessWidget {
               constraints: const BoxConstraints(maxHeight: 104),
               child: TextField(
                 controller: controller,
+                focusNode: focusNode,
                 minLines: 1,
                 maxLines: 4,
                 textInputAction: TextInputAction.send,
@@ -495,6 +476,62 @@ class _ChatActionBar extends StatelessWidget {
                 : const Icon(Icons.send_rounded, size: 20),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 聊天模式下「切换文字输入」按钮：点击聚焦输入框，聚焦中高亮
+class _TextInputToggle extends StatelessWidget {
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TextInputToggle({required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.textPrimary : AppColors.textTertiary;
+    return Semantics(
+      label: '切换为文字输入',
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 3),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.surfaceSubtle : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  selected
+                      ? Icons.keyboard_alt_rounded
+                      : Icons.keyboard_alt_outlined,
+                  size: 24,
+                  color: color,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '文字',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

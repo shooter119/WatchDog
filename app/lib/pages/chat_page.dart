@@ -14,7 +14,9 @@ import '../api/api_client.dart' show ApiClient;
 /// 语音识别结果按意图路由：提问留本页发送；进出场/日志交 main 跳转对应页面。
 class ChatPage extends StatefulWidget {
   final AppController controller;
-  final void Function(String text, ParseResult parsed)? onEntryExit; // 语音识别为进出场：交语音页确认
+  final VoidCallback? onBack; // 顶部返回按钮（回看板），辅助页底部不再展示全部导航入口
+  final void Function(String text, ParseResult parsed)?
+  onEntryExit; // 语音识别为进出场：交语音页确认
   final ValueChanged<String>? onNote; // 语音识别为日志：记入日志并跳日志页
   final ValueChanged<bool>? onRecordingChanged;
   final ValueChanged<bool>? onProcessingChanged;
@@ -24,6 +26,7 @@ class ChatPage extends StatefulWidget {
   const ChatPage({
     super.key,
     required this.controller,
+    this.onBack,
     this.onEntryExit,
     this.onNote,
     this.onRecordingChanged,
@@ -96,12 +99,23 @@ class ChatPageState extends State<ChatPage> {
   Future<void> submitQuestion(String text) async {
     final clean = text.trim();
     if (clean.isEmpty || _sending) return;
-    final opId = 'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
-    OpLogService.instance.record(opId, 'chat_submit', '提交问题', data: {'text': clean});
+    final opId =
+        'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
+    OpLogService.instance.record(
+      opId,
+      'chat_submit',
+      '提交问题',
+      data: {'text': clean},
+    );
     setState(() {
       _messages = [
         ..._messages,
-        ChatMessage(id: 'local-$opId', role: 'user', content: clean, createdAt: DateTime.now().millisecondsSinceEpoch),
+        ChatMessage(
+          id: 'local-$opId',
+          role: 'user',
+          content: clean,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       ];
       _sending = true;
       _error = null;
@@ -124,7 +138,12 @@ class ChatPageState extends State<ChatPage> {
         _error = '辅助回复失败：$e';
       });
       widget.onSendingChanged?.call(false);
-      OpLogService.instance.record(opId, 'chat_err', '回复失败: $e', level: 'error');
+      OpLogService.instance.record(
+        opId,
+        'chat_err',
+        '回复失败: $e',
+        level: 'error',
+      );
     }
     OpLogService.instance.flush(api: widget.controller.api);
   }
@@ -140,16 +159,25 @@ class ChatPageState extends State<ChatPage> {
   /// 就地语音提问（底部语音按钮在问答页长按时调用）
   Future<void> beginRecording() async {
     if (_recording || _processing || _sending) return;
-    _opId = 'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
+    _opId =
+        'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     OpLogService.instance.record(_opId!, 'record_start', '开始录音');
     final ok = await _audio.hasPermission();
     if (!ok) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('需要麦克风权限'), duration: Duration(seconds: 2)),
+          const SnackBar(
+            content: Text('需要麦克风权限'),
+            duration: Duration(seconds: 2),
+          ),
         );
       }
-      OpLogService.instance.record(_opId!, 'record_perm_denied', '缺少麦克风权限', level: 'warn');
+      OpLogService.instance.record(
+        _opId!,
+        'record_perm_denied',
+        '缺少麦克风权限',
+        level: 'warn',
+      );
       _endOp('perm_denied');
       return;
     }
@@ -159,10 +187,18 @@ class ChatPageState extends State<ChatPage> {
       setState(() => _recording = true);
       widget.onRecordingChanged?.call(true);
     } catch (e) {
-      OpLogService.instance.record(_opId!, 'record_start_err', '录音启动失败: $e', level: 'error');
+      OpLogService.instance.record(
+        _opId!,
+        'record_start_err',
+        '录音启动失败: $e',
+        level: 'error',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('录音启动失败：$e'), duration: const Duration(seconds: 2)),
+          SnackBar(
+            content: Text('录音启动失败：$e'),
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
       _endOp('record_error');
@@ -184,12 +220,25 @@ class ChatPageState extends State<ChatPage> {
       String text;
       try {
         text = await widget.controller.transcribeAudio(bytes, opId: opId);
-        OpLogService.instance.record(opId, 'transcribe_ok', '转写成功', data: {'text': text});
+        OpLogService.instance.record(
+          opId,
+          'transcribe_ok',
+          '转写成功',
+          data: {'text': text},
+        );
       } catch (e) {
-        OpLogService.instance.record(opId, 'transcribe_err', '转写失败: $e', level: 'error');
+        OpLogService.instance.record(
+          opId,
+          'transcribe_err',
+          '转写失败: $e',
+          level: 'error',
+        );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('识别失败：$e'), duration: const Duration(seconds: 2)),
+            SnackBar(
+              content: Text('识别失败：$e'),
+              duration: const Duration(seconds: 2),
+            ),
           );
         }
         return;
@@ -197,21 +246,42 @@ class ChatPageState extends State<ChatPage> {
       if (text.trim().isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('未识别到语音，请再说一次'), duration: Duration(seconds: 2)),
+            const SnackBar(
+              content: Text('未识别到语音，请再说一次'),
+              duration: Duration(seconds: 2),
+            ),
           );
         }
-        OpLogService.instance.record(opId, 'transcribe_empty', '未识别到语音', level: 'warn');
+        OpLogService.instance.record(
+          opId,
+          'transcribe_empty',
+          '未识别到语音',
+          level: 'warn',
+        );
         return;
       }
       ParseResult parsed;
       try {
         parsed = await widget.controller.parseText(text, opId: opId);
-        OpLogService.instance.record(opId, 'parse_ok', '语义解析完成', data: {'text': text, 'intent': parsed.intent});
+        OpLogService.instance.record(
+          opId,
+          'parse_ok',
+          '语义解析完成',
+          data: {'text': text, 'intent': parsed.intent},
+        );
       } catch (e) {
-        OpLogService.instance.record(opId, 'parse_err', '解析失败: $e', level: 'error');
+        OpLogService.instance.record(
+          opId,
+          'parse_err',
+          '解析失败: $e',
+          level: 'error',
+        );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('解析失败：$e'), duration: const Duration(seconds: 2)),
+            SnackBar(
+              content: Text('解析失败：$e'),
+              duration: const Duration(seconds: 2),
+            ),
           );
         }
         return;
@@ -221,7 +291,10 @@ class ChatPageState extends State<ChatPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('录音结束失败：$e'), duration: const Duration(seconds: 2)),
+          SnackBar(
+            content: Text('录音结束失败：$e'),
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
       _endOp('error');
@@ -260,7 +333,12 @@ class ChatPageState extends State<ChatPage> {
     final opId = _opId;
     _opId = null;
     if (opId == null) return;
-    OpLogService.instance.record(opId, 'op_end', '本次操作结束', data: {'outcome': outcome});
+    OpLogService.instance.record(
+      opId,
+      'op_end',
+      '本次操作结束',
+      data: {'outcome': outcome},
+    );
     OpLogService.instance.flush(api: widget.controller.api);
   }
 
@@ -271,8 +349,14 @@ class ChatPageState extends State<ChatPage> {
         title: const Text('清空问答记录'),
         content: const Text('将删除本场景下与「辅助」的全部对话历史，确定清空？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('清空')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清空'),
+          ),
         ],
       ),
     );
@@ -284,7 +368,10 @@ class ChatPageState extends State<ChatPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('清空失败：$e'), duration: const Duration(seconds: 2)),
+        SnackBar(
+          content: Text('清空失败：$e'),
+          duration: const Duration(seconds: 2),
+        ),
       );
     }
   }
@@ -320,6 +407,14 @@ class ChatPageState extends State<ChatPage> {
       ),
       child: Row(
         children: [
+          IconButton(
+            onPressed: widget.onBack,
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            tooltip: '返回看板',
+            color: AppColors.textSecondary,
+            visualDensity: VisualDensity.compact,
+          ),
+          const SizedBox(width: 4),
           Container(
             width: 36,
             height: 36,
@@ -327,14 +422,24 @@ class ChatPageState extends State<ChatPage> {
               color: AppColors.actionPrimary,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.assistant_rounded, size: 20, color: Colors.white),
+            child: const Icon(
+              Icons.assistant_rounded,
+              size: 20,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(width: 10),
           const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('辅助', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-              Text('火场困难，随时问我', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+              Text(
+                '辅助',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              Text(
+                '火场困难，随时问我',
+                style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+              ),
             ],
           ),
           const Spacer(),
@@ -376,7 +481,8 @@ class ChatPageState extends State<ChatPage> {
             itemCount: _messages.length + (_sending ? 1 : 0),
             itemBuilder: (context, i) {
               if (i == 0 && _sending) return const _ThinkingBubble();
-              final msg = _messages[_messages.length - 1 - i + (_sending ? 1 : 0)];
+              final msg =
+                  _messages[_messages.length - 1 - i + (_sending ? 1 : 0)];
               return _MessageBubble(message: msg);
             },
           ),
@@ -404,15 +510,26 @@ class ChatPageState extends State<ChatPage> {
                   border: Border.all(color: AppColors.border),
                   boxShadow: AppShadow.card,
                 ),
-                child: const Icon(Icons.assistant_rounded, size: 28, color: AppColors.actionPrimary),
+                child: const Icon(
+                  Icons.assistant_rounded,
+                  size: 28,
+                  color: AppColors.actionPrimary,
+                ),
               ),
               const SizedBox(height: 12),
-              const Text('你好，我是辅助', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const Text(
+                '你好，我是辅助',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              ),
               const SizedBox(height: 6),
               const Text(
                 '火场里遇到困难，按住底部语音按钮说话，\n或在这里输入问题，我来帮你支招。',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 16),
               const _SampleQuestion('气瓶压力下降太快怎么办？'),
@@ -445,11 +562,14 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isUser = message.isUser;
     final time = DateTime.fromMillisecondsSinceEpoch(message.createdAt);
-    final timeText = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    final timeText =
+        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
@@ -461,22 +581,35 @@ class _MessageBubble extends StatelessWidget {
                 color: AppColors.actionPrimary,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.assistant_rounded, size: 16, color: Colors.white),
+              child: const Icon(
+                Icons.assistant_rounded,
+                size: 16,
+                color: Colors.white,
+              ),
             ),
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: isUser
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
                   decoration: BoxDecoration(
                     color: isUser ? AppColors.actionPrimary : AppColors.surface,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(AppRadius.md),
                       topRight: const Radius.circular(AppRadius.md),
-                      bottomLeft: Radius.circular(isUser ? AppRadius.md : AppRadius.sm),
-                      bottomRight: Radius.circular(isUser ? AppRadius.sm : AppRadius.md),
+                      bottomLeft: Radius.circular(
+                        isUser ? AppRadius.md : AppRadius.sm,
+                      ),
+                      bottomRight: Radius.circular(
+                        isUser ? AppRadius.sm : AppRadius.md,
+                      ),
                     ),
                     border: isUser ? null : Border.all(color: AppColors.border),
                     boxShadow: AppShadow.card,
@@ -492,7 +625,13 @@ class _MessageBubble extends StatelessWidget {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
-                  child: Text(timeText, style: const TextStyle(fontSize: 10.5, color: AppColors.textTertiary)),
+                  child: Text(
+                    timeText,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -518,7 +657,10 @@ class _ThinkingBubble extends StatelessWidget {
             child: CircularProgressIndicator(strokeWidth: 2.5),
           ),
           SizedBox(width: 8),
-          Text('辅助思考中…', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          Text(
+            '辅助思考中…',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
@@ -537,7 +679,10 @@ class _SampleQuestion extends StatelessWidget {
         final page = context.findAncestorStateOfType<ChatPageState>();
         page?.submitQuestion(text);
       },
-      child: Text(text, style: const TextStyle(fontSize: 13.5, color: AppColors.textSecondary)),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 13.5, color: AppColors.textSecondary),
+      ),
     );
   }
 }
