@@ -152,7 +152,7 @@ class ChatPageState extends State<ChatPage> {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
-        _scroll.jumpTo(0);
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
     });
   }
@@ -449,16 +449,17 @@ class ChatPageState extends State<ChatPage> {
         Expanded(
           child: ListView.builder(
             controller: _scroll,
-            reverse: true,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             itemCount: _messages.length + (_sending ? 1 : 0),
             itemBuilder: (context, i) {
-              if (i == 0 && _sending) return const _ThinkingBubble();
-              final msg =
-                  _messages[_messages.length - 1 - i + (_sending ? 1 : 0)];
+              if (i == _messages.length && _sending) {
+                return const _ThinkingBubble();
+              }
               return _MessageBubble(
-                message: msg,
-                onFollowUpTap: msg.isUser ? null : (q) => submitQuestion(q),
+                message: _messages[i],
+                onFollowUpTap: _messages[i].isUser
+                    ? null
+                    : (q) => submitQuestion(q),
               );
             },
           ),
@@ -469,7 +470,6 @@ class ChatPageState extends State<ChatPage> {
 
   Widget _buildWelcome() {
     return ListView(
-      reverse: true,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       children: [
         Padding(
