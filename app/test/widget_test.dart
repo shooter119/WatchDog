@@ -1282,5 +1282,20 @@ void main() {
       expect(find.text('服务端'), findsOneWidget);
       expect(find.text('计算参数'), findsOneWidget);
     });
+
+    testWidgets('辅助页输入框多行文本完整显示不裁剪', (tester) async {
+      await tester.pumpWidget(const WatchDogApp());
+      await tester.pump();
+      await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
+      final field = find.byType(TextField);
+      expect(field, findsOneWidget);
+      final singleLineHeight = tester.getSize(field).height;
+      await tester.enterText(field, '第一行很长很长的输入内容\n第二行继续输入内容\n第三行收尾');
+      await tester.pumpAndSettle();
+      final multiLineHeight = tester.getSize(field).height;
+      expect(multiLineHeight, greaterThan(singleLineHeight));
+      expect(tester.takeException(), isNull);
+    });
   });
 }

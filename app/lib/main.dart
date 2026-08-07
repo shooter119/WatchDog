@@ -222,12 +222,13 @@ class _BottomNav extends StatelessWidget {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     if (chatMode) {
       return Container(
-        height: 56 + 50 + 1 + safeBottom, // +1 补偿顶部 border 占用的内容高度
+        padding: EdgeInsets.only(bottom: safeBottom),
         decoration: const BoxDecoration(
           color: AppColors.surface,
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             _ChatActionBar(
               controller: chatController,
@@ -350,8 +351,7 @@ class _ChatActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: AppColors.border)),
@@ -378,15 +378,18 @@ class _ChatActionBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: TextField(
-              controller: controller,
-              minLines: 1,
-              maxLines: 4,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (v) => onSend(),
-              decoration: const InputDecoration(
-                hintText: '输入你的问题…',
-                isDense: true,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 104),
+              child: TextField(
+                controller: controller,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (v) => onSend(),
+                decoration: const InputDecoration(
+                  hintText: '输入你的问题…',
+                  isDense: true,
+                ),
               ),
             ),
           ),
