@@ -2,6 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'app_widgets.dart';
 
+/// 全局字体统一配置：中文优先 PingFang SC，缺失时依次回退
+/// Noto Sans CJK SC（Android 常用）、Microsoft YaHei
+class AppFonts {
+  AppFonts._();
+  static const String family = 'PingFang SC';
+  static const List<String> fallback = ['Noto Sans CJK SC', 'Microsoft YaHei'];
+}
+
 ThemeData buildAppTheme() {
   final scheme = ColorScheme.fromSeed(
     seedColor: AppColors.actionPrimary,
@@ -23,8 +31,8 @@ ThemeData buildAppTheme() {
     splashFactory: InkRipple.splashFactory,
     colorScheme: scheme,
     scaffoldBackgroundColor: AppColors.background,
-    fontFamily: 'PingFang SC',
-    fontFamilyFallback: const ['Noto Sans CJK SC', 'Microsoft YaHei'],
+    fontFamily: AppFonts.family,
+    fontFamilyFallback: AppFonts.fallback,
     appBarTheme: const AppBarTheme(
       backgroundColor: AppColors.surface,
       foregroundColor: AppColors.textPrimary,

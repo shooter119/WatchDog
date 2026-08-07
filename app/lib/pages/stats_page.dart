@@ -146,7 +146,10 @@ class _StatsPageState extends State<StatsPage> {
                       )
                     else
                       for (final (i, p) in people.indexed)
-                        _PersonRow(rank: i + 1, person: p),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _PersonRow(rank: i + 1, person: p),
+                        ),
                   ],
                 ),
               ),
@@ -195,7 +198,7 @@ class _StatsPageState extends State<StatsPage> {
       children: [
         _SummaryCard(
           icon: Icons.fire_extinguisher,
-          color: AppColors.alarm,
+          color: AppColors.textPrimary,
           label: '当前在场',
           value: '$activeCount 人',
         ),

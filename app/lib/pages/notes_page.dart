@@ -24,48 +24,55 @@ class _NotesPageState extends State<NotesPage> {
     final filtered =
         _filter == '全部' ? notes : notes.where((n) => n.category == _filter).toList();
     return SafeArea(
-      child: Stack(
+      child: Column(
         children: [
-          Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Row(
-                  children: [
-                    const Text('火场日志', style: AppTextStyles.h1),
-                    const Spacer(),
-                    ConnectionStatus(
-                      syncing: widget.controller.syncing,
-                      offline: widget.controller.syncError != null,
-                      onRetry: widget.controller.startSync,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                const Text('火场日志', style: AppTextStyles.h1),
+                const Spacer(),
+                OutlinedButton.icon(
+                  onPressed: () => _openEditor(null),
+                  icon: const Icon(Icons.edit_note, size: 16),
+                  label: const Text('写日志'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    side: const BorderSide(color: AppColors.actionPrimary),
+                    foregroundColor: AppColors.actionPrimary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
                     ),
-                  ],
+                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
                 ),
-              ),
-              _buildFilterChips(),
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: widget.controller.refreshNow,
-                  child: filtered.isEmpty
-                      ? _buildEmpty()
-                      : ListView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                          itemCount: filtered.length,
-                          itemBuilder: (context, i) => _TimelineNoteCard(
-                            note: filtered[i],
-                            isLast: i == filtered.length - 1,
-                            onTap: () => _openEditor(filtered[i]),
-                          ),
-                        ),
+                const SizedBox(width: 10),
+                ConnectionStatus(
+                  syncing: widget.controller.syncing,
+                  offline: widget.controller.syncError != null,
+                  onRetry: widget.controller.startSync,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          Positioned(
-            right: 16,
-            bottom: 20,
-            child: NotesFab(onPressed: () => _openEditor(null)),
+          _buildFilterChips(),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: widget.controller.refreshNow,
+              child: filtered.isEmpty
+                  ? _buildEmpty()
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, i) => _TimelineNoteCard(
+                        note: filtered[i],
+                        isLast: i == filtered.length - 1,
+                        onTap: () => _openEditor(filtered[i]),
+                      ),
+                    ),
+            ),
           ),
         ],
       ),
@@ -116,7 +123,7 @@ class _NotesPageState extends State<NotesPage> {
         const SizedBox(height: 8),
         const Center(
           child: Text(
-            '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右下角按钮手动记录',
+            '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右上角按钮手动记录',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textTertiary, fontSize: 13, height: 1.5),
           ),
@@ -277,16 +284,20 @@ class _NotesPageState extends State<NotesPage> {
   }
 }
 
-/// 分类 → 颜色映射（与 AppColors 状态语义不冲突，日志用独立色系）
+/// 分类 → 颜色映射（收敛为消防高可视四色：红=异常/危险，蓝=部署/搜救/撤离等作战信息，
+/// 橙=出水/注意，灰=其他；不随分类数量增加新装饰色）
 class NoteColor {
   NoteColor._();
+  static const Color red = AppColors.alarm;
+  static const Color blue = Color(0xFF2F6FED);
+  static const Color orange = Color(0xFFF97316);
+  static const Color gray = Color(0xFF6B7280);
+
   static Color of(String? category) => switch (category) {
-        NoteCategory.deploy => const Color(0xFF2F6FED),
-        NoteCategory.rescue => const Color(0xFF0E9F6E),
-        NoteCategory.water => const Color(0xFF0E9AC8),
-        NoteCategory.withdraw => const Color(0xFF7C3AED),
-        NoteCategory.abnormal => AppColors.alarm,
-        _ => const Color(0xFF6B7280),
+        NoteCategory.abnormal => red,
+        NoteCategory.deploy || NoteCategory.rescue || NoteCategory.withdraw => blue,
+        NoteCategory.water => orange,
+        _ => gray,
       };
 }
 
@@ -302,7 +313,13 @@ class _TimelineNoteCard extends StatelessWidget {
     required this.onTap,
   });
 
-  String get _time => '${note.updatedAt > note.createdAt ? '改 ' : ''}${_fmtTime(note.createdAt)}';
+  /// 编辑过显示「改」并改用 updatedAt 时间；非今天显示日期前缀
+  String get _time {
+    final edited = note.updatedAt > note.createdAt;
+    final ts = edited ? note.updatedAt : note.createdAt;
+    final day = _isToday(ts) ? '' : '${_fmtDay(ts)} ';
+    return '${edited ? '改 ' : ''}$day${_fmtTime(ts)}';
+  }
 
   static String _fmtTime(int ts) {
     final d = DateTime.fromMillisecondsSinceEpoch(ts);
@@ -313,7 +330,6 @@ class _TimelineNoteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = NoteColor.of(note.category);
-    final sameDay = _isToday(note.createdAt);
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -388,23 +404,6 @@ class _TimelineNoteCard extends StatelessWidget {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.edit_outlined, size: 13, color: AppColors.textTertiary.withValues(alpha: 0.8)),
-                        const SizedBox(width: 3),
-                        const Text(
-                          '点击编辑',
-                          style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
-                        ),
-                        const Spacer(),
-                        if (!sameDay)
-                          Text(
-                            _fmtDay(note.createdAt),
-                            style: const TextStyle(color: AppColors.textTertiary, fontSize: 11),
-                          ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -425,26 +424,5 @@ class _TimelineNoteCard extends StatelessWidget {
     final d = DateTime.fromMillisecondsSinceEpoch(ts);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.month}-${two(d.day)}';
-  }
-}
-
-/// 右下角悬浮「写日志」按钮（FloatingActionButton 由 main.dart 挂载？不，本页自持）
-/// 为保证底部导航不被遮挡，FAB 悬浮在列表底部导航上方
-class NotesFab extends StatelessWidget {
-  final VoidCallback onPressed;
-
-  const NotesFab({super.key, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      onPressed: onPressed,
-      backgroundColor: AppColors.actionPrimary,
-      foregroundColor: Colors.white,
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.pill)),
-      icon: const Icon(Icons.edit_note, size: 20),
-      label: const Text('写日志', style: TextStyle(fontWeight: FontWeight.w700)),
-    );
   }
 }

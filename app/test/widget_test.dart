@@ -259,6 +259,18 @@ Future<void> _pumpBoard(WidgetTester tester, List<Entry> entries) async {
   await tester.pump();
 }
 
+/// 滚动列表直到目标出现：每次拖动后 pumpAndSettle 等惯性动画结束，
+/// 避免 tester.drag 的快速滑动产生飞滑把目标冲过视口（scrollUntilVisible 的 fling 坑）
+Future<void> _scrollToVisible(WidgetTester tester, Finder scrollable, Finder target,
+    {int maxDrags = 25}) async {
+  for (var i = 0; i < maxDrags; i++) {
+    if (target.evaluate().isNotEmpty) break;
+    await tester.drag(scrollable, const Offset(0, -300));
+    await tester.pumpAndSettle();
+  }
+  expect(target, findsOneWidget);
+}
+
 void main() {
   // 测试环境无 Android 原生响应：mock 屏幕常亮通道，避免保存链路挂起/遗留定时器
   const screenChannel = MethodChannel('watchdog/screen');
@@ -592,12 +604,13 @@ void main() {
       final list = find.byType(Scrollable).first;
       expect(find.text('服务端'), findsOneWidget);
       expect(find.text('计算参数'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
+      await _scrollToVisible(tester, list, find.text('屏幕常亮'));
       expect(find.text('提醒方式'), findsOneWidget);
-      await tester.drag(list, const Offset(0, -3000));
-      await tester.pumpAndSettle();
+      await _scrollToVisible(tester, list, find.text('名单与热词'));
       expect(find.text('名单与热词'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('操作日志'));
       expect(find.text('操作日志'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('关于我们'));
       expect(find.text('关于我们'), findsOneWidget);
       expect(find.text('保存设置'), findsNothing);
     });
@@ -667,7 +680,7 @@ void main() {
       expect(find.text('安全员助手 WatchDog'), findsOneWidget);
       expect(find.textContaining('v${AboutPage.appVersion}'), findsOneWidget);
       final aboutList = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(find.text('它能帮你什么'), 100, scrollable: aboutList);
+      await _scrollToVisible(tester, aboutList, find.text('它能帮你什么'));
       expect(find.text('它能帮你什么'), findsOneWidget);
     });
   });

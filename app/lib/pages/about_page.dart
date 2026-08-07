@@ -8,7 +8,7 @@ class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
   /// 与 app/pubspec.yaml 的 version 保持一致
-  static const appVersion = '0.2.1+5';
+  static const appVersion = '0.3.0+6';
 
   @override
   Widget build(BuildContext context) {
