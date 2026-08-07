@@ -118,7 +118,7 @@ class _FeaturesCard extends StatelessWidget {
 
   static const _items = [
     (Icons.mic_rounded, '语音录入', '进场、退场、压力值，一句话搞定；多人一次报完一次确认，单人气瓶容量可单独改'),
-    (Icons.smart_toy_outlined, '辅助问答', '浓烟里拿不准主意，按住说话问一句，AI 按结论/立即行动/注意事项给你支招，追问一点就发'),
+    (Icons.smart_toy_outlined, '辅助问答', '火场智囊「水元素」，浓烟里拿不准主意就问它：按结论/立即行动/注意事项支招，追问一点就发'),
     (Icons.receipt_long_outlined, '火场日志', '说一句「搜救出一人」自动记进日志时间线，按实战环节分类，回头好复盘'),
     (Icons.calculate_outlined, '自动计算', '气瓶容量、压力、消耗率交给我们算，剩余 10 分钟提醒、5 分钟报警'),
     (Icons.dashboard_rounded, '实时看板', '在场谁、进去多久、还剩多久，一目了然；到点自动播报、响警报、锁屏也推通知'),

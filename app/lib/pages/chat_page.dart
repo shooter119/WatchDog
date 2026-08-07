@@ -390,7 +390,7 @@ class ChatPageState extends State<ChatPage> {
             color: AppColors.surface,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: const Text(
-              '辅助建议仅供参考，现场以指挥员口令和现行规程为准。',
+              '水元素建议仅供参考，现场以指挥员口令和现行规程为准。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
             ),
@@ -402,11 +402,8 @@ class ChatPageState extends State<ChatPage> {
 
   Widget _buildHeader(BuildContext context) {
     return Container(
+      key: const Key('chat-header'),
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
       child: Row(
         children: [
           IconButton(
@@ -481,7 +478,7 @@ class ChatPageState extends State<ChatPage> {
               const AssistantAvatar(size: 56),
               const SizedBox(height: 12),
               const Text(
-                '你好，我是辅助',
+                '你好，我是水元素',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
@@ -556,10 +553,7 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            const AssistantAvatar(
-              size: 30,
-              margin: EdgeInsets.only(right: 8),
-            ),
+            const AssistantAvatar(size: 30, margin: EdgeInsets.only(right: 8)),
           ],
           Flexible(
             child: Column(
@@ -753,7 +747,7 @@ class _ThinkingBubble extends StatelessWidget {
           ),
           SizedBox(width: 8),
           Text(
-            '辅助思考中…',
+            '水元素思考中…',
             style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
           ),
         ],

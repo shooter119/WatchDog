@@ -21,8 +21,10 @@ import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
 import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/state/app_controller.dart';
+import 'package:watchdog/theme/assistant_avatar.dart';
 import 'package:watchdog/theme/app_theme.dart';
 import 'package:watchdog/theme/app_widgets.dart';
+import 'package:watchdog/theme/nav_icons.dart';
 
 import 'package:watchdog/main.dart' show WatchDogApp;
 import 'package:watchdog/pages/report_pressure_sheet.dart';
@@ -1472,14 +1474,14 @@ void main() {
       unawaited(state.submitQuestion('如何破拆卷帘门？'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 5));
-      expect(find.text('辅助思考中…'), findsOneWidget);
+      expect(find.text('水元素思考中…'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
       // 用户消息与 AI 回复都渲染，无异常
       expect(find.text('如何破拆卷帘门？'), findsOneWidget);
       expect(find.text('回答：如何破拆卷帘门？'), findsOneWidget);
-      expect(find.text('辅助思考中…'), findsNothing);
+      expect(find.text('水元素思考中…'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -1496,7 +1498,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
-      expect(find.text('你好，我是辅助'), findsOneWidget);
+      expect(find.text('你好，我是水元素'), findsOneWidget);
       await tester.tap(find.text('气瓶压力下降太快怎么办？'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 5));
@@ -1611,6 +1613,30 @@ void main() {
       expect(find.text('辅助'), findsOneWidget);
       expect(find.text('设置'), findsOneWidget);
       expect(find.byType(VoiceButton), findsOneWidget);
+      final navIcons = tester
+          .widgetList<NavIcon>(find.byType(NavIcon))
+          .where((icon) => icon.glyph != NavGlyph.voice);
+      expect(navIcons, hasLength(4));
+      expect(navIcons.every((icon) => icon.size == 28), isTrue);
+      final selectedItem = find.ancestor(
+        of: find.text('看板'),
+        matching: find.byType(AnimatedContainer),
+      );
+      expect(selectedItem, findsOneWidget);
+      expect(
+        tester.widget<AnimatedContainer>(selectedItem).decoration,
+        isNull,
+        reason: '选中导航入口不应显示灰色圆形背景',
+      );
+      expect(tester.widget<Text>(find.text('看板')).style?.fontSize, 10.5);
+      expect(
+        tester.widget<Text>(find.text('看板')).style?.fontWeight,
+        FontWeight.w600,
+      );
+      expect(
+        tester.widget<Text>(find.text('日志')).style?.fontWeight,
+        FontWeight.w400,
+      );
     });
 
     testWidgets('点击日志/辅助/设置可切换页面', (tester) async {
@@ -1621,7 +1647,16 @@ void main() {
       expect(find.text('火场日志'), findsOneWidget);
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
-      expect(find.text('你好，我是辅助'), findsOneWidget);
+      expect(find.text('你好，我是水元素'), findsOneWidget);
+      expect(find.byType(AssistantAvatar), findsOneWidget);
+      final chatHeader = tester.widget<Container>(
+        find.byKey(const Key('chat-header')),
+      );
+      expect(
+        chatHeader.decoration,
+        isNull,
+        reason: '辅助页顶部操作区应直接使用页面背景，不显示横向白条',
+      );
       // 辅助页默认语音态：圆形橙色麦克风（VoiceButton）+ 「文字」切换，无输入框
       expect(find.byType(TextField), findsNothing);
       expect(find.byType(VoiceButton), findsOneWidget);
@@ -1705,6 +1740,20 @@ void main() {
         expect(logs.right, lessThanOrEqualTo(boards.left));
         expect(boards.right, lessThanOrEqualTo(assists.left));
         expect(assists.right, lessThanOrEqualTo(settings.left));
+        final centers = [
+          logs.center.dx,
+          boards.center.dx,
+          button.center.dx,
+          assists.center.dx,
+          settings.center.dx,
+        ];
+        for (var i = 0; i < centers.length - 1; i++) {
+          expect(
+            centers[i + 1] - centers[i],
+            closeTo(width / 5, 0.5),
+            reason: '$width 五个导航入口应保持严格等距',
+          );
+        }
         // 语音按钮不遮挡左右导航图标
         expect(button.left, greaterThanOrEqualTo(boards.right));
         expect(button.right, lessThanOrEqualTo(assists.left));

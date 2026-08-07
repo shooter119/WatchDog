@@ -34,7 +34,7 @@ const mockChat = () => {
     const body = JSON.parse(opts.body);
     assert.equal(body.model, 'deepseek-chat');
     assert.equal(body.messages[0].role, 'system');
-    assert.match(body.messages[0].content, /辅助/);
+    assert.match(body.messages[0].content, /水元素/);
     return Promise.resolve({
       ok: true,
       async json() {
