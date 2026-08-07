@@ -47,14 +47,16 @@ class _FakeController extends AppController {
   @override
   Future<void> markExited(String id, {String? opId}) async {
     exited.add(id);
-    entries = entries
-        .map((e) => e.id == id ? _exitedCopy(e) : e)
-        .toList();
+    entries = entries.map((e) => e.id == id ? _exitedCopy(e) : e).toList();
     notifyListeners();
   }
 
   @override
-  Future<Entry> updatePressure({required String id, required double pressureMpa, String? opId}) async {
+  Future<Entry> updatePressure({
+    required String id,
+    required double pressureMpa,
+    String? opId,
+  }) async {
     reported.add(pressureMpa);
     return entries.firstWhere((e) => e.id == id);
   }
@@ -96,16 +98,16 @@ class _FakeController extends AppController {
   }
 
   static Entry _exitedCopy(Entry e) => Entry(
-        id: e.id,
-        name: e.name,
-        pressureMpa: e.pressureMpa,
-        durationMin: e.durationMin,
-        entryAt: e.entryAt,
-        exitAt: e.exitAt,
-        exitedAt: DateTime.now().millisecondsSinceEpoch,
-        source: e.source,
-        rawText: e.rawText,
-      );
+    id: e.id,
+    name: e.name,
+    pressureMpa: e.pressureMpa,
+    durationMin: e.durationMin,
+    entryAt: e.entryAt,
+    exitAt: e.exitAt,
+    exitedAt: DateTime.now().millisecondsSinceEpoch,
+    source: e.source,
+    rawText: e.rawText,
+  );
 }
 
 Entry _entry({
@@ -177,7 +179,10 @@ class _FakeApi extends ApiClient {
       return ParseResult(action: 'exit', people: []);
     }
     if (exitOnCall > 0 && i + 1 == exitOnCall) {
-      return ParseResult(action: 'exit', people: [ParsePerson(name: '张伟')]);
+      return ParseResult(
+        action: 'exit',
+        people: [ParsePerson(name: '张伟')],
+      );
     }
     if (i >= 1 && i - 1 < rounds.length) {
       return ParseResult(action: 'enter', people: rounds[i - 1]);
@@ -250,19 +255,28 @@ class _FakeAudio extends AudioService {
 }
 
 Future<void> _pumpBoard(WidgetTester tester, List<Entry> entries) async {
-  await tester.pumpWidget(MaterialApp(
-    theme: buildAppTheme(),
-    home: Scaffold(
-      body: BoardPage(controller: _FakeController(entries: entries), onGoVoice: () {}),
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: buildAppTheme(),
+      home: Scaffold(
+        body: BoardPage(
+          controller: _FakeController(entries: entries),
+          onGoVoice: () {},
+        ),
+      ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
 /// 滚动列表直到目标出现：每次拖动后 pumpAndSettle 等惯性动画结束，
 /// 避免 tester.drag 的快速滑动产生飞滑把目标冲过视口（scrollUntilVisible 的 fling 坑）
-Future<void> _scrollToVisible(WidgetTester tester, Finder scrollable, Finder target,
-    {int maxDrags = 25}) async {
+Future<void> _scrollToVisible(
+  WidgetTester tester,
+  Finder scrollable,
+  Finder target, {
+  int maxDrags = 25,
+}) async {
   for (var i = 0; i < maxDrags; i++) {
     if (target.evaluate().isNotEmpty) break;
     await tester.drag(scrollable, const Offset(0, -300));
@@ -281,21 +295,28 @@ void main() {
     testWidgets('弹窗说明并支持合并 / 另建记录 / 取消', (tester) async {
       final existing = _entry(name: '张伟', remainingMin: 20);
       SameNameChoice? result;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: Builder(
-            builder: (ctx) => Center(
-              child: ElevatedButton(
-                onPressed: () async {
-                  result = await showSameNameDialog(ctx, existing: existing, pressureMpa: 15, durationMin: 26);
-                },
-                child: const Text('触发'),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    result = await showSameNameDialog(
+                      ctx,
+                      existing: existing,
+                      pressureMpa: 15,
+                      durationMin: 26,
+                    );
+                  },
+                  child: const Text('触发'),
+                ),
               ),
             ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('触发'));
       await tester.pumpAndSettle();
       expect(find.text('该人员已在火场内'), findsOneWidget);
@@ -320,15 +341,19 @@ void main() {
         );
       }
 
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: Builder(
-            key: ctxKey,
-            builder: (ctx) => Center(child: ElevatedButton(onPressed: open, child: const Text('触发'))),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: Builder(
+              key: ctxKey,
+              builder: (ctx) => Center(
+                child: ElevatedButton(onPressed: open, child: const Text('触发')),
+              ),
+            ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('触发'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('另有同名人员，另建记录'));
@@ -345,23 +370,29 @@ void main() {
 
   group('CountdownText 格式', () {
     testWidgets('MM:SS 常规显示', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(body: CountdownText(ms: 5 * 60000 + 34000)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: CountdownText(ms: 5 * 60000 + 34000)),
+        ),
+      );
       expect(find.text('05:34'), findsOneWidget);
     });
 
     testWidgets('超过 60 分钟显示 H:MM:SS', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(body: CountdownText(ms: 61 * 60000 + 7000)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: CountdownText(ms: 61 * 60000 + 7000)),
+        ),
+      );
       expect(find.text('1:01:07'), findsOneWidget);
     });
 
     testWidgets('超时显示替代文案', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(body: CountdownText(ms: -1000, timeoutText: '已超时')),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: CountdownText(ms: -1000, timeoutText: '已超时')),
+        ),
+      );
       expect(find.text('已超时'), findsOneWidget);
     });
   });
@@ -397,10 +428,7 @@ void main() {
         _entry(name: '李娜', remainingMin: 8),
         _entry(name: '王强', remainingMin: 3),
       ]);
-      expect(
-        find.textContaining('2 人需要关注 · 最早到期'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('2 人需要关注 · 最早到期'), findsOneWidget);
     });
 
     testWidgets('无危险人员时不显示提示条', (tester) async {
@@ -416,7 +444,10 @@ void main() {
         _entry(name: '报警丁', remainingMin: 4),
       ]);
       // 报警丁(alarm) → 注意丙(warn, 7min) → 注意乙(warn, 9min)：危险等级优先，同级按剩余时间升序
-      final yNames = [for (final n in ['报警丁', '注意丙', '注意乙']) tester.getTopLeft(find.text(n)).dy];
+      final yNames = [
+        for (final n in ['报警丁', '注意丙', '注意乙'])
+          tester.getTopLeft(find.text(n)).dy,
+      ];
       expect(yNames[0] < yNames[1], isTrue);
       expect(yNames[1] < yNames[2], isTrue);
       // 安全卡片排在最后（列表外需滚动可见）
@@ -427,9 +458,16 @@ void main() {
 
   group('更新压力（动态耗气率）', () {
     testWidgets('卡片只保留姓名/状态/倒计时/更新压力，次级信息移出', (tester) async {
-      final c = _FakeController(entries: [
-        _entry(name: '张伟', remainingMin: 20, pressureMpa: 20, consumptionActualLpm: 40.8),
-      ]);
+      final c = _FakeController(
+        entries: [
+          _entry(
+            name: '张伟',
+            remainingMin: 20,
+            pressureMpa: 20,
+            consumptionActualLpm: 40.8,
+          ),
+        ],
+      );
       await _pumpBoard(tester, c.entries);
       expect(find.text('更新压力'), findsOneWidget);
       expect(find.text('张伟'), findsOneWidget);
@@ -443,20 +481,31 @@ void main() {
       // 状态徽章与更新压力按钮等高对齐
       final badgeH = tester.getSize(find.byType(StatusBadge)).height;
       final btnH = tester
-          .getSize(find.ancestor(of: find.text('更新压力'), matching: find.byType(Material)).first)
+          .getSize(
+            find
+                .ancestor(
+                  of: find.text('更新压力'),
+                  matching: find.byType(Material),
+                )
+                .first,
+          )
           .height;
       expect(badgeH, btnH);
       expect(btnH, 44.0);
     });
 
     testWidgets('ReportPressureSheet 档位 3MPa 步进、禁用高于当前压力、点选提交', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '李娜', remainingMin: 20, pressureMpa: 20)]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: ReportPressureSheet(controller: c, entry: c.entries.first),
+      final c = _FakeController(
+        entries: [_entry(name: '李娜', remainingMin: 20, pressureMpa: 20)],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ReportPressureSheet(controller: c, entry: c.entries.first),
+          ),
         ),
-      ));
+      );
       // 档位齐全：30 到 6，每档差 3
       for (final lv in [30, 27, 24, 21, 18, 15, 12, 9, 6]) {
         expect(find.text('$lv'), findsOneWidget, reason: '档位 $lv 应存在');
@@ -477,13 +526,17 @@ void main() {
     });
 
     testWidgets('手动输入压力值可直接提交，与档位互斥', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '李娜', remainingMin: 20, pressureMpa: 20)]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: ReportPressureSheet(controller: c, entry: c.entries.first),
+      final c = _FakeController(
+        entries: [_entry(name: '李娜', remainingMin: 20, pressureMpa: 20)],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ReportPressureSheet(controller: c, entry: c.entries.first),
+          ),
         ),
-      ));
+      );
       // 输入 13.5 → 提交按钮启用并显示该值
       await tester.enterText(find.byType(TextField), '13.5');
       await tester.pump();
@@ -492,7 +545,10 @@ void main() {
       await tester.tap(find.text('9'));
       await tester.pump();
       expect(find.text('确认更新 9 MPa'), findsOneWidget);
-      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        isEmpty,
+      );
       await tester.tap(find.text('确认更新 9 MPa'));
       await tester.pumpAndSettle();
       expect(c.reported, [9.0]);
@@ -501,11 +557,15 @@ void main() {
 
   group('EntryDetailPage 详情页', () {
     testWidgets('展示倒计时、气瓶信息与出场按钮', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 30, pressureMpa: 20)]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: EntryDetailPage(controller: c, entryId: 'e-张伟'),
-      ));
+      final c = _FakeController(
+        entries: [_entry(name: '张伟', remainingMin: 30, pressureMpa: 20)],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: EntryDetailPage(controller: c, entryId: 'e-张伟'),
+        ),
+      );
       await tester.pump();
       expect(find.text('张伟'), findsWidgets);
       expect(find.text('20.0 MPa'), findsNWidgets(2)); // 倒计时卡片 + 气瓶信息
@@ -516,25 +576,30 @@ void main() {
     });
 
     testWidgets('确认出火场需二次确认，确认后登记并返回', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '李娜', remainingMin: 30)]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Builder(
-          builder: (ctx) => Scaffold(
-            body: Center(
-              child: FilledButton(
-                onPressed: () => Navigator.push(
-                  ctx,
-                  MaterialPageRoute(
-                    builder: (_) => EntryDetailPage(controller: c, entryId: 'e-李娜'),
+      final c = _FakeController(
+        entries: [_entry(name: '李娜', remainingMin: 30)],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Builder(
+            builder: (ctx) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () => Navigator.push(
+                    ctx,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          EntryDetailPage(controller: c, entryId: 'e-李娜'),
+                    ),
                   ),
+                  child: const Text('打开详情'),
                 ),
-                child: const Text('打开详情'),
               ),
             ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('打开详情'));
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('确认「李娜」已出火场'));
@@ -549,11 +614,15 @@ void main() {
     });
 
     testWidgets('取消二次确认不执行出场', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '王强', remainingMin: 30)]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: EntryDetailPage(controller: c, entryId: 'e-王强'),
-      ));
+      final c = _FakeController(
+        entries: [_entry(name: '王强', remainingMin: 30)],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: EntryDetailPage(controller: c, entryId: 'e-王强'),
+        ),
+      );
       await tester.pump();
       await tester.tap(find.textContaining('确认「王强」已出火场'));
       await tester.pumpAndSettle();
@@ -564,18 +633,23 @@ void main() {
     });
 
     testWidgets('报警人员显示报警状态横幅与红色倒计时', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: EntryDetailPage(
-          controller: _FakeController(entries: [_entry(name: '赵磊', remainingMin: 3)]),
-          entryId: 'e-赵磊',
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: EntryDetailPage(
+            controller: _FakeController(
+              entries: [_entry(name: '赵磊', remainingMin: 3)],
+            ),
+            entryId: 'e-赵磊',
+          ),
         ),
-      ));
+      );
       await tester.pump();
       expect(find.text('报警'), findsOneWidget);
       expect(
         find.byWidgetPredicate(
-          (w) => w is Text && RegExp(r'^0[23]:[0-5][0-9]$').hasMatch(w.data ?? ''),
+          (w) =>
+              w is Text && RegExp(r'^0[23]:[0-5][0-9]$').hasMatch(w.data ?? ''),
         ),
         findsOneWidget,
       );
@@ -583,10 +657,15 @@ void main() {
     });
 
     testWidgets('记录不存在显示失效视图', (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: EntryDetailPage(controller: _FakeController(), entryId: 'missing'),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: EntryDetailPage(
+            controller: _FakeController(),
+            entryId: 'missing',
+          ),
+        ),
+      );
       await tester.pump();
       expect(find.text('该记录已不存在'), findsOneWidget);
       expect(find.text('返回看板'), findsOneWidget);
@@ -596,10 +675,12 @@ void main() {
   group('SettingsPage', () {
     testWidgets('渲染各分区，无保存按钮', (tester) async {
       final c = _FakeController();
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: SettingsPage(controller: c)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
       await tester.pumpAndSettle();
       final list = find.byType(Scrollable).first;
       expect(find.text('服务端'), findsOneWidget);
@@ -618,10 +699,12 @@ void main() {
     testWidgets('修改文本框后失焦即自动保存', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = _FakeController();
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: SettingsPage(controller: c)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, '消耗率'), '55');
       // 模拟失焦（真实设备点击空白处/收起键盘）
@@ -633,10 +716,12 @@ void main() {
     testWidgets('切换开关立即保存', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = _FakeController();
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: SettingsPage(controller: c)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
       await tester.pumpAndSettle();
       // 最后一个开关 = 屏幕常亮（SwitchListTile 无 onTap，需直接点 Switch）
       final list = find.byType(Scrollable).first;
@@ -650,10 +735,12 @@ void main() {
     testWidgets('操作日志入口可进入日志页', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = _FakeController();
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: SettingsPage(controller: c)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
       await tester.pumpAndSettle();
       final list = find.byType(Scrollable).first;
       await tester.scrollUntilVisible(find.text('操作日志'), 200, scrollable: list);
@@ -666,10 +753,12 @@ void main() {
     testWidgets('关于我们入口展示 README 信息与版本号', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = _FakeController();
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: SettingsPage(controller: c)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
       await tester.pumpAndSettle();
       final list = find.byType(Scrollable).first;
       await tester.scrollUntilVisible(find.text('关于我们'), 200, scrollable: list);
@@ -693,14 +782,26 @@ void main() {
       await svc.setSyncEnabled(true);
       await svc.clearLocal();
       svc.record('op-test-1', 'record_start', '开始录音');
-      svc.record('op-test-1', 'transcribe_ok', '转写成功', data: {'text': '张伟，20兆帕'});
-      svc.record('op-test-1', 'op_end', '本次操作结束', data: {'outcome': 'enter_ok'});
+      svc.record(
+        'op-test-1',
+        'transcribe_ok',
+        '转写成功',
+        data: {'text': '张伟，20兆帕'},
+      );
+      svc.record(
+        'op-test-1',
+        'op_end',
+        '本次操作结束',
+        data: {'outcome': 'enter_ok'},
+      );
       svc.record('op-test-2', 'record_start', '开始录音');
       svc.record('op-test-2', 'transcribe_err', '转写失败: 服务器错误', level: 'error');
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: OpLogPage(controller: _FakeController()),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: OpLogPage(controller: _FakeController()),
+        ),
+      );
       await tester.pumpAndSettle();
 
       // 最新操作在前；步骤默认折叠（元素存在但不可命中）
@@ -732,10 +833,14 @@ void main() {
     testWidgets('识别多人后平铺全部人员，一次确认全部进场', (tester) async {
       final api = _FakeApi();
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       // 模拟说话并松手 → 转写 + 解析
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
@@ -763,10 +868,14 @@ void main() {
     testWidgets('缺压力时一次列出全部错误，补充后可一次性通过', (tester) async {
       final api = _FakeApi(multiPressure: false);
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
@@ -799,10 +908,14 @@ void main() {
     testWidgets('逐行移除人员后回到单人确认；全部移除回到初始', (tester) async {
       final api = _FakeApi();
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
@@ -822,14 +935,23 @@ void main() {
     });
 
     testWidgets('再次录音保留已录入人员并去重追加，可统一确认', (tester) async {
-      final api = _FakeApi(rounds: [
-        [ParsePerson(name: '张伟', pressureMpa: 15), ParsePerson(name: '王强', pressureMpa: 24)],
-      ]);
+      final api = _FakeApi(
+        rounds: [
+          [
+            ParsePerson(name: '张伟', pressureMpa: 15),
+            ParsePerson(name: '王强', pressureMpa: 24),
+          ],
+        ],
+      );
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
@@ -857,10 +979,14 @@ void main() {
     testWidgets('出场指令不清空待确认名单，可从空闲态回到确认页', (tester) async {
       final api = _FakeApi(exitOnCall: 2);
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       // 第一轮：张伟+李娜 待确认
       await state.beginRecording();
@@ -879,19 +1005,31 @@ void main() {
 
     testWidgets('非名单内姓名姓名栏留空并提示手动补全', (tester) async {
       final api = _FakeApi();
-      final c = _FakeController(firefighters: [Firefighter(id: '1', name: '张伟')])..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      final c = _FakeController(
+        firefighters: [Firefighter(id: '1', name: '张伟')],
+      )..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
       await tester.pump();
 
       final fields = find.byType(TextField);
-      expect(tester.widget<TextField>(fields.at(0)).controller!.text, '张伟'); // 名单内姓名保留
-      expect(tester.widget<TextField>(fields.at(3)).controller!.text, ''); // 李娜不在名单 → 姓名栏空白
+      expect(
+        tester.widget<TextField>(fields.at(0)).controller!.text,
+        '张伟',
+      ); // 名单内姓名保留
+      expect(
+        tester.widget<TextField>(fields.at(3)).controller!.text,
+        '',
+      ); // 李娜不在名单 → 姓名栏空白
       expect(find.textContaining('「李娜」不在名单内'), findsOneWidget);
 
       // 手动补全姓名后可正常确认
@@ -907,15 +1045,20 @@ void main() {
 
     testWidgets('全员离场指令需弹框确认，确认后全部登记离场', (tester) async {
       final api = _FakeApi(exitAllOnCall: 1, transcribeText: '全体人员撤出火场');
-      final c = _FakeController(entries: [
-        _entry(name: '张伟', remainingMin: 20),
-        _entry(name: '李娜', remainingMin: 10),
-      ])
-        ..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      final c = _FakeController(
+        entries: [
+          _entry(name: '张伟', remainingMin: 20),
+          _entry(name: '李娜', remainingMin: 10),
+        ],
+      )..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       // finishRecording 内部会等待弹框确认，故不 await（由后续点击弹框按钮完成）
@@ -931,11 +1074,16 @@ void main() {
 
     testWidgets('取消全员离场不登记出场', (tester) async {
       final api = _FakeApi(exitAllOnCall: 1, transcribeText: '全员撤离火场');
-      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])
+        ..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       unawaited(state.finishRecording());
@@ -949,10 +1097,14 @@ void main() {
     testWidgets('语音提到钢瓶容积时录入页容积字段随之更新', (tester) async {
       final api = _FakeApi(transcribeText: '张伟20兆帕，李娜22兆帕，钢瓶9升');
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
@@ -967,19 +1119,21 @@ void main() {
       final api = _FakeApi(noteOnCall: 1);
       final c = _FakeController()..api = api;
       String? routed;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: HomePage(
-            controller: c,
-            audioService: _FakeAudio(),
-            onNoteIntent: (t) {
-              routed = t;
-              c.addNote(t);
-            },
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(
+              controller: c,
+              audioService: _FakeAudio(),
+              onNoteIntent: (t) {
+                routed = t;
+                c.addNote(t);
+              },
+            ),
           ),
         ),
-      ));
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
@@ -997,19 +1151,21 @@ void main() {
       final api = _FakeApi(noteOnCall: 1, transcribeText: '龙翔路站从燃烧建筑中搜救出一只宠物狗');
       final c = _FakeController()..api = api;
       String? routed;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: HomePage(
-            controller: c,
-            audioService: _FakeAudio(),
-            onNoteIntent: (t) {
-              routed = t;
-              c.addNote(t);
-            },
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(
+              controller: c,
+              audioService: _FakeAudio(),
+              onNoteIntent: (t) {
+                routed = t;
+                c.addNote(t);
+              },
+            ),
           ),
         ),
-      ));
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
@@ -1027,10 +1183,14 @@ void main() {
     testWidgets('确认页「转为日志记录」兜底按钮生效', (tester) async {
       final api = _FakeApi();
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: HomePage(controller: c, audioService: _FakeAudio())),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
       final state = tester.state<HomePageState>(find.byType(HomePage));
       await state.beginRecording();
       await state.finishRecording();
@@ -1052,14 +1212,30 @@ void main() {
   group('NotesPage 火场日志', () {
     testWidgets('时间线渲染分类标签与内容，分类筛选生效', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final c = _FakeController(notes: [
-        Note(id: 'n1', text: '北侧出水正常', category: NoteCategory.water, createdAt: now - 3600000, updatedAt: now - 3600000),
-        Note(id: 'n2', text: '二楼发现被困人员', category: NoteCategory.rescue, createdAt: now - 1800000, updatedAt: now - 1800000),
-      ]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: NotesPage(controller: c)),
-      ));
+      final c = _FakeController(
+        notes: [
+          Note(
+            id: 'n1',
+            text: '北侧出水正常',
+            category: NoteCategory.water,
+            createdAt: now - 3600000,
+            updatedAt: now - 3600000,
+          ),
+          Note(
+            id: 'n2',
+            text: '二楼发现被困人员',
+            category: NoteCategory.rescue,
+            createdAt: now - 1800000,
+            updatedAt: now - 1800000,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: NotesPage(controller: c)),
+        ),
+      );
       await tester.pump();
       expect(find.text('火场日志'), findsOneWidget);
       expect(find.text('北侧出水正常'), findsOneWidget);
@@ -1076,13 +1252,15 @@ void main() {
 
     testWidgets('写日志弹窗：输入内容+选分类后保存', (tester) async {
       final c = _FakeController();
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: AnimatedBuilder(
-          animation: c,
-          builder: (context, _) => Scaffold(body: NotesPage(controller: c)),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: AnimatedBuilder(
+            animation: c,
+            builder: (context, _) => Scaffold(body: NotesPage(controller: c)),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       await tester.tap(find.text('写日志'));
       await tester.pumpAndSettle();
@@ -1098,13 +1276,23 @@ void main() {
 
     testWidgets('点击条目编辑文本并保存修改', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final c = _FakeController(notes: [
-        Note(id: 'n1', text: '一楼火势较大', category: NoteCategory.other, createdAt: now, updatedAt: now),
-      ]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: NotesPage(controller: c)),
-      ));
+      final c = _FakeController(
+        notes: [
+          Note(
+            id: 'n1',
+            text: '一楼火势较大',
+            category: NoteCategory.other,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: NotesPage(controller: c)),
+        ),
+      );
       await tester.pump();
       await tester.tap(find.text('一楼火势较大'));
       await tester.pumpAndSettle();
@@ -1116,13 +1304,23 @@ void main() {
 
     testWidgets('编辑弹窗内删除条目需确认', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final c = _FakeController(notes: [
-        Note(id: 'n1', text: '测试删除', category: NoteCategory.other, createdAt: now, updatedAt: now),
-      ]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: NotesPage(controller: c)),
-      ));
+      final c = _FakeController(
+        notes: [
+          Note(
+            id: 'n1',
+            text: '测试删除',
+            category: NoteCategory.other,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: NotesPage(controller: c)),
+        ),
+      );
       await tester.pump();
       await tester.tap(find.text('测试删除'));
       await tester.pumpAndSettle();
@@ -1140,25 +1338,42 @@ void main() {
     testWidgets('汇总卡片与每人排行：次数/总时长/平均时长', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
       final e1 = Entry(
-        id: 'e1', name: '张伟', pressureMpa: 20, durationMin: 34,
-        entryAt: now - 100 * 60000, exitAt: now - 20 * 60000, exitedAt: now - 20 * 60000,
+        id: 'e1',
+        name: '张伟',
+        pressureMpa: 20,
+        durationMin: 34,
+        entryAt: now - 100 * 60000,
+        exitAt: now - 20 * 60000,
+        exitedAt: now - 20 * 60000,
         source: 'voice',
       ); // 张伟第 1 次：80 分钟
       final e2 = Entry(
-        id: 'e2', name: '张伟', pressureMpa: 20, durationMin: 34,
-        entryAt: now - 10 * 60000, exitAt: now - 5 * 60000, exitedAt: now - 5 * 60000,
+        id: 'e2',
+        name: '张伟',
+        pressureMpa: 20,
+        durationMin: 34,
+        entryAt: now - 10 * 60000,
+        exitAt: now - 5 * 60000,
+        exitedAt: now - 5 * 60000,
         source: 'voice',
       ); // 张伟第 2 次：5 分钟
       final e3 = Entry(
-        id: 'e3', name: '李娜', pressureMpa: 20, durationMin: 34,
-        entryAt: now - 60 * 60000, exitAt: now + 40 * 60000, exitedAt: null,
+        id: 'e3',
+        name: '李娜',
+        pressureMpa: 20,
+        durationMin: 34,
+        entryAt: now - 60 * 60000,
+        exitAt: now + 40 * 60000,
+        exitedAt: null,
         source: 'voice',
       ); // 李娜 1 次在场：累计 60 分钟
       final c = _FakeController(entries: [e1, e2, e3]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: StatsPage(controller: c)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: StatsPage(controller: c)),
+        ),
+      );
       await tester.pump();
       expect(find.text('数据统计'), findsOneWidget);
       // 汇总：当前在场 1 人（李娜）、3 人次、累计 145 分钟
@@ -1179,10 +1394,12 @@ void main() {
 
     testWidgets('无记录时显示空态', (tester) async {
       final c = _FakeController();
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: StatsPage(controller: c)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: StatsPage(controller: c)),
+        ),
+      );
       await tester.pump();
       expect(find.text('所选范围内暂无进出记录'), findsOneWidget);
     });
@@ -1192,16 +1409,22 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
       addTearDown(tester.view.reset);
       final e = Entry(
-        id: 'e1', name: '张伟', pressureMpa: 20, durationMin: 34,
+        id: 'e1',
+        name: '张伟',
+        pressureMpa: 20,
+        durationMin: 34,
         entryAt: DateTime.now().millisecondsSinceEpoch - 30 * 60000,
         exitAt: DateTime.now().millisecondsSinceEpoch + 30 * 60000,
-        exitedAt: null, source: 'voice',
+        exitedAt: null,
+        source: 'voice',
       );
       final c = _FakeController(entries: [e]);
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(body: StatsPage(controller: c)),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: StatsPage(controller: c)),
+        ),
+      );
       await tester.pump();
       expect(tester.takeException(), isNull);
     });
@@ -1210,17 +1433,31 @@ void main() {
   group('ChatPage 辅助问答', () {
     testWidgets('有历史消息时发送问题：气泡列表不越界并显示回复', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
-      final api = _FakeApi(chatHistory: [
-        ChatMessage(id: 'h1', role: 'user', content: '之前的问题', createdAt: now - 3600000),
-        ChatMessage(id: 'h2', role: 'assistant', content: '之前的回答', createdAt: now - 3500000),
-      ]);
+      final api = _FakeApi(
+        chatHistory: [
+          ChatMessage(
+            id: 'h1',
+            role: 'user',
+            content: '之前的问题',
+            createdAt: now - 3600000,
+          ),
+          ChatMessage(
+            id: 'h2',
+            role: 'assistant',
+            content: '之前的回答',
+            createdAt: now - 3500000,
+          ),
+        ],
+      );
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: ChatPage(controller: c, audioService: _FakeAudio()),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       await tester.pump();
       expect(find.text('之前的问题'), findsOneWidget);
@@ -1245,12 +1482,14 @@ void main() {
     testWidgets('无历史时点示例问题直接发送', (tester) async {
       final api = _FakeApi();
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: ChatPage(controller: c, audioService: _FakeAudio()),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       await tester.pump();
       expect(find.text('你好，我是辅助'), findsOneWidget);
@@ -1267,12 +1506,14 @@ void main() {
     testWidgets('连续多轮问答后列表完整渲染', (tester) async {
       final api = _FakeApi();
       final c = _FakeController()..api = api;
-      await tester.pumpWidget(MaterialApp(
-        theme: buildAppTheme(),
-        home: Scaffold(
-          body: ChatPage(controller: c, audioService: _FakeAudio()),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       await tester.pump();
       final state = tester.state<ChatPageState>(find.byType(ChatPage));
@@ -1286,6 +1527,72 @@ void main() {
       }
       expect(find.text('第 1 问'), findsOneWidget);
       expect(find.text('回答：第 3 问'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('AI 回复 markdown 渲染与追问可点击', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final api = _FakeApi(
+        chatHistory: [
+          ChatMessage(
+            id: 'h2',
+            role: 'assistant',
+            content: '**结论：**立即撤离。\n**追问：**当前气瓶压力多少？',
+            createdAt: now - 3600000,
+          ),
+        ],
+      );
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      // 追问段被解析出来：正文不含"追问"，气泡下方显示可点击胶囊
+      expect(find.textContaining('立即撤离'), findsOneWidget);
+      expect(find.textContaining('追问：当前气瓶压力多少？'), findsOneWidget);
+      // 点击追问胶囊 → 问题被发送
+      await tester.tap(find.textContaining('追问：当前气瓶压力多少？'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 5));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(find.text('当前气瓶压力多少？'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('追问解析支持「关键追问」变体且不残留星号', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      const md = '**立即执行：**\n1. **停止剧烈活动**，原地调整呼吸。\n**关键追问：**当前压力表读数多少？';
+      final api = _FakeApi(
+        chatHistory: [
+          ChatMessage(
+            id: 'h2',
+            role: 'assistant',
+            content: md,
+            createdAt: now - 3600000,
+          ),
+        ],
+      );
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.textContaining('停止剧烈活动'), findsOneWidget);
+      expect(find.textContaining('关键'), findsNothing);
+      expect(find.textContaining('追问：当前压力表读数多少？'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

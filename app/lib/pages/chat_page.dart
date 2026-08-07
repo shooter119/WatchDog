@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../models/models.dart';
 import '../services/audio_service.dart';
@@ -400,7 +401,7 @@ class ChatPageState extends State<ChatPage> {
 
   Widget _buildHeader(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 14, 8, 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: AppColors.border)),
@@ -413,34 +414,6 @@ class ChatPageState extends State<ChatPage> {
             tooltip: '返回看板',
             color: AppColors.textSecondary,
             visualDensity: VisualDensity.compact,
-          ),
-          const SizedBox(width: 4),
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AppColors.actionPrimary,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.assistant_rounded,
-              size: 20,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(width: 10),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '辅助',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-              ),
-              Text(
-                '火场困难，随时问我',
-                style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
-              ),
-            ],
           ),
           const Spacer(),
           IconButton(
@@ -483,7 +456,10 @@ class ChatPageState extends State<ChatPage> {
               if (i == 0 && _sending) return const _ThinkingBubble();
               final msg =
                   _messages[_messages.length - 1 - i + (_sending ? 1 : 0)];
-              return _MessageBubble(message: msg);
+              return _MessageBubble(
+                message: msg,
+                onFollowUpTap: msg.isUser ? null : (q) => submitQuestion(q),
+              );
             },
           ),
         ),
@@ -556,11 +532,31 @@ class ChatPageState extends State<ChatPage> {
 
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
-  const _MessageBubble({required this.message});
+  final ValueChanged<String>? onFollowUpTap; // 点击「追问」直接发送该问题
+  const _MessageBubble({required this.message, this.onFollowUpTap});
+
+  /// 从 AI 回复中解析「追问：xxx」段：返回 (正文, 追问问题)
+  /// 回复固定三段（结论/立即行动/注意事项），注意事项尾部常带一句追问
+  static (String body, String? followUp) splitFollowUp(String content) {
+    final re = RegExp(r'\*{0,2}(关键)?\s*追问\s*[：:]\s*');
+    final matches = re.allMatches(content).toList();
+    if (matches.isEmpty) return (content, null);
+    final m = matches.last;
+    final body = content.substring(0, m.start).trim();
+    var rest = content.substring(m.end).trim();
+    rest = rest.replaceAll(RegExp(r'^\*\*|\*\*$'), '').trim();
+    if (rest.isEmpty) return (content, null);
+    return (body, rest);
+  }
 
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
+    final split = isUser
+        ? (message.content, null)
+        : splitFollowUp(message.content);
+    final body = split.$1;
+    final followUp = split.$2;
     final time = DateTime.fromMillisecondsSinceEpoch(message.createdAt);
     final timeText =
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
@@ -614,15 +610,137 @@ class _MessageBubble extends StatelessWidget {
                     border: isUser ? null : Border.all(color: AppColors.border),
                     boxShadow: AppShadow.card,
                   ),
-                  child: Text(
-                    message.content,
-                    style: TextStyle(
-                      fontSize: 15,
-                      height: 1.5,
-                      color: isUser ? Colors.white : AppColors.textPrimary,
+                  child: isUser
+                      ? Text(
+                          message.content,
+                          style: TextStyle(
+                            fontSize: 15,
+                            height: 1.5,
+                            color: isUser
+                                ? Colors.white
+                                : AppColors.textPrimary,
+                          ),
+                        )
+                      : MarkdownBody(
+                          data: body,
+                          styleSheet:
+                              MarkdownStyleSheet.fromTheme(
+                                Theme.of(context),
+                              ).copyWith(
+                                p: const TextStyle(
+                                  fontSize: 15,
+                                  height: 1.5,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h1: const TextStyle(
+                                  fontSize: 17,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h2: const TextStyle(
+                                  fontSize: 16,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h3: const TextStyle(
+                                  fontSize: 15,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                                strong: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                em: const TextStyle(
+                                  fontStyle: FontStyle.italic,
+                                  color: AppColors.textPrimary,
+                                ),
+                                blockquote: const TextStyle(
+                                  fontSize: 14,
+                                  height: 1.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                                blockquoteDecoration: BoxDecoration(
+                                  color: AppColors.surfaceSubtle.withValues(
+                                    alpha: 0.6,
+                                  ),
+                                  border: const Border(
+                                    left: BorderSide(
+                                      color: AppColors.border,
+                                      width: 3,
+                                    ),
+                                  ),
+                                ),
+                                listBullet: const TextStyle(
+                                  fontSize: 15,
+                                  height: 1.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                                code: const TextStyle(
+                                  fontSize: 13,
+                                  fontFamily: 'Menlo',
+                                  color: AppColors.textPrimary,
+                                  backgroundColor: AppColors.surfaceSubtle,
+                                ),
+                                codeblockDecoration: BoxDecoration(
+                                  color: AppColors.surfaceSubtle.withValues(
+                                    alpha: 0.7,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.sm,
+                                  ),
+                                ),
+                                codeblockPadding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                              ),
+                        ),
+                ),
+                if (followUp != null && onFollowUpTap != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Material(
+                      color: AppColors.voice.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        onTap: () => onFollowUpTap!(followUp),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.quickreply_outlined,
+                                size: 15,
+                                color: AppColors.voice,
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  '追问：$followUp',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
                 Padding(
                   padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
                   child: Text(

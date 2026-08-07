@@ -19,6 +19,7 @@ dependencies:
   timezone: ^0.10.0
   crypto: ^3.0.3
   sherpa_onnx: ^1.13.4
+  flutter_markdown: ^0.7.7+1
 
 dev_dependencies:
   flutter_test:
