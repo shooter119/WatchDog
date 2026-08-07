@@ -11,6 +11,7 @@ import 'services/local_asr_service.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_widgets.dart';
+import 'theme/nav_icons.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -254,9 +255,9 @@ class _BottomNav extends StatelessWidget {
                 top: -30,
                 child: Center(
                   child: VoiceButton(
-                    size: 80,
                     recording: recording,
-                    enabled: !processing,
+                    processing: processing,
+                    enabled: true,
                     onTap: onVoiceTap,
                     onLongPressStart: onVoiceLongPressStart,
                     onLongPressEnd: onVoiceLongPressEnd,
@@ -304,7 +305,7 @@ class _BottomNav extends StatelessWidget {
                           onTap: () => onChatTextModeChange(true),
                         ),
                       ),
-                      const SizedBox(width: 96),
+                      const SizedBox(width: 80),
                       const Expanded(child: SizedBox()),
                       const Expanded(child: SizedBox()),
                     ],
@@ -365,9 +366,9 @@ class _BottomNav extends StatelessWidget {
             top: -30,
             child: Center(
               child: VoiceButton(
-                size: 80,
                 recording: recording,
-                enabled: !processing,
+                processing: processing,
+                enabled: true,
                 onTap: onVoiceTap,
                 onLongPressStart: onVoiceLongPressStart,
                 onLongPressEnd: onVoiceLongPressEnd,
@@ -411,8 +412,7 @@ class _BottomNav extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _NavItem(
-                      icon: Icons.view_timeline_outlined,
-                      selectedIcon: Icons.view_timeline,
+                      glyph: NavGlyph.log,
                       label: '日志',
                       selected: index == 0,
                       onTap: () => onSelect(0),
@@ -420,18 +420,16 @@ class _BottomNav extends StatelessWidget {
                   ),
                   Expanded(
                     child: _NavItem(
-                      icon: Icons.dashboard_outlined,
-                      selectedIcon: Icons.dashboard,
+                      glyph: NavGlyph.board,
                       label: '看板',
                       selected: index == 1,
                       onTap: () => onSelect(1),
                     ),
                   ),
-                  const SizedBox(width: 96),
+                  const SizedBox(width: 80),
                   Expanded(
                     child: _NavItem(
-                      icon: Icons.support_agent_outlined,
-                      selectedIcon: Icons.support_agent,
+                      glyph: NavGlyph.assist,
                       label: '辅助',
                       selected: index == 3,
                       onTap: () => onSelect(3),
@@ -439,8 +437,7 @@ class _BottomNav extends StatelessWidget {
                   ),
                   Expanded(
                     child: _NavItem(
-                      icon: Icons.tune_outlined,
-                      selectedIcon: Icons.tune,
+                      glyph: NavGlyph.settings,
                       label: '设置',
                       selected: index == 4,
                       onTap: () => onSelect(4),
@@ -581,15 +578,13 @@ class _TextInputToggle extends StatelessWidget {
 }
 
 class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final IconData selectedIcon;
+  final NavGlyph glyph;
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
   const _NavItem({
-    required this.icon,
-    required this.selectedIcon,
+    required this.glyph,
     required this.label,
     required this.selected,
     required this.onTap,
@@ -610,7 +605,7 @@ class _NavItem extends StatelessWidget {
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOut,
             margin: const EdgeInsets.symmetric(vertical: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
             decoration: BoxDecoration(
               color: selected ? AppColors.surfaceSubtle : Colors.transparent,
               borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -619,7 +614,7 @@ class _NavItem extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(selected ? selectedIcon : icon, size: 24, color: color),
+                NavIcon(glyph: glyph, color: color, size: 24),
                 const SizedBox(height: 4),
                 Text(
                   label,

@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
+import 'nav_icons.dart';
 
 /// ============================================================
 /// 设计 Token —— 高可视亮色 High-Vis Light（UI 规范 V0.1）
@@ -537,19 +541,25 @@ class ConnectionStatus extends StatelessWidget {
   }
 }
 
-/// 中央语音按钮：橙色圆形凸起，白色麦克风图标；录音中变停止图标 + 脉冲
-class VoiceButton extends StatelessWidget {
-  final double size;
+/// 中央语音按钮：橙色圆形 + 白色麦克风（CustomPainter 绘制，DPR 无关）
+/// - 默认：橙色圆 + 白麦克风
+/// - 按下：轻微缩放(0.94) + 颜色加深（Transform 缩放，不引起布局跳动）
+/// - 录音中：更深橙色 + 白麦克风 + 按钮内部短波形（不外扩、不越界）
+/// - 处理中：中性灰圆 + 白色转圈（独立视觉态，禁用触发避免重复识别）
+class VoiceButton extends StatefulWidget {
+  final double size; // 视觉直径（默认 64，命中区域 size+8 ≥ 44）
   final bool recording;
-  final bool enabled; // 识别/确认中禁用，避免重复触发
+  final bool processing; // 识别/确认中：独立视觉状态 + 禁止重复触发
+  final bool enabled; // 额外禁用开关（保留原语义）
   final VoidCallback? onTap;
   final GestureLongPressStartCallback? onLongPressStart;
   final GestureLongPressEndCallback? onLongPressEnd;
 
   const VoiceButton({
     super.key,
-    this.size = 88,
+    this.size = 64,
     this.recording = false,
+    this.processing = false,
     this.enabled = true,
     this.onTap,
     this.onLongPressStart,
@@ -557,55 +567,199 @@ class VoiceButton extends StatelessWidget {
   });
 
   @override
+  State<VoiceButton> createState() => _VoiceButtonState();
+}
+
+class _VoiceButtonState extends State<VoiceButton>
+    with SingleTickerProviderStateMixin {
+  bool _pressed = false;
+
+  // 录音态内部短波形动画（只影响绘制，不改变布局）；initState 中创建，
+  // 避免懒加载在 dispose 阶段新建 Ticker 导致树停用后查询祖先崩溃
+  late final AnimationController _wave;
+
+  @override
+  void initState() {
+    super.initState();
+    _wave = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 720),
+    );
+    if (widget.recording) _wave.repeat();
+  }
+
+  @override
+  void didUpdateWidget(VoiceButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.recording && !oldWidget.recording) _wave.repeat();
+    if (!widget.recording && oldWidget.recording) _wave.stop();
+  }
+
+  @override
+  void dispose() {
+    _wave.dispose();
+    super.dispose();
+  }
+
+  bool get _disabled => !widget.enabled || widget.processing;
+
+  /// 按下/录音用更深橙色（由现有 voice 色派生，不新增设计系统颜色）
+  Color get _fill {
+    if (widget.processing) return AppColors.textTertiary;
+    if (widget.recording) {
+      return Color.lerp(AppColors.voice, Colors.black, 0.22)!;
+    }
+    if (_pressed) return Color.lerp(AppColors.voice, Colors.black, 0.16)!;
+    return AppColors.voice;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final glow = AppColors.voice.withValues(alpha: recording ? 0.55 : 0.35);
+    final size = widget.size;
+    final glowAlpha = widget.recording ? 0.5 : 0.35;
+    final hint = widget.processing
+        ? '识别处理中，请稍候'
+        : widget.recording
+            ? '松开结束录音'
+            : '长按开始录音，点击进入语音页';
     return Semantics(
-      label: recording ? '停止录音' : '语音录入',
+      label: widget.processing
+          ? '识别处理中'
+          : widget.recording
+              ? '停止录音'
+              : '语音录入',
       button: true,
-      enabled: enabled,
-      hint: enabled ? (recording ? '松开结束录音' : '长按开始录音，点击进入语音页') : '识别处理中，请稍候',
+      enabled: !_disabled,
+      hint: hint,
       child: GestureDetector(
-        onTap: enabled ? onTap : null,
-        onLongPressStart: enabled ? onLongPressStart : null,
-        onLongPressEnd: enabled ? onLongPressEnd : null,
+        behavior: HitTestBehavior.opaque,
+        onTap: _disabled ? null : widget.onTap,
+        onLongPressStart: _disabled ? null : widget.onLongPressStart,
+        onLongPressEnd: _disabled ? null : widget.onLongPressEnd,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
         child: SizedBox(
-          width: size + 16,
-          height: size + 16,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (recording)
-                PulseRing(color: AppColors.voice, ringSize: size + 16),
-              Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: enabled
-                      ? AppColors.voice
-                      : AppColors.voice.withValues(alpha: 0.55),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    width: 2,
+          width: size + 8,
+          height: size + 8,
+          child: AnimatedScale(
+            scale: _pressed && !_disabled ? 0.94 : 1,
+            duration: const Duration(milliseconds: 110),
+            curve: Curves.easeOut,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _fill,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.voice.withValues(alpha: glowAlpha),
+                    blurRadius: widget.recording ? 22 : 16,
+                    spreadRadius: widget.recording ? 4 : 2,
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: glow,
-                      blurRadius: recording ? 28 : 18,
-                      spreadRadius: recording ? 6 : 2,
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  recording ? Icons.stop_rounded : Icons.mic_rounded,
-                  size: size * 0.48,
-                  color: Colors.white,
-                ),
+                ],
               ),
-            ],
+              child: widget.processing
+                  ? const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: Colors.white,
+                        ),
+                      ),
+                    )
+                  : Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (widget.recording)
+                          Positioned(
+                            top: size * 0.15,
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: NavIcon(
+                                glyph: NavGlyph.voice,
+                                color: Colors.white,
+                                size: size * 0.32,
+                              ),
+                            ),
+                          )
+                        else
+                          NavIcon(
+                            glyph: NavGlyph.voice,
+                            color: Colors.white,
+                            size: size * 0.46,
+                          ),
+                        if (widget.recording)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: size * 0.13,
+                            height: size * 0.26,
+                            child: AnimatedBuilder(
+                              animation: _wave,
+                              builder: (context, _) => CustomPaint(
+                                painter: _WavePainter(
+                                  size: size,
+                                  t: _wave.value,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+/// 录音态按钮内部短波形：三根圆头竖条，高度随相位起伏，始终限制在按钮内
+class _WavePainter extends CustomPainter {
+  final double size; // 按钮直径
+  final double t; // 0..1 循环相位
+  final Color color;
+
+  const _WavePainter({required this.size, required this.t, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 0; // 用圆角矩形绘制，strokeWidth 置 0
+    const bars = 3;
+    final barW = this.size * 0.07;
+    final gap = this.size * 0.05;
+    final totalW = bars * barW + (bars - 1) * gap;
+    final maxH = this.size * 0.26;
+    final bottomY = this.size - this.size * 0.13;
+    var x = (this.size - totalW) / 2;
+    for (var i = 0; i < bars; i++) {
+      final phase = math.sin(2 * math.pi * t - i * 1.9);
+      final h = maxH * (0.38 + 0.62 * (0.5 + 0.5 * phase));
+      final bar = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, bottomY - h, barW, h),
+        Radius.circular(barW / 2),
+      );
+      canvas.drawRRect(bar, paint);
+      x += barW + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_WavePainter oldDelegate) =>
+      oldDelegate.size != size || oldDelegate.t != t || oldDelegate.color != color;
 }

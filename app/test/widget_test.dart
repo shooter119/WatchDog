@@ -1657,5 +1657,86 @@ void main() {
       expect(multiLineHeight, greaterThan(singleLineHeight));
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('320/360/390/430 宽度下底部导航无溢出、语音按钮不越界', (tester) async {
+      for (final width in [320.0, 360.0, 390.0, 430.0]) {
+        tester.view.physicalSize = Size(width * 3, 800 * 3);
+        tester.view.devicePixelRatio = 3.0;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(const WatchDogApp());
+        await tester.pump();
+        // 无横向溢出/图标重叠（RenderFlex overflow 会抛异常）
+        expect(tester.takeException(), isNull, reason: '$width 宽度溢出');
+        final button = tester.getRect(find.byType(VoiceButton));
+        // 语音按钮水平居中且在屏幕范围内
+        expect(button.center.dx, closeTo(width / 2, 2),
+            reason: '$width 语音按钮未居中');
+        expect(button.left, greaterThanOrEqualTo(0));
+        expect(button.right, lessThanOrEqualTo(width));
+        // 四个导航入口均可见且不重叠
+        final logs = tester.getRect(find.text('日志'));
+        final boards = tester.getRect(find.text('看板'));
+        final assists = tester.getRect(find.text('辅助'));
+        final settings = tester.getRect(find.text('设置'));
+        expect(logs.right, lessThanOrEqualTo(boards.left));
+        expect(boards.right, lessThanOrEqualTo(assists.left));
+        expect(assists.right, lessThanOrEqualTo(settings.left));
+        // 语音按钮不遮挡左右导航图标
+        expect(button.left, greaterThanOrEqualTo(boards.right));
+        expect(button.right, lessThanOrEqualTo(assists.left));
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
+
+    testWidgets('VoiceButton 默认/按下/录音/处理四态渲染且处理态禁止触发', (tester) async {
+      var taps = 0;
+      var longPresses = 0;
+      Widget wrap({
+        bool recording = false,
+        bool processing = false,
+        bool enabled = true,
+      }) => MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: VoiceButton(
+              recording: recording,
+              processing: processing,
+              enabled: enabled,
+              onTap: () => taps++,
+              onLongPressStart: (_) => longPresses++,
+            ),
+          ),
+        ),
+      );
+      // 默认态：点按可触发
+      await tester.pumpWidget(wrap());
+      await tester.tap(find.byType(VoiceButton));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(taps, 1);
+      expect(tester.takeException(), isNull);
+      // 按下缩放不改变布局尺寸（transform 缩放，不引起布局跳动）
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(VoiceButton)),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      final pressedSize = tester.getSize(find.byType(VoiceButton));
+      expect(pressedSize, const Size(72, 72));
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(taps, 2, reason: '松手触发一次 tap');
+      // 录音态：内部波形动画正常渲染
+      await tester.pumpWidget(wrap(recording: true));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.takeException(), isNull);
+      // 处理态：独立视觉 + 禁止重复触发
+      await tester.pumpWidget(wrap(processing: true));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.byType(VoiceButton));
+      await tester.longPress(find.byType(VoiceButton));
+      await tester.pump();
+      expect(taps, 2, reason: '处理态点击不应触发');
+      expect(longPresses, 0, reason: '处理态长按不应触发');
+      expect(tester.takeException(), isNull);
+    });
   });
 }
