@@ -666,58 +666,60 @@ class _VoiceButtonState extends State<VoiceButton>
                   ),
                 ],
               ),
-              child: widget.processing
-                  ? const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          color: Colors.white,
-                        ),
-                      ),
-                    )
-                  : Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (widget.recording)
-                          Positioned(
-                            top: size * 0.15,
-                            left: 0,
-                            right: 0,
-                            child: Center(
-                              child: NavIcon(
-                                glyph: NavGlyph.voice,
-                                color: Colors.white,
-                                size: size * 0.32,
-                              ),
-                            ),
-                          )
-                        else
-                          NavIcon(
-                            glyph: NavGlyph.voice,
+              child: ClipOval(
+                child: widget.processing
+                    ? const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
                             color: Colors.white,
-                            size: size * 0.46,
                           ),
-                        if (widget.recording)
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: size * 0.13,
-                            height: size * 0.26,
-                            child: AnimatedBuilder(
-                              animation: _wave,
-                              builder: (context, _) => CustomPaint(
-                                painter: _WavePainter(
-                                  size: size,
-                                  t: _wave.value,
+                        ),
+                      )
+                    : Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (widget.recording)
+                            Positioned(
+                              top: size * 0.15,
+                              left: 0,
+                              right: 0,
+                              child: Center(
+                                child: NavIcon(
+                                  glyph: NavGlyph.voice,
                                   color: Colors.white,
+                                  size: size * 0.32,
+                                ),
+                              ),
+                            )
+                          else
+                            NavIcon(
+                              glyph: NavGlyph.voice,
+                              color: Colors.white,
+                              size: size * 0.46,
+                            ),
+                          if (widget.recording)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: size * 0.13,
+                              height: size * 0.26,
+                              child: AnimatedBuilder(
+                                animation: _wave,
+                                builder: (context, _) => CustomPaint(
+                                  painter: _WavePainter(
+                                    size: size,
+                                    t: _wave.value,
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
+                        ],
+                      ),
+              ),
             ),
           ),
         ),

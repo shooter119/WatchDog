@@ -1,11 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 /// ============================================================
 /// 底部导航图标集（24×24 设计网格，统一 1.8 线宽、圆头端点）
-/// 使用 CustomPainter 按矢量重绘视觉稿，任意屏幕/DPR 下保持清晰，
-/// 不引入位图资源与额外依赖。
+/// 形状与设计稿 watchdog-bottom-nav-icons 一致，使用 CustomPainter
+/// 矢量重绘，任意屏幕/DPR 下保持清晰，不引入位图资源与额外依赖。
 /// ============================================================
 
 enum NavGlyph { log, board, voice, assist, settings }
@@ -48,6 +46,10 @@ class NavIconPainter extends CustomPainter {
     ..strokeCap = StrokeCap.round
     ..strokeJoin = StrokeJoin.round;
 
+  Paint _fillPaint(Color c) => Paint()
+    ..color = c
+    ..style = PaintingStyle.fill;
+
   @override
   void paint(Canvas canvas, Size size) {
     canvas.scale(size.width / 24, size.height / 24);
@@ -66,88 +68,97 @@ class NavIconPainter extends CustomPainter {
     }
   }
 
-  /// 日志：翻开的本子 + 三行记录线
+  /// 日志：左侧时间线 + 三个节点圆点 + 三条记录线
   void _paintLog(Canvas canvas, Paint paint) {
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTRB(3, 4, 21, 20),
-        const Radius.circular(3),
-      ),
-      paint,
-    );
-    canvas.drawLine(const Offset(7, 9.5), const Offset(17, 9.5), paint);
-    canvas.drawLine(const Offset(7, 12.5), const Offset(17, 12.5), paint);
-    canvas.drawLine(const Offset(7, 15.5), const Offset(15.5, 15.5), paint);
+    canvas.drawLine(const Offset(7, 4.5), const Offset(7, 19.5), paint);
+    canvas.drawCircle(const Offset(7, 6), 1.5, _fillPaint(color));
+    canvas.drawCircle(const Offset(7, 12), 1.5, _fillPaint(color));
+    canvas.drawCircle(const Offset(7, 18), 1.5, _fillPaint(color));
+    canvas.drawLine(const Offset(11, 6), const Offset(19, 6), paint);
+    canvas.drawLine(const Offset(11, 12), const Offset(19, 12), paint);
+    canvas.drawLine(const Offset(11, 18), const Offset(19, 18), paint);
   }
 
-  /// 看板：2×2 宫格（火场态势看板）
+  /// 看板：2×2 四个独立圆角宫格（火场态势看板）
   void _paintBoard(Canvas canvas, Paint paint) {
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTRB(3, 4, 21, 20),
-        const Radius.circular(3),
-      ),
-      paint,
-    );
-    canvas.drawLine(const Offset(12, 4.9), const Offset(12, 19.1), paint);
-    canvas.drawLine(const Offset(3.9, 12), const Offset(20.1, 12), paint);
-  }
-
-  /// 语音：麦克风（胶囊身 + 弧形支架）
-  void _paintVoice(Canvas canvas, Paint paint) {
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTRB(9.2, 2.6, 14.8, 13.4),
-        const Radius.circular(2.8),
-      ),
-      paint,
-    );
-    canvas.drawLine(const Offset(12, 13.4), const Offset(12, 18.6), paint);
-    final arc = Path()
-      ..moveTo(7.4, 15.2)
-      ..arcToPoint(
-        const Offset(16.6, 15.2),
-        radius: const Radius.circular(4.6),
-        clockwise: false,
-      );
-    canvas.drawPath(arc, paint);
-  }
-
-  /// 辅助：消防机器人轮廓（天线 + 圆头 + 护目镜 + 侧耳）
-  void _paintAssist(Canvas canvas, Paint paint) {
-    canvas.drawLine(const Offset(12, 4.8), const Offset(12, 2.2), paint);
-    canvas.drawCircle(const Offset(12, 1.2), 1.1, paint);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTRB(5, 4.8, 19, 14.6),
-        const Radius.circular(3.4),
-      ),
-      paint,
-    );
-    canvas.drawLine(const Offset(5, 9.2), const Offset(3.1, 9.2), paint);
-    canvas.drawLine(const Offset(19, 9.2), const Offset(20.9, 9.2), paint);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTRB(8.2, 7.4, 15.8, 9.6),
-        const Radius.circular(1.2),
-      ),
-      paint,
-    );
-  }
-
-  /// 设置：八齿齿轮
-  void _paintSettings(Canvas canvas, Paint paint) {
-    const c = Offset(12, 12);
-    canvas.drawCircle(c, 4.6, paint);
-    for (var i = 0; i < 8; i++) {
-      final a = i * math.pi / 4;
-      canvas.drawLine(
-        c + Offset(math.cos(a) * 4.6, math.sin(a) * 4.6),
-        c + Offset(math.cos(a) * 7.2, math.sin(a) * 7.2),
+    for (final r in [
+      const Rect.fromLTWH(4, 4, 7, 7),
+      const Rect.fromLTWH(13, 4, 7, 7),
+      const Rect.fromLTWH(4, 13, 7, 7),
+      const Rect.fromLTWH(13, 13, 7, 7),
+    ]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(r, const Radius.circular(1.2)),
         paint,
       );
     }
-    canvas.drawCircle(c, 1.4, paint);
+  }
+
+  /// 语音：麦克风（胶囊身 + 下方弧形拾音罩 + 支架）
+  void _paintVoice(Canvas canvas, Paint paint) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTRB(9, 3.5, 15, 14.5),
+        const Radius.circular(3),
+      ),
+      paint,
+    );
+    final arc = Path()
+      ..moveTo(5.5, 11.5)
+      ..arcToPoint(
+        const Offset(18.5, 11.5),
+        radius: const Radius.circular(6.5),
+        clockwise: false,
+      );
+    canvas.drawPath(arc, paint);
+    canvas.drawLine(const Offset(12, 18), const Offset(12, 21), paint);
+    canvas.drawLine(const Offset(8.5, 21), const Offset(15.5, 21), paint);
+  }
+
+  /// 辅助：正面消防机器人（头盔穹顶 + 侧护耳 + 面罩圆头 + 肩部）
+  void _paintAssist(Canvas canvas, Paint paint) {
+    final dome = Path()
+      ..moveTo(4.5, 12)
+      ..arcToPoint(
+        const Offset(19.5, 12),
+        radius: const Radius.circular(7.5),
+        clockwise: true,
+      );
+    canvas.drawPath(dome, paint);
+    canvas.drawLine(const Offset(19.5, 12), const Offset(19.5, 15.5), paint);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTRB(4.5, 13, 6.5, 17),
+        const Radius.circular(0.9),
+      ),
+      paint,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTRB(17.5, 13, 19.5, 17),
+        const Radius.circular(0.9),
+      ),
+      paint,
+    );
+    canvas.drawCircle(const Offset(12, 8.5), 3.3, paint);
+    final shoulder = Path()
+      ..moveTo(5.5, 19)
+      ..cubicTo(6.3, 16, 9.4, 14.5, 12, 14.5)
+      ..cubicTo(14.6, 14.5, 17.7, 16, 18.5, 19);
+    canvas.drawPath(shoulder, paint);
+  }
+
+  /// 设置：三条调节滑杆，旋钮白芯 + 描边
+  void _paintSettings(Canvas canvas, Paint paint) {
+    canvas.drawLine(const Offset(4, 7), const Offset(20, 7), paint);
+    canvas.drawLine(const Offset(4, 12), const Offset(20, 12), paint);
+    canvas.drawLine(const Offset(4, 17), const Offset(20, 17), paint);
+    canvas.drawCircle(const Offset(9, 7), 1.7, _fillPaint(Colors.white));
+    canvas.drawCircle(const Offset(9, 7), 1.7, paint);
+    canvas.drawCircle(const Offset(15, 12), 1.7, _fillPaint(Colors.white));
+    canvas.drawCircle(const Offset(15, 12), 1.7, paint);
+    canvas.drawCircle(const Offset(10, 17), 1.7, _fillPaint(Colors.white));
+    canvas.drawCircle(const Offset(10, 17), 1.7, paint);
   }
 
   @override

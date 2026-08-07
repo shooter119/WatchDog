@@ -9,6 +9,7 @@ import '../services/audio_service.dart';
 import '../services/op_log_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+import '../theme/assistant_avatar.dart';
 import '../api/api_client.dart' show ApiClient;
 
 /// 智能体问答页「辅助」：文字输入 + 就地语音提问，AI 解答火场困难。
@@ -477,21 +478,7 @@ class ChatPageState extends State<ChatPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: AppShadow.card,
-                ),
-                child: const Icon(
-                  Icons.assistant_rounded,
-                  size: 28,
-                  color: AppColors.actionPrimary,
-                ),
-              ),
+              const AssistantAvatar(size: 56),
               const SizedBox(height: 12),
               const Text(
                 '你好，我是辅助',
@@ -569,19 +556,9 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            Container(
-              width: 30,
-              height: 30,
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: AppColors.actionPrimary,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.assistant_rounded,
-                size: 16,
-                color: Colors.white,
-              ),
+            const AssistantAvatar(
+              size: 30,
+              margin: EdgeInsets.only(right: 8),
             ),
           ],
           Flexible(
