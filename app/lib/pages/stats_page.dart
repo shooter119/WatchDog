@@ -81,15 +81,16 @@ class _StatsPageState extends State<StatsPage> {
         widget.controller.entries.where((e) => e.isActive).length;
     final people = _perPerson();
     return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('数据统计')),
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               child: Row(
                 children: [
-                  const Text('数据统计', style: AppTextStyles.h1),
-                  const Spacer(),
                   ConnectionStatus(
                     syncing: widget.controller.syncing,
                     offline: widget.controller.syncError != null,
