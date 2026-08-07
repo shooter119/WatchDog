@@ -11,6 +11,9 @@ import 'op_log_page.dart';
 import 'roster_page.dart';
 import 'stats_page.dart';
 
+/// 当前版本号：与 app/pubspec.yaml 的 version 保持一致，只在设置页底部展示
+const appVersion = '0.4.2+9';
+
 class SettingsPage extends StatefulWidget {
   final AppController controller;
   const SettingsPage({super.key, required this.controller});
@@ -493,7 +496,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Column(
             children: [
               Text(
-                '安全员助手 WatchDog v${AboutPage.appVersion}',
+                '安全员助手 WatchDog v$appVersion',
                 style: TextStyle(color: AppColors.textTertiary, fontSize: 12, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),

@@ -693,6 +693,9 @@ void main() {
       expect(find.text('操作日志'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('关于我们'));
       expect(find.text('关于我们'), findsOneWidget);
+      // 版本号只在设置页最底部展示
+      await _scrollToVisible(tester, list, find.textContaining('v$appVersion'));
+      expect(find.textContaining('v$appVersion'), findsOneWidget);
       expect(find.text('保存设置'), findsNothing);
     });
 
@@ -750,7 +753,7 @@ void main() {
       expect(find.text('同步到服务器'), findsOneWidget);
     });
 
-    testWidgets('关于我们入口展示 README 信息与版本号', (tester) async {
+    testWidgets('关于我们入口展示 README 信息且不显示版本号', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = _FakeController();
       await tester.pumpWidget(
@@ -767,7 +770,8 @@ void main() {
       expect(find.byType(AboutPage), findsOneWidget);
       expect(find.text('为什么会有这个 App'), findsOneWidget);
       expect(find.text('安全员助手 WatchDog'), findsOneWidget);
-      expect(find.textContaining('v${AboutPage.appVersion}'), findsOneWidget);
+      // 版本号只在设置页底部展示，关于我们页面不再显示
+      expect(find.textContaining('v$appVersion'), findsNothing);
       final aboutList = find.byType(Scrollable).first;
       await _scrollToVisible(tester, aboutList, find.text('它能帮你什么'));
       expect(find.text('它能帮你什么'), findsOneWidget);
@@ -1677,6 +1681,22 @@ void main() {
         );
         expect(button.left, greaterThanOrEqualTo(0));
         expect(button.right, lessThanOrEqualTo(width));
+        final navSurface = tester.getRect(
+          find.byKey(const Key('bottom-nav-surface')),
+        );
+        final voiceSurface = tester.getRect(
+          find.byKey(const Key('voice-button-surface')),
+        );
+        expect(
+          voiceSurface.top,
+          greaterThanOrEqualTo(navSurface.top),
+          reason: '$width 语音圆面上沿应收在底栏背景内',
+        );
+        expect(
+          voiceSurface.bottom,
+          lessThanOrEqualTo(navSurface.bottom),
+          reason: '$width 语音圆面下沿应收在底栏背景内',
+        );
         // 四个导航入口均可见且不重叠
         final logs = tester.getRect(find.text('日志'));
         final boards = tester.getRect(find.text('看板'));
@@ -1690,6 +1710,26 @@ void main() {
         expect(button.right, lessThanOrEqualTo(assists.left));
         await tester.pumpWidget(const SizedBox());
       }
+    });
+
+    testWidgets('辅助页语音按钮完整位于底栏背景内', (tester) async {
+      tester.view.physicalSize = const Size(390 * 3, 800 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const WatchDogApp());
+      await tester.pump();
+      await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
+
+      final navSurface = tester.getRect(
+        find.byKey(const Key('bottom-nav-surface')),
+      );
+      final voiceSurface = tester.getRect(
+        find.byKey(const Key('voice-button-surface')),
+      );
+      expect(voiceSurface.top, greaterThanOrEqualTo(navSurface.top));
+      expect(voiceSurface.bottom, lessThanOrEqualTo(navSurface.bottom));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('VoiceButton 默认/按下/录音/处理四态渲染且处理态禁止触发', (tester) async {

@@ -241,6 +241,7 @@ class _BottomNav extends StatelessWidget {
       if (!chatTextMode) {
         // 语音态：中央凸起圆形橙色麦克风（与普通页 VoiceButton 一致）+ 左侧「文字」切换，无输入框
         return Container(
+          key: const Key('bottom-nav-surface'),
           height: 68 + safeBottom,
           decoration: const BoxDecoration(
             color: AppColors.surface,
@@ -252,7 +253,7 @@ class _BottomNav extends StatelessWidget {
               Positioned(
                 left: 0,
                 right: 0,
-                top: -30,
+                top: -2,
                 child: Center(
                   child: VoiceButton(
                     recording: recording,
@@ -268,7 +269,7 @@ class _BottomNav extends StatelessWidget {
                 Positioned(
                   left: 0,
                   right: 0,
-                  top: -92,
+                  top: -64,
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -318,6 +319,7 @@ class _BottomNav extends StatelessWidget {
       }
       // 文字态：输入框 + 发送（呼出键盘），麦克风隐藏，底部「语音」切换回语音态
       return Container(
+        key: const Key('bottom-nav-surface'),
         padding: EdgeInsets.only(bottom: safeBottom),
         decoration: const BoxDecoration(
           color: AppColors.surface,
@@ -352,6 +354,7 @@ class _BottomNav extends StatelessWidget {
       );
     }
     return Container(
+      key: const Key('bottom-nav-surface'),
       height: 68 + safeBottom,
       decoration: const BoxDecoration(
         color: AppColors.surface,
@@ -363,7 +366,7 @@ class _BottomNav extends StatelessWidget {
           Positioned(
             left: 0,
             right: 0,
-            top: -30,
+            top: -2,
             child: Center(
               child: VoiceButton(
                 recording: recording,
@@ -379,7 +382,7 @@ class _BottomNav extends StatelessWidget {
             Positioned(
               left: 0,
               right: 0,
-              top: -92,
+              top: -64,
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -555,7 +558,10 @@ class _TextInputToggle extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 24, color: color),
+                Transform.translate(
+                  offset: const Offset(0, -2),
+                  child: Icon(icon, size: 24, color: color),
+                ),
                 const SizedBox(height: 3),
                 Text(
                   label,
@@ -615,7 +621,10 @@ class _NavItem extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                NavIcon(glyph: glyph, color: color, size: 24),
+                Transform.translate(
+                  offset: const Offset(0, -2),
+                  child: NavIcon(glyph: glyph, color: color, size: 24),
+                ),
                 const SizedBox(height: 3),
                 Text(
                   label,

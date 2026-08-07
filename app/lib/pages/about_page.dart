@@ -3,12 +3,9 @@ import 'package:flutter/material.dart';
 import '../theme/app_widgets.dart';
 
 /// 关于我们：展示项目 README 核心信息（为什么做/怎么用/功能/场景/项目背景）。
-/// 与名单热词/数据统计同款 AppBar + 卡片排版。
+/// 与名单热词/数据统计同款 AppBar + 卡片排版。版本号只在设置页底部展示，这里不显示。
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
-
-  /// 与 app/pubspec.yaml 的 version 保持一致
-  static const appVersion = '0.3.0+6';
 
   @override
   Widget build(BuildContext context) {
@@ -24,19 +21,21 @@ class AboutPage extends StatelessWidget {
           _SectionCard(
             body: '火场里，安全员是最要紧也最紧张的岗位。进了多少人、进去多久了、谁的气瓶快空了——每一个数字都人命关天。'
                 '但现场往往是这样：防护服、手套、对讲机的嘈杂声，烟雾里看不清纸笔，指挥员一句「报一下里面几个人」，'
-                '靠的是一张被水打湿的名单和一个记在心里的时间。气瓶剩余时间要心算，人多了一乱就错。\n\n'
-                '安全员真的没时间翻记录本。我们做了这个 App，让安全员只做一件事：张嘴说。',
+                '靠的是一张被水打湿的名单和一个记在心里的时间。气瓶剩余时间要心算，人多了一乱就错。'
+                '我们太清楚那种手忙脚乱的感觉了。\n\n'
+                '安全员真的没时间翻记录本。我们做了这个 App，从头到尾只坚持一件事：让你张嘴说话，剩下的交给它。',
           ),
           SizedBox(height: 18),
           SectionTitle(text: '它是怎么用的'),
           _SectionCard(
             body: '安全员站在入口，队员进场时报一句「张三，24」：\n'
                 '· App 自动听清人名和压力值，算好这瓶气能用多久\n'
-                '· 谁进来、谁出去、还剩多少分钟，全部实时显示在看板上\n'
-                '· 快没气了，App 会提醒、会响警报、会大声喊出来\n'
+                '· 谁进来、谁出去、还剩多少分钟，看板上实时滚动\n'
+                '· 快没气了，App 会先说话提醒，再响警报\n'
                 '· 退场时一句「张三退场」，记录自动归档\n\n'
-                '全程不用敲一个字，戴着战术手套也能操作。几台手机连上同一个场景码，'
-                '指挥员和多个安全员看到的是同一块看板，数据实时同步。',
+                '全程不用敲一个字，戴着战术手套也按得动。底部就五个入口：日志、看板、语音、辅助、设置。'
+                '中间那个橙色的麦克风就是最快的那只手——按住说话，松手完事。\n\n'
+                '几台手机连上同一个场景码，指挥员和多个安全员看到的是同一块看板，数据实时同步，谁也不用来回扯着嗓子问。',
           ),
           SizedBox(height: 18),
           SectionTitle(text: '它能帮你什么'),
@@ -45,14 +44,15 @@ class AboutPage extends StatelessWidget {
           SectionTitle(text: '场景'),
           _SectionCard(
             body: '室内烟火特性训练、楼层火灾进攻、化工装置处置……'
-                '凡是需要安全员盯着气瓶和人员的现场，都适用。',
+                '凡是需要安全员盯着气瓶和人员的现场，都适用。训练场上练顺手了，真打火场才不慌。',
           ),
           SizedBox(height: 18),
           SectionTitle(text: '关于这个项目'),
           _SectionCard(
-            body: '由一线消防员在工作之余开发，用了豆包语音识别和 DeepSeek 语义理解做语音解析，后端和 App 全部开源。'
-                '断网时自动切换本机 sherpa-onnx 语音识别与规则解析，火场无信号也能用。\n\n'
-                '如果你的队伍也用得上，欢迎提需求、提 bug，一起让它变得更好用。',
+            body: '由一线消防员在工作之余开发，后端和 App 全部开源。语音识别用豆包，语义理解用 DeepSeek，'
+                '断网时自动切到本机 sherpa-onnx 识别和规则解析，两套兜底都备着，火场无信号也能用。\n\n'
+                '我们不是软件公司，就是一群想让安全员轻松一点的战友。如果你的队伍也用得上，欢迎提需求、提 bug——'
+                '每一个意见，都可能救下一个兄弟。',
           ),
         ],
       ),
@@ -60,7 +60,7 @@ class AboutPage extends StatelessWidget {
   }
 }
 
-/// 顶部品牌卡：图标 + 名称 + 版本 + 一句话简介
+/// 顶部品牌卡：图标 + 名称 + 一句话简介（版本号不在本页展示）
 class _HeroCard extends StatelessWidget {
   const _HeroCard();
 
@@ -82,8 +82,6 @@ class _HeroCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text('安全员助手 WatchDog', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-          const SizedBox(height: 4),
-          Text('v${AboutPage.appVersion}', style: const TextStyle(fontSize: 12, color: AppColors.textTertiary, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           const Text(
             '一款由消防员开发、给消防员用的 App',
@@ -119,11 +117,14 @@ class _FeaturesCard extends StatelessWidget {
   const _FeaturesCard();
 
   static const _items = [
-    (Icons.mic_rounded, '语音录入', '进场、退场、压力值，一句话搞定，自动识别人名和气瓶压力'),
+    (Icons.mic_rounded, '语音录入', '进场、退场、压力值，一句话搞定；多人一次报完一次确认，单人气瓶容量可单独改'),
+    (Icons.smart_toy_outlined, '辅助问答', '浓烟里拿不准主意，按住说话问一句，AI 按结论/立即行动/注意事项给你支招，追问一点就发'),
+    (Icons.receipt_long_outlined, '火场日志', '说一句「搜救出一人」自动记进日志时间线，按实战环节分类，回头好复盘'),
+    (Icons.calculate_outlined, '自动计算', '气瓶容量、压力、消耗率交给我们算，剩余 10 分钟提醒、5 分钟报警'),
+    (Icons.dashboard_rounded, '实时看板', '在场谁、进去多久、还剩多久，一目了然；到点自动播报、响警报、锁屏也推通知'),
     (Icons.offline_bolt_outlined, '断网可用', '语音识别与语义解析支持本机运行，火场没信号也能录'),
-    (Icons.calculate_outlined, '自动计算', '气瓶容量、压力、消耗率交给我们算，10 分钟、5 分钟双阈值预警'),
-    (Icons.dashboard_rounded, '实时看板', '在场谁、进去多久、还剩多久，一目了然；到点自动播报、闹钟提醒'),
-    (Icons.group_outlined, '名单与热词', '把班组名单录进去，语音识别对你的人名更准'),
+    (Icons.group_outlined, '名单与热词', '把班组名单录进去，语音识别对你的人名和叫法更准'),
+    (Icons.bar_chart_rounded, '数据统计', '每人的进出场次数、时长一清二楚，训练复盘心里有数'),
     (Icons.touch_app_outlined, '火场友好', '屏幕常亮、后台保活、按键式录音，戴着手套、满场嘈杂也能用'),
   ];
 
