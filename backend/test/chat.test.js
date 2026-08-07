@@ -30,15 +30,15 @@ const realFetch = globalThis.fetch;
 // mock LLM：校验请求形态，固定返回 REPLY
 const mockChat = () => {
   globalThis.fetch = (url, opts) => {
-    if (!String(url).match(/chat\/completions$/)) return realFetch(url, opts);
+    if (!String(url).match(/\/responses$/)) return realFetch(url, opts);
     const body = JSON.parse(opts.body);
-    assert.equal(body.model, 'deepseek-chat');
-    assert.equal(body.messages[0].role, 'system');
-    assert.match(body.messages[0].content, /水元素/);
+    assert.equal(body.model, 'deepseek-v4-flash');
+    assert.match(body.instructions, /水元素/);
+    assert.deepEqual(body.tools, [{ type: 'web_search' }]);
     return Promise.resolve({
       ok: true,
       async json() {
-        return { choices: [{ message: { content: REPLY } }] };
+        return { output_text: REPLY };
       },
     });
   };
@@ -71,20 +71,46 @@ test('POST /api/chat 问答全链路：回复落库成对写入', async () => {
 test('POST /api/chat 历史上下文带入请求', async () => {
   let captured = null;
   globalThis.fetch = (url, opts) => {
-    if (!String(url).match(/chat\/completions$/)) return realFetch(url, opts);
+    if (!String(url).match(/\/responses$/)) return realFetch(url, opts);
     captured = JSON.parse(opts.body);
     return Promise.resolve({
       ok: true,
       async json() {
-        return { choices: [{ message: { content: '收到' } }] };
+        return { output_text: '收到' };
       },
     });
   };
   await fetch(`${base}/api/chat`, { method: 'POST', headers: H, body: JSON.stringify({ message: '再问一个' }) });
-  const userMsgs = captured.messages.filter((m) => m.role === 'user').map((m) => m.content);
+  const userMsgs = captured.input.filter((m) => m.role === 'user').map((m) => m.content);
   assert.ok(userMsgs.includes('再问一个'), '新问题应传入');
   assert.ok(userMsgs.includes('浓烟太大看不清怎么办'), '历史问题应带入上下文');
   assert.ok(userMsgs.length >= 2, `历史上下文未完整带入（user 消息 ${userMsgs.length} 条）`);
+});
+
+test('POST /api/chat 联网搜索失败回退普通问答', async () => {
+  let fellBack = false;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).match(/\/responses$/)) {
+      return Promise.resolve({ ok: false, status: 500, async text() { return 'boom'; } });
+    }
+    if (String(url).match(/chat\/completions$/)) {
+      fellBack = true;
+      const body = JSON.parse(opts.body);
+      assert.equal(body.model, 'deepseek-chat');
+      return Promise.resolve({
+        ok: true,
+        async json() {
+          return { choices: [{ message: { content: '兜底回复' } }] };
+        },
+      });
+    }
+    return realFetch(url, opts);
+  };
+  const res = await fetch(`${base}/api/chat`, { method: 'POST', headers: H, body: JSON.stringify({ message: '兜底测试' }) });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.reply, '兜底回复');
+  assert.ok(fellBack, 'Responses 失败后应回退 chat/completions');
 });
 
 test('GET /api/chat 场景隔离', async () => {

@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { transcribe } = require('./asr');
-const { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek } = require('./parse');
+const { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch } = require('./parse');
 const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
@@ -20,6 +20,8 @@ const CFG = {
     apiKey: process.env.DEEPSEEK_API_KEY || '',
     baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    chatModel: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-v4-flash',
+    chatSearch: (process.env.CHAT_SEARCH_ENABLED ?? '1') !== '0',
   },
   calc: {
     cylinderVolL: Number(process.env.CYLINDER_VOL_L || 6.8),
@@ -261,12 +263,32 @@ app.post('/api/chat', async (req, res, next) => {
     ];
     const t0 = Date.now();
     logOp(req, 'info', 'chat_req', '收到问答请求', { text: clean.slice(0, 100), history: history.length });
-    const reply = await chatWithDeepSeek({
-      apiKey: CFG.llm.apiKey,
-      baseUrl: CFG.llm.baseUrl,
-      model: CFG.llm.model,
-      messages,
-    });
+    let reply;
+    if (CFG.llm.chatSearch) {
+      try {
+        reply = await chatWithWebSearch({
+          apiKey: CFG.llm.apiKey,
+          baseUrl: CFG.llm.baseUrl,
+          model: CFG.llm.chatModel,
+          messages,
+        });
+      } catch (e) {
+        logOp(req, 'error', 'chat_search_err', `联网搜索问答失败，回退普通问答: ${e.message || e}`);
+        reply = await chatWithDeepSeek({
+          apiKey: CFG.llm.apiKey,
+          baseUrl: CFG.llm.baseUrl,
+          model: CFG.llm.model,
+          messages,
+        });
+      }
+    } else {
+      reply = await chatWithDeepSeek({
+        apiKey: CFG.llm.apiKey,
+        baseUrl: CFG.llm.baseUrl,
+        model: CFG.llm.model,
+        messages,
+      });
+    }
     db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'user', content: clean });
     db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'assistant', content: reply });
     logOp(req, 'info', 'chat_done', '问答完成', { ms: Date.now() - t0, replyLen: reply.length });

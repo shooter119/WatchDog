@@ -216,6 +216,42 @@ async function chatWithDeepSeek({ apiKey, baseUrl, model, messages, timeoutMs = 
   return content;
 }
 
+/// 智能体问答（Responses API + 服务端联网搜索）：返回完整回复文本。
+/// 目前仅 deepseek-v4-flash 支持 Responses API，失败抛错由调用方决定是否回退。
+async function chatWithWebSearch({ apiKey, baseUrl, model, messages, timeoutMs = 90000, temperature = 0.3, maxOutputTokens = 800 }) {
+  const url = (baseUrl || 'https://api.deepseek.com') + '/responses';
+  const system = messages.find((m) => m.role === 'system')?.content || '';
+  const input = messages
+    .filter((m) => m.role !== 'system')
+    .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: model || 'deepseek-v4-flash',
+      instructions: system,
+      input,
+      tools: [{ type: 'web_search' }],
+      tool_choice: 'auto',
+      temperature,
+      max_output_tokens: maxOutputTokens,
+      stream: false,
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`DeepSeek Responses API ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const content = data?.output_text || '';
+  if (!content) throw new Error('DeepSeek Responses 返回空内容');
+  return content;
+}
+
 /// 修正 ASR 原始文本：结合消防员名单与热词纠正同音字/错别字/专有名词。
 /// 返回修正后的文本；调用方应捕获异常并回退原始文本。
 async function reviseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighters = [], hotwords = [] }) {
@@ -235,4 +271,4 @@ async function reviseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighte
   return corrected || text;
 }
 
-module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, looksMultiPerson, guardrailAction, guardrailIntent };
+module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch, looksMultiPerson, guardrailAction, guardrailIntent };
