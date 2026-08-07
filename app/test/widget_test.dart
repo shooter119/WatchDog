@@ -1311,14 +1311,19 @@ void main() {
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
       expect(find.text('你好，我是辅助'), findsOneWidget);
-      // 辅助页底部变聊天操作条：输入框 + 语音 + 发送，无凸起按钮
-      expect(find.byType(TextField), findsOneWidget);
+      // 辅助页默认语音态：仅悬浮麦克风 + 「文字」切换，无输入框、无凸起按钮
+      expect(find.byType(TextField), findsNothing);
       expect(find.text('语音'), findsOneWidget);
       expect(find.text('文字'), findsOneWidget);
       expect(find.byType(VoiceButton), findsNothing);
       // 辅助页底部不再有 4 个导航入口，通过顶部返回按钮回看板
       expect(find.text('看板'), findsNothing);
       expect(find.text('设置'), findsNothing);
+      // 点「文字」→ 麦克风隐藏，输入框呼出
+      await tester.tap(find.text('文字'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+      expect(find.text('语音'), findsOneWidget);
       await tester.tap(find.byTooltip('返回看板'));
       await tester.pumpAndSettle();
       expect(find.text('火场安全管控看板'), findsOneWidget);
@@ -1332,6 +1337,9 @@ void main() {
       await tester.pumpWidget(const WatchDogApp());
       await tester.pump();
       await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
+      // 先切换文字输入模式
+      await tester.tap(find.text('文字'));
       await tester.pumpAndSettle();
       final field = find.byType(TextField);
       expect(field, findsOneWidget);

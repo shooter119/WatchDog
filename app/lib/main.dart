@@ -36,6 +36,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
   bool _processing = false; // 识别/确认中（禁用语音按钮，避免重复触发）
   bool _chatSending = false; // 问答请求中（底部发送按钮转圈禁用）
+  bool _chatTextMode = false; // 辅助页输入模式：false=悬浮麦克风（默认）；true=文字输入（麦克风隐藏）
 
   @override
   void initState() {
@@ -53,7 +54,10 @@ class _WatchDogAppState extends State<WatchDogApp> {
 
   void _selectTab(int i) {
     HapticFeedback.selectionClick();
-    setState(() => _tab = i);
+    setState(() {
+      _tab = i;
+      if (i != 3) _chatTextMode = false; // 离开辅助页重置为悬浮麦克风态
+    });
   }
 
   void _goVoice() => _selectTab(2);
@@ -168,13 +172,19 @@ class _WatchDogAppState extends State<WatchDogApp> {
               recording: _recording,
               processing: _processing,
               chatMode: _tab == 3,
+              chatTextMode: _chatTextMode,
               chatController: _chatInput,
               chatInputFocus: _chatInputFocus,
               chatSending: _chatSending,
               onChatSubmit: _chatSubmit,
-              onChatMicTap: _voiceTap,
-              onChatMicLongPressStart: _voiceLongPressStart,
-              onChatMicLongPressEnd: _voiceLongPressEnd,
+              onChatTextModeChange: (v) {
+                setState(() => _chatTextMode = v);
+                if (v) {
+                  _chatInputFocus.requestFocus();
+                } else {
+                  _chatInputFocus.unfocus();
+                }
+              },
               onSelect: _selectTab,
               onVoiceTap: _voiceTap,
               onVoiceLongPressStart: _voiceLongPressStart,
@@ -188,19 +198,19 @@ class _WatchDogAppState extends State<WatchDogApp> {
 }
 
 /// 底部导航：日志 / 看板 / 中央凸起语音按钮 / 辅助 / 设置（左右对称）
-/// 辅助页（chatMode）切换为聊天操作条：上行 语音+输入框+发送，下行 5 个导航入口（中央为语音页入口）
+/// 辅助页（chatMode）：默认仅悬浮麦克风入口（无导航、无输入框）；
+/// 点「文字」切换为文字输入（麦克风隐藏，输入框+键盘呼出）
 class _BottomNav extends StatelessWidget {
   final int index;
   final bool recording; // 录音中：按钮变停止图标 + 橙色脉冲 + 上方提示
   final bool processing; // 识别/确认中：禁用语音按钮
   final bool chatMode; // 辅助页：底部变身聊天操作条（语音+输入+发送）
+  final bool chatTextMode; // 辅助页文字输入模式（true=输入框，麦克风隐藏）
   final TextEditingController chatController;
   final FocusNode chatInputFocus; // 文字输入切换按钮的聚焦目标
   final bool chatSending; // 问答请求中：发送按钮转圈
   final ValueChanged<String> onChatSubmit;
-  final VoidCallback onChatMicTap;
-  final GestureLongPressStartCallback onChatMicLongPressStart;
-  final GestureLongPressEndCallback onChatMicLongPressEnd;
+  final ValueChanged<bool> onChatTextModeChange; // 切换文字/语音输入模式
   final ValueChanged<int> onSelect;
   final VoidCallback onVoiceTap;
   final GestureLongPressStartCallback onVoiceLongPressStart;
@@ -211,13 +221,12 @@ class _BottomNav extends StatelessWidget {
     required this.recording,
     required this.processing,
     required this.chatMode,
+    required this.chatTextMode,
     required this.chatController,
     required this.chatInputFocus,
     required this.chatSending,
     required this.onChatSubmit,
-    required this.onChatMicTap,
-    required this.onChatMicLongPressStart,
-    required this.onChatMicLongPressEnd,
+    required this.onChatTextModeChange,
     required this.onSelect,
     required this.onVoiceTap,
     required this.onVoiceLongPressStart,
@@ -228,6 +237,38 @@ class _BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     if (chatMode) {
+      if (!chatTextMode) {
+        // 语音态：中央悬浮麦克风 + 左侧「文字」切换，无输入框
+        return Container(
+          padding: EdgeInsets.only(bottom: safeBottom),
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            border: Border(top: BorderSide(color: AppColors.border)),
+          ),
+          child: SizedBox(
+            height: 68,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _TextInputToggle(
+                    textMode: false,
+                    onTap: () => onChatTextModeChange(true),
+                  ),
+                ),
+                _VoiceNavEntry(
+                  recording: recording,
+                  processing: processing,
+                  onTap: onVoiceTap,
+                  onLongPressStart: onVoiceLongPressStart,
+                  onLongPressEnd: onVoiceLongPressEnd,
+                ),
+                const Expanded(child: SizedBox()),
+              ],
+            ),
+          ),
+        );
+      }
+      // 文字态：输入框 + 发送（呼出键盘），麦克风隐藏，底部「语音」切换回语音态
       return Container(
         padding: EdgeInsets.only(bottom: safeBottom),
         decoration: const BoxDecoration(
@@ -241,28 +282,18 @@ class _BottomNav extends StatelessWidget {
               controller: chatController,
               focusNode: chatInputFocus,
               sending: chatSending,
-              recording: recording,
               onSend: () => onChatSubmit(chatController.text),
-              onMicTap: onChatMicTap,
-              onMicLongPressStart: onChatMicLongPressStart,
-              onMicLongPressEnd: onChatMicLongPressEnd,
             ),
             SizedBox(
               height: 56,
               child: Row(
                 children: [
+                  const Expanded(child: SizedBox()),
                   Expanded(
                     child: _TextInputToggle(
-                      selected: chatInputFocus.hasFocus,
-                      onTap: () => chatInputFocus.requestFocus(),
+                      textMode: true,
+                      onTap: () => onChatTextModeChange(false),
                     ),
-                  ),
-                  _VoiceNavEntry(
-                    recording: recording,
-                    processing: processing,
-                    onTap: onVoiceTap,
-                    onLongPressStart: onVoiceLongPressStart,
-                    onLongPressEnd: onVoiceLongPressEnd,
                   ),
                   const Expanded(child: SizedBox()),
                 ],
@@ -378,26 +409,18 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-/// 辅助页聊天操作条：语音（长按录音）+ 输入框 + 发送
+/// 辅助页文字输入操作条：输入框 + 发送（仅文字态显示，无麦克风图标）
 class _ChatActionBar extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode? focusNode;
   final bool sending;
-  final bool recording;
   final VoidCallback onSend;
-  final VoidCallback onMicTap;
-  final GestureLongPressStartCallback onMicLongPressStart;
-  final GestureLongPressEndCallback onMicLongPressEnd;
 
   const _ChatActionBar({
     required this.controller,
     this.focusNode,
     required this.sending,
-    required this.recording,
     required this.onSend,
-    required this.onMicTap,
-    required this.onMicLongPressStart,
-    required this.onMicLongPressEnd,
   });
 
   @override
@@ -410,33 +433,6 @@ class _ChatActionBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Semantics(
-            label: recording ? '停止录音' : '语音录入',
-            button: true,
-            enabled: !recording,
-            hint: recording ? '松开结束录音' : '长按开始录音，点击停止',
-            child: GestureDetector(
-              onTap: onMicTap,
-              onLongPressStart: onMicLongPressStart,
-              onLongPressEnd: onMicLongPressEnd,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: recording
-                      ? AppColors.voice
-                      : AppColors.actionPrimary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  recording ? Icons.stop_rounded : Icons.mic_rounded,
-                  size: 22,
-                  color: recording ? Colors.white : AppColors.actionPrimary,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
           Expanded(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 104),
@@ -481,20 +477,22 @@ class _ChatActionBar extends StatelessWidget {
   }
 }
 
-/// 聊天模式下「切换文字输入」按钮：点击聚焦输入框，聚焦中高亮
+/// 辅助页输入模式切换按钮：语音态显示「文字」，文字态显示「语音」，互斥切换
 class _TextInputToggle extends StatelessWidget {
-  final bool selected;
+  final bool textMode; // true=当前为文字输入模式
   final VoidCallback onTap;
 
-  const _TextInputToggle({required this.selected, required this.onTap});
+  const _TextInputToggle({required this.textMode, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.textPrimary : AppColors.textTertiary;
+    final icon = textMode ? Icons.mic_rounded : Icons.keyboard_alt_outlined;
+    final label = textMode ? '语音' : '文字';
+    final color = textMode ? AppColors.textPrimary : AppColors.textTertiary;
     return Semantics(
-      label: '切换为文字输入',
+      label: textMode ? '切换为语音输入' : '切换为文字输入',
       button: true,
-      selected: selected,
+      selected: textMode,
       child: InkWell(
         onTap: onTap,
         child: Center(
@@ -504,7 +502,7 @@ class _TextInputToggle extends StatelessWidget {
             margin: const EdgeInsets.symmetric(vertical: 2),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 3),
             decoration: BoxDecoration(
-              color: selected ? AppColors.surfaceSubtle : Colors.transparent,
+              color: textMode ? AppColors.surfaceSubtle : Colors.transparent,
               borderRadius: BorderRadius.circular(AppRadius.pill),
             ),
             child: Column(
@@ -512,19 +510,17 @@ class _TextInputToggle extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  selected
-                      ? Icons.keyboard_alt_rounded
-                      : Icons.keyboard_alt_outlined,
+                  textMode ? Icons.keyboard_alt_rounded : icon,
                   size: 24,
                   color: color,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '文字',
+                  label,
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.2,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight: textMode ? FontWeight.w700 : FontWeight.w500,
                     color: color,
                   ),
                 ),
