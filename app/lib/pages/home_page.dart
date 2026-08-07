@@ -855,11 +855,11 @@ class HomePageState extends State<HomePage> {
             const SizedBox(height: 24),
             const Text('按住下方按钮说话', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
             const SizedBox(height: 10),
-            _example('例：「张伟20兆帕，李娜22兆帕」 → 多人一次确认进场'),
+            _example('例：「张伟20兆帕，刘洋22兆帕」 → 多人一次确认进场'),
             const SizedBox(height: 4),
             _example('例：「张伟，20兆帕」 → 单人进场，可用34分钟'),
             const SizedBox(height: 4),
-            _example('例：「李娜出来了」 → 登记出火场'),
+            _example('例：「刘洋出来了」 → 登记出火场'),
             if (_peopleEditors.isNotEmpty) ...[
               const SizedBox(height: 14),
               FilledButton.icon(

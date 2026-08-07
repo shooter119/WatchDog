@@ -80,76 +80,78 @@ class _StatsPageState extends State<StatsPage> {
     final activeCount =
         widget.controller.entries.where((e) => e.isActive).length;
     final people = _perPerson();
-    return SafeArea(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Row(
-              children: [
-                const Text('数据统计', style: AppTextStyles.h1),
-                const Spacer(),
-                ConnectionStatus(
-                  syncing: widget.controller.syncing,
-                  offline: widget.controller.syncError != null,
-                  onRetry: widget.controller.startSync,
-                ),
-              ],
-            ),
-          ),
-          _buildFilters(),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: widget.controller.refreshNow,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
                 children: [
-                  _buildSummary(filtered.length, totalMs, activeCount),
-                  const SizedBox(height: 16),
-                  SectionTitle(
-                    text: _sortByDuration ? '时长排行（点按切换排序）' : '次数排行（点按切换排序）',
-                    trailing: GestureDetector(
-                      onTap: () => setState(() => _sortByDuration = !_sortByDuration),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _sortByDuration ? Icons.timer_outlined : Icons.repeat,
-                            size: 15,
-                            color: AppColors.textTertiary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _sortByDuration ? '按总时长' : '按次数',
-                            style: const TextStyle(
-                              color: AppColors.textTertiary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  const Text('数据统计', style: AppTextStyles.h1),
+                  const Spacer(),
+                  ConnectionStatus(
+                    syncing: widget.controller.syncing,
+                    offline: widget.controller.syncError != null,
+                    onRetry: widget.controller.startSync,
                   ),
-                  if (people.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 40),
-                      child: Center(
-                        child: Text(
-                          '所选范围内暂无进出记录',
-                          style: TextStyle(color: AppColors.textTertiary, fontSize: 14),
-                        ),
-                      ),
-                    )
-                  else
-                    for (final (i, p) in people.indexed)
-                      _PersonRow(rank: i + 1, person: p),
                 ],
               ),
             ),
-          ),
-        ],
+            _buildFilters(),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: widget.controller.refreshNow,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                  children: [
+                    _buildSummary(filtered.length, totalMs, activeCount),
+                    const SizedBox(height: 16),
+                    SectionTitle(
+                      text: _sortByDuration ? '时长排行（点按切换排序）' : '次数排行（点按切换排序）',
+                      trailing: GestureDetector(
+                        onTap: () => setState(() => _sortByDuration = !_sortByDuration),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _sortByDuration ? Icons.timer_outlined : Icons.repeat,
+                              size: 15,
+                              color: AppColors.textTertiary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _sortByDuration ? '按总时长' : '按次数',
+                              style: const TextStyle(
+                                color: AppColors.textTertiary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (people.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(
+                          child: Text(
+                            '所选范围内暂无进出记录',
+                            style: TextStyle(color: AppColors.textTertiary, fontSize: 14),
+                          ),
+                        ),
+                      )
+                    else
+                      for (final (i, p) in people.indexed)
+                        _PersonRow(rank: i + 1, person: p),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
