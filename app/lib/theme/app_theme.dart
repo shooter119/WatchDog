@@ -11,20 +11,21 @@ class AppFonts {
 }
 
 ThemeData buildAppTheme() {
-  final scheme = ColorScheme.fromSeed(
-    seedColor: AppColors.actionPrimary,
-    brightness: Brightness.light,
-    surface: AppColors.surface,
-  ).copyWith(
-    primary: AppColors.actionPrimary,
-    onPrimary: Colors.white,
-    secondary: AppColors.caution,
-    onSecondary: AppColors.textPrimary,
-    onSurface: AppColors.textPrimary,
-    surface: AppColors.surface,
-    surfaceContainerHighest: AppColors.surfaceSubtle,
-    outline: AppColors.border,
-  );
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: AppColors.actionPrimary,
+        brightness: Brightness.light,
+        surface: AppColors.surface,
+      ).copyWith(
+        primary: AppColors.actionPrimary,
+        onPrimary: Colors.white,
+        secondary: AppColors.caution,
+        onSecondary: AppColors.textPrimary,
+        onSurface: AppColors.textPrimary,
+        surface: AppColors.surface,
+        surfaceContainerHighest: AppColors.surfaceSubtle,
+        outline: AppColors.border,
+      );
 
   return ThemeData(
     useMaterial3: true,
@@ -39,7 +40,11 @@ ThemeData buildAppTheme() {
       elevation: 0,
       centerTitle: false,
       surfaceTintColor: Colors.transparent,
-      titleTextStyle: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
+      titleTextStyle: TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: 20,
+        fontWeight: FontWeight.w800,
+      ),
     ),
     tabBarTheme: const TabBarThemeData(
       labelColor: AppColors.textPrimary,
@@ -48,7 +53,10 @@ ThemeData buildAppTheme() {
       dividerColor: AppColors.border,
       indicatorSize: TabBarIndicatorSize.label,
       labelStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-      unselectedLabelStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      unselectedLabelStyle: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -68,7 +76,10 @@ ThemeData buildAppTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.actionPrimary, width: 1.5),
+        borderSide: const BorderSide(
+          color: AppColors.actionPrimary,
+          width: 1.5,
+        ),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -76,7 +87,9 @@ ThemeData buildAppTheme() {
         backgroundColor: AppColors.actionPrimary,
         foregroundColor: Colors.white,
         minimumSize: const Size(48, 52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
       ),
     ),
@@ -94,10 +107,20 @@ ThemeData buildAppTheme() {
     ),
     dialogTheme: const DialogThemeData(
       backgroundColor: AppColors.surface,
-      titleTextStyle: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700),
-      contentTextStyle: TextStyle(color: AppColors.textSecondary, fontSize: 15, height: 1.4),
+      titleTextStyle: TextStyle(
+        color: AppColors.textPrimary,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+      ),
+      contentTextStyle: TextStyle(
+        color: AppColors.textSecondary,
+        fontSize: 15,
+        height: 1.4,
+      ),
     ),
     dividerTheme: const DividerThemeData(color: AppColors.border),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.actionPrimary),
+    progressIndicatorTheme: const ProgressIndicatorThemeData(
+      color: AppColors.actionPrimary,
+    ),
   );
 }

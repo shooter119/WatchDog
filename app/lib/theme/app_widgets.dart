@@ -82,12 +82,36 @@ class AppTextStyles {
     fontWeight: FontWeight.w800,
     fontFeatures: [FontFeature.tabularFigures()],
   );
-  static const h1 = TextStyle(fontSize: 24, height: 1.2, fontWeight: FontWeight.w800);
-  static const h2 = TextStyle(fontSize: 22, height: 1.25, fontWeight: FontWeight.w700);
-  static const bodyLg = TextStyle(fontSize: 17, height: 1.4, fontWeight: FontWeight.w600);
-  static const bodyMd = TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w500);
-  static const label = TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w600);
-  static const caption = TextStyle(fontSize: 12, height: 1.4, fontWeight: FontWeight.w500);
+  static const h1 = TextStyle(
+    fontSize: 24,
+    height: 1.2,
+    fontWeight: FontWeight.w800,
+  );
+  static const h2 = TextStyle(
+    fontSize: 22,
+    height: 1.25,
+    fontWeight: FontWeight.w700,
+  );
+  static const bodyLg = TextStyle(
+    fontSize: 17,
+    height: 1.4,
+    fontWeight: FontWeight.w600,
+  );
+  static const bodyMd = TextStyle(
+    fontSize: 15,
+    height: 1.45,
+    fontWeight: FontWeight.w500,
+  );
+  static const label = TextStyle(
+    fontSize: 13,
+    height: 1.35,
+    fontWeight: FontWeight.w600,
+  );
+  static const caption = TextStyle(
+    fontSize: 12,
+    height: 1.4,
+    fontWeight: FontWeight.w500,
+  );
 }
 
 /// 状态 → 颜色/标签/图标 映射（normal=安全, warn=注意, alarm=报警, 其他=超时）
@@ -101,15 +125,35 @@ class EntryStatus {
   const EntryStatus(this.color, this.label, this.icon, this.danger, this.fg);
 
   static EntryStatus of(String status) => switch (status) {
-        'normal' => const EntryStatus(
-            AppColors.safe, '安全', Icons.check_circle, false, AppColors.textPrimary),
-        'warn' => const EntryStatus(
-            AppColors.caution, '注意', Icons.warning_amber_rounded, false, AppColors.textPrimary),
-        'alarm' => const EntryStatus(
-            AppColors.alarm, '报警', Icons.notifications_active, true, AppColors.onStatus),
-        _ => const EntryStatus(
-            AppColors.timeout, '超时', Icons.timer_off_outlined, true, AppColors.onStatus),
-      };
+    'normal' => const EntryStatus(
+      AppColors.safe,
+      '安全',
+      Icons.check_circle,
+      false,
+      AppColors.textPrimary,
+    ),
+    'warn' => const EntryStatus(
+      AppColors.caution,
+      '注意',
+      Icons.warning_amber_rounded,
+      false,
+      AppColors.textPrimary,
+    ),
+    'alarm' => const EntryStatus(
+      AppColors.alarm,
+      '报警',
+      Icons.notifications_active,
+      true,
+      AppColors.onStatus,
+    ),
+    _ => const EntryStatus(
+      AppColors.timeout,
+      '超时',
+      Icons.timer_off_outlined,
+      true,
+      AppColors.onStatus,
+    ),
+  };
 }
 
 /// 统一卡片容器（白色大圆角，克制阴影，少装饰）
@@ -173,7 +217,9 @@ class StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = EntryStatus.of(status);
     final fg = onColorCard ? s.fg : s.color;
-    final bg = onColorCard ? s.fg.withValues(alpha: 0.22) : s.color.withValues(alpha: 0.14);
+    final bg = onColorCard
+        ? s.fg.withValues(alpha: 0.22)
+        : s.color.withValues(alpha: 0.14);
     return Container(
       height: height,
       alignment: Alignment.center,
@@ -207,7 +253,12 @@ class SectionTitle extends StatelessWidget {
   final Widget? trailing;
   final Widget? inline; // 紧跟标题文字后的符号（如折叠指示箭头）
 
-  const SectionTitle({super.key, required this.text, this.trailing, this.inline});
+  const SectionTitle({
+    super.key,
+    required this.text,
+    this.trailing,
+    this.inline,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -233,10 +284,7 @@ class SectionTitle extends StatelessWidget {
               letterSpacing: 0.5,
             ),
           ),
-          if (inline != null) ...[
-            const SizedBox(width: 4),
-            inline!,
-          ],
+          if (inline != null) ...[const SizedBox(width: 4), inline!],
           const Spacer(),
           if (trailing != null) trailing!,
         ],
@@ -304,7 +352,8 @@ class PulseRing extends StatefulWidget {
   State<PulseRing> createState() => _PulseRingState();
 }
 
-class _PulseRingState extends State<PulseRing> with SingleTickerProviderStateMixin {
+class _PulseRingState extends State<PulseRing>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1300),
@@ -327,7 +376,10 @@ class _PulseRingState extends State<PulseRing> with SingleTickerProviderStateMix
           height: widget.ringSize * (0.85 + t * 0.15),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: widget.color.withValues(alpha: (1 - t) * 0.6), width: 2),
+            border: Border.all(
+              color: widget.color.withValues(alpha: (1 - t) * 0.6),
+              width: 2,
+            ),
           ),
         );
       },
@@ -341,13 +393,19 @@ class PulseGlow extends StatefulWidget {
   final Widget child;
   final double radius;
 
-  const PulseGlow({super.key, required this.color, required this.child, this.radius = AppRadius.lg});
+  const PulseGlow({
+    super.key,
+    required this.color,
+    required this.child,
+    this.radius = AppRadius.lg,
+  });
 
   @override
   State<PulseGlow> createState() => _PulseGlowState();
 }
 
-class _PulseGlowState extends State<PulseGlow> with SingleTickerProviderStateMixin {
+class _PulseGlowState extends State<PulseGlow>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -407,7 +465,14 @@ class ConnectionStatus extends StatelessWidget {
         children: [
           Icon(Icons.cloud_sync_outlined, size: 16, color: AppColors.voice),
           SizedBox(width: 6),
-          Text('连接中', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+          Text(
+            '连接中',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       );
     } else if (offline) {
@@ -420,12 +485,23 @@ class ConnectionStatus extends StatelessWidget {
             children: [
               Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.alarm),
               SizedBox(width: 6),
-              Text('已中断', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(
+                '已中断',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
           Text(
             '当前使用本地数据 · 点击重试',
-            style: TextStyle(color: AppColors.textTertiary, fontSize: 10.5, height: 1.3),
+            style: TextStyle(
+              color: AppColors.textTertiary,
+              fontSize: 10.5,
+              height: 1.3,
+            ),
           ),
         ],
       );
@@ -435,7 +511,14 @@ class ConnectionStatus extends StatelessWidget {
         children: [
           Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
           SizedBox(width: 6),
-          Text('已连接', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+          Text(
+            '已连接',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       );
     }
@@ -476,35 +559,51 @@ class VoiceButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final glow = AppColors.voice.withValues(alpha: recording ? 0.55 : 0.35);
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      onLongPressStart: enabled ? onLongPressStart : null,
-      onLongPressEnd: enabled ? onLongPressEnd : null,
-      child: SizedBox(
-        width: size + 16,
-        height: size + 16,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (recording) PulseRing(color: AppColors.voice, ringSize: size + 16),
-            Container(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: enabled ? AppColors.voice : AppColors.voice.withValues(alpha: 0.55),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 2),
-                boxShadow: [
-                  BoxShadow(color: glow, blurRadius: recording ? 28 : 18, spreadRadius: recording ? 6 : 2),
-                ],
+    return Semantics(
+      label: recording ? '停止录音' : '语音录入',
+      button: true,
+      enabled: enabled,
+      hint: enabled ? (recording ? '松开结束录音' : '长按开始录音，点击进入语音页') : '识别处理中，请稍候',
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        onLongPressStart: enabled ? onLongPressStart : null,
+        onLongPressEnd: enabled ? onLongPressEnd : null,
+        child: SizedBox(
+          width: size + 16,
+          height: size + 16,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (recording)
+                PulseRing(color: AppColors.voice, ringSize: size + 16),
+              Container(
+                width: size,
+                height: size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: enabled
+                      ? AppColors.voice
+                      : AppColors.voice.withValues(alpha: 0.55),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: glow,
+                      blurRadius: recording ? 28 : 18,
+                      spreadRadius: recording ? 6 : 2,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  recording ? Icons.stop_rounded : Icons.mic_rounded,
+                  size: size * 0.48,
+                  color: Colors.white,
+                ),
               ),
-              child: Icon(
-                recording ? Icons.stop_rounded : Icons.mic_rounded,
-                size: size * 0.48,
-                color: Colors.white,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

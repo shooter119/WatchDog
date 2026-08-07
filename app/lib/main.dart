@@ -28,7 +28,8 @@ class _WatchDogAppState extends State<WatchDogApp> {
   final AppController controller = AppController(localAsr: LocalAsrService());
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
-  final TextEditingController _chatInput = TextEditingController(); // 辅助页输入条（全局底部聊天操作条）
+  final TextEditingController _chatInput =
+      TextEditingController(); // 辅助页输入条（全局底部聊天操作条）
   int _tab = 1; // 规范 2.3：App 启动默认进入看板（tab 顺序：日志0/看板1/语音2/辅助3/设置4）
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换语音页后自动开始录音
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
@@ -240,11 +241,27 @@ class _BottomNav extends StatelessWidget {
               onMicLongPressEnd: onChatMicLongPressEnd,
             ),
             SizedBox(
-              height: 50,
+              height: 56,
               child: Row(
                 children: [
-                  Expanded(child: _NavItem(icon: Icons.note_alt_outlined, selectedIcon: Icons.note_alt, label: '日志', selected: index == 0, onTap: () => onSelect(0))),
-                  Expanded(child: _NavItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: '看板', selected: index == 1, onTap: () => onSelect(1))),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.view_timeline_outlined,
+                      selectedIcon: Icons.view_timeline,
+                      label: '日志',
+                      selected: index == 0,
+                      onTap: () => onSelect(0),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.dashboard_outlined,
+                      selectedIcon: Icons.dashboard,
+                      label: '看板',
+                      selected: index == 1,
+                      onTap: () => onSelect(1),
+                    ),
+                  ),
                   _VoiceNavEntry(
                     recording: recording,
                     processing: processing,
@@ -252,8 +269,24 @@ class _BottomNav extends StatelessWidget {
                     onLongPressStart: onVoiceLongPressStart,
                     onLongPressEnd: onVoiceLongPressEnd,
                   ),
-                  Expanded(child: _NavItem(icon: Icons.chat_bubble_outline_rounded, selectedIcon: Icons.chat_bubble_rounded, label: '辅助', selected: index == 3, onTap: () => onSelect(3))),
-                  Expanded(child: _NavItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: '设置', selected: index == 4, onTap: () => onSelect(4))),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.support_agent_outlined,
+                      selectedIcon: Icons.support_agent,
+                      label: '辅助',
+                      selected: index == 3,
+                      onTap: () => onSelect(3),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.tune_outlined,
+                      selectedIcon: Icons.tune,
+                      label: '设置',
+                      selected: index == 4,
+                      onTap: () => onSelect(4),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -262,7 +295,7 @@ class _BottomNav extends StatelessWidget {
       );
     }
     return Container(
-      height: 60 + safeBottom,
+      height: 68 + safeBottom,
       decoration: const BoxDecoration(
         color: AppColors.surface,
         border: Border(top: BorderSide(color: AppColors.border)),
@@ -292,7 +325,10 @@ class _BottomNav extends StatelessWidget {
               top: -92,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 7,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.voice,
                     borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -300,7 +336,11 @@ class _BottomNav extends StatelessWidget {
                   ),
                   child: const Text(
                     '正在聆听，松开结束',
-                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -310,14 +350,46 @@ class _BottomNav extends StatelessWidget {
             right: 0,
             bottom: safeBottom,
             child: SizedBox(
-              height: 48,
+              height: 56,
               child: Row(
                 children: [
-                  Expanded(child: _NavItem(icon: Icons.note_alt_outlined, selectedIcon: Icons.note_alt, label: '日志', selected: index == 0, onTap: () => onSelect(0))),
-                  Expanded(child: _NavItem(icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: '看板', selected: index == 1, onTap: () => onSelect(1))),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.view_timeline_outlined,
+                      selectedIcon: Icons.view_timeline,
+                      label: '日志',
+                      selected: index == 0,
+                      onTap: () => onSelect(0),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.dashboard_outlined,
+                      selectedIcon: Icons.dashboard,
+                      label: '看板',
+                      selected: index == 1,
+                      onTap: () => onSelect(1),
+                    ),
+                  ),
                   const SizedBox(width: 96),
-                  Expanded(child: _NavItem(icon: Icons.chat_bubble_outline_rounded, selectedIcon: Icons.chat_bubble_rounded, label: '辅助', selected: index == 3, onTap: () => onSelect(3))),
-                  Expanded(child: _NavItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: '设置', selected: index == 4, onTap: () => onSelect(4))),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.support_agent_outlined,
+                      selectedIcon: Icons.support_agent,
+                      label: '辅助',
+                      selected: index == 3,
+                      onTap: () => onSelect(3),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.tune_outlined,
+                      selectedIcon: Icons.tune,
+                      label: '设置',
+                      selected: index == 4,
+                      onTap: () => onSelect(4),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -358,21 +430,29 @@ class _ChatActionBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: onMicTap,
-            onLongPressStart: onMicLongPressStart,
-            onLongPressEnd: onMicLongPressEnd,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: recording ? AppColors.voice : AppColors.actionPrimary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                recording ? Icons.stop_rounded : Icons.mic_rounded,
-                size: 22,
-                color: recording ? Colors.white : AppColors.actionPrimary,
+          Semantics(
+            label: recording ? '停止录音' : '语音录入',
+            button: true,
+            enabled: !recording,
+            hint: recording ? '松开结束录音' : '长按开始录音，点击停止',
+            child: GestureDetector(
+              onTap: onMicTap,
+              onLongPressStart: onMicLongPressStart,
+              onLongPressEnd: onMicLongPressEnd,
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: recording
+                      ? AppColors.voice
+                      : AppColors.actionPrimary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  recording ? Icons.stop_rounded : Icons.mic_rounded,
+                  size: 22,
+                  color: recording ? Colors.white : AppColors.actionPrimary,
+                ),
               ),
             ),
           ),
@@ -399,10 +479,19 @@ class _ChatActionBar extends StatelessWidget {
             style: FilledButton.styleFrom(
               minimumSize: const Size(48, 44),
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
             ),
             child: sending
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.send_rounded, size: 20),
           ),
         ],
@@ -412,6 +501,7 @@ class _ChatActionBar extends StatelessWidget {
 }
 
 /// 聊天模式下中央「语音页」入口（点击进语音页，长按就地录音）
+/// 保持橙色语音层级：浅橙胶囊 + 橙色 mic，录音中橙底白字
 class _VoiceNavEntry extends StatelessWidget {
   final bool recording;
   final bool processing;
@@ -429,33 +519,55 @@ class _VoiceNavEntry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = recording ? AppColors.voice : AppColors.textSecondary;
-    return GestureDetector(
-      onTap: processing ? null : onTap,
-      onLongPressStart: processing ? null : onLongPressStart,
-      onLongPressEnd: processing ? null : onLongPressEnd,
-      child: SizedBox(
-        width: 76,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(recording ? Icons.stop_rounded : Icons.mic_rounded, size: 24, color: color),
-            const SizedBox(height: 3),
-            Text(
-              recording ? '停止' : '语音',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
+    final recordingColor = Colors.white;
+    final idleColor = AppColors.voice;
+    return Semantics(
+      label: recording ? '停止录音' : '语音录入（长按录音）',
+      button: true,
+      enabled: !processing,
+      hint: recording ? '松开结束录音' : '点击进入语音页',
+      child: GestureDetector(
+        onTap: processing ? null : onTap,
+        onLongPressStart: processing ? null : onLongPressStart,
+        onLongPressEnd: processing ? null : onLongPressEnd,
+        child: Container(
+          width: 76,
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: recording
+                ? AppColors.voice
+                : AppColors.voice.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                recording ? Icons.stop_rounded : Icons.mic_rounded,
+                size: 24,
+                color: recording ? recordingColor : idleColor,
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                recording ? '停止' : '语音',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
+                  color: recording ? recordingColor : idleColor,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// 导航项：选中 filled 图标 + surfaceSubtle 胶囊 + textPrimary，未选中 outlined + textTertiary
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final IconData selectedIcon;
@@ -474,22 +586,42 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? AppColors.textPrimary : AppColors.textTertiary;
-    return InkWell(
-      onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(selected ? selectedIcon : icon, size: 22, color: color),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: color,
+    return Semantics(
+      label: label,
+      selected: selected,
+      button: true,
+      container: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 3),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.surfaceSubtle : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(selected ? selectedIcon : icon, size: 24, color: color),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.2,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: color,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
