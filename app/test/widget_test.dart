@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:watchdog/api/api_client.dart';
 import 'package:watchdog/models/models.dart';
+import 'package:watchdog/pages/about_page.dart';
 import 'package:watchdog/pages/board_page.dart';
 import 'package:watchdog/pages/chat_page.dart';
 import 'package:watchdog/pages/entry_detail_page.dart';
@@ -593,8 +594,11 @@ void main() {
       expect(find.text('计算参数'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
       expect(find.text('提醒方式'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('名单与热词'), 200, scrollable: list);
-      await tester.scrollUntilVisible(find.text('操作日志'), 200, scrollable: list);
+      await tester.drag(list, const Offset(0, -3000));
+      await tester.pumpAndSettle();
+      expect(find.text('名单与热词'), findsOneWidget);
+      expect(find.text('操作日志'), findsOneWidget);
+      expect(find.text('关于我们'), findsOneWidget);
       expect(find.text('保存设置'), findsNothing);
     });
 
@@ -644,6 +648,27 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(OpLogPage), findsOneWidget);
       expect(find.text('同步到服务器'), findsOneWidget);
+    });
+
+    testWidgets('关于我们入口展示 README 信息与版本号', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _FakeController();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(body: SettingsPage(controller: c)),
+      ));
+      await tester.pumpAndSettle();
+      final list = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(find.text('关于我们'), 200, scrollable: list);
+      await tester.tap(find.text('关于我们'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AboutPage), findsOneWidget);
+      expect(find.text('为什么会有这个 App'), findsOneWidget);
+      expect(find.text('安全员助手 WatchDog'), findsOneWidget);
+      expect(find.textContaining('v${AboutPage.appVersion}'), findsOneWidget);
+      final aboutList = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(find.text('它能帮你什么'), 100, scrollable: aboutList);
+      expect(find.text('它能帮你什么'), findsOneWidget);
     });
   });
 

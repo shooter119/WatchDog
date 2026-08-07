@@ -6,6 +6,7 @@ import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+import 'about_page.dart';
 import 'op_log_page.dart';
 import 'roster_page.dart';
 import 'stats_page.dart';
@@ -453,15 +454,51 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          const SectionTitle(text: '关于'),
+          AppCard(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AboutPage()),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceSubtle,
+                  ),
+                  child: const Icon(Icons.info_outline, size: 20, color: AppColors.textPrimary),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('关于我们', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      SizedBox(height: 2),
+                      Text('项目介绍与使用说明', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              ],
+            ),
+          ),
           const SizedBox(height: 28),
           Column(
             children: [
-              const Icon(Icons.shield_outlined, size: 28, color: AppColors.textTertiary),
-              const SizedBox(height: 8),
               Text(
-                '安全员助手 WatchDog v0.1\n语音录入 → 气瓶余量 → 自动倒计时\n豆包语音识别 + DeepSeek 语义解析',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 12, height: 1.7),
+                '安全员助手 WatchDog v${AboutPage.appVersion}',
+                style: TextStyle(color: AppColors.textTertiary, fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                '一线消防员开发 · 开源项目',
+                style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
               ),
             ],
           ),
