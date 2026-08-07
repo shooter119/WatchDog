@@ -238,33 +238,80 @@ class _BottomNav extends StatelessWidget {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     if (chatMode) {
       if (!chatTextMode) {
-        // 语音态：中央悬浮麦克风 + 左侧「文字」切换，无输入框
+        // 语音态：中央凸起圆形橙色麦克风（与普通页 VoiceButton 一致）+ 左侧「文字」切换，无输入框
         return Container(
-          padding: EdgeInsets.only(bottom: safeBottom),
+          height: 68 + safeBottom,
           decoration: const BoxDecoration(
             color: AppColors.surface,
             border: Border(top: BorderSide(color: AppColors.border)),
           ),
-          child: SizedBox(
-            height: 68,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _TextInputToggle(
-                    textMode: false,
-                    onTap: () => onChatTextModeChange(true),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 0,
+                right: 0,
+                top: -30,
+                child: Center(
+                  child: VoiceButton(
+                    size: 80,
+                    recording: recording,
+                    enabled: !processing,
+                    onTap: onVoiceTap,
+                    onLongPressStart: onVoiceLongPressStart,
+                    onLongPressEnd: onVoiceLongPressEnd,
                   ),
                 ),
-                _VoiceNavEntry(
-                  recording: recording,
-                  processing: processing,
-                  onTap: onVoiceTap,
-                  onLongPressStart: onVoiceLongPressStart,
-                  onLongPressEnd: onVoiceLongPressEnd,
+              ),
+              if (recording)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: -92,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.voice,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        boxShadow: AppShadow.float,
+                      ),
+                      child: const Text(
+                        '正在聆听，松开结束',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                const Expanded(child: SizedBox()),
-              ],
-            ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: safeBottom,
+                child: SizedBox(
+                  height: 56,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _TextInputToggle(
+                          textMode: false,
+                          onTap: () => onChatTextModeChange(true),
+                        ),
+                      ),
+                      const SizedBox(width: 96),
+                      const Expanded(child: SizedBox()),
+                      const Expanded(child: SizedBox()),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       }
@@ -533,74 +580,6 @@ class _TextInputToggle extends StatelessWidget {
   }
 }
 
-/// 聊天模式下中央「语音页」入口（点击进语音页，长按就地录音）
-/// 保持橙色语音层级：浅橙胶囊 + 橙色 mic，录音中橙底白字
-class _VoiceNavEntry extends StatelessWidget {
-  final bool recording;
-  final bool processing;
-  final VoidCallback onTap;
-  final GestureLongPressStartCallback onLongPressStart;
-  final GestureLongPressEndCallback onLongPressEnd;
-
-  const _VoiceNavEntry({
-    required this.recording,
-    required this.processing,
-    required this.onTap,
-    required this.onLongPressStart,
-    required this.onLongPressEnd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final recordingColor = Colors.white;
-    final idleColor = AppColors.voice;
-    return Semantics(
-      label: recording ? '停止录音' : '语音录入（长按录音）',
-      button: true,
-      enabled: !processing,
-      hint: recording ? '松开结束录音' : '点击进入语音页',
-      child: GestureDetector(
-        onTap: processing ? null : onTap,
-        onLongPressStart: processing ? null : onLongPressStart,
-        onLongPressEnd: processing ? null : onLongPressEnd,
-        child: Container(
-          width: 76,
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: recording
-                ? AppColors.voice
-                : AppColors.voice.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                recording ? Icons.stop_rounded : Icons.mic_rounded,
-                size: 24,
-                color: recording ? recordingColor : idleColor,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                recording ? '停止' : '语音',
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.2,
-                  fontWeight: FontWeight.w700,
-                  color: recording ? recordingColor : idleColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 导航项：选中 filled 图标 + surfaceSubtle 胶囊 + textPrimary，未选中 outlined + textTertiary
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final IconData selectedIcon;
