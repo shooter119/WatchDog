@@ -306,7 +306,8 @@ class _BottomNav extends StatelessWidget {
                           onTap: () => onChatTextModeChange(true),
                         ),
                       ),
-                      const SizedBox(width: 80),
+                      const Expanded(child: SizedBox()),
+                      const Expanded(child: SizedBox()),
                       const Expanded(child: SizedBox()),
                       const Expanded(child: SizedBox()),
                     ],
@@ -339,12 +340,14 @@ class _BottomNav extends StatelessWidget {
               child: Row(
                 children: [
                   const Expanded(child: SizedBox()),
+                  const Expanded(child: SizedBox()),
                   Expanded(
                     child: _TextInputToggle(
                       textMode: true,
                       onTap: () => onChatTextModeChange(false),
                     ),
                   ),
+                  const Expanded(child: SizedBox()),
                   const Expanded(child: SizedBox()),
                 ],
               ),
@@ -429,7 +432,7 @@ class _BottomNav extends StatelessWidget {
                       onTap: () => onSelect(1),
                     ),
                   ),
-                  const SizedBox(width: 80),
+                  const Expanded(child: SizedBox()),
                   Expanded(
                     child: _NavItem(
                       glyph: NavGlyph.assist,
@@ -550,25 +553,21 @@ class _TextInputToggle extends StatelessWidget {
             margin: const EdgeInsets.symmetric(vertical: 2),
             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Transform.translate(
-                  offset: const Offset(0, -2),
-                  child: Icon(icon, size: 24, color: color),
+                  offset: const Offset(0, -1),
+                  child: Icon(icon, size: 28, color: color),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   label,
                   style: const TextStyle(
-                    fontSize: 12,
-                    height: 1.15,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 10.5,
+                    height: 1.1,
+                    fontWeight: FontWeight.w400,
                     color: color,
                   ),
                 ),
@@ -612,26 +611,22 @@ class _NavItem extends StatelessWidget {
             curve: Curves.easeOut,
             margin: const EdgeInsets.symmetric(vertical: 2),
             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-            decoration: BoxDecoration(
-              color: selected ? AppColors.surfaceSubtle : Colors.transparent,
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Transform.translate(
-                  offset: const Offset(0, -2),
-                  child: NavIcon(glyph: glyph, color: color, size: 24),
+                  offset: const Offset(0, -1),
+                  child: NavIcon(glyph: glyph, color: color, size: 28),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 12,
-                    height: 1.15,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 10.5,
+                    height: 1.1,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     color: color,
                   ),
                 ),
