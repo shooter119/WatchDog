@@ -116,6 +116,9 @@ test('guardrailIntent 文本含名单姓名时禁止丢弃（宁记不错过）'
 test('guardrailIntent 文本含火场痕迹时禁止丢弃', () => {
   assert.equal(guardrailIntent('这个火烧得挺大的', { intent: 'ignore', people: [] }, []), 'note');
   assert.equal(guardrailIntent('气瓶压力还有二十个压', { intent: 'ignore', people: [] }, []), 'note');
+  // 火场指挥/到场语境（含与名单同音的姓名时更需兜底）
+  assert.equal(guardrailIntent('带队指挥员陆和胜', { intent: 'ignore', people: [] }, ['陆河圣']), 'note');
+  assert.equal(guardrailIntent('总队全勤指挥部到达现场', { intent: 'ignore', people: [] }, []), 'note');
 });
 
 test('guardrailIntent 搜救出物品误判 exit 降级 note', () => {
