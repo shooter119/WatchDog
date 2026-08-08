@@ -56,16 +56,20 @@ jobs:
           ls -lh build/app/outputs/flutter-apk/
 
       # 防呆：比对 APK 签名与 keystore 指纹，不一致（静默 debug 签名）则终止发布
+      # AGP9 默认 minSdk>=24 关闭 v1(JAR) 签名，keytool -printcert -jarfile 读不到证书，
+      # 必须用 apksigner verify --print-certs（读 v2/v3 签名块）
       - name: Verify release signature
         working-directory: app
         env:
           STORE_PASSWORD: ${{ secrets.WATCHDOG_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.WATCHDOG_KEY_ALIAS }}
         run: |
-          APK_SHA=$(keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk 2>/dev/null | grep "SHA256:" | head -1)
-          KEY_SHA=$(keytool -list -v -keystore android/app/watchdog-release.keystore -alias "$KEY_ALIAS" -storepass "$STORE_PASSWORD" 2>/dev/null | grep "SHA256:" | head -1)
-          echo "APK: $APK_SHA"
-          echo "KEY: $KEY_SHA"
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort -V | tail -1)
+          APK_SHA=$("$APKSIGNER" verify --print-certs "$APK" | grep -i "SHA-256 digest" | head -1 | sed 's/.*: //' | tr 'a-f' 'A-F' | tr -d ':')
+          KEY_SHA=$(keytool -list -v -keystore android/app/watchdog-release.keystore -alias "$KEY_ALIAS" -storepass "$STORE_PASSWORD" 2>/dev/null | grep "SHA256:" | head -1 | sed 's/.*SHA256: //' | tr -d ':')
+          echo "APK SHA-256: $APK_SHA"
+          echo "KEY SHA-256: $KEY_SHA"
           if [ -z "$APK_SHA" ] || [ "$APK_SHA" != "$KEY_SHA" ]; then
             echo "::error::APK 签名与发布密钥不一致（可能静默使用了 debug 签名），终止发布"
             exit 1
