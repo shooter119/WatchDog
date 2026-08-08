@@ -20,6 +20,7 @@ import 'package:watchdog/pages/stats_page.dart';
 import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
 import 'package:watchdog/services/settings.dart';
+import 'package:watchdog/services/update_service.dart';
 import 'package:watchdog/state/app_controller.dart';
 import 'package:watchdog/theme/assistant_avatar.dart';
 import 'package:watchdog/theme/app_theme.dart';
@@ -717,6 +718,38 @@ void main() {
   });
 
   group('SettingsPage', () {
+    testWidgets('启动检查发现新版本时更新卡片显示提示与红点', (tester) async {
+      final c = _FakeController();
+      c.pendingUpdate = const UpdateInfo(tagName: 'v9.9.9+99', apkUrl: 'x');
+      c.updateCheckDone = true;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(Scrollable).first;
+      await _scrollToVisible(tester, list, find.text('检查更新'));
+      expect(find.textContaining('发现新版本 v9.9.9+99'), findsOneWidget);
+    });
+
+    testWidgets('检查失败时更新卡片提示可重试', (tester) async {
+      final c = _FakeController();
+      c.updateCheckDone = true;
+      c.updateCheckError = '更新服务不可达（HTTP 0）';
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(Scrollable).first;
+      await _scrollToVisible(tester, list, find.text('检查更新'));
+      expect(find.text('检查更新失败，点击重试'), findsOneWidget);
+    });
+
     testWidgets('渲染各分区，无保存按钮', (tester) async {
       final c = _FakeController();
       await tester.pumpWidget(

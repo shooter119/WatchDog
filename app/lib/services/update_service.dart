@@ -92,11 +92,18 @@ class UpdateService {
     }
   }
 
-  /// 下载并安装（下载进度 0-100 通过回调上报；错误通过回调 message 返回）
+  /// 下载并安装（下载进度 0-100 通过回调上报；错误通过回调 message 返回）。
+  ///
+  /// 强制 `usePackageInstaller: true`：走系统 PackageInstaller 流程，安装器
+  /// 一定有系统确认界面（下载完成后必然弹出安装提示），且有真实的安装结果
+  /// 回调（INSTALLATION_DONE / INSTALLATION_ERROR）。默认的 ACTION_INSTALL_PACKAGE
+  /// 路径在未授权「安装未知来源」时会被系统静默拒绝且无任何回调，App 只能
+  /// 误报「下载完成」。
   Future<void> downloadAndInstall(
     UpdateInfo update, {
     void Function(int percent)? onProgress,
     void Function(String message)? onError,
+    void Function()? onInstalling,
   }) async {
     final completer = Completer<void>();
     StreamSubscription<OtaEvent>? sub;
@@ -105,6 +112,7 @@ class UpdateService {
         update.apkUrl,
         headers: {'User-Agent': userAgent},
         sha256checksum: update.sha256,
+        usePackageInstaller: true,
       );
       sub = stream.listen(
         (event) {
@@ -112,6 +120,7 @@ class UpdateService {
             case OtaStatus.DOWNLOADING:
               onProgress?.call(int.tryParse(event.value ?? '') ?? 0);
             case OtaStatus.INSTALLING:
+              onInstalling?.call();
               onProgress?.call(100);
             case OtaStatus.INSTALLATION_DONE:
               if (!completer.isCompleted) completer.complete();
@@ -151,6 +160,8 @@ class UpdateService {
         return '安装包校验失败，请重试';
       case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
         return '需要允许安装未知来源应用';
+      case OtaStatus.INSTALLATION_ERROR:
+        return '安装未完成：$detail\n\n如未弹出安装界面，请在系统设置 → 应用 → 本应用 → 安装未知应用 中允许安装';
       case OtaStatus.DOWNLOAD_ERROR:
         return '下载失败（网络异常）$detail';
       case OtaStatus.ALREADY_RUNNING_ERROR:

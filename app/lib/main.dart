@@ -47,6 +47,8 @@ class _WatchDogAppState extends State<WatchDogApp> {
   void initState() {
     super.initState();
     controller.init();
+    // 启动即静默检查更新：有新版本时设置页「检查更新」卡片显示提示（失败静默）
+    controller.checkUpdateSilently();
   }
 
   @override

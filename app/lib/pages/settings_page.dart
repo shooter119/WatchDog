@@ -16,7 +16,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '0.9.0+24';
+const appVersion = '0.10.0+25';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -72,7 +72,13 @@ class _SettingsPageState extends State<SettingsPage> {
         if (_loaded && !n.hasFocus && _allInputsUnfocused()) _autoSave();
       });
     }
+    // 启动自动检查完成后刷新「检查更新」卡片提示（有新版/已最新）
+    widget.controller.addListener(_onControllerChanged);
     _load();
+  }
+
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
   }
 
   bool _allInputsUnfocused() {
@@ -128,6 +134,8 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     if (!mounted) return;
     setState(() => _checkingUpdate = false);
+    // 手动检查结果同步到共享状态，卡片提示保持一致
+    widget.controller.recordUpdateCheck(info, error);
     if (error != null) {
       _showUpdateResult('检查更新失败', error);
       return;
@@ -196,10 +204,11 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  /// 下载安装：进度对话框，完成/失败后提示
+  /// 下载安装：进度对话框 → 安装阶段自动关闭进度框并提示用户在系统界面完成安装
   Future<void> _startDownload(UpdateInfo info) async {
     if (!mounted) return;
     final progress = ValueNotifier<int>(0);
+    var installPrompted = false; // 已提示「安装中」（避免完成后重复弹框）
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -224,12 +233,18 @@ class _SettingsPageState extends State<SettingsPage> {
     await UpdateService().downloadAndInstall(
       info,
       onProgress: (p) => progress.value = p,
+      onInstalling: () {
+        installPrompted = true;
+        // 关闭进度对话框，提示用户去系统安装界面操作
+        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        if (mounted) _showUpdateResult('安装中', '安装包已就绪，请在弹出的系统界面完成安装');
+      },
       onError: (m) => fail = m,
     );
     if (!mounted) return;
     if (fail != null) {
       _showUpdateResult('更新失败', fail!);
-    } else {
+    } else if (!installPrompted) {
       _showUpdateResult('下载完成', '请在弹出的系统界面完成安装');
     }
   }
@@ -335,6 +350,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
     _server.dispose();
     _token.dispose();
     _volume.dispose();
@@ -669,28 +685,70 @@ class _SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
-                Container(
+                SizedBox(
                   width: 40,
                   height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceSubtle,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.surfaceSubtle,
+                        ),
+                        child: _checkingUpdate
+                            ? const Padding(
+                                padding: EdgeInsets.all(10),
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.system_update_alt_rounded, size: 20, color: AppColors.textPrimary),
+                      ),
+                      // 启动自动检查发现新版本：图标右上角红点提示
+                      if (!_checkingUpdate && widget.controller.pendingUpdate != null)
+                        Positioned(
+                          right: -2,
+                          top: -2,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.alarm,
+                              border: Border.all(color: AppColors.surface, width: 1.5),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  child: _checkingUpdate
-                      ? const Padding(
-                          padding: EdgeInsets.all(10),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.system_update_alt_rounded, size: 20, color: AppColors.textPrimary),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('检查更新', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                      SizedBox(height: 2),
-                      Text('从 GitHub Releases 获取最新版本', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                      const Text('检查更新', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      const SizedBox(height: 2),
+                      Builder(builder: (_) {
+                        final pending = widget.controller.pendingUpdate;
+                        final String subtitle;
+                        final Color color;
+                        if (pending != null) {
+                          subtitle = '发现新版本 ${pending.tagName}，点击更新';
+                          color = AppColors.caution;
+                        } else if (widget.controller.updateCheckError != null) {
+                          subtitle = '检查更新失败，点击重试';
+                          color = AppColors.alarm;
+                        } else if (widget.controller.updateCheckDone) {
+                          subtitle = '已是最新版本';
+                          color = AppColors.textTertiary;
+                        } else {
+                          subtitle = '从 GitHub Releases 获取最新版本';
+                          color = AppColors.textTertiary;
+                        }
+                        return Text(subtitle, style: TextStyle(fontSize: 12, color: color));
+                      }),
                     ],
                   ),
                 ),

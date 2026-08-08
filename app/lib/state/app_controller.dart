@@ -12,6 +12,7 @@ import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/tts_service.dart';
+import '../services/update_service.dart';
 
 class AppController extends ChangeNotifier {
   final LocalAsrService? localAsr;
@@ -60,6 +61,37 @@ class AppController extends ChangeNotifier {
 
   /// 本场景已被某设备结束任务（归档）：非空时看板顶部显示"切换到新任务"横幅
   SceneState? sceneEnded;
+
+  /// 启动时自动检查到的新版本（非空 = 有新版本可更新，设置页据此显示提示）
+  UpdateInfo? pendingUpdate;
+
+  /// 是否已完成一次版本检查（区分「未检查」与「已是最新」）
+  bool updateCheckDone = false;
+
+  /// 最近一次检查失败的错误信息（非空 = 检查失败，设置页提示可重试）
+  String? updateCheckError;
+
+  /// 启动静默检查更新：失败不打扰用户，只更新状态供设置页展示
+  Future<void> checkUpdateSilently() async {
+    try {
+      final (info, error) = await UpdateService().checkForUpdate();
+      pendingUpdate = info;
+      updateCheckError = error;
+    } catch (e) {
+      // 网络/解析失败静默，用户可在设置页手动检查
+      updateCheckError = '$e';
+    }
+    updateCheckDone = true;
+    notifyListeners();
+  }
+
+  /// 记录一次版本检查结果（设置页手动检查后调用，刷新共享提示状态）
+  void recordUpdateCheck(UpdateInfo? info, String? error) {
+    pendingUpdate = info;
+    updateCheckError = error;
+    updateCheckDone = true;
+    notifyListeners();
+  }
 
   Future<void> init() async {
     await tts.init();
