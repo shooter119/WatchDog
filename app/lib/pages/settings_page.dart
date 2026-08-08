@@ -14,7 +14,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号：与 app/pubspec.yaml 的 version 保持一致，只在设置页底部展示
-const appVersion = '0.8.1+18';
+const appVersion = '0.8.2+19';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -182,7 +182,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// 车载保活开关：开启时先引导权限（通知 → 电池白名单），再拉起前台服务；关闭即停止
+  /// 后台值守开关：开启时先引导权限（通知 → 电池白名单），再拉起前台服务；关闭即停止
   Future<void> _toggleKeepAlive(bool v) async {
     setState(() => _keepAlive = v);
     await Settings.setKeepAliveEnabled(v);
@@ -368,7 +368,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
-                    title: const Text('车载保活模式', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    title: const Text('后台值守模式', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                     subtitle: const Text('前台服务常驻：切后台/锁屏后轮询与报警不停，通知栏显示指挥状态'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _keepAlive,

@@ -16,7 +16,7 @@ import 'theme/nav_icons.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // 注册车载保活前台服务（TaskHandler 必须全局注册一次，供服务 isolate 恢复）
+  // 注册后台值守前台服务（TaskHandler 必须全局注册一次，供服务 isolate 恢复）
   ForegroundKeepAlive.init();
   runApp(const WatchDogApp());
 }

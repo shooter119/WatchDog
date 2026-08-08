@@ -194,7 +194,7 @@ class Settings {
     await sp.setBool(_kParseCloud, v);
   }
 
-  /// 车载保活模式：前台服务常驻，切后台/锁屏后轮询与报警不停
+  /// 后台值守模式：前台服务常驻，切后台/锁屏后轮询与报警不停
   static Future<bool> get keepAliveEnabled async =>
       (await SharedPreferences.getInstance()).getBool(_kKeepAlive) ?? false;
 

@@ -71,7 +71,7 @@ class AppController extends ChangeNotifier {
     syncSettings();
     // 启动后补传上次未上传完的操作日志（fire-and-forget）
     OpLogService.instance.flush(api: api);
-    // 车载保活：开关开启则拉起前台服务（进程保活 + 常驻通知栏）
+    // 后台值守：开关开启则拉起前台服务（进程保活 + 常驻通知栏）
     await syncKeepAlive();
   }
 

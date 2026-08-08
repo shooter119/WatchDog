@@ -5,14 +5,14 @@ import 'dart:io';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:http/http.dart' as http;
 
-/// 车载保活前台服务（flutter_foreground_task 10.x）：
+/// 后台值守前台服务（flutter_foreground_task 10.x）：
 /// - 前台服务保住进程 + CPU 唤醒锁，App 切后台/锁屏后 5 秒轮询与 1 秒阈值检查照常运行
 ///   （主 isolate 的 Timer 逻辑不变，服务 isolate 独立拉数据只负责刷新常驻通知栏）。
 /// - 常驻通知栏显示"火场指挥中 · 在场 N 人 · 最早剩余 M:SS"，每 5 秒自刷新。
 /// - specialUse 类型：Android 15 无 dataSync 的 6 小时时长限制，可开机自启。
 class ForegroundKeepAlive {
   static const channelId = 'watchdog_keepalive';
-  static const channelName = '车载保活';
+  static const channelName = '后台值守';
   static const channelDesc = '火场指挥持续值守，保持后台轮询与报警';
 
   static const _kServerUrl = 'keepalive_server_url';
