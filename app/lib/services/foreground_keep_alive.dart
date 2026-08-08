@@ -136,7 +136,8 @@ class WatchdogTaskHandler extends TaskHandler {
     try {
       final res = await http.get(
         Uri.parse('$_serverUrl/api/entries?active=1'),
-        headers: {'X-Scene-Code': _sceneCode, 'X-Api-Token': _token},
+        // 中文场景码 URL 编码（dart:io 拒绝非 ASCII 头值，服务端 sceneKey 解码还原）
+        headers: {'X-Scene-Code': Uri.encodeComponent(_sceneCode), 'X-Api-Token': _token},
       ).timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return;
       final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;

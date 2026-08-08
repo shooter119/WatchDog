@@ -345,3 +345,21 @@ test('API_TOKEN 配置后未带令牌返回 401', async () => {
   // 此处通过 spawn 子进程验证（见 token.e2e.test.js）
   assert.equal(process.env.API_TOKEN || '', '');
 });
+
+test('中文场景码 URL 编码头：服务端解码还原并正确隔离', async () => {
+  // App 端 dart:io 拒绝非 ASCII 头值，中文场景码（如苹果）会 URL 编码发送
+  const encH = { ...H, 'X-Scene-Code': encodeURIComponent('苹果') };
+  const created = await (await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: encH,
+    body: JSON.stringify({ name: '编码场景测试', pressure_mpa: 20 }),
+  })).json();
+  // 服务端解码后按"苹果"场景存储
+  assert.equal(created.scene, '苹果');
+  // 同编码头查询能命中（解码一致）
+  const list = await (await fetch(`${base}/api/entries`, { headers: encH })).json();
+  assert.ok(list.some((e) => e.name === '编码场景测试'));
+  // 与原始中文头（undici 无法发送，这里用解码后的 ASCII 码验证隔离性：BHYSQB 场景不受影响）
+  const other = await (await fetch(`${base}/api/entries`, { headers: { ...H, 'X-Scene-Code': 'BHYSQB' } })).json();
+  assert.ok(!other.some((e) => e.name === '编码场景测试'));
+});

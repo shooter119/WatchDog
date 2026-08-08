@@ -61,7 +61,15 @@ app.use((req, res, next) => {
 });
 
 function sceneKey(req) {
-  return (req.headers['x-scene-code'] || 'default').toString().slice(0, 64);
+  // App 端中文场景码（水果名）会 URL 编码后放入 X-Scene-Code 头（dart:io 拒绝
+  // 非 ASCII 头值，否则 FormatException 请求发不出去）；此处统一解码还原。
+  // ASCII 场景码（历史 BHYSQB 等）编码后不变，解码后与原值一致。
+  const raw = (req.headers['x-scene-code'] || 'default').toString().slice(0, 64);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function deviceKey(req) {

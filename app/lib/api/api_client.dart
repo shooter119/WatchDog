@@ -15,7 +15,9 @@ class ApiClient {
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        'X-Scene-Code': sceneCode,
+        // 中文场景码（水果名）必须 URL 编码：dart:io 拒绝非 ASCII 头值，
+        // 直接放中文会抛 FormatException 导致请求发不出去（服务端 sceneKey 会解码还原）
+        'X-Scene-Code': Uri.encodeComponent(sceneCode),
         if (apiToken.isNotEmpty) 'X-Api-Token': apiToken,
         if (deviceId.isNotEmpty) 'X-Device-Id': deviceId,
       };
