@@ -69,6 +69,9 @@ class _FakeController extends AppController {
   void startSync() {} // 测试环境不启动轮询定时器（否则每秒刷新导致 pumpAndSettle 无法收敛）
 
   @override
+  Future<void> sync() async {} // 测试环境不发网络请求
+
+  @override
   Future<void> markExited(String id, {String? opId}) async {
     exited.add(id);
     entries = entries.map((e) => e.id == id ? _exitedCopy(e) : e).toList();
@@ -328,6 +331,9 @@ void main() {
   const screenChannel = MethodChannel('watchdog/screen');
   TestWidgetsFlutterBinding.ensureInitialized().defaultBinaryMessenger
       .setMockMethodCallHandler(screenChannel, (call) async => null);
+  // 剪贴板等平台通道统一 mock（复制任务码/新场景码触发 Clipboard.setData）
+  TestWidgetsFlutterBinding.ensureInitialized().defaultBinaryMessenger
+      .setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
 
   group('同名已在场确认弹窗', () {
     testWidgets('弹窗说明并支持合并 / 另建记录 / 取消', (tester) async {
@@ -1929,23 +1935,69 @@ void main() {
     });
   });
 
-  group('结束任务（场景归档）', () {
-    testWidgets('看板结束任务按钮：二次确认后展示新场景码，取消不触发', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])
-        ..endTaskResult = 'KX8MZP';
+  group('任务页（核心 hub）与结束任务', () {
+    Future<void> pumpTask(WidgetTester tester, _FakeController c) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(),
           home: Scaffold(
             body: AnimatedBuilder(
               animation: c,
-              builder: (_, __) => BoardPage(controller: c, onGoVoice: () {}),
+              builder: (_, __) => HomePage(controller: c, audioService: _FakeAudio()),
             ),
           ),
         ),
       );
       await tester.pump();
-      // 结束任务按钮存在
+    }
+
+    testWidgets('任务卡：显示任务码与在场概览（含需关注人数）', (tester) async {
+      final c = _FakeController(entries: [
+        _entry(name: '张伟', remainingMin: 20),
+        _entry(name: '李娜', remainingMin: 2), // 低于报警阈值 → 需关注
+      ])
+        ..api = _FakeApi(sceneCode: 'TEST01');
+      await pumpTask(tester, c);
+      expect(find.byKey(const Key('task-bar')), findsOneWidget);
+      expect(find.text('TEST01'), findsOneWidget);
+      expect(find.text('在场 2 人'), findsOneWidget);
+      expect(find.text('需关注 1'), findsOneWidget);
+      // 语音引导仍在主区（hub 改造不挤占语音主功能）
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('任务码复制：提示已复制', (tester) async {
+      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
+      await pumpTask(tester, c);
+      await tester.tap(find.byIcon(Icons.copy_rounded));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('任务码 TEST01 已复制'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('更换任务码：弹窗输入新码后保存并提示', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
+      await pumpTask(tester, c);
+      await tester.tap(find.byIcon(Icons.edit_outlined));
+      await tester.pumpAndSettle();
+      expect(find.text('更换任务码'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).last, 'ABC123');
+      await tester.tap(find.text('确认更换'));
+      await tester.pumpAndSettle();
+      expect(await Settings.sceneCode, 'ABC123');
+      expect(find.textContaining('已切换到任务码 ABC123'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('任务页结束任务按钮：二次确认后展示新场景码，取消不触发', (tester) async {
+      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])
+        ..endTaskResult = 'KX8MZP'
+        ..api = _FakeApi(sceneCode: 'TEST01');
+      await pumpTask(tester, c);
+      // 结束任务按钮在任务卡内
       expect(find.byTooltip('结束任务'), findsOneWidget);
       // 先取消：不触发结束
       await tester.tap(find.byTooltip('结束任务'));
@@ -1969,25 +2021,15 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('其他设备：归档横幅常驻，一键切换到新任务后消失', (tester) async {
+    testWidgets('其他设备：归档横幅常驻在任务页，一键切换到新任务后消失', (tester) async {
       final c = _FakeController(entries: [_entry(name: '李娜', remainingMin: 15)])
         ..sceneEnded = SceneState(
           endedAt: DateTime.now().millisecondsSinceEpoch - 60000,
           endedBy: 'dev-x',
           newScene: 'KX8MZP',
-        );
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: buildAppTheme(),
-          home: Scaffold(
-            body: AnimatedBuilder(
-              animation: c,
-              builder: (_, __) => BoardPage(controller: c, onGoVoice: () {}),
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
+        )
+        ..api = _FakeApi(sceneCode: 'TEST01');
+      await pumpTask(tester, c);
       // 横幅提示本场景已结束，不弹窗
       expect(find.byKey(const Key('scene-ended-banner')), findsOneWidget);
       expect(find.textContaining('本场景任务已结束'), findsOneWidget);

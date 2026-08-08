@@ -14,7 +14,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号：与 app/pubspec.yaml 的 version 保持一致，只在设置页底部展示
-const appVersion = '0.7.1+16';
+const appVersion = '0.8.0+17';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -26,7 +26,6 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _server = TextEditingController();
-  final TextEditingController _scene = TextEditingController();
   final TextEditingController _token = TextEditingController();
   final TextEditingController _volume = TextEditingController();
   final TextEditingController _full = TextEditingController();
@@ -34,7 +33,6 @@ class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _warn = TextEditingController();
   final TextEditingController _alarm = TextEditingController();
   final FocusNode _serverFocus = FocusNode();
-  final FocusNode _sceneFocus = FocusNode();
   final FocusNode _tokenFocus = FocusNode();
   final FocusNode _volumeFocus = FocusNode();
   final FocusNode _fullFocus = FocusNode();
@@ -63,7 +61,7 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     // 任一输入框失焦且全部输入框均无焦点（点空白处/收起键盘）→ 自动保存
     for (final n in [
-      _serverFocus, _sceneFocus, _tokenFocus, _volumeFocus,
+      _serverFocus, _tokenFocus, _volumeFocus,
       _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus,
     ]) {
       n.addListener(() {
@@ -75,14 +73,13 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool _allInputsUnfocused() {
     return [
-      _serverFocus, _sceneFocus, _tokenFocus, _volumeFocus,
+      _serverFocus, _tokenFocus, _volumeFocus,
       _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus,
     ].every((n) => !n.hasFocus);
   }
 
   Future<void> _load() async {
     _server.text = await Settings.serverUrl;
-    _scene.text = await Settings.sceneCode;
     _token.text = await Settings.apiToken;
     _volume.text = (await Settings.cylinderVolL).toString();
     _full.text = (await Settings.fullPressureMpa).toString();
@@ -155,7 +152,6 @@ class _SettingsPageState extends State<SettingsPage> {
     if (mounted) setState(() => _saveState = _SaveState.saving);
     try {
       await Settings.setServerUrl(_server.text.trim());
-      await Settings.setSceneCode(_scene.text.trim());
       await Settings.setApiToken(_token.text.trim());
       await Settings.setCylinderVolL(double.tryParse(_volume.text) ?? 6.8);
       await Settings.setFullPressureMpa(double.tryParse(_full.text) ?? 30);
@@ -204,7 +200,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void dispose() {
     _server.dispose();
-    _scene.dispose();
     _token.dispose();
     _volume.dispose();
     _full.dispose();
@@ -212,7 +207,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _warn.dispose();
     _alarm.dispose();
     _serverFocus.dispose();
-    _sceneFocus.dispose();
     _tokenFocus.dispose();
     _volumeFocus.dispose();
     _fullFocus.dispose();
@@ -250,7 +244,6 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Column(
                 children: [
                   _field(_server, '服务器地址', '默认 https://bytevirt.meiyou.xyz:8443', icon: Icons.dns_outlined, keyboard: TextInputType.url, focusNode: _serverFocus),
-                  _field(_scene, '场景码', '多设备同步用同一场景码', icon: Icons.tag, focusNode: _sceneFocus),
                   _field(
                     _token,
                     '访问令牌',

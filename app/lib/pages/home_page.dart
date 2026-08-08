@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api/api_client.dart';
 import '../models/models.dart';
@@ -9,10 +10,11 @@ import '../pages/same_name_dialog.dart';
 import '../services/audio_service.dart';
 import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
+import '../services/settings.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
-/// 语音录入主页面：按住说话 → 自动识别 → 确认进场 / 登记出场。
+/// 任务主页面（核心 hub）：语音录入 + 任务身份（任务码）+ 任务状态 + 任务管理（结束任务）。
 /// 识别结果按 AI 意图分流：进出场本页确认；日志/提问/环境音交 main 统一路由。
 class HomePage extends StatefulWidget {
   final AppController controller;
@@ -711,6 +713,7 @@ class HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final cfg = widget.controller.calcConfig;
+    final sceneEnded = widget.controller.sceneEnded;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -718,7 +721,7 @@ class HomePageState extends State<HomePage> {
           children: [
             Row(
               children: [
-                const Text('语音录入', style: AppTextStyles.h1),
+                const Text('任务', style: AppTextStyles.h1),
                 const Spacer(),
                 ConnectionStatus(
                   syncing: widget.controller.syncing,
@@ -727,6 +730,26 @@ class HomePageState extends State<HomePage> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            _TaskBar(
+              sceneCode: widget.controller.api?.sceneCode ?? 'default',
+              activeCount: widget.controller.entries.where((e) => e.isActive).length,
+              dangerCount: widget.controller.entries
+                  .where((e) =>
+                      e.isActive &&
+                      e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin) != 'normal')
+                  .length,
+              onCopy: _copySceneCode,
+              onChange: _changeSceneCode,
+              onEndTask: _confirmEndTask,
+            ),
+            if (sceneEnded != null) ...[
+              const SizedBox(height: 8),
+              _SceneEndedBanner(
+                state: sceneEnded,
+                onSwitch: _switchScene,
+              ),
+            ],
             const SizedBox(height: 8),
             Expanded(child: _buildResultCard(context, cfg)),
             const SizedBox(height: 12),
@@ -742,6 +765,189 @@ class HomePageState extends State<HomePage> {
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 复制当前任务码（新设备加入本任务时使用）
+  Future<void> _copySceneCode() async {
+    final code = widget.controller.api?.sceneCode ?? 'default';
+    await Clipboard.setData(ClipboardData(text: code));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('任务码 $code 已复制，新设备输入即可加入本任务'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// 更换任务码：输入其他设备正在使用的任务码即可加入该任务（替代设置页入口）
+  Future<void> _changeSceneCode() async {
+    final current = widget.controller.api?.sceneCode ?? 'default';
+    String input = current;
+    final newCode = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('更换任务码'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '输入其他设备正在使用的任务码，即可加入该任务。',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                onChanged: (v) => input = v,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: '任务码',
+                  hintText: '如 CP659A',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, input.trim()),
+              child: const Text('确认更换'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (newCode == null || newCode.isEmpty || !mounted) return;
+    await Settings.setSceneCode(newCode);
+    await widget.controller.refreshConfig();
+    await widget.controller.sync();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已切换到任务码 $newCode'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// 结束任务（归档）：二次确认（影响场景内所有设备，要求确认灾情处置已结束）
+  Future<void> _confirmEndTask() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('结束任务（归档）'),
+        content: const Text(
+          '将结束当前灾情处置任务，所有连接本场景的设备将被提示切换到新任务。\n\n'
+          '• 新场景码由服务器统一分配\n'
+          '• 本机各页数据将清零（旧数据服务器保留，7-30 天后自动清理）\n\n'
+          '请确认灾情处置是否已结束？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认结束'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      final newCode = await widget.controller.endTask();
+      if (!mounted) return;
+      await _showNewSceneCode(newCode);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('结束任务失败：$e'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  /// 展示服务端分配的新场景码（新设备加入需手输此码）
+  Future<void> _showNewSceneCode(String newCode) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('任务已结束'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('本机已切换到新任务，各页数据已清零。'),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceSubtle,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: SelectableText(
+                newCode,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 6,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '其他设备会自动收到切换提示；新设备加入时请输入此任务码。',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: newCode));
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                    content: Text('任务码已复制'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+            child: const Text('复制'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 其他设备响应归档横幅：一键切换到服务端分配的新场景码
+  Future<void> _switchScene() async {
+    await widget.controller.switchToNewScene();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('已切换到新任务'),
+        duration: Duration(seconds: 2),
       ),
     );
   }
@@ -1345,6 +1551,166 @@ class _PulseMic extends StatelessWidget {
           ),
           child: const Icon(Icons.mic_rounded, size: 46, color: AppColors.voice),
         ),
+      ),
+    );
+  }
+}
+
+/// 任务卡：任务码（复制/更换）+ 在场概览 + 结束任务入口。
+/// 任务身份与任务管理都收在核心 hub 页面，设置页不再承载任务码。
+class _TaskBar extends StatelessWidget {
+  final String sceneCode;
+  final int activeCount;
+  final int dangerCount;
+  final VoidCallback onCopy;
+  final VoidCallback onChange;
+  final VoidCallback onEndTask;
+
+  const _TaskBar({
+    required this.sceneCode,
+    required this.activeCount,
+    required this.dangerCount,
+    required this.onCopy,
+    required this.onChange,
+    required this.onEndTask,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('task-bar'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppShadow.card,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      '任务码',
+                      style: TextStyle(fontSize: 10.5, color: AppColors.textTertiary, letterSpacing: 0.5),
+                    ),
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: onCopy,
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.copy_rounded, size: 13, color: AppColors.textTertiary),
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    InkWell(
+                      onTap: onChange,
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.edit_outlined, size: 13, color: AppColors.textTertiary),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                SelectableText(
+                  sceneCode,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 3,
+                    color: AppColors.textPrimary,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(width: 1, height: 36, color: AppColors.border),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '在场 $activeCount 人',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                dangerCount > 0 ? '需关注 $dangerCount' : '状态正常',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: dangerCount > 0 ? AppColors.alarm : AppColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: '结束任务',
+            child: IconButton(
+              onPressed: onEndTask,
+              icon: const Icon(Icons.flag_outlined, size: 22),
+              color: AppColors.alarm,
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 归档横幅：本场景已被某设备结束任务，常驻提示可一键切换（不弹窗打断）
+class _SceneEndedBanner extends StatelessWidget {
+  final SceneState state;
+  final VoidCallback onSwitch;
+
+  const _SceneEndedBanner({required this.state, required this.onSwitch});
+
+  String get _timeText {
+    final t = DateTime.fromMillisecondsSinceEpoch(state.endedAt);
+    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('scene-ended-banner'),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: AppColors.caution.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.caution.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.flag_rounded, size: 17, color: AppColors.caution),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '本场景任务已结束（$_timeText）',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onSwitch,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text('切换到新任务', style: TextStyle(fontSize: 12.5)),
+          ),
+        ],
       ),
     );
   }

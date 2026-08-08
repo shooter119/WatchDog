@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/models.dart';
 import '../state/app_controller.dart';
@@ -48,7 +47,6 @@ class _BoardPageState extends State<BoardPage> {
       });
     final danger = active.where((e) => statusOf(e) != 'normal').toList();
     final offline = widget.controller.syncError != null;
-    final sceneEnded = widget.controller.sceneEnded;
 
     return SafeArea(
       child: Column(
@@ -59,14 +57,7 @@ class _BoardPageState extends State<BoardPage> {
             child: Row(
               children: [
                 const Flexible(child: Text('火场安全管控看板', style: AppTextStyles.h1)),
-                const SizedBox(width: 4),
-                IconButton(
-                  onPressed: _confirmEndTask,
-                  icon: const Icon(Icons.flag_outlined, size: 20),
-                  tooltip: '结束任务',
-                  color: AppColors.alarm,
-                  visualDensity: VisualDensity.compact,
-                ),
+                const Spacer(),
                 ConnectionStatus(
                   syncing: widget.controller.syncing,
                   offline: offline,
@@ -80,11 +71,6 @@ class _BoardPageState extends State<BoardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (sceneEnded != null)
-                  _SceneEndedBanner(
-                    state: sceneEnded,
-                    onSwitch: _switchScene,
-                  ),
                 _OverviewBanner(entries: active, config: cfg),
                 if (danger.isNotEmpty) _DangerAlertBar(entries: danger, config: cfg),
               ],
@@ -148,171 +134,6 @@ class _BoardPageState extends State<BoardPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (_) => ReportPressureSheet(controller: widget.controller, entry: e),
-    );
-  }
-
-  /// 结束任务：二次确认（影响场景内所有设备，要求确认灾情处置已结束）
-  Future<void> _confirmEndTask() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('结束任务（归档）'),
-        content: const Text(
-          '将结束当前灾情处置任务，所有连接本场景的设备将被提示切换到新任务。\n\n'
-          '• 新场景码由服务器统一分配\n'
-          '• 本机各页数据将清零（旧数据服务器保留，7-30 天后自动清理）\n\n'
-          '请确认灾情处置是否已结束？',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认结束'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    try {
-      final newCode = await widget.controller.endTask();
-      if (!mounted) return;
-      await _showNewSceneCode(newCode);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('结束任务失败：$e'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  /// 展示服务端分配的新场景码（新设备加入需手输此码）
-  Future<void> _showNewSceneCode(String newCode) async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('任务已结束'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('本机已切换到新任务，各页数据已清零。'),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceSubtle,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: SelectableText(
-                newCode,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 6,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '其他设备会自动收到切换提示；新设备加入时请输入此场景码。',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: newCode));
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(
-                    content: Text('场景码已复制'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              }
-            },
-            child: const Text('复制'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('知道了'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 其他设备响应归档横幅：一键切换到服务端分配的新场景码
-  Future<void> _switchScene() async {
-    await widget.controller.switchToNewScene();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已切换到新任务'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-}
-
-/// 归档横幅：本场景已被某设备结束任务，常驻提示可一键切换（不弹窗打断）
-class _SceneEndedBanner extends StatelessWidget {
-  final SceneState state;
-  final VoidCallback onSwitch;
-
-  const _SceneEndedBanner({required this.state, required this.onSwitch});
-
-  String get _timeText {
-    final t = DateTime.fromMillisecondsSinceEpoch(state.endedAt);
-    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('scene-ended-banner'),
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-      decoration: BoxDecoration(
-        color: AppColors.caution.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.caution.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.flag_rounded, size: 17, color: AppColors.caution),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '本场景任务已结束（$_timeText）',
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: onSwitch,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              visualDensity: VisualDensity.compact,
-            ),
-            child: const Text('切换到新任务', style: TextStyle(fontSize: 12.5)),
-          ),
-        ],
-      ),
     );
   }
 }
