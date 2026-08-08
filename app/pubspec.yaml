@@ -1,7 +1,7 @@
 name: watchdog
 description: 消防救援现场安全管控 - 语音录入与气瓶倒计时
 publish_to: "none"
-version: 0.8.4+21
+version: 0.8.5+22
 
 environment:
   sdk: ^3.10.0
@@ -21,6 +21,8 @@ dependencies:
   sherpa_onnx: ^1.13.4
   flutter_markdown: ^0.7.7+1
   flutter_foreground_task: ^10.0.0
+  ota_update: ^7.1.0
+  package_info_plus: ^10.2.1
 
 dev_dependencies:
   flutter_test:

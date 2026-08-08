@@ -1073,6 +1073,7 @@ class HomePageState extends State<HomePage> {
                             SizedBox(width: itemW, child: _guideItem(Icons.login_rounded, '进场登记', '「张伟，20兆帕」\n自动开始倒计时')),
                             SizedBox(width: itemW, child: _guideItem(Icons.groups_rounded, '多人进场', '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场')),
                             SizedBox(width: itemW, child: _guideItem(Icons.logout_rounded, '出场登记', '「刘洋出来了」\n登记出火场')),
+                            SizedBox(width: itemW, child: _guideItem(Icons.update_rounded, '压力复核', '「张伟，15兆帕」\n场中报数，更新倒计时')),
                             SizedBox(width: itemW, child: _guideItem(Icons.edit_note_rounded, '火场随手记', '「三楼破拆完成」\n自动记入火场日志')),
                             SizedBox(width: itemW, child: _guideItem(Icons.assistant_rounded, '火场提问', '「浓烟太大看不清路怎么办？」\n转给辅助智囊')),
                           ],

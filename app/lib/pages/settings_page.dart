@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/alarm_service.dart';
 import '../services/foreground_keep_alive.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
+import '../services/update_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import 'about_page.dart';
@@ -13,8 +15,8 @@ import 'op_log_page.dart';
 import 'roster_page.dart';
 import 'stats_page.dart';
 
-/// 当前版本号：与 app/pubspec.yaml 的 version 保持一致，只在设置页底部展示
-const appVersion = '0.8.4+21';
+/// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
+const appVersion = '0.8.5+22';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -52,6 +54,8 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _downloadError;
   bool _policyAccess = true; // 勿扰策略访问是否授权（bypassDnd 生效前提）
   bool _fullScreenOk = true; // Android 14+ 全屏通知是否开启
+  String _runtimeVersion = ''; // 运行时版本号（package_info_plus），空则用常量
+  bool _checkingUpdate = false; // 检查更新进行中
   bool _loaded = false;
   bool _saving = false; // 防止失焦时 8 个输入框监听器并发触发多次保存
   _SaveState _saveState = _SaveState.idle; // 自动保存状态提示
@@ -95,7 +99,139 @@ class _SettingsPageState extends State<SettingsPage> {
     _loaded = true;
     _refreshModelStatus();
     _refreshAlarmCaps();
+    _loadRuntimeVersion();
     if (mounted) setState(() {});
+  }
+
+  /// 运行时版本号：优先 package_info_plus（真实安装包），失败保留常量兜底
+  Future<void> _loadRuntimeVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted && info.version.isNotEmpty) {
+        setState(() => _runtimeVersion = '${info.version}+${info.buildNumber}');
+      }
+    } catch (_) {
+      // 测试/异常环境用常量兜底
+    }
+  }
+
+  /// 检查更新：GitHub Releases 最新版 → 提示/下载/安装
+  Future<void> _checkUpdate() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    String? error;
+    UpdateInfo? info;
+    try {
+      (info, error) = await UpdateService().checkForUpdate();
+    } catch (e) {
+      error = '$e';
+    }
+    if (!mounted) return;
+    setState(() => _checkingUpdate = false);
+    if (error != null) {
+      _showUpdateResult('检查更新失败', error);
+      return;
+    }
+    if (info == null) {
+      _showUpdateResult('已是最新版本', '当前版本 ${_displayVersion} 已是最新');
+      return;
+    }
+    _showUpdateDialog(info);
+  }
+
+  String get _displayVersion => _runtimeVersion.isEmpty ? appVersion : _runtimeVersion;
+
+  void _showUpdateResult(String title, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        content: Text(message, style: const TextStyle(fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('好的')),
+        ],
+      ),
+    );
+  }
+
+  void _showUpdateDialog(UpdateInfo info) {
+    final sizeText = info.sizeBytes == null
+        ? ''
+        : '${(info.sizeBytes! / 1048576).toStringAsFixed(1)} MB';
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('发现新版本 ${info.tagName}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (sizeText.isNotEmpty)
+                Text('安装包大小：$sizeText', style: const TextStyle(fontSize: 13, color: AppColors.textTertiary)),
+              const SizedBox(height: 10),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Text(
+                    info.changelog ?? '点击立即更新下载安装',
+                    style: const TextStyle(fontSize: 13, height: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍后')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _startDownload(info);
+            },
+            child: const Text('立即更新'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 下载安装：进度对话框，完成/失败后提示
+  Future<void> _startDownload(UpdateInfo info) async {
+    if (!mounted) return;
+    final progress = ValueNotifier<int>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('正在下载更新', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        content: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (ctx, v, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: v / 100),
+              const SizedBox(height: 10),
+              Text('$v%', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+              const SizedBox(height: 4),
+              const Text('下载中请保持应用在前台', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+            ],
+          ),
+        ),
+      ),
+    );
+    String? fail;
+    await UpdateService().downloadAndInstall(
+      info,
+      onProgress: (p) => progress.value = p,
+      onError: (m) => fail = m,
+    );
+    if (!mounted) return;
+    if (fail != null) {
+      _showUpdateResult('更新失败', fail!);
+    } else {
+      _showUpdateResult('下载完成', '请在弹出的系统界面完成安装');
+    }
   }
 
   /// 检测勿扰策略授权 / Android 14+ 全屏通知状态（不影响主流程，失败静默）
@@ -529,6 +665,41 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 16),
           const SectionTitle(text: '关于'),
           AppCard(
+            onTap: _checkingUpdate ? null : _checkUpdate,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceSubtle,
+                  ),
+                  child: _checkingUpdate
+                      ? const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.system_update_alt_rounded, size: 20, color: AppColors.textPrimary),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('检查更新', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      SizedBox(height: 2),
+                      Text('从 GitHub Releases 获取最新版本', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          AppCard(
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AboutPage()),
@@ -564,7 +735,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Column(
             children: [
               Text(
-                '安全员助手 WatchDog v$appVersion',
+                '安全员助手 WatchDog v$_displayVersion',
                 style: TextStyle(color: AppColors.textTertiary, fontSize: 12, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
