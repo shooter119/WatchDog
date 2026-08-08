@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>火场智控标志方案</title>
+  <style>
+    :root {
+      --bg: oklch(96.65% 0.005 258.3);
+      --surface: oklch(100% 0 89.9);
+      --fg: oklch(17.76% 0 89.9);
+      --muted: oklch(44.61% 0.026 256.8);
+      --border: oklch(89.53% 0.013 255.5);
+      --accent: oklch(76.52% 0.175 62.6);
+      --font-display: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      --font-body: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      --font-mono: "DIN Alternate", "SF Mono", "Roboto Mono", ui-monospace, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      color: var(--fg);
+      background: var(--bg);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; }
+    h1, h2, h3, p { margin-top: 0; }
+
+    .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    .topbar {
+      min-height: 84px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .brand-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--fg); }
+    .eyebrow, .meta, .control-label {
+      margin: 0;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    main { padding: 72px 0 64px; }
+    .intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(270px, 400px);
+      gap: 64px;
+      align-items: end;
+      padding-bottom: 48px;
+    }
+    h1 {
+      max-width: 660px;
+      margin: 14px 0 0;
+      font-family: var(--font-display);
+      font-size: clamp(42px, 6vw, 76px);
+      line-height: 1.06;
+      letter-spacing: -.05em;
+      text-wrap: balance;
+    }
+    .intro-copy {
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.75;
+      text-wrap: pretty;
+    }
+    .hero-card, .usage-card, .logic-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+    }
+    .hero-card { overflow: hidden; }
+    .hero-stage {
+      min-height: 464px;
+      display: grid;
+      place-items: center;
+      padding: 48px;
+      background: var(--surface);
+      transition: background 180ms ease;
+    }
+    .hero-stage.is-dark { background: var(--fg); }
+    .logo-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: clamp(20px, 3vw, 32px);
+      color: var(--fg);
+      transition: color 180ms ease;
+    }
+    .is-dark .logo-lockup { color: var(--surface); }
+    .mark { width: clamp(112px, 16vw, 176px); height: auto; flex: 0 0 auto; }
+    .wordmark { display: grid; gap: 9px; }
+    .wordmark b {
+      font-family: var(--font-display);
+      font-size: clamp(40px, 6vw, 72px);
+      line-height: .92;
+      letter-spacing: -.06em;
+    }
+    .wordmark span {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .18em;
+    }
+    .hero-controls {
+      min-height: 86px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px 24px;
+      border-top: 1px solid var(--border);
+    }
+    .control-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .toggle {
+      min-height: 44px;
+      padding: 0 14px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 700;
+      transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+    }
+    .toggle:hover { color: var(--fg); border-color: var(--fg); }
+    .toggle[aria-pressed="true"] { color: var(--surface); background: var(--fg); border-color: var(--fg); }
+    .toggle:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+
+    .section-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 24px;
+      margin: 72px 0 20px;
+    }
+    h2 { margin: 0; font-size: 24px; letter-spacing: -.03em; }
+    .usage-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .usage-card { overflow: hidden; }
+    .usage-preview {
+      min-height: 220px;
+      display: grid;
+      place-items: center;
+      padding: 32px;
+      background: var(--surface);
+    }
+    .usage-preview.dark { background: var(--fg); }
+    .usage-preview.dark .mini-lockup { color: var(--surface); }
+    .mini-lockup { display: inline-flex; align-items: center; gap: 12px; color: var(--fg); }
+    .mini-lockup .mark { width: 80px; }
+    .mini-word { display: grid; gap: 5px; }
+    .mini-word b { font-size: 28px; line-height: 1; letter-spacing: -.05em; }
+    .mini-word span { font-size: 10px; font-weight: 700; letter-spacing: .16em; }
+    .usage-caption { padding: 18px 20px 20px; border-top: 1px solid var(--border); }
+    .usage-caption h3 { margin: 0 0 6px; font-size: 16px; }
+    .usage-caption p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+    .logic-card { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 16px; overflow: hidden; }
+    .logic-item { min-height: 168px; padding: 24px; border-right: 1px solid var(--border); }
+    .logic-item:last-child { border-right: 0; }
+    .logic-num {
+      display: block;
+      margin-bottom: 40px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .logic-item p { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.58; }
+    .footer-note { margin: 40px 0 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+    .footer-note code { color: var(--fg); font-family: var(--font-mono); font-size: .94em; }
+
+    @media (max-width: 760px) {
+      .shell { width: min(100% - 32px, 1180px); }
+      .topbar { min-height: 68px; }
+      .topbar .meta { display: none; }
+      main { padding: 44px 0 48px; }
+      .intro { grid-template-columns: 1fr; gap: 24px; padding-bottom: 32px; }
+      .hero-stage { min-height: 350px; padding: 28px; }
+      .logo-lockup { align-items: flex-start; flex-direction: column; }
+      .hero-controls { align-items: flex-start; flex-direction: column; }
+      .usage-grid, .logic-card { grid-template-columns: 1fr; }
+      .logic-item { min-height: 112px; border-right: 0; border-bottom: 1px solid var(--border); }
+      .logic-item:last-child { border-bottom: 0; }
+      .logic-num { margin-bottom: 18px; }
+      .section-heading { margin-top: 48px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="shell topbar" data-od-id="top-navigation">
+    <div class="brand" data-brand-page-label aria-label="火场智控标志方案"><span class="brand-dot" aria-hidden="true"></span><span data-brand-name>火场智控</span> / 标志方案</div>
+    <p class="meta">中文主名 · 方案 02</p>
+  </header>
+
+  <main class="shell" id="content" data-od-id="logo-proposal">
+    <section class="section intro" data-od-id="logo-introduction">
+      <div>
+        <p class="eyebrow" data-brand-descriptor>消防救援智能体</p>
+        <h1 data-od-id="logo-heading">锁定现场，形成判断。</h1>
+      </div>
+      <p class="intro-copy">四个向内收拢的场域框先锁定现场，菱形核心再承接处置判断。图形不依赖任何语言或字母，因此产品改名时，应用图标仍可保持完整识别。</p>
+    </section>
+
+    <section class="section hero-card" data-od-id="primary-logo-preview">
+      <div class="hero-stage" id="hero-stage">
+        <div class="logo-lockup" data-brand-lockup aria-label="火场智控 消防救援智能体标志">
+          <svg class="mark" viewBox="0 0 512 512" role="img" aria-labelledby="hero-logo-title hero-logo-desc">
+            <title id="hero-logo-title">火场智控图形标志</title>
+            <desc id="hero-logo-desc">深色圆角方形内，四向场域框围合菱形判断核心。</desc>
+            <rect x="24" y="24" width="464" height="464" rx="108" fill="currentColor"/>
+            <path fill="var(--surface)" d="M120 120h116v44h-72v72h-44zM392 120v116h-44v-72h-72v-44zM120 392V276h44v72h72v44zM392 392H276v-44h72v-72h44z"/>
+            <path fill="var(--surface)" d="M256 196 316 256 256 316 196 256Z"/>
+          </svg>
+          <div class="wordmark">
+            <b data-brand-name>火场智控</b>
+            <span data-brand-descriptor>消防救援智能体</span>
+          </div>
+        </div>
+      </div>
+      <div class="hero-controls" data-od-id="logo-preview-controls">
+        <div class="control-group" aria-label="预览背景">
+          <span class="control-label">预览</span>
+          <button class="toggle" type="button" data-theme="light" aria-pressed="true">浅色</button>
+          <button class="toggle" type="button" data-theme="dark" aria-pressed="false">深色</button>
+        </div>
+        <span class="meta">图形源文件：app/assets/branding/fire-control-mark.svg</span>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="logo-applications">
+      <div class="section-heading">
+        <h2 data-od-id="applications-heading">使用方式</h2>
+        <p class="meta">图形与名称分层，可独立替换</p>
+      </div>
+      <div class="usage-grid">
+        <article class="usage-card" data-od-id="usage-card-app-icon">
+          <div class="usage-preview">
+            <svg class="mark" viewBox="0 0 512 512" role="img" data-brand-icon aria-label="火场智控应用图标">
+              <rect x="24" y="24" width="464" height="464" rx="108" fill="var(--fg)"/>
+              <path fill="var(--surface)" d="M120 120h116v44h-72v72h-44zM392 120v116h-44v-72h-72v-44zM120 392V276h44v72h72v44zM392 392H276v-44h72v-72h44z"/>
+              <path fill="var(--surface)" d="M256 196 316 256 256 316 196 256Z"/>
+            </svg>
+          </div>
+          <div class="usage-caption"><h3>应用图标</h3><p>仅保留图形，避免在设备桌面用小字承载产品名称。</p></div>
+        </article>
+        <article class="usage-card" data-od-id="usage-card-horizontal">
+          <div class="usage-preview">
+            <div class="mini-lockup">
+              <svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect x="24" y="24" width="464" height="464" rx="108" fill="currentColor"/><path fill="var(--surface)" d="M120 120h116v44h-72v72h-44zM392 120v116h-44v-72h-72v-44zM120 392V276h44v72h72v44zM392 392H276v-44h72v-72h44z"/><path fill="var(--surface)" d="M256 196 316 256 256 316 196 256Z"/></svg>
+              <div class="mini-word"><b data-brand-name>火场智控</b><span data-brand-descriptor>消防救援智能体</span></div>
+            </div>
+          </div>
+          <div class="usage-caption"><h3>中文横向签名</h3><p>用于启动页、关于页与交接资料；主名优先，功能说明次之。</p></div>
+        </article>
+        <article class="usage-card" data-od-id="usage-card-reverse">
+          <div class="usage-preview dark">
+            <div class="mini-lockup">
+              <svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect x="24" y="24" width="464" height="464" rx="108" fill="currentColor"/><path fill="var(--fg)" d="M120 120h116v44h-72v72h-44zM392 120v116h-44v-72h-72v-44zM120 392V276h44v72h72v44zM392 392H276v-44h72v-72h44z"/><path fill="var(--fg)" d="M256 196 316 256 256 316 196 256Z"/></svg>
+              <div class="mini-word"><b data-brand-name>火场智控</b><span data-brand-descriptor>消防救援智能体</span></div>
+            </div>
+          </div>
+          <div class="usage-caption"><h3>深色反白</h3><p>用于夜间资料与深色载体；只交换深浅关系，不增加颜色。</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="logo-rationale">
+      <div class="section-heading"><h2 data-od-id="rationale-heading">构成逻辑</h2></div>
+      <div class="logic-card">
+        <article class="logic-item" data-od-id="logic-field-frame"><span class="logic-num">01</span><p>四向场域框向中心收拢，表达对火场范围、人员状态与处置重点的同时锁定。</p></article>
+        <article class="logic-item" data-od-id="logic-decision-core"><span class="logic-num">02</span><p>菱形核心表示稳定的现场判断点：先看清现场，再回到可执行的下一步。</p></article>
+        <article class="logic-item" data-od-id="logic-name-independence"><span class="logic-num">03</span><p>图形不含任何字母或名称；中文主名由单一配置项提供，未来改名无需重绘图标。</p></article>
+      </div>
+      <p class="footer-note">可复用源文件：<code>app/assets/branding/fire-control-mark.svg</code>。中文主名可在页面底部脚本的 <code>brandConfig.productName</code> 中替换；图形本身不受名称变更影响。</p>
+    </section>
+  </main>
+
+  <script>
+    const brandConfig = Object.freeze({
+      productName: '火场智控',
+      descriptor: '消防救援智能体',
+    });
+    document.querySelectorAll('[data-brand-name]').forEach((node) => { node.textContent = brandConfig.productName; });
+    document.querySelectorAll('[data-brand-descriptor]').forEach((node) => { node.textContent = brandConfig.descriptor; });
+    document.querySelectorAll('[data-brand-lockup]').forEach((node) => { node.setAttribute('aria-label', brandConfig.productName + ' ' + brandConfig.descriptor + '标志'); });
+    document.querySelectorAll('[data-brand-icon]').forEach((node) => { node.setAttribute('aria-label', brandConfig.productName + '应用图标'); });
+    document.querySelectorAll('[data-brand-page-label]').forEach((node) => { node.setAttribute('aria-label', brandConfig.productName + '标志方案'); });
+    document.title = brandConfig.productName + '标志方案';
+
+    const stage = document.getElementById('hero-stage');
+    const themeButtons = document.querySelectorAll('[data-theme]');
+    themeButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const dark = button.dataset.theme === 'dark';
+        stage.classList.toggle('is-dark', dark);
+        themeButtons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+      });
+    });
+  </script>
+</body>
+</html>

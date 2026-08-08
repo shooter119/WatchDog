@@ -1,5 +1,7 @@
 # 火场安全管控 App UI 设计规范
 
+> 历史基线：本文件记录 V0.1 的三入口方案，现行规范请使用 [V0.2](fire-rescue-safety-app-ui-spec-v0.2.md)。
+
 版本：V0.1
 方案：方案 2——高可视亮色 High-Vis Light
 适用范围：移动端消防救援现场安全监控 App

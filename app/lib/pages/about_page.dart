@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/fire_control_logo.dart';
 import '../theme/app_widgets.dart';
 
 /// 关于我们：展示项目 README 核心信息（为什么做/怎么用/功能/场景/项目背景）。
@@ -19,7 +20,8 @@ class AboutPage extends StatelessWidget {
           SizedBox(height: 18),
           SectionTitle(text: '为什么会有这个 App'),
           _SectionCard(
-            body: '火场里，安全员是最要紧也最紧张的岗位。进了多少人、进去多久了、谁的气瓶快空了——每一个数字都人命关天。'
+            body:
+                '火场里，安全员是最要紧也最紧张的岗位。进了多少人、进去多久了、谁的气瓶快空了——每一个数字都人命关天。'
                 '但现场往往是这样：防护服、手套、对讲机的嘈杂声，烟雾里看不清纸笔，指挥员一句「报一下里面几个人」，'
                 '靠的是一张被水打湿的名单和一个记在心里的时间。气瓶剩余时间要心算，人多了一乱就错。'
                 '我们太清楚那种手忙脚乱的感觉了。\n\n'
@@ -28,7 +30,8 @@ class AboutPage extends StatelessWidget {
           SizedBox(height: 18),
           SectionTitle(text: '它是怎么用的'),
           _SectionCard(
-            body: '安全员站在入口，队员进场时报一句「张三，24」：\n'
+            body:
+                '安全员站在入口，队员进场时报一句「张三，24」：\n'
                 '· App 自动听清人名和压力值，算好这瓶气能用多久\n'
                 '· 谁进来、谁出去、还剩多少分钟，看板上实时滚动\n'
                 '· 快没气了，App 会先说话提醒，再响警报\n'
@@ -43,13 +46,15 @@ class AboutPage extends StatelessWidget {
           SizedBox(height: 18),
           SectionTitle(text: '场景'),
           _SectionCard(
-            body: '室内烟火特性训练、楼层火灾进攻、化工装置处置……'
+            body:
+                '室内烟火特性训练、楼层火灾进攻、化工装置处置……'
                 '凡是需要安全员盯着气瓶和人员的现场，都适用。训练场上练顺手了，真打火场才不慌。',
           ),
           SizedBox(height: 18),
           SectionTitle(text: '关于这个项目'),
           _SectionCard(
-            body: '由一线消防员在工作之余开发，后端和 App 全部开源。语音识别用豆包，语义理解用 DeepSeek，'
+            body:
+                '由一线消防员在工作之余开发，后端和 App 全部开源。语音识别用豆包，语义理解用 DeepSeek，'
                 '断网时自动切到本机 sherpa-onnx 识别和规则解析，两套兜底都备着，火场无信号也能用。\n\n'
                 '我们不是软件公司，就是一群想让安全员轻松一点的战友。如果你的队伍也用得上，欢迎提需求、提 bug——'
                 '每一个意见，都可能救下一个兄弟。',
@@ -70,23 +75,25 @@ class _HeroCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: AppColors.actionPrimary,
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-              boxShadow: AppShadow.card,
-            ),
-            child: const Icon(Icons.shield_outlined, size: 32, color: Colors.white),
-          ),
+          const FireControlLogo(size: 64),
           const SizedBox(height: 14),
-          const Text('安全员助手 WatchDog', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+          const Text(
+            '火场智控',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 10),
           const Text(
             '一款由消防员开发、给消防员用的 App',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13.5, color: AppColors.textSecondary, height: 1.5),
+            style: TextStyle(
+              fontSize: 13.5,
+              color: AppColors.textSecondary,
+              height: 1.5,
+            ),
           ),
         ],
       ),
@@ -106,7 +113,11 @@ class _SectionCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Text(
         body,
-        style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.65),
+        style: const TextStyle(
+          fontSize: 14,
+          color: AppColors.textSecondary,
+          height: 1.65,
+        ),
       ),
     );
   }
@@ -118,7 +129,11 @@ class _FeaturesCard extends StatelessWidget {
 
   static const _items = [
     (Icons.mic_rounded, '语音录入', '进场、退场、压力值，一句话搞定；多人一次报完一次确认，单人气瓶容量可单独改'),
-    (Icons.smart_toy_outlined, '辅助问答', '火场智囊「水元素」，浓烟里拿不准主意就问它：按结论/立即行动/注意事项支招，追问一点就发'),
+    (
+      Icons.smart_toy_outlined,
+      '辅助问答',
+      '火场智囊「水元素」，浓烟里拿不准主意就问它：按结论/立即行动/注意事项支招，追问一点就发',
+    ),
     (Icons.receipt_long_outlined, '火场日志', '说一句「搜救出一人」自动记进日志时间线，按实战环节分类，回头好复盘'),
     (Icons.calculate_outlined, '自动计算', '气瓶容量、压力、消耗率交给我们算，剩余 10 分钟提醒、5 分钟报警'),
     (Icons.dashboard_rounded, '实时看板', '在场谁、进去多久、还剩多久，一目了然；到点自动播报、响警报、锁屏也推通知'),
@@ -148,16 +163,34 @@ class _FeaturesCard extends StatelessWidget {
                       shape: BoxShape.circle,
                       color: AppColors.surfaceSubtle,
                     ),
-                    child: Icon(item.$1, size: 18, color: AppColors.textPrimary),
+                    child: Icon(
+                      item.$1,
+                      size: 18,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(item.$2, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                        Text(
+                          item.$2,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
                         const SizedBox(height: 2),
-                        Text(item.$3, style: const TextStyle(fontSize: 12.5, color: AppColors.textTertiary, height: 1.45)),
+                        Text(
+                          item.$3,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.textTertiary,
+                            height: 1.45,
+                          ),
+                        ),
                       ],
                     ),
                   ),

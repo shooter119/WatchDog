@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>安全员助手</string>
+	<string>火场智控</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于语音录入消防员姓名与气瓶余量</string>
 	<key>NSLocalNetworkUsageDescription</key>
@@ -19,7 +19,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>WatchDog</string>
+	<string>火场智控</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

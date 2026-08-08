@@ -15,9 +15,10 @@
     <!-- OTA 更新：允许安装未知来源 APK（GitHub Releases 分发，系统会引导授权） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
-        android:label="安全员助手"
+        android:label="火场智控"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@drawable/fire_control_logo"
+        android:roundIcon="@drawable/fire_control_logo">
         <activity
             android:name=".MainActivity"
             android:exported="true"

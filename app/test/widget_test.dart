@@ -819,7 +819,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(AboutPage), findsOneWidget);
       expect(find.text('为什么会有这个 App'), findsOneWidget);
-      expect(find.text('安全员助手 WatchDog'), findsOneWidget);
+      expect(find.text('火场智控'), findsOneWidget);
       // 版本号只在设置页底部展示，关于我们页面不再显示
       expect(find.textContaining('v$appVersion'), findsNothing);
       final aboutList = find.byType(Scrollable).first;

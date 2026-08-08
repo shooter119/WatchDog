@@ -140,7 +140,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '安全员助手',
+      title: '火场智控',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       home: AnimatedBuilder(
