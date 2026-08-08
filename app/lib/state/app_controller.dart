@@ -289,6 +289,10 @@ class AppController extends ChangeNotifier {
       consumptionLpm: calcConfig.consumptionLpm,
       opId: opId,
     );
+    // 提交成功立即插入本地列表并通知（看板即时显示倒计时），
+    // 不依赖 sync 网络结果——网络不稳时同步失败也不影响本地展示
+    entries = [e, ...entries.where((x) => x.id != e.id)];
+    notifyListeners();
     await sync();
     return e;
   }

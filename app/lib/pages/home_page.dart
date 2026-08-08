@@ -498,28 +498,6 @@ class HomePageState extends State<HomePage> {
     _clearEditors();
   }
 
-  /// 兜底：把当前转写内容转为火场日志（识别为报数但实际是记录时使用）
-  Future<void> _saveAsNote() async {
-    final text = _transcript;
-    if (text == null || text.isEmpty) return;
-    try {
-      await widget.controller.addNote(text, opId: _opId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('已转为日志记录'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-      _retry();
-    } catch (e) {
-      if (mounted) {
-        setState(() => _error = '转为日志失败：$e');
-      }
-    }
-  }
-
   /// 从空闲态回到待确认名单（出场/取消录音后仍有已录入人员时）
   void _showPendingConfirm() {
     if (_peopleEditors.isEmpty) return;
@@ -1300,15 +1278,6 @@ class HomePageState extends State<HomePage> {
                   ),
                   SizedBox(
                     width: double.infinity,
-                    height: 40,
-                    child: TextButton.icon(
-                      onPressed: _processing ? null : _saveAsNote,
-                      icon: const Icon(Icons.edit_note, size: 18),
-                      label: const Text('转为日志记录'),
-                    ),
-                  ),
-                  SizedBox(
-                    width: double.infinity,
                     height: 44,
                     child: TextButton.icon(
                       onPressed: _retry,
@@ -1387,15 +1356,6 @@ class HomePageState extends State<HomePage> {
               onPressed: _processing ? null : beginRecording,
               icon: const Icon(Icons.mic_none),
               label: const Text('继续语音添加'),
-            ),
-          ),
-          SizedBox(
-            width: double.infinity,
-            height: 40,
-            child: TextButton.icon(
-              onPressed: _processing ? null : _saveAsNote,
-              icon: const Icon(Icons.edit_note, size: 18),
-              label: const Text('转为日志记录'),
             ),
           ),
           SizedBox(

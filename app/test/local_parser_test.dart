@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:watchdog/models/models.dart';
 import 'package:watchdog/services/local_parser.dart';
 
 void main() {
@@ -113,6 +114,20 @@ void main() {
       final r = p.parse('撤收，收工', firefighters: ['张伟']);
       expect(r.action, 'exit');
       expect(r.people, isEmpty);
+    });
+  });
+
+  group('LocalParser 长距离报数（进入火场句式）', () {
+    test('名单姓名与压力间隔较长仍判进场（李翔进入火场，空气呼吸器压力20兆帕）', () {
+      final p = LocalParser().parse(
+        '李翔进入火场，空气呼吸器压力20兆帕',
+        firefighters: ['李翔'],
+      );
+      expect(p.action, 'enter');
+      expect(p.intent, VoiceIntent.entry);
+      expect(p.people, hasLength(1));
+      expect(p.people.first.name, '李翔');
+      expect(p.people.first.pressureMpa, 20);
     });
   });
 }

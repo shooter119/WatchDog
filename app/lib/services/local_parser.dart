@@ -58,7 +58,9 @@ class LocalParser {
 
     final usedPressure = List<bool>.filled(pressures.length, false);
 
-    // 名单姓名：按位置顺序与后续最近压力配对
+    // 名单姓名：按位置顺序与后续最近压力配对。
+    // 间距上限 24：兼容「李翔进入火场，空气呼吸器压力20兆帕」这类
+    // 姓名与压力间隔较长的报数（此前 12 过紧导致配对失败、进场被误判为日志）
     final rosterSorted = List.of(rosterMatches)..sort((a, b) => a.start.compareTo(b.start));
     for (final m in rosterSorted) {
       double? matched;
@@ -66,7 +68,7 @@ class LocalParser {
         if (usedPressure[i]) continue;
         if (pressures[i].start <= m.start) continue;
         final gap = pressures[i].start - m.end;
-        if (gap > 12) continue;
+        if (gap > 24) continue;
         matched = pressures[i].value;
         usedPressure[i] = true;
         break;

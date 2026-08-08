@@ -1284,34 +1284,6 @@ void main() {
       expect(c.notes.single.category, NoteCategory.rescue);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
     });
-
-    testWidgets('确认页「转为日志记录」兜底按钮生效', (tester) async {
-      final api = _FakeApi();
-      final c = _FakeController()..api = api;
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: buildAppTheme(),
-          home: Scaffold(
-            body: HomePage(controller: c, audioService: _FakeAudio()),
-          ),
-        ),
-      );
-      final state = tester.state<HomePageState>(find.byType(HomePage));
-      await state.beginRecording();
-      await state.finishRecording();
-      await tester.pump();
-      // 确认页出现"转为日志记录"按钮
-      final saveAsNote = find.text('转为日志记录');
-      await tester.ensureVisible(saveAsNote);
-      await tester.pump();
-      await tester.tap(saveAsNote);
-      await tester.pumpAndSettle();
-      expect(c.notes.single.text, '张伟20兆帕，李娜22兆帕');
-      expect(c.notes.single.category, NoteCategory.other);
-      // 名单未提交（api.created 为空）且回到空闲态
-      expect(api.created, isEmpty);
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
-    });
   });
 
   group('NotesPage 火场日志', () {
