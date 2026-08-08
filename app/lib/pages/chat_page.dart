@@ -16,7 +16,7 @@ import '../api/api_client.dart' show ApiClient;
 /// 语音识别结果按意图路由：提问留本页发送；进出场/日志交 main 跳转对应页面。
 class ChatPage extends StatefulWidget {
   final AppController controller;
-  final VoidCallback? onBack; // 顶部返回按钮（回看板），辅助页底部不再展示全部导航入口
+  final VoidCallback? onBack; // 顶部返回按钮（回进入前的来源页），辅助页底部不再展示全部导航入口
   final void Function(String text, ParseResult parsed)?
   onEntryExit; // 语音识别为进出场：交语音页确认
   final ValueChanged<String>? onNote; // 语音识别为日志：记入日志并跳日志页
@@ -409,7 +409,7 @@ class ChatPageState extends State<ChatPage> {
           IconButton(
             onPressed: widget.onBack,
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-            tooltip: '返回看板',
+            tooltip: '返回',
             color: AppColors.textSecondary,
             visualDensity: VisualDensity.compact,
           ),

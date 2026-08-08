@@ -33,6 +33,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
       TextEditingController(); // 辅助页输入条（全局底部聊天操作条）
   final FocusNode _chatInputFocus = FocusNode(); // 辅助页文字输入切换按钮聚焦目标
   int _tab = 1; // 规范 2.3：App 启动默认进入看板（tab 顺序：日志0/看板1/语音2/辅助3/设置4）
+  int _preChatTab = 1; // 进入辅助页前的 tab（顶部返回/系统返回都回来源页而非固定看板）
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换语音页后自动开始录音
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
   bool _processing = false; // 识别/确认中（禁用语音按钮，避免重复触发）
@@ -56,6 +57,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   void _selectTab(int i) {
     HapticFeedback.selectionClick();
     setState(() {
+      if (i == 3 && _tab != 3) _preChatTab = _tab; // 记录进入辅助页前的来源页
       _tab = i;
       if (i != 3) _chatTextMode = false; // 离开辅助页重置为悬浮麦克风态
     });
@@ -157,7 +159,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
             ChatPage(
               key: _chatKey,
               controller: controller,
-              onBack: () => _selectTab(1),
+              onBack: () => _selectTab(_preChatTab),
               onEntryExit: _routeEntryExit,
               onNote: _routeNote,
               onRecordingChanged: (v) => setState(() => _recording = v),
@@ -166,30 +168,37 @@ class _WatchDogAppState extends State<WatchDogApp> {
             ),
             SettingsPage(controller: controller),
           ];
-          return Scaffold(
-            body: IndexedStack(index: _tab, children: pages),
-            bottomNavigationBar: _BottomNav(
-              index: _tab,
-              recording: _recording,
-              processing: _processing,
-              chatMode: _tab == 3,
-              chatTextMode: _chatTextMode,
-              chatController: _chatInput,
-              chatInputFocus: _chatInputFocus,
-              chatSending: _chatSending,
-              onChatSubmit: _chatSubmit,
-              onChatTextModeChange: (v) {
-                setState(() => _chatTextMode = v);
-                if (v) {
-                  _chatInputFocus.requestFocus();
-                } else {
-                  _chatInputFocus.unfocus();
-                }
-              },
-              onSelect: _selectTab,
-              onVoiceTap: _voiceTap,
-              onVoiceLongPressStart: _voiceLongPressStart,
-              onVoiceLongPressEnd: _voiceLongPressEnd,
+          // 辅助页系统返回键 = 回来源页（与顶部返回箭头一致）；其它页维持系统默认（退出）
+          return PopScope(
+            canPop: _tab != 3,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && _tab == 3) _selectTab(_preChatTab);
+            },
+            child: Scaffold(
+              body: IndexedStack(index: _tab, children: pages),
+              bottomNavigationBar: _BottomNav(
+                index: _tab,
+                recording: _recording,
+                processing: _processing,
+                chatMode: _tab == 3,
+                chatTextMode: _chatTextMode,
+                chatController: _chatInput,
+                chatInputFocus: _chatInputFocus,
+                chatSending: _chatSending,
+                onChatSubmit: _chatSubmit,
+                onChatTextModeChange: (v) {
+                  setState(() => _chatTextMode = v);
+                  if (v) {
+                    _chatInputFocus.requestFocus();
+                  } else {
+                    _chatInputFocus.unfocus();
+                  }
+                },
+                onSelect: _selectTab,
+                onVoiceTap: _voiceTap,
+                onVoiceLongPressStart: _voiceLongPressStart,
+                onVoiceLongPressEnd: _voiceLongPressEnd,
+              ),
             ),
           );
         },
@@ -237,6 +246,11 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
+    // Scaffold 不会把 bottomNavigationBar 顶过键盘（body 才避让），
+    // 这里手动加 viewInsets 底边距，让辅助页输入条悬浮在键盘上方。
+    final keyboardInset = chatMode
+        ? MediaQuery.viewInsetsOf(context).bottom
+        : 0.0;
     if (chatMode) {
       if (!chatTextMode) {
         // 语音态：中央凸起圆形橙色麦克风（与普通页 VoiceButton 一致）+ 左侧「文字」切换，无输入框
@@ -321,7 +335,7 @@ class _BottomNav extends StatelessWidget {
       // 文字态：输入框 + 发送（呼出键盘），麦克风隐藏，底部「语音」切换回语音态
       return Container(
         key: const Key('bottom-nav-surface'),
-        padding: EdgeInsets.only(bottom: safeBottom),
+        padding: EdgeInsets.only(bottom: safeBottom + keyboardInset),
         decoration: const BoxDecoration(
           color: AppColors.surface,
           border: Border(top: BorderSide(color: AppColors.border)),

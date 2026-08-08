@@ -1661,7 +1661,7 @@ void main() {
       expect(find.byType(TextField), findsNothing);
       expect(find.byType(VoiceButton), findsOneWidget);
       expect(find.text('文字'), findsOneWidget);
-      // 辅助页底部不再有 4 个导航入口，通过顶部返回按钮回看板
+      // 辅助页底部不再有 4 个导航入口，通过顶部返回按钮回来源页
       expect(find.text('看板'), findsNothing);
       expect(find.text('设置'), findsNothing);
       // 点「文字」→ 麦克风隐藏，输入框呼出
@@ -1671,13 +1671,62 @@ void main() {
       expect(find.byType(VoiceButton), findsNothing);
       expect(find.text('语音'), findsOneWidget);
       expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
-      await tester.tap(find.byTooltip('返回看板'));
+      // 从日志页进入辅助，顶部返回应回到日志页（来源页）而非固定看板
+      await tester.tap(find.byTooltip('返回'));
       await tester.pumpAndSettle();
-      expect(find.text('火场安全管控看板'), findsOneWidget);
+      expect(find.text('火场日志'), findsOneWidget);
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(find.text('服务端'), findsOneWidget);
       expect(find.text('计算参数'), findsOneWidget);
+    });
+
+    testWidgets('辅助页系统返回键回到来源页', (tester) async {
+      await tester.pumpWidget(const WatchDogApp());
+      await tester.pump();
+      // 从日志页进入辅助页
+      await tester.tap(find.text('日志'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
+      expect(find.text('你好，我是水元素'), findsOneWidget);
+      // 模拟 Android 系统返回键
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('火场日志'), findsOneWidget);
+      expect(find.text('你好，我是水元素'), findsNothing);
+      // 从看板页进入辅助页，系统返回应回到看板
+      await tester.tap(find.text('看板'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('火场安全管控看板'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页呼出键盘后输入框不被键盘遮挡', (tester) async {
+      tester.view.physicalSize = const Size(390 * 3, 800 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: 300 * 3,
+      ); // 模拟 300 逻辑像素键盘
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const WatchDogApp());
+      await tester.pump();
+      await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('文字'));
+      await tester.pumpAndSettle();
+      final field = tester.getRect(find.byType(TextField));
+      // 键盘顶高 300：输入框底边应完全位于键盘上方
+      expect(
+        field.bottom,
+        lessThanOrEqualTo(800 - 300 + 0.5),
+        reason: '辅助页输入框被键盘遮挡：bottom=${field.bottom}',
+      );
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('辅助页输入框多行文本完整显示不裁剪', (tester) async {
