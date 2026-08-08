@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/alarm_service.dart';
+import '../services/foreground_keep_alive.dart';
 import '../services/local_asr_service.dart';
 import '../services/local_parser.dart';
 import '../services/op_log_service.dart';
@@ -58,6 +59,24 @@ class AppController extends ChangeNotifier {
     syncSettings();
     // 启动后补传上次未上传完的操作日志（fire-and-forget）
     OpLogService.instance.flush(api: api);
+    // 车载保活：开关开启则拉起前台服务（进程保活 + 常驻通知栏）
+    await syncKeepAlive();
+  }
+
+  /// 保活服务与本地设置同步：开启时启动并更新配置，关闭时停止
+  Future<void> syncKeepAlive() async {
+    final enabled = await Settings.keepAliveEnabled;
+    if (!enabled) {
+      await ForegroundKeepAlive.stop();
+      return;
+    }
+    await ForegroundKeepAlive.start(
+      serverUrl: await Settings.serverUrl,
+      sceneCode: await Settings.sceneCode,
+      token: await Settings.apiToken,
+      warnMin: calcConfig.warnMin,
+      alarmMin: calcConfig.alarmMin,
+    );
   }
 
   /// 用户设置云同步：服务器较新则拉取覆盖本地并生效，本地较新则推送，一致跳过

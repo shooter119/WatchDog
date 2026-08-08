@@ -751,11 +751,17 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      // 最后一个开关 = 屏幕常亮（SwitchListTile 无 onTap，需直接点 Switch）
+      // 屏幕常亮开关：切换后立即落库（开关按文字定位，避免新增开关改变顺序）
       final list = find.byType(Scrollable).first;
       await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
       await tester.pump();
-      await tester.tap(find.byType(Switch).last);
+      await tester.tap(find.descendant(
+        of: find.ancestor(
+          of: find.text('屏幕常亮'),
+          matching: find.byType(SwitchListTile),
+        ),
+        matching: find.byType(Switch),
+      ));
       await tester.pumpAndSettle();
       expect(await Settings.keepScreenOn, isFalse);
     });

@@ -14,6 +14,7 @@ class Settings {
   static const _kKeepScreenOn = 'keep_screen_on';
   static const _kAsrCloud = 'asr_cloud_enabled';
   static const _kParseCloud = 'parse_cloud_enabled';
+  static const _kKeepAlive = 'keep_alive_enabled';
   static const _kModifiedAt = 'settings_modified_at';
 
   /// 可同步到服务器的个人设置键（与后端 user_settings 白名单一致，snake_case）
@@ -191,5 +192,14 @@ class Settings {
   static Future<void> setParseCloudEnabled(bool v) async {
     final sp = await SharedPreferences.getInstance();
     await sp.setBool(_kParseCloud, v);
+  }
+
+  /// 车载保活模式：前台服务常驻，切后台/锁屏后轮询与报警不停
+  static Future<bool> get keepAliveEnabled async =>
+      (await SharedPreferences.getInstance()).getBool(_kKeepAlive) ?? false;
+
+  static Future<void> setKeepAliveEnabled(bool v) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool(_kKeepAlive, v);
   }
 }

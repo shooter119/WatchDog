@@ -7,6 +7,7 @@ import 'pages/home_page.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
 import 'models/models.dart';
+import 'services/foreground_keep_alive.dart';
 import 'services/local_asr_service.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
@@ -15,6 +16,8 @@ import 'theme/nav_icons.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // 注册车载保活前台服务（TaskHandler 必须全局注册一次，供服务 isolate 恢复）
+  ForegroundKeepAlive.init();
   runApp(const WatchDogApp());
 }
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/alarm_service.dart';
+import '../services/foreground_keep_alive.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../state/app_controller.dart';
@@ -44,6 +45,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _tts = true;
   bool _sound = true;
   bool _keepScreenOn = true;
+  bool _keepAlive = false;
   bool _asrCloud = true;
   bool _parseCloud = true;
   bool? _modelInstalled;
@@ -90,6 +92,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _tts = await Settings.ttsEnabled;
     _sound = await Settings.alarmSoundEnabled;
     _keepScreenOn = await Settings.keepScreenOn;
+    _keepAlive = await Settings.keepAliveEnabled;
     _asrCloud = await Settings.asrCloudEnabled;
     _parseCloud = await Settings.parseCloudEnabled;
     _loaded = true;
@@ -181,6 +184,21 @@ class _SettingsPageState extends State<SettingsPage> {
     } finally {
       _saving = false;
     }
+  }
+
+  /// 车载保活开关：开启时先引导权限（通知 → 电池白名单），再拉起前台服务；关闭即停止
+  Future<void> _toggleKeepAlive(bool v) async {
+    setState(() => _keepAlive = v);
+    await Settings.setKeepAliveEnabled(v);
+    if (v) {
+      await ForegroundKeepAlive.requestNotificationPermission();
+      await ForegroundKeepAlive.requestIgnoreBatteryOptimization();
+      if (widget.controller.alarm.exactAlarmAvailable == false) {
+        await ForegroundKeepAlive.openAlarmsAndRemindersSettings();
+      }
+    }
+    await widget.controller.refreshConfig();
+    await widget.controller.syncKeepAlive();
   }
 
   @override
@@ -356,6 +374,22 @@ class _SettingsPageState extends State<SettingsPage> {
                       _autoSave();
                     },
                   ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('车载保活模式', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('前台服务常驻：切后台/锁屏后轮询与报警不停，通知栏显示指挥状态'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _keepAlive,
+                    onChanged: _toggleKeepAlive,
+                  ),
+                  if (!_keepAlive)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Text(
+                        '开启时请允许通知与电池白名单，否则保活可能被系统中断',
+                        style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                      ),
+                    ),
                   if (!widget.controller.alarm.exactAlarmAvailable) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     ListTile(
