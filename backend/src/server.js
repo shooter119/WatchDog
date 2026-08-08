@@ -84,6 +84,7 @@ const USER_SETTING_KEYS = [
   'keep_screen_on',
   'asr_cloud_enabled',
   'parse_cloud_enabled',
+  'real_name',
 ];
 
 /** 服务端操作日志：与 App 端同 op_id，便于拼接完整链路 */
@@ -603,13 +604,21 @@ app.post('/api/notes', (req, res, next) => {
     const clean = String(text || '').trim();
     if (!clean) return res.status(400).json({ error: '缺少日志内容' });
     if (clean.length > 2000) return res.status(400).json({ error: '日志内容过长（最多 2000 字）' });
+    // 发布者姓名：实名用户（设置页填写并同步到服务器）显示真名，否则匿名
+    const device = deviceKey(req);
+    let author = '';
+    if (device) {
+      const { settings } = db.getUserSettings(device, sceneKey(req));
+      author = String(settings.real_name || '').trim().slice(0, 32);
+    }
     const note = db.createNote({
       id: crypto.randomUUID(),
       scene: sceneKey(req),
       text: clean,
       category: cleanCategory(category),
+      author,
     });
-    logOp(req, 'info', 'note_created', '已记录随手记', { noteId: note.id, category: note.category, text: clean.slice(0, 100) });
+    logOp(req, 'info', 'note_created', '已记录随手记', { noteId: note.id, category: note.category, author: author || '(匿名)', text: clean.slice(0, 100) });
     res.status(201).json(note);
   } catch (e) {
     logOp(req, 'error', 'note_err', `记录随手记失败: ${e.message || e}`);
@@ -674,6 +683,9 @@ app.put('/api/user-settings', (req, res, next) => {
         clean[key] = v;
       } else if (typeof v === 'boolean') {
         clean[key] = v;
+      } else if (key === 'real_name' && typeof v === 'string') {
+        // 实名认证：真实姓名（trim 后截断，空串 = 匿名）
+        clean[key] = v.trim().slice(0, 32);
       }
     }
     if (Object.keys(clean).length === 0) return res.status(400).json({ error: '没有可同步的合法设置项' });

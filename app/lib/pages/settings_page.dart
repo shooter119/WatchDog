@@ -34,6 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _consumption = TextEditingController();
   final TextEditingController _warn = TextEditingController();
   final TextEditingController _alarm = TextEditingController();
+  final TextEditingController _realName = TextEditingController();
   final FocusNode _serverFocus = FocusNode();
   final FocusNode _tokenFocus = FocusNode();
   final FocusNode _volumeFocus = FocusNode();
@@ -41,6 +42,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final FocusNode _consumptionFocus = FocusNode();
   final FocusNode _warnFocus = FocusNode();
   final FocusNode _alarmFocus = FocusNode();
+  final FocusNode _realNameFocus = FocusNode();
   bool _tokenVisible = false;
   bool _tts = true;
   bool _sound = true;
@@ -66,7 +68,7 @@ class _SettingsPageState extends State<SettingsPage> {
     // 任一输入框失焦且全部输入框均无焦点（点空白处/收起键盘）→ 自动保存
     for (final n in [
       _serverFocus, _tokenFocus, _volumeFocus,
-      _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus,
+      _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus, _realNameFocus,
     ]) {
       n.addListener(() {
         if (_loaded && !n.hasFocus && _allInputsUnfocused()) _autoSave();
@@ -84,7 +86,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _allInputsUnfocused() {
     return [
       _serverFocus, _tokenFocus, _volumeFocus,
-      _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus,
+      _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus, _realNameFocus,
     ].every((n) => !n.hasFocus);
   }
 
@@ -102,6 +104,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _keepAlive = await Settings.keepAliveEnabled;
     _asrCloud = await Settings.asrCloudEnabled;
     _parseCloud = await Settings.parseCloudEnabled;
+    _realName.text = await Settings.realName;
     _loaded = true;
     _refreshModelStatus();
     _refreshAlarmCaps();
@@ -316,6 +319,7 @@ class _SettingsPageState extends State<SettingsPage> {
       await Settings.setKeepScreenOn(_keepScreenOn);
       await Settings.setAsrCloudEnabled(_asrCloud);
       await Settings.setParseCloudEnabled(_parseCloud);
+      await Settings.setRealName(_realName.text);
       try {
         await ScreenOn.setKeepScreenOn(_keepScreenOn);
       } catch (_) {
@@ -358,6 +362,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _consumption.dispose();
     _warn.dispose();
     _alarm.dispose();
+    _realName.dispose();
     _serverFocus.dispose();
     _tokenFocus.dispose();
     _volumeFocus.dispose();
@@ -365,6 +370,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _consumptionFocus.dispose();
     _warnFocus.dispose();
     _alarmFocus.dispose();
+    _realNameFocus.dispose();
     super.dispose();
   }
 
@@ -574,6 +580,27 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const SectionTitle(text: '实名认证'),
+          AppCard(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _field(
+                  _realName,
+                  '真实姓名',
+                  '填写后日志显示你的姓名，留空为匿名',
+                  icon: Icons.badge_outlined,
+                  focusNode: _realNameFocus,
+                ),
+                const Text(
+                  '实名后，你在火场日志发布的记录会以小字标注姓名；未填写则显示"匿名"。',
+                  style: TextStyle(fontSize: 12, color: AppColors.textTertiary, height: 1.5),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),

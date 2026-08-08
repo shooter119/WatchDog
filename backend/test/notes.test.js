@@ -99,3 +99,32 @@ test('场景隔离：不同场景码的随手记互不可见', async () => {
   assert.equal(a.length, 1);
   assert.equal(a[0].text, 'A 场景记录');
 });
+
+test('实名用户发布日志携带 author，未实名为空串（匿名）', async () => {
+  // 未设置实名（无 X-Device-Id）：author 空串 = 匿名
+  const anon = await (await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ text: '匿名发布测试' }),
+  })).json();
+  assert.equal(anon.author, '');
+
+  // 设备设置实名后发布：author 为真实姓名
+  const deviceH = { ...H, 'X-Device-Id': 'notes-device-1' };
+  await fetch(`${base}/api/user-settings`, {
+    method: 'PUT',
+    headers: deviceH,
+    body: JSON.stringify({ settings: { real_name: '李娜' } }),
+  });
+  const named = await (await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: deviceH,
+    body: JSON.stringify({ text: '实名发布测试' }),
+  })).json();
+  assert.equal(named.author, '李娜');
+
+  // 列表同样携带 author
+  const list = await (await fetch(`${base}/api/notes`, { headers: H })).json();
+  const item = list.find((n) => n.text === '实名发布测试');
+  assert.equal(item.author, '李娜');
+});

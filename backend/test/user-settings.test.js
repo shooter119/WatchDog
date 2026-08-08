@@ -127,3 +127,38 @@ test('PUT 覆盖后旧值被替换', async () => {
   assert.equal(body.settings.alarm_min, 7);
   assert.equal(body.settings.cylinder_vol_l, 9.5);
 });
+
+test('real_name 实名同步：PUT 保存（trim）→ GET 读回 → 清空为匿名', async () => {
+  // PUT 实名（带空格 trim 后保存）
+  let res = await fetch(`${base}/api/user-settings`, {
+    method: 'PUT',
+    headers: H,
+    body: JSON.stringify({ settings: { real_name: ' 张三 ' } }),
+  });
+  assert.equal(res.status, 200);
+  let body = await j(res);
+  assert.equal(body.settings.real_name, '张三');
+
+  // GET 读回
+  res = await fetch(`${base}/api/user-settings`, { headers: H });
+  body = await j(res);
+  assert.equal(body.settings.real_name, '张三');
+
+  // 白名单外字符串键仍被拒绝
+  res = await fetch(`${base}/api/user-settings`, {
+    method: 'PUT',
+    headers: H,
+    body: JSON.stringify({ settings: { foo: 'bar' } }),
+  });
+  assert.equal(res.status, 400);
+
+  // 清空实名 = 匿名
+  res = await fetch(`${base}/api/user-settings`, {
+    method: 'PUT',
+    headers: H,
+    body: JSON.stringify({ settings: { real_name: '' } }),
+  });
+  assert.equal(res.status, 200);
+  body = await j(res);
+  assert.equal(body.settings.real_name, '');
+});

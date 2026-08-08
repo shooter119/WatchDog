@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS notes (
   scene TEXT NOT NULL DEFAULT 'default',
   text TEXT NOT NULL,
   category TEXT NOT NULL DEFAULT '其他',
+  author TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -103,6 +104,11 @@ CREATE TABLE IF NOT EXISTS scene_state (
 // 动态耗气率迁移：entries 增加实测耗气率列（可空，无采样时为 null）
 if (!hasColumn('entries', 'consumption_actual_lpm')) {
   db.exec('ALTER TABLE entries ADD COLUMN consumption_actual_lpm REAL');
+}
+
+// 实名认证迁移：notes 增加发布者姓名列（可空串 = 匿名）
+if (!hasColumn('notes', 'author')) {
+  db.exec("ALTER TABLE notes ADD COLUMN author TEXT NOT NULL DEFAULT ''");
 }
 
 // 旧库迁移：无 scene 列时重建表（新表场景内唯一，跨场景允许同名）
@@ -447,11 +453,11 @@ function getNote(id) {
   return db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
 }
 
-function createNote({ id, scene = 'default', text, category = '其他' }) {
+function createNote({ id, scene = 'default', text, category = '其他', author = '' }) {
   const now = Date.now();
   db.prepare(
-    'INSERT INTO notes (id, scene, text, category, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, scene, text, category, now, now);
+    'INSERT INTO notes (id, scene, text, category, author, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, scene, text, category, author, now, now);
   return getNote(id);
 }
 

@@ -1309,6 +1309,38 @@ void main() {
   });
 
   group('NotesPage 火场日志', () {
+    testWidgets('发布者显示：实名显示姓名小字，未实名为匿名', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final c = _FakeController(
+        notes: [
+          Note(
+            id: 'n1',
+            text: '实名发布的记录',
+            category: NoteCategory.water,
+            author: '李娜',
+            createdAt: now - 3600000,
+            updatedAt: now - 3600000,
+          ),
+          Note(
+            id: 'n2',
+            text: '匿名发布的记录',
+            category: NoteCategory.rescue,
+            createdAt: now - 1800000,
+            updatedAt: now - 1800000,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: NotesPage(controller: c)),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('李娜'), findsOneWidget);
+      expect(find.text('匿名'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
     testWidgets('时间线渲染分类标签与内容，分类筛选生效', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
       final c = _FakeController(

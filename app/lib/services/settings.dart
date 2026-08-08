@@ -18,6 +18,7 @@ class Settings {
   static const _kParseCloud = 'parse_cloud_enabled';
   static const _kKeepAlive = 'keep_alive_enabled';
   static const _kModifiedAt = 'settings_modified_at';
+  static const _kRealName = 'real_name';
 
   /// 可同步到服务器的个人设置键（与后端 user_settings 白名单一致，snake_case）
   static const syncKeys = [
@@ -31,6 +32,7 @@ class Settings {
     'keep_screen_on',
     'asr_cloud_enabled',
     'parse_cloud_enabled',
+    'real_name',
   ];
 
   /// 本地设置最近修改时间戳（0 = 从未显式保存过）
@@ -122,6 +124,17 @@ class Settings {
   static Future<void> setApiToken(String v) async {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_kToken, v);
+  }
+
+  /// 实名认证：真实姓名（空 = 匿名，日志发布显示"匿名"）
+  static Future<String> get realName async {
+    final sp = await SharedPreferences.getInstance();
+    return (sp.getString(_kRealName) ?? '').trim();
+  }
+
+  static Future<void> setRealName(String v) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kRealName, v.trim());
   }
 
   static Future<double> get cylinderVolL async =>
