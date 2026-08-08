@@ -9,6 +9,7 @@ import 'pages/settings_page.dart';
 import 'models/models.dart';
 import 'services/foreground_keep_alive.dart';
 import 'services/local_asr_service.dart';
+import 'services/op_log_service.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_widgets.dart';
@@ -113,8 +114,23 @@ class _WatchDogAppState extends State<WatchDogApp> {
   Future<void> _routeNote(String text) async {
     try {
       await controller.addNote(text);
-    } catch (_) {
-      // 记日志失败不影响跳转，日志页可见失败原因
+    } catch (e) {
+      // 写日志失败要可见：提示用户 + 埋点，避免"识别成功但日志没新增"无从排查
+      OpLogService.instance.record(
+        'note-${DateTime.now().millisecondsSinceEpoch}',
+        'note_add_fail',
+        '自动记日志失败：$e',
+        level: 'error',
+        data: {'text': text},
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('记日志失败：$e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
     _selectTab(0);
   }
