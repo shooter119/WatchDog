@@ -133,7 +133,7 @@ class _SettingsPageState extends State<SettingsPage> {
       return;
     }
     if (info == null) {
-      _showUpdateResult('已是最新版本', '当前版本 ${_displayVersion} 已是最新');
+      _showUpdateResult('已是最新版本', '当前版本 $_displayVersion 已是最新');
       return;
     }
     _showUpdateDialog(info);
