@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:ota_update/ota_update.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 远端更新信息（来自 GitHub Releases）
 class UpdateInfo {
@@ -42,6 +43,9 @@ class UpdateService {
   static const userAgent = 'watchdog-app-updater/1.0';
 
   static const MethodChannel _installChannel = MethodChannel('watchdog/screen');
+  static const _apkFilename = 'watchdog-update.apk';
+  static const _cachedTagKey = 'ota_cached_tag';
+  static const _cachedShaKey = 'ota_cached_sha256';
 
   /// Android 8+ 安装 APK 需要"安装未知来源应用"授权。
   /// 返回 false 时下载后也无法弹出安装界面，应先引导用户授权。
@@ -66,6 +70,42 @@ class UpdateService {
     } catch (_) {
       // 平台不支持时静默忽略
     }
+  }
+
+  /// 是否已有该版本已下载并通过校验的安装包。
+  ///
+  /// APK 保存在应用内部目录；这里只在版本和校验值都匹配时复用，避免远端
+  /// 发布新版本后误装旧包。原生层会再确认文件确实存在且非空。
+  static Future<bool> hasReadyPackage(UpdateInfo update) async {
+    try {
+      // 没有发布端 SHA256 就不能证明本地文件已校验，宁可重新下载。
+      if (update.sha256 == null) return false;
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString(_cachedTagKey) != update.tagName ||
+          prefs.getString(_cachedShaKey) != update.sha256) {
+        return false;
+      }
+      return await _installChannel
+              .invokeMethod<bool>('hasDownloadedUpdate')
+              .timeout(const Duration(seconds: 2)) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 重新拉起系统安装器，不重复下载已校验的 APK。
+  static Future<void> installReadyPackage() async {
+    await _installChannel
+        .invokeMethod<void>('installDownloadedUpdate')
+        .timeout(const Duration(seconds: 5));
+  }
+
+  static Future<void> _rememberReadyPackage(UpdateInfo update) async {
+    if (update.sha256 == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_cachedTagKey, update.tagName);
+    await prefs.setString(_cachedShaKey, update.sha256!);
   }
 
   final OtaUpdate _ota = OtaUpdate();
@@ -94,10 +134,10 @@ class UpdateService {
         return (null, '更新服务不可达（HTTP ${res.statusCode}）');
       }
       final html = utf8.decode(res.bodyBytes);
-      final ogMatch =
-          RegExp(r'og:url"\s+content="([^"]+)"').firstMatch(html);
-      final tagMatch =
-          RegExp(r'/releases/tag/([^/?]+)').firstMatch(ogMatch?.group(1) ?? '');
+      final ogMatch = RegExp(r'og:url"\s+content="([^"]+)"').firstMatch(html);
+      final tagMatch = RegExp(
+        r'/releases/tag/([^/?]+)',
+      ).firstMatch(ogMatch?.group(1) ?? '');
       if (tagMatch == null) return (null, '更新清单解析失败');
       final tagName = Uri.decodeComponent(tagMatch.group(1)!);
       if (tagName.isEmpty) return (null, '更新清单解析失败');
@@ -109,10 +149,13 @@ class UpdateService {
           'watchdog-$version-arm64-v8a.apk';
       // sha256 约定写在 release body 的 `SHA256: <hex>` 行（CI 自动生成），
       // markdown 渲染进 HTML 后以纯文本保留
-      final shaMatch =
-          RegExp(r'SHA256:\s*([0-9a-fA-F]{64})').firstMatch(html);
+      final shaMatch = RegExp(r'SHA256:\s*([0-9a-fA-F]{64})').firstMatch(html);
       return (
-        UpdateInfo(tagName: tagName, apkUrl: apkUrl, sha256: shaMatch?.group(1)),
+        UpdateInfo(
+          tagName: tagName,
+          apkUrl: apkUrl,
+          sha256: shaMatch?.group(1),
+        ),
         null,
       );
     } catch (e) {
@@ -122,11 +165,9 @@ class UpdateService {
 
   /// 下载并安装（下载进度 0-100 通过回调上报；错误通过回调 message 返回）。
   ///
-  /// 强制 `usePackageInstaller: true`：走系统 PackageInstaller 流程，安装器
-  /// 一定有系统确认界面（下载完成后必然弹出安装提示），且有真实的安装结果
-  /// 回调（INSTALLATION_DONE / INSTALLATION_ERROR）。默认的 ACTION_INSTALL_PACKAGE
-  /// 路径在未授权「安装未知来源」时会被系统静默拒绝且无任何回调，App 只能
-  /// 误报「下载完成」。
+  /// 普通应用使用 ACTION_INSTALL_PACKAGE 直接拉起系统安装界面。PackageInstaller
+  /// 的待确认结果依赖广播接收器，部分系统会限制从该后台回调启动 Activity；
+  /// 它更适合系统应用/静默安装，不适合这里的用户确认式 OTA。
   Future<void> downloadAndInstall(
     UpdateInfo update, {
     void Function(int percent)? onProgress,
@@ -135,12 +176,20 @@ class UpdateService {
   }) async {
     final completer = Completer<void>();
     StreamSubscription<OtaEvent>? sub;
+    Future<void>? rememberPackage;
     try {
+      if (await hasReadyPackage(update)) {
+        await installReadyPackage();
+        onInstalling?.call();
+        onProgress?.call(100);
+        return;
+      }
       final stream = _ota.execute(
         update.apkUrl,
         headers: {'User-Agent': userAgent},
+        destinationFilename: _apkFilename,
         sha256checksum: update.sha256,
-        usePackageInstaller: true,
+        usePackageInstaller: false,
       );
       sub = stream.listen(
         (event) {
@@ -148,6 +197,8 @@ class UpdateService {
             case OtaStatus.DOWNLOADING:
               onProgress?.call(int.tryParse(event.value ?? '') ?? 0);
             case OtaStatus.INSTALLING:
+              // 该事件只会在下载完成、SHA256 校验通过且系统安装 Intent 已发出后到达。
+              rememberPackage ??= _rememberReadyPackage(update);
               onInstalling?.call();
               onProgress?.call(100);
             case OtaStatus.INSTALLATION_DONE:
@@ -166,7 +217,9 @@ class UpdateService {
         },
         onError: (Object e) {
           if (!completer.isCompleted) {
-            completer.completeError(_errorText(OtaEvent(OtaStatus.INTERNAL_ERROR, '$e')));
+            completer.completeError(
+              _errorText(OtaEvent(OtaStatus.INTERNAL_ERROR, '$e')),
+            );
           }
         },
         onDone: () {
@@ -177,6 +230,7 @@ class UpdateService {
     } catch (e) {
       onError?.call(e.toString());
     } finally {
+      await rememberPackage;
       await sub?.cancel();
     }
   }
