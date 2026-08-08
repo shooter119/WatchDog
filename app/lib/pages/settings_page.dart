@@ -14,7 +14,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号：与 app/pubspec.yaml 的 version 保持一致，只在设置页底部展示
-const appVersion = '0.8.2+19';
+const appVersion = '0.8.3+20';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;

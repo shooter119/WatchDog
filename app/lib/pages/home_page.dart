@@ -751,16 +751,6 @@ class HomePageState extends State<HomePage> {
             ],
             const SizedBox(height: 8),
             Expanded(child: _buildResultCard(context, cfg)),
-            const SizedBox(height: 12),
-            if (!_recording && !_processing)
-              const Text(
-                '按住下方按钮说话，例：「张伟，20兆帕」',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
             const SizedBox(height: 24),
           ],
         ),
@@ -1042,37 +1032,45 @@ class HomePageState extends State<HomePage> {
       );
     }
     if (_transcript == null || _parsed == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.border),
+      // 引导区：内容不足时居中，窄屏可滚动不溢出
+      return LayoutBuilder(
+        builder: (ctx, box) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: box.maxHeight),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.surface,
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: const Icon(Icons.record_voice_over, size: 44, color: AppColors.textTertiary),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('按住下方按钮说话', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 12),
+                  _guide('进场登记', '「张伟，20兆帕」→ 自动开始倒计时'),
+                  _guide('多人进场', '「张伟20兆帕，刘洋22兆帕」→ 一次确认全部进场'),
+                  _guide('出场登记', '「刘洋出来了」→ 登记出火场'),
+                  _guide('火场随手记', '「三楼破拆完成」→ 自动记入火场日志'),
+                  _guide('火场提问', '「浓烟太大看不清路怎么办？」→ 转给辅助智囊'),
+                  if (_peopleEditors.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: _showPendingConfirm,
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: Text('继续确认已录入的 ${_peopleEditors.length} 人'),
+                    ),
+                  ],
+                ],
               ),
-              child: const Icon(Icons.record_voice_over, size: 44, color: AppColors.textTertiary),
             ),
-            const SizedBox(height: 24),
-            const Text('按住下方按钮说话', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 10),
-            _example('例：「张伟20兆帕，刘洋22兆帕」 → 多人一次确认进场'),
-            const SizedBox(height: 4),
-            _example('例：「张伟，20兆帕」 → 单人进场，可用34分钟'),
-            const SizedBox(height: 4),
-            _example('例：「刘洋出来了」 → 登记出火场'),
-            if (_peopleEditors.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              FilledButton.icon(
-                onPressed: _showPendingConfirm,
-                icon: const Icon(Icons.fact_check_outlined),
-                label: Text('继续确认已录入的 ${_peopleEditors.length} 人'),
-              ),
-            ],
-          ],
+          ),
         ),
       );
     }
@@ -1448,14 +1446,42 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _example(String text) {
+  /// 引导行：分类标签 + 语音示例（覆盖全部语音意图）
+  Widget _guide(String label, String example) {
     return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
-      child: Text(text, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12.5)),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppColors.voice.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.voice,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              example,
+              style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
