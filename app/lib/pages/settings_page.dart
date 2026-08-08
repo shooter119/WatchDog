@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/alarm_service.dart';
 import '../services/foreground_keep_alive.dart';
+import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/update_service.dart';
@@ -16,7 +17,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '0.11.2+28';
+const appVersion = '0.11.3+29';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -210,8 +211,16 @@ class _SettingsPageState extends State<SettingsPage> {
   /// 下载安装：进度对话框 → 安装阶段自动关闭进度框并提示用户在系统界面完成安装
   Future<void> _startDownload(UpdateInfo info) async {
     if (!mounted) return;
+    // OTA 全链路操作日志埋点（服务器可查，定位设备版本与安装失败原因）
+    final opId = 'ota-${DateTime.now().millisecondsSinceEpoch}';
+    void trace(String stage, String msg, {String level = 'info'}) {
+      OpLogService.instance.record(opId, stage, msg, level: level, data: {'version': info.tagName});
+    }
+
     // 安装前置：Android 8+ 需"安装未知来源应用"授权，未授权先引导（否则下载完也弹不出安装界面）
     final canInstall = await UpdateService.canRequestPackageInstalls();
+    trace('ota_permission_check', canInstall ? '安装权限已授权' : '未授权安装未知来源应用',
+        level: canInstall ? 'info' : 'warn');
     if (!mounted) return;
     if (!canInstall) {
       final go = await showDialog<bool>(
@@ -236,6 +245,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     final progress = ValueNotifier<int>(0);
     var installPrompted = false; // 已提示「安装中」（避免完成后重复弹框）
+    var downloadStarted = false;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -259,9 +269,16 @@ class _SettingsPageState extends State<SettingsPage> {
     String? fail;
     await UpdateService().downloadAndInstall(
       info,
-      onProgress: (p) => progress.value = p,
+      onProgress: (p) {
+        if (!downloadStarted) {
+          downloadStarted = true;
+          trace('ota_download_start', '开始下载更新包');
+        }
+        progress.value = p;
+      },
       onInstalling: () {
         installPrompted = true;
+        trace('ota_installing', '下载完成，进入系统安装阶段');
         // 关闭进度对话框，提示用户去系统安装界面操作
         if (mounted) Navigator.of(context, rootNavigator: true).pop();
         if (mounted) _showUpdateResult('安装中', '安装包已就绪，请在弹出的系统界面完成安装');
@@ -270,9 +287,32 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (!mounted) return;
     if (fail != null) {
-      _showUpdateResult('更新失败', fail!);
+      trace('ota_fail', fail!, level: 'error');
+      // 安装类失败（未授权/系统拦截）：提供一键跳转授权页，避免用户无从下手
+      if (fail!.contains('安装未完成') || fail!.contains('未知来源')) {
+        final go = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('安装未完成', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            content: Text(fail!, style: const TextStyle(fontSize: 14, height: 1.5)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('知道了')),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('去设置开启'),
+              ),
+            ],
+          ),
+        );
+        if (go == true) await UpdateService.openUnknownAppSourcesSettings();
+      } else {
+        _showUpdateResult('更新失败', fail!);
+      }
     } else if (!installPrompted) {
+      trace('ota_done', '下载完成（未进入安装阶段）');
       _showUpdateResult('下载完成', '请在弹出的系统界面完成安装');
+    } else {
+      trace('ota_done', '安装流程已交系统处理');
     }
   }
 
