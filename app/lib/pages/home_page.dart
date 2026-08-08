@@ -271,6 +271,19 @@ class HomePageState extends State<HomePage> {
         _processing = false;
       });
       widget.onProcessingChanged?.call(false);
+      // 进场意图但未识别到任何姓名：不进空确认页，提示重新报读
+      if (parsed.action == 'enter' && parsed.people.isEmpty) {
+        OpLogService.instance.record(opId, 'entry_empty', '进场意图未识别到姓名', data: {'text': text});
+        setState(() {
+          _transcript = null;
+          _parsed = null;
+          _error = '未识别到进场人员姓名，请重新报：姓名+压力';
+          _processing = false;
+        });
+        widget.onProcessingChanged?.call(false);
+        _endOp('entry_empty');
+        return;
+      }
       if (parsed.action == 'exit') {
         if (parsed.people.isNotEmpty) {
           await _handleExit(parsed.people.map((p) => p.name).toList());

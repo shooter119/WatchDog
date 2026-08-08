@@ -165,8 +165,7 @@ Entry _entry({
 }
 
 /// 测试专用 ApiClient：固定返回 张伟+李娜 的转写/解析结果
-class _FakeApi extends ApiClient {
-  _FakeApi({
+class _FakeApi extends ApiClient {  _FakeApi({
     this.multiPressure = true,
     this.rounds = const [],
     this.exitOnCall = 0,
@@ -297,6 +296,13 @@ class _FakeApi extends ApiClient {
     onChunk(reply);
     return reply;
   }
+}
+
+/// 模拟"进场意图但未识别到姓名"的解析结果（ASR 同音错字未纠正的兜底场景）
+class _EmptyEntryApi extends _FakeApi {
+  @override
+  Future<ParseResult> parse(String text, {String? opId}) async =>
+      ParseResult(action: 'enter', people: const [], intent: VoiceIntent.entry);
 }
 
 /// 测试专用 AudioService：无真实录音
@@ -938,6 +944,24 @@ void main() {
   });
 
   group('HomePage 多人一次性确认', () {
+    testWidgets('进场意图未识别到姓名：提示重新报读，不进空确认页', (tester) async {
+      final api = _EmptyEntryApi();
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      expect(find.textContaining('未识别到进场人员姓名'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
     testWidgets('识别多人后平铺全部人员，一次确认全部进场', (tester) async {
       final api = _FakeApi();
       final c = _FakeController()..api = api;

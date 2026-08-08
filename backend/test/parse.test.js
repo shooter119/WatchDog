@@ -176,3 +176,19 @@ test('parseTextWithDeepSeek 环境音意图但文本含名单时兜底为 note',
   const parsed = await parseTextWithDeepSeek({ apiKey: 'k', text: '李娜在不在火场里', firefighters: ['李娜'] });
   assert.equal(parsed.intent, 'note');
 });
+
+test('guardrailIntent：入场词+压力但 people 空 → 强制 entry（进场登记宁多勿漏）', () => {
+  const { guardrailIntent } = require('../src/parse');
+  // 人名被 ASR 听错（洪辰→层层）导致 people 空，但"进入火场+压力"证据充分 → entry
+  assert.equal(
+    guardrailIntent('层层进入火场空呼气钢瓶为九升压力十兆帕', { intent: 'note', action: 'unknown', people: [] }),
+    'entry'
+  );
+  // 纯日志陈述句无入场证据 → 保持 note
+  assert.equal(guardrailIntent('现场浓烟很大，正在铺设水带', { intent: 'note', action: 'unknown', people: [] }), 'note');
+  // 有入场证据的 entry（people 空）不被降级
+  assert.equal(
+    guardrailIntent('有人进入火场压力十五兆帕', { intent: 'entry', action: 'enter', people: [] }),
+    'entry'
+  );
+});

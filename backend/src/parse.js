@@ -24,7 +24,7 @@ intent 判断规则（最重要，决定 App 跳转）：
 3. 一句话可能包含多人：如"张伟20兆帕，刘洋22兆帕，王强十五个压"，people 数组需包含全部明确提到的进场人员，按说话顺序排列，不要遗漏、不要合并、不要只取第一个
 4. 数字可能以中文表示（二十、15），请统一转为数字
 5. 压力单位换算：1兆帕=10个大气压，"20个压"=20MPa，"2个压"=2MPa
-6. 姓名优先匹配消防员名单（见下文）
+*6. 姓名必须与消防员名单做同音/近似字纠正：语音识别文本中的姓名若与名单中某人读音相同或近似（同音字、平翘舌/前后鼻音相近的错别字，如 名单"洪辰"被识别成"层层"、名单"陆河圣"识别成"路和胜"），必须纠正为名单中的准确姓名；名单外姓名按原文输出
 7. exit 时 people 只填姓名，pressure_mpa 为 null
 8. 无法确定姓名的人员不要放入 people，放入 note 说明
 9. 人数上限 10 人，超出部分在 note 中说明
@@ -152,12 +152,24 @@ function guardrailIntent(text, parsed, firefighters = []) {
   let intent = parsed.intent;
   if (!['entry', 'exit', 'note', 'ask', 'ignore'].includes(intent)) intent = 'note';
   const hasPeople = Array.isArray(parsed.people) && parsed.people.length > 0;
+  // 入场报数兜底：意图被降级/人名存疑时，文本含强入场动作词 + 压力 → 强制按进场处理。
+  // 进场登记是安全关键（宁多勿漏），姓名可在 App 确认页补全或重录
+  if (intent === 'note' && !hasPeople) {
+    const hasEnter = /(进入|进场|进火场|入火场|入场|开始作业|气瓶余量|进去了)/.test(text);
+    const hasPressure = /(兆帕|个压|大气压|气瓶|钢瓶|压力|余量)/.test(text);
+    if (hasEnter && hasPressure) return 'entry';
+  }
   // 出场意图：从火场拿物品、或无人名且无强出场动作词 → 按日志处理，不误登记离场
   if (intent === 'exit' && (TAKE_OUT_WORDS.some((w) => text.includes(w)) || (!hasPeople && !EXIT_ACTION_WORDS.some((w) => text.includes(w))))) {
     return 'note';
   }
-  // 进场意图但无人可登记 → 按日志兜底
-  if (intent === 'entry' && !hasPeople) return 'note';
+  // 进场意图但无人可登记：有"入场动作词+压力"强证据的保留 entry（交确认页补名），
+  // 无证据（DeepSeek 幻觉）降级为日志
+  if (intent === 'entry' && !hasPeople) {
+    const hasEnter = /(进入|进场|进火场|入火场|入场|开始作业|气瓶余量|进去了)/.test(text);
+    const hasPressure = /(兆帕|个压|大气压|气瓶|钢瓶|压力|余量)/.test(text);
+    if (!(hasEnter && hasPressure)) return 'note';
+  }
   // 环境音意图：默认保留（安全员主动按键报话即记录信号），仅明确噪音才允许丢弃——
   // 1) 命中名单/火场痕迹/多人 必救回；2) 长完整陈述句（路况、情况通报等）同样救回；3) 仅短句+噪音词才放行 ignore
   if (intent === 'ignore') {
