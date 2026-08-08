@@ -145,10 +145,14 @@ class AppController extends ChangeNotifier {
       } catch (_) {
         // 日志拉取失败不影响主流程（entries 已成功）
       }
-      // 本场景被其他设备归档：检测后驱动看板横幅（失败静默，不阻断主流程）
+      // 本场景被其他设备归档：检测后驱动看板横幅（失败静默，不阻断主流程）。
+      // identical 校验：结束任务换码瞬间，并发轮询可能仍持旧 api 实例，
+      // 其检测结果属于旧场景，忽略避免横幅残留在新场景。
       if (sceneEnded == null) {
         try {
-          sceneEnded = await api!.fetchSceneState();
+          final a2 = api;
+          final state = await api!.fetchSceneState();
+          if (identical(a2, api)) sceneEnded = state;
         } catch (_) {}
       }
       syncError = null;
@@ -326,9 +330,15 @@ class AppController extends ChangeNotifier {
     OpLogService.instance.record(op, 'scene_end', '结束任务（归档场景）');
     final newCode = await a.endTask(opId: op);
     await Settings.setSceneCode(newCode);
+    // 换码瞬间并发轮询可能正用旧 api 检测到旧场景已归档，强制清状态与数据，
+    // 保证界面立即清零且不残留"本场景已结束"横幅（sync 若被轮询占用跳过，轮询随后会拉到新场景数据）
     sceneEnded = null;
+    entries = [];
+    notes = [];
     await refreshConfig();
     await sync();
+    sceneEnded = null; // 兜底：旧 api 轮询在换码窗口写入的归档状态
+    notifyListeners();
     OpLogService.instance.record(
       op,
       'scene_end_done',
@@ -352,8 +362,12 @@ class AppController extends ChangeNotifier {
     );
     await Settings.setSceneCode(newCode);
     sceneEnded = null;
+    entries = [];
+    notes = [];
     await refreshConfig();
     await sync();
+    sceneEnded = null; // 兜底：换码窗口内旧 api 轮询写入的归档状态
+    notifyListeners();
     OpLogService.instance.flush(api: api);
   }
 

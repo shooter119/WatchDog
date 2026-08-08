@@ -1,7 +1,7 @@
 name: watchdog
 description: 消防救援现场安全管控 - 语音录入与气瓶倒计时
 publish_to: "none"
-version: 0.7.0+15
+version: 0.7.1+16
 
 environment:
   sdk: ^3.10.0

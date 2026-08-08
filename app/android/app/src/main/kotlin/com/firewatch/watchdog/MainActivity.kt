@@ -63,8 +63,8 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "isNotificationPolicyAccessGranted" -> {
-                    val am = getSystemService(AUDIO_SERVICE) as AudioManager
-                    result.success(am.isNotificationPolicyAccessGranted)
+                    val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+                    result.success(nm.isNotificationPolicyAccessGranted)
                 }
                 // 勿扰权限被拒后的恢复路径：跳系统勿扰设置页
                 "openNotificationPolicySettings" -> {
