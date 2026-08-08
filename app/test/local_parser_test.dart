@@ -59,6 +59,28 @@ void main() {
       expect(r.action, 'unknown');
       expect(r.people, isEmpty);
     });
+
+    test('出警途中路况通报：完整陈述句保留为 note（宁记不错过）', () {
+      final r = p.parse('路上遇到小学放学，车队堵车。', firefighters: []);
+      expect(r.intent, 'note');
+    });
+
+    test('火场指挥语境：无名单姓名也保留为 note', () {
+      final r = p.parse('带队指挥员陆和胜', firefighters: ['陆河圣']);
+      expect(r.intent, 'note');
+    });
+
+    test('纯噪音（测试/语气词）判 ignore', () {
+      expect(p.parse('咳咳，测试测试').intent, 'ignore');
+      expect(p.parse('嗯').intent, 'ignore');
+      expect(p.parse('喂喂').intent, 'ignore');
+      expect(p.parse('哦哦哦').intent, 'ignore');
+    });
+
+    test('通信确认短句保留为 note（收到/明白）', () {
+      expect(p.parse('收到').intent, 'note');
+      expect(p.parse('明白').intent, 'note');
+    });
   });
 
   group('LocalParser 出场解析', () {

@@ -104,9 +104,22 @@ test('guardrailAction 正常进场不受影响', () => {
 });
 
 // guardrailIntent：环境音/无关内容与灭火救援无关时才允许丢弃
-test('guardrailIntent 纯环境音（咳嗽/测试/电视声）保留 ignore', () => {
+test('guardrailIntent 纯环境音（语气词/测试）保留 ignore', () => {
   assert.equal(guardrailIntent('咳咳，测试测试', { intent: 'ignore', people: [] }, []), 'ignore');
-  assert.equal(guardrailIntent('今晚油价又涨了', { intent: 'ignore', people: [] }, []), 'ignore');
+  assert.equal(guardrailIntent('嗯', { intent: 'ignore', people: [] }, []), 'ignore');
+  assert.equal(guardrailIntent('喂喂', { intent: 'ignore', people: [] }, []), 'ignore');
+});
+
+test('guardrailIntent 短句无痕迹且无噪音词时宁记不错过', () => {
+  assert.equal(guardrailIntent('哦哦哦', { intent: 'ignore', people: [] }, []), 'ignore');
+  assert.equal(guardrailIntent('收到', { intent: 'ignore', people: [] }, []), 'note');
+});
+
+test('guardrailIntent 完整陈述句默认保留（路况/情况通报等）', () => {
+  // 出警途中路况通报：不含火场关键词也应按日志保留
+  assert.equal(guardrailIntent('路上遇到小学放学，车队堵车。', { intent: 'ignore', people: [] }, []), 'note');
+  // 完整句闲聊：宁记不错过，宁可多记一条也不漏任务信息
+  assert.equal(guardrailIntent('今晚油价又涨了', { intent: 'ignore', people: [] }, []), 'note');
 });
 
 test('guardrailIntent 文本含名单姓名时禁止丢弃（宁记不错过）', () => {
@@ -119,6 +132,10 @@ test('guardrailIntent 文本含火场痕迹时禁止丢弃', () => {
   // 火场指挥/到场语境（含与名单同音的姓名时更需兜底）
   assert.equal(guardrailIntent('带队指挥员陆和胜', { intent: 'ignore', people: [] }, ['陆河圣']), 'note');
   assert.equal(guardrailIntent('总队全勤指挥部到达现场', { intent: 'ignore', people: [] }, []), 'note');
+  // 行进/路况痕迹
+  assert.equal(guardrailIntent('途中堵车，预计晚十分钟到场', { intent: 'ignore', people: [] }, []), 'note');
+  // 通信确认
+  assert.equal(guardrailIntent('明白，马上增援', { intent: 'ignore', people: [] }, []), 'note');
 });
 
 test('guardrailIntent 搜救出物品误判 exit 降级 note', () => {
