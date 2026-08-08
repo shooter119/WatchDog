@@ -16,7 +16,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '0.11.0+26';
+const appVersion = '0.11.1+27';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -210,6 +210,30 @@ class _SettingsPageState extends State<SettingsPage> {
   /// 下载安装：进度对话框 → 安装阶段自动关闭进度框并提示用户在系统界面完成安装
   Future<void> _startDownload(UpdateInfo info) async {
     if (!mounted) return;
+    // 安装前置：Android 8+ 需"安装未知来源应用"授权，未授权先引导（否则下载完也弹不出安装界面）
+    final canInstall = await UpdateService.canRequestPackageInstalls();
+    if (!mounted) return;
+    if (!canInstall) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('需要开启安装权限', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          content: const Text(
+            '系统要求先允许本应用"安装未知来源应用"，否则下载完成后无法弹出安装界面。\n\n是否前往系统设置开启？',
+            style: TextStyle(fontSize: 14, height: 1.5),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('去设置'),
+            ),
+          ],
+        ),
+      );
+      if (go == true) await UpdateService.openUnknownAppSourcesSettings();
+      return; // 授权后需重新点击"立即更新"
+    }
     final progress = ValueNotifier<int>(0);
     var installPrompted = false; // 已提示「安装中」（避免完成后重复弹框）
     showDialog<void>(

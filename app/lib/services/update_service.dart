@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:ota_update/ota_update.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -39,6 +40,33 @@ class UpdateService {
   static const repoHome = 'https://github.com/shooter119/WatchDog';
   static const latestUrl = '$repoHome/releases/latest';
   static const userAgent = 'watchdog-app-updater/1.0';
+
+  static const MethodChannel _installChannel = MethodChannel('watchdog/screen');
+
+  /// Android 8+ 安装 APK 需要"安装未知来源应用"授权。
+  /// 返回 false 时下载后也无法弹出安装界面，应先引导用户授权。
+  /// 平台不可用/低版本/测试环境视为已授权（不阻断下载）。
+  static Future<bool> canRequestPackageInstalls() async {
+    try {
+      final v = await _installChannel
+          .invokeMethod<bool>('canRequestPackageInstalls')
+          .timeout(const Duration(seconds: 2));
+      return v ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// 打开系统"安装未知来源应用"授权页（本应用）
+  static Future<void> openUnknownAppSourcesSettings() async {
+    try {
+      await _installChannel
+          .invokeMethod('openUnknownAppSourcesSettings')
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 平台不支持时静默忽略
+    }
+  }
 
   final OtaUpdate _ota = OtaUpdate();
 

@@ -48,6 +48,30 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "canRequestPackageInstalls" -> {
+                    // Android 8+ 安装 APK 需"安装未知来源应用"授权（API 26 以下无此概念，视为已授权）
+                    val can = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        packageManager.canRequestPackageInstalls()
+                    } else {
+                        true
+                    }
+                    result.success(can)
+                }
+                "openUnknownAppSourcesSettings" -> {
+                    // 引导用户授权"安装未知来源应用"（OTA 安装前置条件）
+                    runOnUiThread {
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                                data = Uri.parse("package:$packageName")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("open_settings_failed", e.message, null)
+                        }
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
