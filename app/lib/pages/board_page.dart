@@ -55,7 +55,14 @@ class _BoardPageState extends State<BoardPage> {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
               children: [
-                const Flexible(child: Text('火场安全管控看板', style: AppTextStyles.h1)),
+                // 标题固定一行：窄屏自动等比缩小字号，不换行（与右侧连接状态同行）
+                const Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text('火场安全管控看板', style: AppTextStyles.h1, maxLines: 1),
+                  ),
+                ),
                 const Spacer(),
                 ConnectionStatus(
                   connected: !widget.controller.connectionLost,

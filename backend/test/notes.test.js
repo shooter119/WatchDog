@@ -128,3 +128,34 @@ test('实名用户发布日志携带 author，未实名为空串（匿名）', a
   const item = list.find((n) => n.text === '实名发布测试');
   assert.equal(item.author, '李娜');
 });
+
+test('日志作者：请求体 author 优先，其次按设备实名，缺省匿名', async () => {
+  // 请求体 author 直接生效（不依赖 user_settings）
+  const direct = await (await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ text: '直传作者测试', author: '王五' }),
+  })).json();
+  assert.equal(direct.author, '王五');
+  // 无 author 且无设备实名 → 匿名
+  const anon = await (await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ text: '无作者测试' }),
+  })).json();
+  assert.equal(anon.author, '');
+  // body author 带空格/超长 → trim + 截断
+  const trimmed = await (await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ text: 'trim测试', author: '  赵六  ' }),
+  })).json();
+  assert.equal(trimmed.author, '赵六');
+  // body author 优先于设备实名（设备实名已在其他测试设置过）
+  const deviceNamed = await (await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: { ...H, 'X-Device-Id': 'notes-device-1' },
+    body: JSON.stringify({ text: '优先级测试', author: '优先作者' }),
+  })).json();
+  assert.equal(deviceNamed.author, '优先作者');
+});

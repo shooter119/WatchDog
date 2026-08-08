@@ -614,12 +614,16 @@ app.post('/api/notes', (req, res, next) => {
     const clean = String(text || '').trim();
     if (!clean) return res.status(400).json({ error: '缺少日志内容' });
     if (clean.length > 2000) return res.status(400).json({ error: '日志内容过长（最多 2000 字）' });
-    // 发布者姓名：实名用户（设置页填写并同步到服务器）显示真名，否则匿名
-    const device = deviceKey(req);
-    let author = '';
-    if (device) {
-      const { settings } = db.getUserSettings(device, sceneKey(req));
-      author = String(settings.real_name || '').trim().slice(0, 32);
+    // 发布者姓名：优先用请求体 author（App 本地实名，实时生效）；
+    // 未携带时按设备实名（user_settings）兜底；都无则匿名
+    const submitted = String(req.body?.author || '').trim().slice(0, 32);
+    let author = submitted;
+    if (!author) {
+      const device = deviceKey(req);
+      if (device) {
+        const { settings } = db.getUserSettings(device, sceneKey(req));
+        author = String(settings.real_name || '').trim().slice(0, 32);
+      }
     }
     const note = db.createNote({
       id: crypto.randomUUID(),

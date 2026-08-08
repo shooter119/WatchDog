@@ -336,8 +336,16 @@ class HomePageState extends State<HomePage> {
       try {
         await widget.controller.addNote(noteText, opId: _opId);
         OpLogService.instance.record(_opId ?? '', 'exit_note', '出场事件已写入火场日志', data: {'text': noteText});
-      } catch (_) {
-        // 写日志失败不影响主流程
+      } catch (e) {
+        OpLogService.instance.record(_opId ?? '', 'exit_note_fail', '出场日志写入失败: $e', level: 'error', data: {'text': noteText});
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('出场已登记，但火场日志写入失败：$e'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
       widget.controller.tts.speak('$done 已登记出火场');
       if (mounted) {
@@ -425,8 +433,16 @@ class HomePageState extends State<HomePage> {
     try {
       await widget.controller.addNote(noteText, opId: _opId);
       OpLogService.instance.record(_opId ?? '', 'exit_all_note', '全员离场已写入火场日志', data: {'text': noteText});
-    } catch (_) {
-      // 写日志失败不影响主流程
+    } catch (e) {
+      OpLogService.instance.record(_opId ?? '', 'exit_all_note_fail', '全员离场日志写入失败: $e', level: 'error', data: {'text': noteText});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('离场已登记，但火场日志写入失败：$e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
     setState(() {
       _transcript = null;
@@ -599,8 +615,17 @@ class HomePageState extends State<HomePage> {
       try {
         await widget.controller.addNote(noteText, opId: _opId);
         OpLogService.instance.record(_opId ?? '', 'enter_note', '进场事件已写入火场日志', data: {'text': noteText});
-      } catch (_) {
-        // 写日志失败不影响主流程
+      } catch (e) {
+        // 写日志失败要可见，避免"登记成功但日志没出现"无从排查
+        OpLogService.instance.record(_opId ?? '', 'enter_note_fail', '进场日志写入失败: $e', level: 'error', data: {'text': noteText});
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('登记已成功，但火场日志写入失败：$e'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
       widget.controller.tts.speak('${done.join('、')}，已开始倒计时');
       if (mounted) {

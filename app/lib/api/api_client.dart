@@ -166,12 +166,17 @@ class ApiClient {
     return list.map((e) => Note.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<Note> createNote({required String text, String? category, String? opId}) async {
+  Future<Note> createNote({required String text, String? category, String? opId, String? author}) async {
     final res = await http
         .post(
           _uri('/api/notes'),
           headers: _opHeaders(opId),
-          body: jsonEncode({'text': text, if (category != null) 'category': category}),
+          body: jsonEncode({
+            'text': text,
+            if (category != null) 'category': category,
+            // 实名作者：随请求直接提交（本地实名，不依赖服务器 user_settings 同步时序/场景匹配）
+            if (author != null && author.isNotEmpty) 'author': author,
+          }),
         )
         .timeout(const Duration(seconds: 15));
     final body = jsonDecode(utf8.decode(res.bodyBytes));

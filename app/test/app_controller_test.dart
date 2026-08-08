@@ -17,6 +17,25 @@ class _OfflineApi extends ApiClient {
   Future<List<Hotword>> fetchHotwords() async => throw Exception('网络不可达');
 }
 
+/// 记录 createNote 收到的 author，验证实名随日志提交
+class _RecordingApi extends ApiClient {
+  _RecordingApi() : super(baseUrl: 'http://rec', sceneCode: 'test');
+  String? lastAuthor;
+
+  @override
+  Future<Note> createNote({required String text, String? category, String? opId, String? author}) async {
+    lastAuthor = author;
+    return Note(
+      id: 'n1',
+      text: text,
+      category: category ?? NoteCategory.other,
+      author: author ?? '',
+      createdAt: 1,
+      updatedAt: 1,
+    );
+  }
+}
+
 void main() {
   // AppController 构造会实例化 AlarmService/TtsService（插件通道），
   // 需要 testWidgets 的测试 binding 环境（与 widget_test 一致）
@@ -34,6 +53,20 @@ void main() {
       expect(c.hotwords.map((h) => h.word), containsAll(['火情', '破拆']));
       // 本地识别热词来源可用（名单 → 人名热词）
       expect(c.firefighters, isNotEmpty);
+    });
+
+    testWidgets('addNote 携带本地实名作者，随日志提交', (tester) async {
+      SharedPreferences.setMockInitialValues({'real_name': '李娜'});
+      final api = _RecordingApi();
+      final c = AppController()..api = api;
+      await c.addNote('实名日志测试');
+      expect(api.lastAuthor, '李娜');
+      // 未填实名 → 不携带 author（服务器按设备查/匿名）
+      SharedPreferences.setMockInitialValues({'real_name': ''});
+      final api2 = _RecordingApi();
+      final c2 = AppController()..api = api2;
+      await c2.addNote('匿名日志测试');
+      expect(api2.lastAuthor, isEmpty);
     });
 
     testWidgets('无缓存且服务器不可达：保持空列表不抛错', (tester) async {

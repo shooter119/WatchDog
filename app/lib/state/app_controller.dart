@@ -319,10 +319,12 @@ class AppController extends ChangeNotifier {
     await sync();
   }
 
-  /// 新增火场随手记（语音分流自动入日志 / 手动添加）
+  /// 新增火场随手记（语音分流自动入日志 / 手动添加）。
+  /// 实名作者随请求直接提交（本地实名立即生效，不依赖服务器 user_settings 同步）。
   Future<Note> addNote(String text, {String? category, String? opId}) async {
     final cat = category ?? NoteCategory.fromText(text);
-    final note = await api!.createNote(text: text, category: cat, opId: opId);
+    final author = await Settings.realName;
+    final note = await api!.createNote(text: text, category: cat, opId: opId, author: author);
     notes = [note, ...notes];
     notifyListeners();
     return note;
