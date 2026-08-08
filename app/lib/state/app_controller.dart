@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/models.dart';
@@ -422,6 +424,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 名单/热词本地缓存键（断网/服务器不可达时回退，保证本地识别热词与名单查看离线可用）
+  static const _kCachedFirefighters = 'cached_firefighters';
+  static const _kCachedHotwords = 'cached_hotwords';
+
+  /// 拉取名单与热词：成功写入本地缓存；失败（断网/服务器不可达）回退缓存。
+  /// 名单热词是本地识别的热词来源，火场无信号时也必须生效。
   Future<void> loadRoster() async {
     if (api == null) return;
     try {
@@ -430,7 +438,41 @@ class AppController extends ChangeNotifier {
       firefighters = f;
       hotwords = h;
       notifyListeners();
-    } catch (_) {}
+      await _cacheRoster();
+    } catch (_) {
+      await _restoreCachedRoster();
+    }
+  }
+
+  Future<void> _cacheRoster() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString(
+        _kCachedFirefighters,
+        jsonEncode(firefighters.map((f) => f.name).toList()),
+      );
+      await sp.setString(_kCachedHotwords, jsonEncode(hotwords.map((h) => h.word).toList()));
+    } catch (_) {
+      // 缓存失败不影响主流程
+    }
+  }
+
+  Future<void> _restoreCachedRoster() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final fNames = (jsonDecode(sp.getString(_kCachedFirefighters) ?? '[]') as List)
+          .map((e) => e.toString())
+          .toList();
+      final hWords = (jsonDecode(sp.getString(_kCachedHotwords) ?? '[]') as List)
+          .map((e) => e.toString())
+          .toList();
+      if (fNames.isEmpty && hWords.isEmpty) return; // 无缓存：保持现状（首次使用需在线同步一次）
+      firefighters = fNames.map((n) => Firefighter(id: '', name: n)).toList();
+      hotwords = hWords.map((w) => Hotword(id: '', word: w)).toList();
+      notifyListeners();
+    } catch (_) {
+      // 缓存损坏时忽略
+    }
   }
 
   List<String> get _rosterNames => firefighters.map((f) => f.name).toList();
