@@ -557,6 +557,7 @@ module.exports = {
   markSceneEnded,
   getSceneStates,
   purgeOldSceneStates,
+  FRUIT_NAMES,
   addLog,
   listLogs,
   clearLogs,

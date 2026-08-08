@@ -170,6 +170,7 @@ class _FakeApi extends ApiClient {
     this.noteOnCall = 0,
     this.transcribeText,
     this.chatHistory = const [],
+    this.endedScene,
     super.sceneCode = 'test',
   }) : super(baseUrl: 'http://test');
   final bool multiPressure;
@@ -191,8 +192,19 @@ class _FakeApi extends ApiClient {
 
   /// 智能体问答历史（旧→新）
   final List<ChatMessage> chatHistory;
+
+  /// 核验为已结束的场景码（输入该码时 App 提示任务已结束且不切换）
+  String? endedScene;
   final created = <String>[];
   int _parseCalls = 0;
+
+  @override
+  Future<SceneValidation> validateScene(String code) async {
+    if (endedScene != null && code == endedScene) {
+      return const SceneValidation(valid: true, exists: true, ended: true, newScene: '蜜桃');
+    }
+    return const SceneValidation(valid: true, exists: true, ended: false);
+  }
 
   @override
   Future<String> transcribe(Uint8List audioBytes, {String? opId}) async =>
@@ -2070,18 +2082,51 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('更换任务码：弹窗输入新码后保存并提示', (tester) async {
+    testWidgets('更换任务码：合法水果码核验通过后保存并提示', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
       await pumpTask(tester, c);
       await tester.tap(find.byIcon(Icons.edit_outlined));
       await tester.pumpAndSettle();
       expect(find.text('更换任务码'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).last, '苹果');
+      await tester.tap(find.text('确认更换'));
+      await tester.pumpAndSettle();
+      expect(await Settings.sceneCode, '苹果');
+      expect(find.textContaining('已切换到任务码 苹果'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('更换任务码：乱码被本地词表拦截，维持原场景码', (tester) async {
+      SharedPreferences.setMockInitialValues({'scene_code': 'TEST01'});
+      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
+      await pumpTask(tester, c);
+      await tester.tap(find.byIcon(Icons.edit_outlined));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).last, 'ABC123');
       await tester.tap(find.text('确认更换'));
       await tester.pumpAndSettle();
-      expect(await Settings.sceneCode, 'ABC123');
-      expect(find.textContaining('已切换到任务码 ABC123'), findsOneWidget);
+      // 原场景码保持，不切换
+      expect(await Settings.sceneCode, 'TEST01');
+      expect(find.textContaining('任务码不正确'), findsOneWidget);
+      expect(find.textContaining('已切换到任务码'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('更换任务码：已结束任务码被拒绝并提示新码', (tester) async {
+      SharedPreferences.setMockInitialValues({'scene_code': 'TEST01'});
+      final c = _FakeController()
+        ..api = _FakeApi(sceneCode: 'TEST01', endedScene: '桃子');
+      await pumpTask(tester, c);
+      await tester.tap(find.byIcon(Icons.edit_outlined));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '桃子');
+      await tester.tap(find.text('确认更换'));
+      await tester.pumpAndSettle();
+      // 原场景码保持，提示任务已结束并给出新码
+      expect(await Settings.sceneCode, 'TEST01');
+      expect(find.textContaining('该任务已结束'), findsOneWidget);
+      expect(find.textContaining('蜜桃'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

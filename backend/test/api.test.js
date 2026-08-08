@@ -8,6 +8,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-api-'));
 process.env.WATCHDOG_DATA_DIR = tmpDir;
 
 const app = require('../src/server');
+const db = require('../src/db');
 
 let server;
 let base;
@@ -292,6 +293,43 @@ test('POST /api/scenes/end 结束任务：分配新场景码并标记，幂等�
   assert.equal(ended.new_scene, r1.new_scene);
   // 新码不与既有场景冲突
   assert.ok(!scenes.some((s) => s.code === r1.new_scene));
+});
+
+test('GET /api/scenes/validate 核验场景码：乱码拒绝、水果码通过、已结束带新码', async () => {
+  // 乱码：valid=false
+  let v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent('随便乱写')}`)).json();
+  assert.equal(v.valid, false);
+  assert.equal(v.exists, false);
+  assert.equal(v.ended, false);
+  // 非水果场景码（历史数据，如 testscene）：valid=false（App 应拒绝切换）
+  v = await (await fetch(`${base}/api/scenes/validate?code=testscene`)).json();
+  assert.equal(v.valid, false);
+  // 空码：invalid（App 端空输入不会提交）
+  v = await (await fetch(`${base}/api/scenes/validate?code=`)).json();
+  assert.equal(v.valid, false);
+  // 旧数据 default 场景兼容
+  v = await (await fetch(`${base}/api/scenes/validate?code=default`)).json();
+  assert.equal(v.valid, true);
+  // 合法水果码且场景存在：直写 db 造活跃水果场景（HTTP header 传中文受 undici 限制）
+  const entryAt = Date.now();
+  db.createEntry({ id: 'validate-apple', scene: '苹果', name: '核验测试', pressureMpa: 20, durationMin: 34, entryAtMs: entryAt, exitAtMs: entryAt + 34 * 60000, source: 'voice', rawText: null });
+  v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent('苹果')}`)).json();
+  assert.equal(v.valid, true);
+  assert.equal(v.exists, true);
+  assert.equal(v.ended, false);
+  // 合法水果码但服务器无数据：valid=true, exists=false（可加入新任务）
+  v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent('香蕉')}`)).json();
+  assert.equal(v.valid, true);
+  assert.equal(v.exists, false);
+  // 已结束场景：ended=true 且携带服务端新码（将苹果场景归档）
+  db.markSceneEnded('苹果', 'test-device');
+  v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent('苹果')}`)).json();
+  assert.equal(v.valid, true);
+  assert.equal(v.ended, true);
+  assert.ok(v.new_scene);
+  // 空格容错
+  v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent(' 香蕉 ')}`)).json();
+  assert.equal(v.valid, true);
 });
 
 test('API_TOKEN 配置后未带令牌返回 401', async () => {

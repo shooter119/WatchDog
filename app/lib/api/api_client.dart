@@ -342,6 +342,22 @@ class ApiClient {
     return (body as Map)['new_scene']?.toString() ?? '';
   }
 
+  /// 核验场景码（更换任务码前调用）：格式（水果词表/default）+ 存在性 + 是否已归档。
+  /// 核验不通过时 App 必须维持原场景码，避免切换后设备失联。
+  Future<SceneValidation> validateScene(String code) async {
+    final uri = Uri.parse('$baseUrl/api/scenes/validate')
+        .replace(queryParameters: {'code': code});
+    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('核验失败(${res.statusCode})');
+    final m = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    return SceneValidation(
+      valid: m['valid'] == true,
+      exists: m['exists'] == true,
+      ended: m['ended'] == true,
+      newScene: m['new_scene']?.toString(),
+    );
+  }
+
   /// 查询当前场景是否已被归档（其他设备发起），返回 null 表示场景未结束
   Future<SceneState?> fetchSceneState() async {
     final res = await http.get(_uri('/api/scenes'), headers: _headers).timeout(const Duration(seconds: 10));
@@ -366,6 +382,21 @@ class ApiException implements Exception {
   ApiException(this.message);
   @override
   String toString() => message;
+}
+
+/// 场景码核验结果（GET /api/scenes/validate）
+class SceneValidation {
+  final bool valid; // 合法任务码（水果词表或 default）
+  final bool exists; // 服务器上已有该场景数据
+  final bool ended; // 该场景已被归档（任务已结束）
+  final String? newScene; // ended 时服务端分配的新场景码
+
+  const SceneValidation({
+    required this.valid,
+    required this.exists,
+    required this.ended,
+    this.newScene,
+  });
 }
 
 /// SSE 事件：增量内容 / 错误 / 结束

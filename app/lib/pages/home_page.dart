@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import '../services/audio_service.dart';
 import '../services/op_log_service.dart';
+import '../services/scene_code.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../state/app_controller.dart';
@@ -815,13 +816,60 @@ class HomePageState extends State<HomePage> {
       ),
     );
     if (newCode == null || newCode.isEmpty || !mounted) return;
-    await Settings.setSceneCode(newCode);
+    final code = newCode.trim();
+    // 核验 1：本地词表校验（乱码/随意输入直接拦截，不发网络请求）
+    if (!isValidSceneCode(code)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('任务码不正确：仅支持水果名称（如 苹果、香蕉）或 default'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return; // 维持原场景码，避免设备失联
+    }
+    if (code == current) return;
+    // 核验 2：服务器核验（格式、场景存在性、是否已归档）；任何失败都维持原场景
+    final api = widget.controller.api;
+    if (api != null) {
+      try {
+        final v = await api.validateScene(code);
+        if (!mounted) return;
+        if (!v.valid) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('任务码不正确：仅支持水果名称（如 苹果、香蕉）或 default'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+        if (v.ended) {
+          final hint = v.newScene == null ? '' : '，新任务码：${v.newScene}';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('该任务已结束$hint'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          return;
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('任务码核验失败（$e），已保持原任务码'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+    }
+    await Settings.setSceneCode(code);
     await widget.controller.refreshConfig();
     await widget.controller.sync();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已切换到任务码 $newCode'),
+        content: Text('已切换到任务码 $code'),
         duration: const Duration(seconds: 2),
       ),
     );

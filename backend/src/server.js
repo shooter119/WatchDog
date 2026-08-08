@@ -119,9 +119,34 @@ app.get('/api/config', (req, res) => {
 });
 
 // 场景列表（供多设备确认场景码、查看活跃场景）；已结束的场景携带归档信息
-app.get('/api/scenes', (req, res) => {
-  const states = new Map(db.getSceneStates().map((s) => [s.scene, s]));
-  res.json(db.listScenes().map((code) => ({ code, ...(states.get(code) || {}) })));
+app.get('/api/scenes', (req, res, next) => {
+  try {
+    const states = new Map(db.getSceneStates().map((s) => [s.scene, s]));
+    res.json(db.listScenes().map((code) => ({ code, ...(states.get(code) || {}) })));
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 场景码核验（App 更换任务码前调用，防止输错码导致设备失联）：
+// valid = 合法任务码（水果词表 或 兼容旧数据的 default）；exists = 服务器上有该场景数据；
+// ended = 该场景已被归档（携带服务端分配的新码 new_scene）
+app.get('/api/scenes/validate', (req, res, next) => {
+  try {
+    const code = String(req.query.code || '').trim().slice(0, 64);
+    const valid = code === 'default' || db.FRUIT_NAMES.includes(code);
+    const endedState = valid
+      ? db.getSceneStates().find((s) => s.scene === code)
+      : null;
+    res.json({
+      valid,
+      exists: valid && db.listScenes().includes(code),
+      ended: !!endedState,
+      ...(endedState ? { new_scene: endedState.new_scene } : {}),
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 // 结束任务：标记当前场景已归档并分配新场景码（幂等，多人同时发起返回同一新码）。
