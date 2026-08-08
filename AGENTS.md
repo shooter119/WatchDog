@@ -8,7 +8,9 @@
 - 临时调试文件（含密钥等）不入库。
 - 提交前必须通过验证（见下），构建/测试失败不允许提交。
 - **后端代码（backend/src/、deploy/）有修改时，验证通过后直接运行 `deploy/deploy.sh` 部署到线上**，无需用户提醒。
-- **版本号由 AI 智能决定**：每次准备发新版时，依据改动规模判断升级幅度（小优化/修复 → 补丁 +0.0.1；新功能 → 次版本 +0.1.0；重大重构/首个稳定版 → 主版本 +1.0.0），`+` 号后构建号必须递增。同步更新 `app/pubspec.yaml` 的 `version:` 并打 tag（`v<版本号>`），随发版一起 commit + push。
+- **版本号由 AI 智能决定**：每次准备发新版时，依据改动规模判断升级幅度（小优化/修复 → 补丁 +0.0.1；新功能 → 次版本 +0.1.0；重大重构/首个稳定版 → 主版本 +1.0.0），`+` 号后构建号必须递增。同步更新 `app/pubspec.yaml` 的 `version:` 与 `app/lib/pages/settings_page.dart` 的 `appVersion` 常量（fallback，运行时由 package_info_plus 读取覆盖）。
+- **发布 = push tag**：`git tag v<版本号>+<构建号>`（如 `v0.9.0+22`，**必须带 +build**，App 用它比较版本）+ `git push origin <tag>` → GitHub Actions（`.github/workflows/release.yml`）自动构建 arm64 正式签名 APK → 发布 GitHub Release（含 sha256 与自动 changelog）。设备端设置页「检查更新」→ 下载安装。
+- **OTA 分发链路**：GitHub Releases 直连（公开仓库免 token）；release body 必须含 `SHA256: <64位hex>` 行（CI 自动写入，App 下载后校验）；App 端 `app/lib/services/update_service.dart` 负责查询/比较/下载。
 
 ## 验证命令
 
@@ -48,6 +50,7 @@ deploy/                  部署脚本与配置
 - `backend/.env`（VOLC_APP_ID / VOLC_ACCESS_TOKEN / DEEPSEEK_API_KEY / API_TOKEN）不入库，只维护 `.env.example`。
 - `app/android/key.properties` 与 `watchdog-release.keystore` 不入库（正式签名）。
 - 涉及真实 key 的临时调试脚本不入库（如 `backend/asr-debug.js`）。
+- CI 签名：keystore/key.properties 已配为 GitHub Actions secrets（`WATCHDOG_KEYSTORE_B64` / `WATCHDOG_STORE_PASSWORD` / `WATCHDOG_KEY_ALIAS` / `WATCHDOG_KEY_PASSWORD`），workflow 构建后 keytool 指纹比对防静默 debug 签名。
 
 ## 部署（bytevirt VPS）
 
