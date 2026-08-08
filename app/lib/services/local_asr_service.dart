@@ -23,6 +23,13 @@ class LocalAsrService {
   static const _downloadBase =
       'https://bytevirt.meiyou.xyz:8443/models/$modelName';
 
+  /// 语音降噪模型（DPDFNet，9.8MB）：录音 → 降噪 → 识别，火场嘈杂环境提升人名/压力识别率。
+  /// 与 ASR 模型同目录下载（denoiser/），缺失时自动跳过降噪（不影响识别主流程）。
+  static const _denoiserName = 'denoiser';
+  static const _denoiserFile = 'dpdfnet2.onnx';
+  static const _denoiserDownloadBase =
+      'https://bytevirt.meiyou.xyz:8443/models/$_denoiserName';
+
   /// 旧模型目录（streaming 系列含崩溃 bug / 14M 小模型精度差 / Paraformer 不支持热词 / x-asr 词表稀疏），下载新模型后清理
   static const _legacyModelDirs = [
     'paraformer-zh-small-2024-03-09',
@@ -34,6 +41,7 @@ class LocalAsrService {
 
   OfflineRecognizer? _recognizer;
   String? _recognizerHotwordsSignature;
+  OfflineSpeechDenoiser? _denoiser;
   bool _initializing = false;
   Future<void>? _pendingInit;
 
@@ -42,6 +50,19 @@ class LocalAsrService {
     final dir = Directory('${base.path}/asr_models/$modelName');
     await dir.create(recursive: true);
     return dir;
+  }
+
+  Future<Directory> _denoiserDir() async {
+    final base = await getApplicationSupportDirectory();
+    final dir = Directory('${base.path}/asr_models/$_denoiserName');
+    await dir.create(recursive: true);
+    return dir;
+  }
+
+  /// 降噪模型是否已安装
+  Future<bool> isDenoiserInstalled() async {
+    final dir = await _denoiserDir();
+    return File('${dir.path}/$_denoiserFile').exists();
   }
 
   /// 模型是否已安装（五个文件齐全）
@@ -53,7 +74,7 @@ class LocalAsrService {
     return true;
   }
 
-  /// 下载模型（encoder + decoder + joiner + tokens + bpe.vocab），带进度回调
+  /// 下载模型（encoder + decoder + joiner + tokens + bpe.vocab + 降噪模型），带进度回调
   Future<void> downloadModel({void Function(int received, int total)? onProgress}) async {
     final dir = await _modelDir();
     for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile, _bpeVocabFile]) {
@@ -62,6 +83,17 @@ class LocalAsrService {
         path: '${dir.path}/$name',
         onProgress: onProgress,
       );
+    }
+    // 降噪模型（DPDFNet）：失败不阻断 ASR 模型下载（降噪只是增强项）
+    try {
+      final ddir = await _denoiserDir();
+      await _downloadFile(
+        url: '$_denoiserDownloadBase/$_denoiserFile',
+        path: '${ddir.path}/$_denoiserFile',
+        onProgress: onProgress,
+      );
+    } catch (_) {
+      // 降噪模型下载失败静默：识别仍可用，只是少了降噪
     }
     await _cleanupLegacyModels();
   }
@@ -128,13 +160,20 @@ class LocalAsrService {
   Future<void> removeModel() async {
     _recognizer?.free();
     _recognizer = null;
+    _denoiser?.free();
+    _denoiser = null;
     final dir = await _modelDir();
     try {
       await dir.delete(recursive: true);
     } catch (_) {}
+    final ddir = await _denoiserDir();
+    try {
+      await ddir.delete(recursive: true);
+    } catch (_) {}
   }
 
   /// 本地识别：wav 字节 → 文本。首次调用会加载模型（约 1-2 秒）。
+  /// 降噪模型已安装时先做 DPDFNet 语音增强，再喂识别器（火场嘈杂环境提升人名/压力识别率）。
   Future<String> transcribe(
     Uint8List wavBytes, {
     List<String> hotwords = const [],
@@ -145,7 +184,13 @@ class LocalAsrService {
     final wave = _parseWav(wavBytes);
     final stream = recognizer.createStream();
     try {
-      stream.acceptWaveform(samples: wave.samples, sampleRate: wave.sampleRate);
+      var samples = wave.samples;
+      final denoiser = _denoiser;
+      if (denoiser != null && samples.isNotEmpty) {
+        final denoised = denoiser.run(samples: samples, sampleRate: wave.sampleRate);
+        if (denoised.samples.isNotEmpty) samples = denoised.samples;
+      }
+      stream.acceptWaveform(samples: samples, sampleRate: wave.sampleRate);
       recognizer.decode(stream);
       return recognizer.getResult(stream).text.trim();
     } finally {
@@ -220,6 +265,28 @@ class LocalAsrService {
     );
     _recognizer = OfflineRecognizer(config);
     _recognizerHotwordsSignature = _signatureFor(hotwords);
+    await _ensureDenoiser();
+  }
+
+  /// 加载降噪模型（DPDFNet）：模型缺失/加载失败时静默跳过（降噪是增强项，不影响识别）
+  Future<void> _ensureDenoiser() async {
+    _denoiser?.free();
+    _denoiser = null;
+    try {
+      final dir = await _denoiserDir();
+      final model = '${dir.path}/$_denoiserFile';
+      if (!await File(model).exists()) return;
+      _denoiser = OfflineSpeechDenoiser(
+        OfflineSpeechDenoiserConfig(
+          model: OfflineSpeechDenoiserModelConfig(
+            dpdfnet: OfflineSpeechDenoiserDpdfNetModelConfig(model: model),
+            numThreads: 2,
+          ),
+        ),
+      );
+    } catch (_) {
+      // 降噪器加载失败静默
+    }
   }
 
   String _signatureFor(List<String> hotwords) => hotwords.join('|');
