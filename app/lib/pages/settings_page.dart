@@ -16,7 +16,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '0.8.5+22';
+const appVersion = '0.8.6+23';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -527,7 +527,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         '系统已关闭精确闹钟权限，后台提醒可能延迟',
                         style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
                       ),
-                      subtitle: const Text('请在系统设置-应用-安全员助手中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
+                      subtitle: const Text('请在系统设置-应用-火场智控中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
                     ),
                   ],
                   if (!_policyAccess) ...[
@@ -735,7 +735,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Column(
             children: [
               Text(
-                '安全员助手 WatchDog v$_displayVersion',
+                '火场智控 v$_displayVersion',
                 style: TextStyle(color: AppColors.textTertiary, fontSize: 12, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),

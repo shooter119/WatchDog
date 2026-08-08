@@ -31,4 +31,21 @@ void main() {
       expect(m, isNull);
     });
   });
+
+  group('releases/latest 302 页提取约定（免 api.github.com 限流）', () {
+    test('从 og:url meta 提取 tag（%2B 编码，需 decode）', () {
+      const ogUrl = '/shooter119/WatchDog/releases/tag/v0.8.5%2B22';
+      final m = RegExp(r'/releases/tag/([^/?]+)').firstMatch(ogUrl);
+      expect(Uri.decodeComponent(m?.group(1) ?? ''), 'v0.8.5+22');
+    });
+
+    test('下载 URL 约定：watchdog-<版本>-arm64-v8a.apk（+ 需编码）', () {
+      const tagName = 'v0.8.5+22';
+      final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
+      final apkUrl = 'https://github.com/shooter119/WatchDog/releases/download/'
+          '${Uri.encodeComponent(tagName)}/watchdog-$version-arm64-v8a.apk';
+      expect(apkUrl, contains('watchdog-0.8.5+22-arm64-v8a.apk'));
+      expect(apkUrl, contains('releases/download/v0.8.5%2B22/'));
+    });
+  });
 }

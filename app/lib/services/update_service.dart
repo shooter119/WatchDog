@@ -31,9 +31,13 @@ class UpdateInfo {
 
 /// OTA 更新服务：查询 GitHub Releases 最新版（公开仓库免 token），
 /// ota_update 下载（内部目录免存储权限 + sha256 校验）并拉起系统安装。
+///
+/// 版本查询走 github.com 主站（releases/latest 302 → 最新 tag 页，从 HTML
+/// 提取 SHA256），不依赖 api.github.com——匿名 API 限流 60 次/小时/出口 IP，
+/// 调试工具与多台设备共享 IP 时极易撞上 403。
 class UpdateService {
-  static const repoApi =
-      'https://api.github.com/repos/shooter119/WatchDog/releases/latest';
+  static const repoHome = 'https://github.com/shooter119/WatchDog';
+  static const latestUrl = '$repoHome/releases/latest';
   static const userAgent = 'watchdog-app-updater/1.0';
 
   final OtaUpdate _ota = OtaUpdate();
@@ -53,40 +57,34 @@ class UpdateService {
 
   Future<(UpdateInfo?, String?)> _fetchLatestRelease() async {
     try {
+      // releases/latest 302 到最新 tag 页（http 包跟随重定向后 body 已是
+      // 最终页，但 request.url 仍是最初地址），从 og:url meta 提取 tag
       final res = await http
-          .get(Uri.parse(repoApi), headers: {'User-Agent': userAgent})
+          .get(Uri.parse(latestUrl), headers: {'User-Agent': userAgent})
           .timeout(const Duration(seconds: 10));
       if (res.statusCode != 200) {
         return (null, '更新服务不可达（HTTP ${res.statusCode}）');
       }
-      final body =
-          jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-      final tagName = body['tag_name']?.toString() ?? '';
+      final html = utf8.decode(res.bodyBytes);
+      final ogMatch =
+          RegExp(r'og:url"\s+content="([^"]+)"').firstMatch(html);
+      final tagMatch =
+          RegExp(r'/releases/tag/([^/?]+)').firstMatch(ogMatch?.group(1) ?? '');
+      if (tagMatch == null) return (null, '更新清单解析失败');
+      final tagName = Uri.decodeComponent(tagMatch.group(1)!);
       if (tagName.isEmpty) return (null, '更新清单解析失败');
 
-      String? apkUrl;
-      int? size;
-      for (final a in ((body['assets'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
-        final name = a['name']?.toString() ?? '';
-        if (name.endsWith('.apk')) {
-          apkUrl = a['browser_download_url']?.toString();
-          size = (a['size'] as num?)?.toInt();
-          break;
-        }
-      }
-      if (apkUrl == null || apkUrl.isEmpty) return (null, '最新版未附带 APK 安装包');
-      // sha256 约定写在 release body 的 `SHA256: <hex>` 行（CI 自动生成）
-      final releaseBody = body['body']?.toString() ?? '';
+      final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
+      // asset 命名约定：watchdog-<版本>-arm64-v8a.apk（CI 构建产出）
+      final apkUrl =
+          '$repoHome/releases/download/${Uri.encodeComponent(tagName)}/'
+          'watchdog-$version-arm64-v8a.apk';
+      // sha256 约定写在 release body 的 `SHA256: <hex>` 行（CI 自动生成），
+      // markdown 渲染进 HTML 后以纯文本保留
       final shaMatch =
-          RegExp(r'SHA256:\s*([0-9a-fA-F]{64})').firstMatch(releaseBody);
+          RegExp(r'SHA256:\s*([0-9a-fA-F]{64})').firstMatch(html);
       return (
-        UpdateInfo(
-          tagName: tagName,
-          apkUrl: apkUrl,
-          sizeBytes: size,
-          sha256: shaMatch?.group(1),
-          changelog: releaseBody,
-        ),
+        UpdateInfo(tagName: tagName, apkUrl: apkUrl, sha256: shaMatch?.group(1)),
         null,
       );
     } catch (e) {
