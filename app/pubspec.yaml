@@ -33,3 +33,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/sounds/
+
+dependency_overrides:
+  package_info_plus:
+    path: third_party/package_info_plus
