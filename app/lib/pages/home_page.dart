@@ -1066,17 +1066,35 @@ class HomePageState extends State<HomePage> {
                     LayoutBuilder(
                       builder: (ctx, c) {
                         final itemW = (c.maxWidth - 10) / 2;
-                        return Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            SizedBox(width: itemW, child: _guideItem(Icons.login_rounded, '进场登记', '「张伟，20兆帕」\n自动开始倒计时')),
-                            SizedBox(width: itemW, child: _guideItem(Icons.groups_rounded, '多人进场', '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场')),
-                            SizedBox(width: itemW, child: _guideItem(Icons.logout_rounded, '出场登记', '「刘洋出来了」\n登记出火场')),
-                            SizedBox(width: itemW, child: _guideItem(Icons.update_rounded, '压力复核', '「张伟，15兆帕」\n场中报数，更新倒计时')),
-                            SizedBox(width: itemW, child: _guideItem(Icons.edit_note_rounded, '火场随手记', '「三楼破拆完成」\n自动记入火场日志')),
-                            SizedBox(width: itemW, child: _guideItem(Icons.assistant_rounded, '火场提问', '「浓烟太大看不清路怎么办？」\n转给辅助智囊')),
-                          ],
+                        // 三行等高：文字行数不同也保持六块整齐一致
+                        return IntrinsicHeight(
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: _guideRow(
+                                  itemW,
+                                  _guideItem(Icons.login_rounded, '进场登记', '「张伟，20兆帕」\n自动开始倒计时'),
+                                  _guideItem(Icons.groups_rounded, '多人进场', '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场'),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Expanded(
+                                child: _guideRow(
+                                  itemW,
+                                  _guideItem(Icons.logout_rounded, '出场登记', '「刘洋出来了」\n登记出火场'),
+                                  _guideItem(Icons.update_rounded, '压力复核', '「张伟，15兆帕」\n场中报数，更新倒计时'),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Expanded(
+                                child: _guideRow(
+                                  itemW,
+                                  _guideItem(Icons.edit_note_rounded, '火场随手记', '「三楼破拆完成」\n自动记入火场日志'),
+                                  _guideItem(Icons.assistant_rounded, '火场提问', '「浓烟太大看不清路怎么办？」\n转给辅助智囊'),
+                                ),
+                              ),
+                            ],
+                          ),
                         );
                       },
                     ),
@@ -1468,9 +1486,22 @@ class HomePageState extends State<HomePage> {
     );
   }
 
+  /// 引导网格行：两个等宽卡片，行内等高（较矮的卡片底部留白对齐）
+  Widget _guideRow(double itemW, Widget first, Widget second) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(width: itemW, child: first),
+        const SizedBox(width: 10),
+        SizedBox(width: itemW, child: second),
+      ],
+    );
+  }
+
   /// 引导网格项：图标 + 意图标签 + 语音示例（两行，覆盖全部语音意图）
   Widget _guideItem(IconData icon, String label, String example) {
     return Container(
+      key: ValueKey('guide-$label'),
       padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
       decoration: BoxDecoration(
         color: AppColors.surfaceSubtle.withValues(alpha: 0.6),

@@ -2016,6 +2016,17 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('语音引导：六个功能块文字行数不同也完全等高', (tester) async {
+      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
+      await pumpTask(tester, c);
+      const labels = ['进场登记', '多人进场', '出场登记', '压力复核', '火场随手记', '火场提问'];
+      final heights = labels
+          .map((l) => tester.getSize(find.byKey(ValueKey('guide-$l'))).height)
+          .toSet();
+      expect(heights.length, 1, reason: '六个引导块应完全等高，不得因文字行数不同而参差');
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('任务码复制：提示已复制', (tester) async {
       final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
       await pumpTask(tester, c);
