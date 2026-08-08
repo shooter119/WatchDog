@@ -1935,6 +1935,55 @@ void main() {
     });
   });
 
+  group('连接状态（平滑阈值）', () {
+    testWidgets('ConnectionStatus 两态渲染：已连接绿 / 已中断红并可重试', (tester) async {
+      var retried = 0;
+      Future<void> pump(bool connected) => tester.pumpWidget(
+            MaterialApp(
+              theme: buildAppTheme(),
+              home: Scaffold(
+                body: Center(
+                  child: ConnectionStatus(
+                    connected: connected,
+                    onRetry: () => retried++,
+                  ),
+                ),
+              ),
+            ),
+          );
+      await pump(true);
+      expect(find.text('已连接'), findsOneWidget);
+      expect(find.byIcon(Icons.cloud_done_outlined), findsOneWidget);
+      // 已连接态不响应重试点击
+      await tester.tap(find.byType(ConnectionStatus));
+      expect(retried, 0);
+      await pump(false);
+      expect(find.text('已中断'), findsOneWidget);
+      expect(find.byIcon(Icons.cloud_off_outlined), findsOneWidget);
+      expect(find.textContaining('点击重试'), findsOneWidget);
+      await tester.tap(find.byType(ConnectionStatus));
+      expect(retried, 1);
+      // 无橙色「连接中」状态（已移除）
+      expect(find.text('连接中'), findsNothing);
+      expect(find.byIcon(Icons.cloud_sync_outlined), findsNothing);
+    });
+
+    test('isConnectionLost：从未成功乐观绿，30 秒阈值判定', () {
+      const now = 1_000_000;
+      // 从未成功过 → 已连接（乐观）
+      expect(isConnectionLost(lastSyncSuccessAt: 0, nowMs: now), false);
+      // 刚成功 → 已连接
+      expect(isConnectionLost(lastSyncSuccessAt: now - 1000, nowMs: now), false);
+      // 29 秒内 → 已连接（瞬时抖动不红）
+      expect(isConnectionLost(lastSyncSuccessAt: now - 29000, nowMs: now), false);
+      // 恰好 30 秒 → 仍未红（严格大于）
+      expect(isConnectionLost(lastSyncSuccessAt: now - 30000, nowMs: now), false);
+      // 超过 30 秒 → 断线
+      expect(isConnectionLost(lastSyncSuccessAt: now - 30001, nowMs: now), true);
+      expect(isConnectionLost(lastSyncSuccessAt: now - 60000, nowMs: now), true);
+    });
+  });
+
   group('任务页（核心 hub）与结束任务', () {
     Future<void> pumpTask(WidgetTester tester, _FakeController c) async {
       await tester.pumpWidget(

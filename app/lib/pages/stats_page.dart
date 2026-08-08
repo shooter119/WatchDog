@@ -92,8 +92,7 @@ class _StatsPageState extends State<StatsPage> {
               child: Row(
                 children: [
                   ConnectionStatus(
-                    syncing: widget.controller.syncing,
-                    offline: widget.controller.syncError != null,
+                    connected: !widget.controller.connectionLost,
                     onRetry: widget.controller.startSync,
                   ),
                 ],

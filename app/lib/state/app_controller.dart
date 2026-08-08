@@ -46,6 +46,18 @@ class AppController extends ChangeNotifier {
   Timer? _tickTimer;
   final Map<String, int> _announced = {};
 
+  /// 最近一次同步成功时间戳（0 = 从未成功过）
+  int _lastSyncSuccessAt = 0;
+
+  /// 平滑断线判定：最近 [connectionLostThreshold] 毫秒内无一次同步成功才视为断线，
+  /// 避免网络瞬时抖动导致连接状态频繁变红。从未成功过时乐观视为已连接。
+  static const int connectionLostThreshold = 30000;
+
+  bool get connectionLost => isConnectionLost(
+        lastSyncSuccessAt: _lastSyncSuccessAt,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      );
+
   /// 本场景已被某设备结束任务（归档）：非空时看板顶部显示"切换到新任务"横幅
   SceneState? sceneEnded;
 
@@ -156,6 +168,7 @@ class AppController extends ChangeNotifier {
         } catch (_) {}
       }
       syncError = null;
+      _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
       await _rescheduleNotifications();
     } catch (e) {
       syncError = e.toString();
@@ -445,4 +458,12 @@ class AppController extends ChangeNotifier {
     tts.stop();
     super.dispose();
   }
+}
+
+/// 平滑断线判定纯函数（可单测）：
+/// 从未同步成功（lastSyncSuccessAt == 0）→ 乐观视为已连接；
+/// 距上次成功超过 [thresholdMs] 毫秒 → 断线。
+bool isConnectionLost({required int lastSyncSuccessAt, required int nowMs, int thresholdMs = 30000}) {
+  if (lastSyncSuccessAt <= 0) return false;
+  return nowMs - lastSyncSuccessAt > thresholdMs;
 }

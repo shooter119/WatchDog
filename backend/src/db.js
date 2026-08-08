@@ -329,25 +329,36 @@ function listScenes() {
   return rows.map((r) => r.scene);
 }
 
-// 场景码字符集：剔除易混淆的 I/O/0/1
-const SCENE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+// 中文任务码词表：两字常见水果（便于对讲机口述与记忆，避开多音/生僻字）
+const FRUIT_NAMES = [
+  '苹果', '香蕉', '葡萄', '橙子', '草莓', '西瓜', '桃子', '梨子', '樱桃', '芒果',
+  '柚子', '柠檬', '菠萝', '椰子', '石榴', '柿子', '李子', '杏子', '蓝莓', '山竹',
+  '荔枝', '杨梅', '枇杷', '甘蔗', '山楂', '橄榄', '榴莲', '枣子', '蜜桃', '蜜橘',
+];
 
-/** 生成 6 位可读场景码（大写字母+数字，便于口述与跨设备手输） */
-function generateSceneCode(len = 6) {
-  const bytes = randomBytes(len);
-  let code = '';
-  for (let i = 0; i < len; i++) {
-    code += SCENE_CODE_ALPHABET[bytes[i] % SCENE_CODE_ALPHABET.length];
-  }
-  return code;
-}
+/** 新码复用窗口（天）：结束后 7 天内分配的新码不复用，防多设备切换分叉；7 天后旧场景数据已清理、设备早已切换 */
+const NEW_SCENE_RESERVE_DAYS = 7;
 
-/** 生成不与现有场景冲突的新场景码（含已结束场景分配过的码） */
+/**
+ * 生成不与现有场景冲突的中文任务码（单水果名）。
+ * 占用检查范围：活跃场景（entries 产生）+ 近 7 天内结束场景分配过的新码。
+ * 词表耗尽时抛明确错误（需同时活跃 + 近 7 天结束的任务数 ≥ 词表数才会触发）。
+ */
 function newUniqueSceneCode() {
-  const used = new Set([...listScenes(), ...db.prepare('SELECT new_scene FROM scene_state').all().map((r) => r.new_scene)]);
-  let code = generateSceneCode();
-  while (used.has(code)) code = generateSceneCode();
-  return code;
+  const used = new Set(listScenes());
+  const reserveCutoff = Date.now() - NEW_SCENE_RESERVE_DAYS * 24 * 3600 * 1000;
+  for (const r of db
+    .prepare('SELECT new_scene, ended_at FROM scene_state WHERE ended_at >= ?')
+    .all(reserveCutoff)) {
+    used.add(r.new_scene);
+  }
+  const free = FRUIT_NAMES.filter((f) => !used.has(f));
+  if (free.length === 0) {
+    throw new Error('中文任务码词表已全部占用，请结束部分任务后重试');
+  }
+  const bytes = randomBytes(4);
+  const idx = bytes.readUInt32BE(0) % free.length;
+  return free[idx];
 }
 
 /** 结束任务：标记场景已归档并分配新场景码。幂等——已结束返回既有记录 */
@@ -373,8 +384,8 @@ function getSceneStates() {
   return db.prepare('SELECT * FROM scene_state ORDER BY ended_at DESC').all();
 }
 
-/** 清理超过 days 天的场景结束标记，返回删除条数 */
-function purgeOldSceneStates(days = 90) {
+/** 清理超过 days 天的场景结束标记（默认 7 天：与新码复用窗口一致，7 天后旧新码即可复用），返回删除条数 */
+function purgeOldSceneStates(days = NEW_SCENE_RESERVE_DAYS) {
   const cutoff = Date.now() - days * 24 * 3600 * 1000;
   return db.prepare('DELETE FROM scene_state WHERE ended_at < ?').run(cutoff).changes;
 }

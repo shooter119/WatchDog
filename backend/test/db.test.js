@@ -133,7 +133,7 @@ test('listScenes 仅由 entries 产生（名单/热词全局共享不产生场�
 
 test('markSceneEnded：分配可读新码、幂等、不与既有场景冲突', () => {
   const s1 = db.markSceneEnded('sceneEnd', 'dev-abc');
-  assert.match(s1.new_scene, /^[A-HJ-NP-Z2-9]{6}$/);
+  assert.match(s1.new_scene, /^[一-鿿]{2}$/);
   assert.ok(s1.ended_at > 0);
   assert.equal(s1.ended_by, 'dev-abc');
   // 幂等：已结束场景返回既有记录（新码不变）
@@ -154,4 +154,32 @@ test('purgeOldSceneStates 清理结束标记', () => {
   assert.ok(db.getSceneStates().some((s) => s.scene === 'scenePurge'));
   db.purgeOldSceneStates(-1);
   assert.ok(!db.getSceneStates().some((s) => s.scene === 'scenePurge'));
+});
+
+test('中文任务码：近 7 天内新码计入占用，词表耗尽抛错，清理后恢复', () => {
+  // 连续分配若干场景：新码均为两字中文且互不重复
+  const codes = new Set();
+  for (let i = 0; i < 10; i++) {
+    const s = db.markSceneEnded(`fruit-${i}`, 'dev-x');
+    assert.match(s.new_scene, /^[\u4e00-\u9fff]{2}$/);
+    codes.add(s.new_scene);
+  }
+  assert.equal(codes.size, 10, '10 个场景应分配到互不重复的中文任务码');
+  // 新码不与既有场景码冲突
+  const scenes = db.listScenes();
+  for (const c of codes) {
+    assert.ok(!scenes.includes(c));
+  }
+  // 词表耗尽：持续分配直到抛错（防死循环，词表规模应在合理区间）
+  let n = 0;
+  try {
+    for (n = 0; n < 100; n++) db.markSceneEnded(`fruit-full-${n}`, 'dev-x');
+  } catch (e) {
+    assert.match(String(e.message), /词表已全部占用/);
+  }
+  assert.ok(n >= 10 && n < 100, `词表应 10~99 个（实际耗尽于 ${n} 个）`);
+  // 清理结束标记（模拟 7 天复用窗口过后）→ 恢复可分配
+  db.purgeOldSceneStates(-1);
+  const s = db.markSceneEnded('fruit-reuse', 'dev-x');
+  assert.match(s.new_scene, /^[\u4e00-\u9fff]{2}$/);
 });

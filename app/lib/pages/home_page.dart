@@ -724,8 +724,7 @@ class HomePageState extends State<HomePage> {
                 const Text('任务', style: AppTextStyles.h1),
                 const Spacer(),
                 ConnectionStatus(
-                  syncing: widget.controller.syncing,
-                  offline: widget.controller.syncError != null,
+                  connected: !widget.controller.connectionLost,
                   onRetry: widget.controller.startSync,
                 ),
               ],
@@ -807,7 +806,7 @@ class HomePageState extends State<HomePage> {
                 decoration: const InputDecoration(
                   isDense: true,
                   labelText: '任务码',
-                  hintText: '如 CP659A',
+                  hintText: '如 苹果',
                 ),
               ),
             ],
@@ -1632,23 +1631,26 @@ class _TaskBar extends StatelessWidget {
           ),
           Container(width: 1, height: 36, color: AppColors.border),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '在场 $activeCount 人',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                dangerCount > 0 ? '需关注 $dangerCount' : '状态正常',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: dangerCount > 0 ? AppColors.alarm : AppColors.textTertiary,
+          Tooltip(
+            message: '进入火场内部、正在气瓶倒计时管控的人数',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '在场 $activeCount 人',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                 ),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  dangerCount > 0 ? '需关注 $dangerCount' : '状态正常',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: dangerCount > 0 ? AppColors.alarm : AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 8),
           Tooltip(

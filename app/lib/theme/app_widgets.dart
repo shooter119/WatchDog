@@ -447,30 +447,30 @@ class _PulseGlowState extends State<PulseGlow>
   }
 }
 
-/// 连接状态：同步中显示橙色云图标 + 「连接中」；正常显示绿色云图标 + 「已连接」；断线显示红色云图标 + 「已中断」，点击可重试
+/// 连接状态：仅绿/红两态，避免频繁变化造成焦虑。
+/// 绿色「已连接」（正常，含同步中，不再显示橙色）；红色「已中断」（持续断线，点击可重试）。
+/// 红/绿切换由 AppController.connectionLost 平滑判定（30 秒无成功才转红）。
 class ConnectionStatus extends StatelessWidget {
-  final bool syncing;
-  final bool offline;
+  final bool connected;
   final VoidCallback? onRetry;
 
   const ConnectionStatus({
     super.key,
-    required this.syncing,
-    required this.offline,
+    required this.connected,
     this.onRetry,
   });
 
   @override
   Widget build(BuildContext context) {
     final Widget inner;
-    if (syncing) {
+    if (connected) {
       inner = const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.cloud_sync_outlined, size: 16, color: AppColors.voice),
+          Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
           SizedBox(width: 6),
           Text(
-            '连接中',
+            '已连接',
             style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12,
@@ -479,7 +479,7 @@ class ConnectionStatus extends StatelessWidget {
           ),
         ],
       );
-    } else if (offline) {
+    } else {
       inner = const Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -509,25 +509,9 @@ class ConnectionStatus extends StatelessWidget {
           ),
         ],
       );
-    } else {
-      inner = const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
-          SizedBox(width: 6),
-          Text(
-            '已连接',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      );
     }
     return GestureDetector(
-      onTap: offline ? onRetry : null,
+      onTap: connected ? null : onRetry,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(

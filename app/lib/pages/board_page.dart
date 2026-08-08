@@ -46,7 +46,6 @@ class _BoardPageState extends State<BoardPage> {
         return sa != sb ? sa.compareTo(sb) : a.exitAt.compareTo(b.exitAt);
       });
     final danger = active.where((e) => statusOf(e) != 'normal').toList();
-    final offline = widget.controller.syncError != null;
 
     return SafeArea(
       child: Column(
@@ -59,8 +58,7 @@ class _BoardPageState extends State<BoardPage> {
                 const Flexible(child: Text('火场安全管控看板', style: AppTextStyles.h1)),
                 const Spacer(),
                 ConnectionStatus(
-                  syncing: widget.controller.syncing,
-                  offline: offline,
+                  connected: !widget.controller.connectionLost,
                   onRetry: () => widget.controller.startSync(),
                 ),
               ],

@@ -14,7 +14,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号：与 app/pubspec.yaml 的 version 保持一致，只在设置页底部展示
-const appVersion = '0.8.0+17';
+const appVersion = '0.8.1+18';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -230,8 +230,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _SaveStatusBadge(state: _saveState),
               const Spacer(),
               ConnectionStatus(
-                syncing: widget.controller.syncing,
-                offline: widget.controller.syncError != null,
+                connected: !widget.controller.connectionLost,
                 onRetry: () => widget.controller.startSync(),
               ),
             ],

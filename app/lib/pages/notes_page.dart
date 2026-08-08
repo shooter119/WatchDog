@@ -49,8 +49,7 @@ class _NotesPageState extends State<NotesPage> {
                 ),
                 const SizedBox(width: 10),
                 ConnectionStatus(
-                  syncing: widget.controller.syncing,
-                  offline: widget.controller.syncError != null,
+                  connected: !widget.controller.connectionLost,
                   onRetry: widget.controller.startSync,
                 ),
               ],

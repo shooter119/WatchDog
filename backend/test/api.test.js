@@ -280,7 +280,7 @@ test('POST /api/scenes/end 结束任务：分配新场景码并标记，幂等�
   });
   const r1 = await (await fetch(`${base}/api/scenes/end`, { method: 'POST', headers: H })).json();
   assert.equal(r1.ok, true);
-  assert.match(r1.new_scene, /^[A-HJ-NP-Z2-9]{6}$/);
+  assert.match(r1.new_scene, /^[一-鿿]{2}$/);
   assert.ok(r1.ended_at > 0);
   // 幂等：再次结束返回同一新码
   const r2 = await (await fetch(`${base}/api/scenes/end`, { method: 'POST', headers: H })).json();
