@@ -301,9 +301,17 @@ test('GET /api/scenes/validate 核验场景码：乱码拒绝、水果码通过�
   assert.equal(v.valid, false);
   assert.equal(v.exists, false);
   assert.equal(v.ended, false);
-  // 非水果场景码（历史数据，如 testscene）：valid=false（App 应拒绝切换）
-  v = await (await fetch(`${base}/api/scenes/validate?code=testscene`)).json();
+  // 不存在的非水果码：valid=false（App 应拒绝切换）
+  v = await (await fetch(`${base}/api/scenes/validate?code=legacy-nonexist`)).json();
   assert.equal(v.valid, false);
+  // 活跃历史场景（非水果）：valid=true（老设备可加入，防锁死）。
+  // 顶层测试并发执行，用独立场景码自建数据，避免依赖其他测试的执行顺序/共享场景状态
+  const legacyAt = Date.now();
+  db.createEntry({ id: 'validate-legacy', scene: 'legacy-active-1', name: '历史场景', pressureMpa: 20, durationMin: 34, entryAtMs: legacyAt, exitAtMs: legacyAt + 1000, source: 'voice', rawText: null });
+  v = await (await fetch(`${base}/api/scenes/validate?code=legacy-active-1`)).json();
+  assert.equal(v.valid, true);
+  assert.equal(v.exists, true);
+  assert.equal(v.ended, false);
   // 空码：invalid（App 端空输入不会提交）
   v = await (await fetch(`${base}/api/scenes/validate?code=`)).json();
   assert.equal(v.valid, false);

@@ -19,6 +19,7 @@ import 'package:watchdog/pages/settings_page.dart';
 import 'package:watchdog/pages/stats_page.dart';
 import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
+import 'package:watchdog/services/scene_code.dart';
 import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/services/update_service.dart';
 import 'package:watchdog/state/app_controller.dart';
@@ -203,7 +204,12 @@ class _FakeApi extends ApiClient {
     if (endedScene != null && code == endedScene) {
       return const SceneValidation(valid: true, exists: true, ended: true, newScene: '蜜桃');
     }
-    return const SceneValidation(valid: true, exists: true, ended: false);
+    // 模拟服务器核验：水果词表 / default / 活跃历史场景（如 firestation-1）合法
+    const active = {'苹果', 'TEST01', 'firestation-1'};
+    final valid = kFruitSceneNames.contains(code) ||
+        code == kLegacyDefaultScene ||
+        active.contains(code);
+    return SceneValidation(valid: valid, exists: active.contains(code), ended: false);
   }
 
   @override
@@ -2129,7 +2135,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('更换任务码：乱码被本地词表拦截，维持原场景码', (tester) async {
+    testWidgets('更换任务码：乱码被服务器核验拒绝，维持原场景码', (tester) async {
       SharedPreferences.setMockInitialValues({'scene_code': 'TEST01'});
       final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
       await pumpTask(tester, c);
@@ -2142,6 +2148,20 @@ void main() {
       expect(await Settings.sceneCode, 'TEST01');
       expect(find.textContaining('任务码不正确'), findsOneWidget);
       expect(find.textContaining('已切换到任务码'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('更换任务码：服务器活跃的历史场景码（非水果）可切换', (tester) async {
+      SharedPreferences.setMockInitialValues({'scene_code': 'TEST01'});
+      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
+      await pumpTask(tester, c);
+      await tester.tap(find.byIcon(Icons.edit_outlined));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'firestation-1');
+      await tester.tap(find.text('确认更换'));
+      await tester.pumpAndSettle();
+      expect(await Settings.sceneCode, 'firestation-1');
+      expect(find.textContaining('已切换到任务码 firestation-1'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

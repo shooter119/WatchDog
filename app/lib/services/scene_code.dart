@@ -21,6 +21,14 @@ bool isValidSceneCode(String input) {
   return code == kLegacyDefaultScene || kFruitSceneNames.contains(code);
 }
 
+/// 前置快速校验（更换任务码前）：仅拦截空/超长等明显无效输入。
+/// 最终合法性由服务器核验决定（水果词表 / default / 服务器活跃的历史场景码
+/// 如 firestation-1 都允许），本地不限定词表以免锁死老场景码。
+bool isPlausibleSceneCode(String input) {
+  final code = input.trim();
+  return code.isNotEmpty && code.length <= 32;
+}
+
 final Random _random = Random();
 
 /// 生成一个随机水果场景码（首装默认场景码，与服务器分配的新码同一词表）

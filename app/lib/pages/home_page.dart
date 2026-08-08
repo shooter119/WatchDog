@@ -817,18 +817,19 @@ class HomePageState extends State<HomePage> {
     );
     if (newCode == null || newCode.isEmpty || !mounted) return;
     final code = newCode.trim();
-    // 核验 1：本地词表校验（乱码/随意输入直接拦截，不发网络请求）
-    if (!isValidSceneCode(code)) {
+    // 核验 1：本地前置校验（空/超长等明显无效输入直接拦截，不发网络请求）
+    if (!isPlausibleSceneCode(code)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('任务码不正确：仅支持水果名称（如 苹果、香蕉）或 default'),
+          content: Text('任务码不正确，请确认输入与其他设备一致'),
           duration: Duration(seconds: 3),
         ),
       );
       return; // 维持原场景码，避免设备失联
     }
     if (code == current) return;
-    // 核验 2：服务器核验（格式、场景存在性、是否已归档）；任何失败都维持原场景
+    // 核验 2：服务器核验（水果词表 / default / 活跃历史场景均合法）；
+    // 任何失败都维持原场景
     final api = widget.controller.api;
     if (api != null) {
       try {
@@ -837,7 +838,7 @@ class HomePageState extends State<HomePage> {
         if (!v.valid) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('任务码不正确：仅支持水果名称（如 苹果、香蕉）或 default'),
+              content: Text('任务码不正确，请确认输入与其他设备一致'),
               duration: Duration(seconds: 3),
             ),
           );

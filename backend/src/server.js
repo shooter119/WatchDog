@@ -130,18 +130,20 @@ app.get('/api/scenes', (req, res, next) => {
 });
 
 // 场景码核验（App 更换任务码前调用，防止输错码导致设备失联）：
-// valid = 合法任务码（水果词表 或 兼容旧数据的 default）；exists = 服务器上有该场景数据；
-// ended = 该场景已被归档（携带服务端分配的新码 new_scene）
+// valid = 合法任务码（水果词表 或 default 兼容 或 服务器上活跃的历史场景）；
+// exists = 服务器上有该场景数据；ended = 该场景已被归档（携带服务端分配的新码 new_scene）
 app.get('/api/scenes/validate', (req, res, next) => {
   try {
     const code = String(req.query.code || '').trim().slice(0, 64);
-    const valid = code === 'default' || db.FRUIT_NAMES.includes(code);
+    // 活跃场景列表（entries 产生）：历史非水果场景码（如 firestation-1）允许加入，避免老设备被锁死
+    const activeScenes = new Set(db.listScenes());
+    const valid = code === 'default' || db.FRUIT_NAMES.includes(code) || activeScenes.has(code);
     const endedState = valid
       ? db.getSceneStates().find((s) => s.scene === code)
       : null;
     res.json({
       valid,
-      exists: valid && db.listScenes().includes(code),
+      exists: valid && activeScenes.has(code),
       ended: !!endedState,
       ...(endedState ? { new_scene: endedState.new_scene } : {}),
     });

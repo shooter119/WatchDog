@@ -39,6 +39,21 @@ void main() {
     });
   });
 
+  group('isPlausibleSceneCode 前置校验', () {
+    test('空/纯空格/超长拦截', () {
+      expect(isPlausibleSceneCode(''), isFalse);
+      expect(isPlausibleSceneCode('   '), isFalse);
+      expect(isPlausibleSceneCode('a' * 33), isFalse);
+    });
+
+    test('常规输入放行（合法性交给服务器核验）', () {
+      expect(isPlausibleSceneCode('苹果'), isTrue);
+      expect(isPlausibleSceneCode('ABC123'), isTrue);
+      expect(isPlausibleSceneCode('firestation-1'), isTrue);
+      expect(isPlausibleSceneCode(' 香蕉 '), isTrue);
+    });
+  });
+
   group('generateSceneCode 首装生成', () {
     test('生成结果必在水果词表内', () {
       for (var i = 0; i < 50; i++) {
