@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">火场智控图形标志</title>
+  <desc id="desc">深色圆角方形内，四向场域框围合菱形判断核心，表达消防救援智能体对现场的定位与判断。</desc>
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="#111111"/>
+  <path fill="#ffffff" d="M120 120h116v44h-72v72h-44zM392 120v116h-44v-72h-72v-44zM120 392V276h44v72h72v44zM392 392H276v-44h72v-72h44z"/>
+  <path fill="#ffffff" d="M256 196 316 256 256 316 196 256Z"/>
+</svg>
