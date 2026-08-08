@@ -1,5 +1,5 @@
 const { DatabaseSync } = require('node:sqlite');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, randomBytes } = require('node:crypto');
 const path = require('path');
 const fs = require('fs');
 
@@ -90,6 +90,14 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_scene ON chat_messages(scene, created_at);
+
+CREATE TABLE IF NOT EXISTS scene_state (
+  scene TEXT PRIMARY KEY,
+  ended_at INTEGER NOT NULL,
+  ended_by TEXT,
+  new_scene TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 `);
 
 // 动态耗气率迁移：entries 增加实测耗气率列（可空，无采样时为 null）
@@ -321,6 +329,56 @@ function listScenes() {
   return rows.map((r) => r.scene);
 }
 
+// 场景码字符集：剔除易混淆的 I/O/0/1
+const SCENE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** 生成 6 位可读场景码（大写字母+数字，便于口述与跨设备手输） */
+function generateSceneCode(len = 6) {
+  const bytes = randomBytes(len);
+  let code = '';
+  for (let i = 0; i < len; i++) {
+    code += SCENE_CODE_ALPHABET[bytes[i] % SCENE_CODE_ALPHABET.length];
+  }
+  return code;
+}
+
+/** 生成不与现有场景冲突的新场景码（含已结束场景分配过的码） */
+function newUniqueSceneCode() {
+  const used = new Set([...listScenes(), ...db.prepare('SELECT new_scene FROM scene_state').all().map((r) => r.new_scene)]);
+  let code = generateSceneCode();
+  while (used.has(code)) code = generateSceneCode();
+  return code;
+}
+
+/** 结束任务：标记场景已归档并分配新场景码。幂等——已结束返回既有记录 */
+function markSceneEnded(scene, device = null) {
+  const existing = db.prepare('SELECT * FROM scene_state WHERE scene = ?').get(scene);
+  if (existing) return existing;
+  const now = Date.now();
+  const state = {
+    scene,
+    ended_at: now,
+    ended_by: device,
+    new_scene: newUniqueSceneCode(),
+    created_at: now,
+  };
+  db.prepare(
+    'INSERT INTO scene_state (scene, ended_at, ended_by, new_scene, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(state.scene, state.ended_at, state.ended_by, state.new_scene, state.created_at);
+  return state;
+}
+
+/** 全部场景结束状态（新→旧），供多设备轮询检测"本场景任务已结束" */
+function getSceneStates() {
+  return db.prepare('SELECT * FROM scene_state ORDER BY ended_at DESC').all();
+}
+
+/** 清理超过 days 天的场景结束标记，返回删除条数 */
+function purgeOldSceneStates(days = 90) {
+  const cutoff = Date.now() - days * 24 * 3600 * 1000;
+  return db.prepare('DELETE FROM scene_state WHERE ended_at < ?').run(cutoff).changes;
+}
+
 /** 追加一条操作日志（App 上报或服务端埋点共用） */
 function addLog({ scene = 'default', device = null, opId = null, level = 'info', stage = '', msg = '', data = null }) {
   db.prepare(
@@ -485,6 +543,9 @@ module.exports = {
   removeHotword,
   purgeOldExited,
   listScenes,
+  markSceneEnded,
+  getSceneStates,
+  purgeOldSceneStates,
   addLog,
   listLogs,
   clearLogs,

@@ -118,9 +118,34 @@ app.get('/api/config', (req, res) => {
   res.json({ calc: CFG.calc, asrConfigured: !!CFG.asr.appId, llmConfigured: !!CFG.llm.apiKey });
 });
 
-// 场景列表（供多设备确认场景码、查看活跃场景）
+// 场景列表（供多设备确认场景码、查看活跃场景）；已结束的场景携带归档信息
 app.get('/api/scenes', (req, res) => {
-  res.json(db.listScenes());
+  const states = new Map(db.getSceneStates().map((s) => [s.scene, s]));
+  res.json(db.listScenes().map((code) => ({ code, ...(states.get(code) || {}) })));
+});
+
+// 结束任务：标记当前场景已归档并分配新场景码（幂等，多人同时发起返回同一新码）。
+// 本机换码 + 其它设备轮询检测横幅提示后一键切换，实现场景级"界面清零"。
+app.post('/api/scenes/end', (req, res, next) => {
+  try {
+    const scene = sceneKey(req);
+    const device = deviceKey(req);
+    const state = db.markSceneEnded(scene, device);
+    logOp(req, 'info', 'scene_ended', '结束任务：场景已归档', {
+      newScene: state.new_scene,
+      endedAt: state.ended_at,
+      endedBy: state.ended_by,
+    });
+    res.json({
+      ok: true,
+      new_scene: state.new_scene,
+      ended_at: state.ended_at,
+      ended_by: state.ended_by,
+    });
+  } catch (e) {
+    logOp(req, 'error', 'scene_end_err', `结束任务失败: ${e.message || e}`);
+    next(e);
+  }
 });
 
 app.post('/api/transcribe', (req, res, next) => {
@@ -689,6 +714,17 @@ if (require.main === module) {
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的随手记`);
     } catch (e) {
       logger.error('清理旧随手记失败', e.message);
+    }
+    try {
+      const n = db.purgeOldChatMessages(logPurgeDays);
+      if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的问答记录`);
+    } catch (e) {
+      logger.error('清理旧问答记录失败', e.message);
+    }
+    try {
+      db.purgeOldSceneStates();
+    } catch (e) {
+      logger.error('清理旧场景结束标记失败', e.message);
     }
   };
   doPurge();

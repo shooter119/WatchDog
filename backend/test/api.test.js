@@ -263,8 +263,35 @@ test('消防员/热词 CRUD 与 409 查重', async () => {
 
 test('GET /api/scenes 列出活跃场景', async () => {
   const scenes = await (await fetch(`${base}/api/scenes`, { headers: H })).json();
-  assert.ok(scenes.includes('testscene'));
-  assert.ok(scenes.includes('sceneA'));
+  assert.ok(scenes.some((s) => s.code === 'testscene'));
+  assert.ok(scenes.some((s) => s.code === 'sceneA'));
+  // 未结束的场景不带归档字段
+  for (const s of scenes) {
+    assert.equal(s.ended_at, undefined);
+  }
+});
+
+test('POST /api/scenes/end 结束任务：分配新场景码并标记，幂等返回同一码', async () => {
+  // 先在场景内产生一条记录，确保场景存在
+  await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: '归档测试', pressure_mpa: 25 }),
+  });
+  const r1 = await (await fetch(`${base}/api/scenes/end`, { method: 'POST', headers: H })).json();
+  assert.equal(r1.ok, true);
+  assert.match(r1.new_scene, /^[A-HJ-NP-Z2-9]{6}$/);
+  assert.ok(r1.ended_at > 0);
+  // 幂等：再次结束返回同一新码
+  const r2 = await (await fetch(`${base}/api/scenes/end`, { method: 'POST', headers: H })).json();
+  assert.equal(r2.new_scene, r1.new_scene);
+  // GET /api/scenes 带归档状态
+  const scenes = await (await fetch(`${base}/api/scenes`, { headers: H })).json();
+  const ended = scenes.find((s) => s.code === 'testscene');
+  assert.equal(ended.ended_at, r1.ended_at);
+  assert.equal(ended.new_scene, r1.new_scene);
+  // 新码不与既有场景冲突
+  assert.ok(!scenes.some((s) => s.code === r1.new_scene));
 });
 
 test('API_TOKEN 配置后未带令牌返回 401', async () => {

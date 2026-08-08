@@ -291,6 +291,36 @@ class ApiClient {
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('同步设置失败(${res.statusCode})');
   }
+
+  /// 结束任务：标记当前场景已归档，返回服务端统一分配的新场景码（幂等）
+  Future<String> endTask({String? opId}) async {
+    final res = await http
+        .post(_uri('/api/scenes/end'), headers: _opHeaders(opId))
+        .timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) {
+      throw ApiException((body as Map)['error']?.toString() ?? '结束任务失败(${res.statusCode})');
+    }
+    return (body as Map)['new_scene']?.toString() ?? '';
+  }
+
+  /// 查询当前场景是否已被归档（其他设备发起），返回 null 表示场景未结束
+  Future<SceneState?> fetchSceneState() async {
+    final res = await http.get(_uri('/api/scenes'), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('获取场景状态失败(${res.statusCode})');
+    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    for (final item in list) {
+      final m = item as Map<String, dynamic>;
+      if (m['code'] == sceneCode && m['ended_at'] != null) {
+        return SceneState(
+          endedAt: (m['ended_at'] as num).toInt(),
+          endedBy: m['ended_by']?.toString(),
+          newScene: m['new_scene']?.toString(),
+        );
+      }
+    }
+    return null;
+  }
 }
 
 class ApiException implements Exception {

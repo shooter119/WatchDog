@@ -43,6 +43,28 @@ class _FakeController extends AppController {
   final exited = <String>[];
   final reported = <double>[];
 
+  /// 结束任务：非空时返回该新场景码（模拟服务端分配）
+  String? endTaskResult;
+  bool endTaskCalled = false;
+
+  /// 场景已归档（其他设备发起）：直接赋值 controller.sceneEnded 驱动横幅
+  int switchCount = 0;
+
+  @override
+  Future<String> endTask({String? opId}) async {
+    endTaskCalled = true;
+    sceneEnded = null;
+    notifyListeners();
+    return endTaskResult ?? 'NEWXYZ';
+  }
+
+  @override
+  Future<void> switchToNewScene() async {
+    switchCount++;
+    sceneEnded = null;
+    notifyListeners();
+  }
+
   @override
   void startSync() {} // 测试环境不启动轮询定时器（否则每秒刷新导致 pumpAndSettle 无法收敛）
 
@@ -144,7 +166,8 @@ class _FakeApi extends ApiClient {
     this.noteOnCall = 0,
     this.transcribeText,
     this.chatHistory = const [],
-  }) : super(baseUrl: 'http://test', sceneCode: 'test');
+    super.sceneCode = 'test',
+  }) : super(baseUrl: 'http://test');
   final bool multiPressure;
 
   /// 第 2、3... 次解析时返回的追加轮次（分批录入测试用）
@@ -1883,6 +1906,114 @@ void main() {
       await tester.pump();
       expect(taps, 2, reason: '处理态点击不应触发');
       expect(longPresses, 0, reason: '处理态长按不应触发');
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('结束任务（场景归档）', () {
+    testWidgets('看板结束任务按钮：二次确认后展示新场景码，取消不触发', (tester) async {
+      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])
+        ..endTaskResult = 'KX8MZP';
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: AnimatedBuilder(
+              animation: c,
+              builder: (_, __) => BoardPage(controller: c, onGoVoice: () {}),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      // 结束任务按钮存在
+      expect(find.byTooltip('结束任务'), findsOneWidget);
+      // 先取消：不触发结束
+      await tester.tap(find.byTooltip('结束任务'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('请确认灾情处置是否已结束'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(c.endTaskCalled, false);
+      // 再确认：展示新场景码
+      await tester.tap(find.byTooltip('结束任务'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认结束'));
+      await tester.pumpAndSettle();
+      expect(c.endTaskCalled, true);
+      expect(find.text('任务已结束'), findsOneWidget);
+      expect(find.text('KX8MZP'), findsOneWidget);
+      expect(find.text('复制'), findsOneWidget);
+      await tester.tap(find.text('知道了'));
+      await tester.pumpAndSettle();
+      expect(find.text('任务已结束'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('其他设备：归档横幅常驻，一键切换到新任务后消失', (tester) async {
+      final c = _FakeController(entries: [_entry(name: '李娜', remainingMin: 15)])
+        ..sceneEnded = SceneState(
+          endedAt: DateTime.now().millisecondsSinceEpoch - 60000,
+          endedBy: 'dev-x',
+          newScene: 'KX8MZP',
+        );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: AnimatedBuilder(
+              animation: c,
+              builder: (_, __) => BoardPage(controller: c, onGoVoice: () {}),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      // 横幅提示本场景已结束，不弹窗
+      expect(find.byKey(const Key('scene-ended-banner')), findsOneWidget);
+      expect(find.textContaining('本场景任务已结束'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+      // 一键切换到新任务
+      await tester.tap(find.text('切换到新任务'));
+      await tester.pumpAndSettle();
+      expect(c.switchCount, 1);
+      expect(find.byKey(const Key('scene-ended-banner')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页：场景码变化后自动重载历史（归档换码清零）', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final oldApi = _FakeApi(
+        sceneCode: 'old',
+        chatHistory: [
+          ChatMessage(
+            id: 'h1',
+            role: 'user',
+            content: '旧场景的问题',
+            createdAt: now - 3600000,
+          ),
+        ],
+      );
+      final newApi = _FakeApi(sceneCode: 'new');
+      final c = _FakeController()..api = oldApi;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('旧场景的问题'), findsOneWidget);
+      // 模拟结束任务换码：api 换到新场景（服务端新场景无历史）并通知
+      c.api = newApi;
+      c.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('旧场景的问题'), findsNothing);
+      expect(find.text('你好，我是水元素'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

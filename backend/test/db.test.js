@@ -130,3 +130,28 @@ test('listScenes 仅由 entries 产生（名单/热词全局共享不产生场�
   assert.ok(scenes.includes('x'));
   assert.ok(!scenes.includes('y'));
 });
+
+test('markSceneEnded：分配可读新码、幂等、不与既有场景冲突', () => {
+  const s1 = db.markSceneEnded('sceneEnd', 'dev-abc');
+  assert.match(s1.new_scene, /^[A-HJ-NP-Z2-9]{6}$/);
+  assert.ok(s1.ended_at > 0);
+  assert.equal(s1.ended_by, 'dev-abc');
+  // 幂等：已结束场景返回既有记录（新码不变）
+  const s2 = db.markSceneEnded('sceneEnd', 'dev-other');
+  assert.equal(s2.new_scene, s1.new_scene);
+  assert.equal(s2.ended_by, 'dev-abc');
+  // 新码不与既有场景码冲突
+  const scenes = db.listScenes();
+  assert.ok(!scenes.includes(s1.new_scene));
+  // getSceneStates 返回含该场景
+  const states = db.getSceneStates();
+  assert.ok(states.some((s) => s.scene === 'sceneEnd'));
+  assert.ok(states.some((s) => s.new_scene === s1.new_scene));
+});
+
+test('purgeOldSceneStates 清理结束标记', () => {
+  db.markSceneEnded('scenePurge', 'dev-x');
+  assert.ok(db.getSceneStates().some((s) => s.scene === 'scenePurge'));
+  db.purgeOldSceneStates(-1);
+  assert.ok(!db.getSceneStates().some((s) => s.scene === 'scenePurge'));
+});

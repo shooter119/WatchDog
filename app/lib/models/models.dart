@@ -266,9 +266,17 @@ class ParseResult {
   }
 }
 
+/// 场景结束状态：本场景已被某设备结束任务（归档），携带服务端统一分配的新场景码
+class SceneState {
+  final int endedAt;
+  final String? endedBy;
+  final String? newScene;
+
+  const SceneState({required this.endedAt, this.endedBy, this.newScene});
+}
+
 /// 智能体问答消息（user 提问 / assistant 回复）
-class ChatMessage {
-  final String id;
+class ChatMessage {  final String id;
   final String role; // user / assistant
   final String content;
   final int createdAt;

@@ -45,6 +45,9 @@ class AppController extends ChangeNotifier {
   Timer? _tickTimer;
   final Map<String, int> _announced = {};
 
+  /// 本场景已被某设备结束任务（归档）：非空时看板顶部显示"切换到新任务"横幅
+  SceneState? sceneEnded;
+
   Future<void> init() async {
     await tts.init();
     await alarm.init();
@@ -122,6 +125,12 @@ class AppController extends ChangeNotifier {
         notes = await api!.fetchNotes();
       } catch (_) {
         // 日志拉取失败不影响主流程（entries 已成功）
+      }
+      // 本场景被其他设备归档：检测后驱动看板横幅（失败静默，不阻断主流程）
+      if (sceneEnded == null) {
+        try {
+          sceneEnded = await api!.fetchSceneState();
+        } catch (_) {}
       }
       syncError = null;
       await _rescheduleNotifications();
@@ -276,6 +285,46 @@ class AppController extends ChangeNotifier {
     final a = api;
     if (a == null) return;
     await a.clearChatMessages();
+  }
+
+  /// 结束任务（归档）：服务端标记本场景已结束并分配新场景码 → 本机切换。
+  /// 其他设备轮询检测到归档后经 [switchToNewScene] 汇聚到同一新场景。
+  Future<String> endTask({String? opId}) async {
+    final a = api;
+    if (a == null) throw StateError('未连接服务器');
+    final op = opId ?? '';
+    OpLogService.instance.record(op, 'scene_end', '结束任务（归档场景）');
+    final newCode = await a.endTask(opId: op);
+    await Settings.setSceneCode(newCode);
+    sceneEnded = null;
+    await refreshConfig();
+    await sync();
+    OpLogService.instance.record(
+      op,
+      'scene_end_done',
+      '任务已结束，切换到新场景',
+      data: {'newScene': newCode},
+    );
+    OpLogService.instance.flush(api: api);
+    return newCode;
+  }
+
+  /// 其他设备响应归档横幅：切换到服务端统一分配的新场景码（各设备汇聚同一码）
+  Future<void> switchToNewScene() async {
+    final s = sceneEnded;
+    final newCode = s?.newScene;
+    if (newCode == null || newCode.isEmpty) return;
+    OpLogService.instance.record(
+      '',
+      'scene_switch',
+      '切换到已归档任务的新场景',
+      data: {'newScene': newCode},
+    );
+    await Settings.setSceneCode(newCode);
+    sceneEnded = null;
+    await refreshConfig();
+    await sync();
+    OpLogService.instance.flush(api: api);
   }
 
   Future<void> deleteNote(String id) async {
