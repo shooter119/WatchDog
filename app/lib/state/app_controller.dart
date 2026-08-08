@@ -508,7 +508,15 @@ class AppController extends ChangeNotifier {
   Future<String> _localTranscribe(Uint8List bytes, {String? opId}) async {
     final asr = localAsr;
     if (asr == null) throw StateError('未配置本地语音识别');
-    final text = await asr.transcribe(bytes, hotwords: [..._rosterNames, ..._hotwordTerms]);
+    final hotwords = [..._rosterNames, ..._hotwordTerms];
+    // 热词注入埋点：可验证名单/术语是否真正进入本地识别（排查同音错字问题）
+    OpLogService.instance.record(
+      opId ?? '',
+      'local_asr_hotwords',
+      '本地识别热词 ${hotwords.length} 个',
+      data: {'count': hotwords.length, 'sample': hotwords.take(8).toList()},
+    );
+    final text = await asr.transcribe(bytes, hotwords: hotwords);
     if (text.trim().isEmpty) {
       throw StateError('本地识别未听清，请再说一遍');
     }

@@ -129,5 +129,26 @@ void main() {
       expect(p.people.first.name, '李翔');
       expect(p.people.first.pressureMpa, 20);
     });
+
+    test('名单姓名同音纠正：陆河圣被听成路和胜仍判进场', () {
+      final p = LocalParser().parse(
+        '路和胜进入火场压力十三兆帕',
+        firefighters: ['陆河圣'],
+      );
+      expect(p.action, 'enter');
+      expect(p.intent, VoiceIntent.entry);
+      expect(p.people, hasLength(1));
+      expect(p.people.first.name, '陆河圣');
+      expect(p.people.first.pressureMpa, 13);
+    });
+
+    test('同音纠正不误伤：读音不同的姓名不替换', () {
+      final p = LocalParser().parse(
+        '王刚，十五兆帕',
+        firefighters: ['陆河圣'],
+      );
+      expect(p.people, hasLength(1));
+      expect(p.people.first.name, '王刚');
+    });
   });
 }

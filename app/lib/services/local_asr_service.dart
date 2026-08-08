@@ -261,7 +261,9 @@ class LocalAsrService {
       decodingMethod: 'modified_beam_search',
       maxActivePaths: 4,
       hotwordsFile: hotwordsPath,
-      hotwordsScore: 1.5,
+      // 热词加权：1.5 偏弱，同音竞争时名单姓名常被默认词压过（如 陆河圣→路和胜），
+      // 提到 4.0 让名单/术语在 modified_beam_search 中显著占优
+      hotwordsScore: 4.0,
     );
     _recognizer = OfflineRecognizer(config);
     _recognizerHotwordsSignature = _signatureFor(hotwords);
