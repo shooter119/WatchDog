@@ -870,6 +870,21 @@ class HomePageState extends State<HomePage> {
           );
           return;
         }
+        // 合法但服务器无数据（DB 清空 / 新环境）：二次确认，避免切到空场景造成"已连接但空白"
+        if (!v.exists) {
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('任务码暂无数据'),
+              content: const Text('服务器上该任务码没有任何记录，切换后看板将为空白。\n\n如果这是新任务的第一台设备，可以继续；否则请确认任务码是否正确。'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('仍然切换')),
+              ],
+            ),
+          );
+          if (ok != true || !mounted) return;
+        }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

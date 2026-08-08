@@ -480,31 +480,17 @@ class ConnectionStatus extends StatelessWidget {
         ],
       );
     } else {
-      inner = const Column(
+      inner = const Row(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.alarm),
-              SizedBox(width: 6),
-              Text(
-                '已中断',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.alarm),
+          SizedBox(width: 6),
           Text(
-            '当前使用本地数据 · 点击重试',
+            '已中断',
             style: TextStyle(
-              color: AppColors.textTertiary,
-              fontSize: 10.5,
-              height: 1.3,
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

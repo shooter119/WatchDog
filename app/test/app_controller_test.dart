@@ -69,12 +69,12 @@ void main() {
       expect(api2.lastAuthor, isEmpty);
     });
 
-    testWidgets('无缓存且服务器不可达：保持空列表不抛错', (tester) async {
+    testWidgets('无缓存且服务器不可达：回退内置默认名单和热词', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = AppController()..api = _OfflineApi();
       await c.loadRoster();
-      expect(c.firefighters, isEmpty);
-      expect(c.hotwords, isEmpty);
+      expect(c.firefighters.length, 95);
+      expect(c.hotwords.length, 11);
     });
   });
 

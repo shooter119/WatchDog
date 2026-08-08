@@ -2,7 +2,7 @@
 
 ## 工作流
 
-- 改完代码后**自动 commit 并 push**，无需用户每次手动要求。
+- 改完代码后**不自动 commit/push/发版**，等用户明确通知再操作。后端部署（`deploy/deploy.sh`）除外，见下。
 - commit 前检查 `git status` / `git diff`，只提交本次相关的改动。
 - 提交信息简洁中文，符合仓库现有风格。
 - 临时调试文件（含密钥等）不入库。
@@ -10,12 +10,11 @@
 - **README 同步核查**：每次改动完成后核查 README 是否有必要更新（品牌、功能、架构、入口变化都算）；README 有实质内容变更时，App 内「关于我们」页（`app/lib/pages/about_page.dart`）必须同步更新，反之亦然。
 - 提交前必须通过验证（见下），构建/测试失败不允许提交。
 - **后端代码（backend/src/、deploy/）有修改时，验证通过后直接运行 `deploy/deploy.sh` 部署到线上**，无需用户提醒。
-- **版本号由 AI 智能决定**：每次准备发新版时，依据改动规模判断升级幅度（小优化/修复 → 补丁 +0.0.1；新功能 → 次版本 +0.1.0；重大重构/首个稳定版 → 主版本 +1.0.0），`+` 号后构建号必须递增。同步更新 `app/pubspec.yaml` 的 `version:` 与 `app/lib/pages/settings_page.dart` 的 `appVersion` 常量（fallback，运行时由 package_info_plus 读取覆盖）。
-- **发布 = push tag**：`git tag v<版本号>+<构建号>`（如 `v0.9.0+22`，**必须带 +build**，App 用它比较版本）+ `git push origin <tag>` → GitHub Actions（`.github/workflows/release.yml`）自动构建 arm64 正式签名 APK → 发布 GitHub Release（含 sha256 与自动 changelog）。设备端设置页「检查更新」→ 下载安装。
-- **发版时机由 AI 自动判断并执行，无需用户提醒**：每次 App 端改动完成且验证通过后（analyze 0 问题、flutter test 全绿、模拟器/真机验证过用户可见效果），自动评估是否发版：
-  - **发版**：改动含用户可见的修复或新功能（引导、UI、交互、OTA、语音等），且 `git push` 成功后 → 按版本号规则打 tag + `git push origin <tag>`，随后用 `gh run watch <run-id>` 确认 CI 通过、Release 已发布。
-  - **不发版**：纯后端改动（只走 deploy.sh）；纯文档/CI 配置改动；纯依赖调整或内部重构（用户不可见）；改动未验证通过。
-  - **发版前的兜底检查**：`git status` 确认改动已全部提交；`git diff HEAD` 确认版本号常量（pubspec.yaml version、settings_page.dart appVersion）与要打的 tag 一致。
+- **版本号与发版由用户决定**：用户要求发版时，依据改动规模判断升级幅度（小优化/修复 → 补丁 +0.0.1；新功能 → 次版本 +0.1.0；重大重构/首个稳定版 → 主版本 +1.0.0），`+` 号后构建号必须递增。同步更新 `app/pubspec.yaml` 的 `version:` 与 `app/lib/pages/settings_page.dart` 的 `appVersion` 常量。
+- **发版流程**：验证通过后 commit + push，再 `git tag v<版本号>+<构建号>` + `git push origin <tag>` → GitHub Actions 自动构建 arm64 正式签名 APK → 发布 GitHub Release（含 sha256 与自动 changelog）。
+- 发版前兜底检查：`git status` 确认改动已全部提交；`git diff HEAD` 确认版本号常量与要打的 tag 一致。
+- **CI 触发注意**：GitHub 对**已存在 tag 的 force push 不触发 workflow**。若需用新提交更新已发布版本，必须先删远端 tag（`git push origin :refs/tags/<tag>`）再重新创建并 push。
+- 发布后确认 Actions 状态，失败（如签名校验）先修 workflow 再重打 tag，不能带着失败发布。
   - **CI 触发注意**：GitHub 对**已存在 tag 的 force push 不触发 workflow**。若需用新提交更新已发布版本，必须先删远端 tag（`git push origin :refs/tags/<tag>`）再重新创建并 push；tag 打错位置同理。发布后确认 Actions 状态，失败（如签名校验）先修 workflow 再重打 tag，不能带着失败发布。
 - **OTA 分发链路**：GitHub Releases 直连（公开仓库免 token）；release body 必须含 `SHA256: <64位hex>` 行（CI 自动写入，App 下载后校验）；App 端 `app/lib/services/update_service.dart` 负责查询/比较/下载。
 

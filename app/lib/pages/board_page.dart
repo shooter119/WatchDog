@@ -55,14 +55,7 @@ class _BoardPageState extends State<BoardPage> {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
               children: [
-                // 标题固定一行：窄屏自动等比缩小字号，不换行（与右侧连接状态同行）
-                const Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text('火场安全管控看板', style: AppTextStyles.h1, maxLines: 1),
-                  ),
-                ),
+                const Text('管控看板', style: AppTextStyles.h1),
                 const Spacer(),
                 ConnectionStatus(
                   connected: !widget.controller.connectionLost,
@@ -71,6 +64,18 @@ class _BoardPageState extends State<BoardPage> {
               ],
             ),
           ),
+
+          // 断线时显示具体错误原因
+          if (widget.controller.connectionLost && widget.controller.syncError != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Text(
+                widget.controller.syncError!,
+                style: const TextStyle(fontSize: 11.5, color: AppColors.alarm, height: 1.3),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
@@ -81,6 +86,12 @@ class _BoardPageState extends State<BoardPage> {
               ],
             ),
           ),
+          // 场景无数据提示：首连检测到服务器无此任务码数据时提醒更换
+          if (_shouldShowNoDataHint())
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: _NoDataHint(onChangeCode: () => widget.onGoVoice?.call()),
+            ),
           const SizedBox(height: 16),
           Expanded(
             child: active.isEmpty
@@ -121,6 +132,12 @@ class _BoardPageState extends State<BoardPage> {
     }
   }
 
+  /// 场景无数据时显示提示的条件：看板为空 + 服务器确认无该场景数据 + 非 default
+  bool _shouldShowNoDataHint() {
+    final sv = widget.controller.sceneValidation;
+    return sv != null && !sv.exists && widget.controller.api?.sceneCode != 'default';
+  }
+
   void _openDetail(Entry e) {
     Navigator.push(
       context,
@@ -139,6 +156,48 @@ class _BoardPageState extends State<BoardPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (_) => ReportPressureSheet(controller: widget.controller, entry: e),
+    );
+  }
+}
+
+/// 看板空场景时提示：服务器无此任务码数据，引导更换任务码
+class _NoDataHint extends StatelessWidget {
+  final VoidCallback? onChangeCode;
+  const _NoDataHint({this.onChangeCode});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0x1AFFB000), // caution 10% 透明度
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.caution.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 18, color: AppColors.caution),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              '服务器上该任务码暂无数据，可尝试更换任务码',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
+            ),
+          ),
+          if (onChangeCode != null) ...[
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: onChangeCode,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                visualDensity: VisualDensity.compact,
+                foregroundColor: AppColors.caution,
+              ),
+              child: const Text('更换', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

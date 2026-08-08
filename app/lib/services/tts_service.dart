@@ -16,12 +16,11 @@ class TtsService {
     }
   }
 
-  Future<void> speak(String text) async {
+  /// 立即调度播报，不等待 TTS 引擎完成（火场场景对延迟敏感）
+  void speak(String text) {
     if (!_ready || !enabled) return;
-    try {
-      await _tts.stop();
-      await _tts.speak(text);
-    } catch (_) {}
+    _tts.stop();
+    _tts.speak(text);
   }
 
   Future<void> stop() async {

@@ -1737,7 +1737,7 @@ void main() {
     testWidgets('默认进入看板，底部五个入口对称存在', (tester) async {
       await tester.pumpWidget(const WatchDogApp());
       await tester.pump();
-      expect(find.text('火场安全管控看板'), findsOneWidget);
+      expect(find.text('管控看板'), findsOneWidget);
       expect(find.text('日志'), findsOneWidget);
       expect(find.text('看板'), findsOneWidget);
       expect(find.text('辅助'), findsOneWidget);
@@ -1832,7 +1832,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      expect(find.text('火场安全管控看板'), findsOneWidget);
+      expect(find.text('管控看板'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -2042,7 +2042,7 @@ void main() {
       await pump(false);
       expect(find.text('已中断'), findsOneWidget);
       expect(find.byIcon(Icons.cloud_off_outlined), findsOneWidget);
-      expect(find.textContaining('点击重试'), findsOneWidget);
+      // 已中断状态：点击 GestureDetector 触发重试（已去掉小字文案）
       await tester.tap(find.byType(ConnectionStatus));
       expect(retried, 1);
       // 无橙色「连接中」状态（已移除）

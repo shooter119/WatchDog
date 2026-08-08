@@ -57,13 +57,23 @@ class AppController extends ChangeNotifier {
   /// 避免网络瞬时抖动导致连接状态频繁变红。从未成功过时乐观视为已连接。
   static const int connectionLostThreshold = 30000;
 
-  bool get connectionLost => isConnectionLost(
-        lastSyncSuccessAt: _lastSyncSuccessAt,
-        nowMs: DateTime.now().millisecondsSinceEpoch,
-      );
+  bool get connectionLost {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_lastSyncSuccessAt <= 0) {
+      // 从未同步成功 → 有 syncError 说明已尝试且失败，应显示中断
+      return syncError != null;
+    }
+    return now - _lastSyncSuccessAt > connectionLostThreshold;
+  }
 
   /// 本场景已被某设备结束任务（归档）：非空时看板顶部显示"切换到新任务"横幅
   SceneState? sceneEnded;
+
+  /// 当前场景码在服务器上是否有数据（启动后首连检测，用于提示"任务码可能不对"）
+  SceneValidation? _sceneValidation;
+
+  /// 外部只读：场景数据是否存在（null = 尚未检测）
+  SceneValidation? get sceneValidation => _sceneValidation;
 
   /// 启动时自动检查到的新版本（非空 = 有新版本可更新，设置页据此显示提示）
   UpdateInfo? pendingUpdate;
@@ -149,12 +159,17 @@ class AppController extends ChangeNotifier {
     final serverUrl = await Settings.serverUrl;
     final sceneCode = await Settings.sceneCode;
     final token = await Settings.apiToken;
+    final oldScene = api?.sceneCode;
     api = ApiClient(
       baseUrl: serverUrl,
       sceneCode: sceneCode,
       apiToken: token,
       deviceId: await OpLogService.instance.deviceId,
     );
+    // 换码后旧核验结果失效，下次空场景重新检测
+    if (oldScene != null && oldScene != sceneCode) {
+      _sceneValidation = null;
+    }
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
     await ScreenOn.setKeepScreenOn(await Settings.keepScreenOn);
@@ -201,6 +216,14 @@ class AppController extends ChangeNotifier {
           final state = await api!.fetchSceneState();
           if (identical(a2, api)) sceneEnded = state;
         } catch (_) {}
+      }
+      // 首连后检测：entries 为空且场景码非 default → 可能是服务器数据被清/任务码不对
+      if (entries.isEmpty && _sceneValidation == null && api!.sceneCode != 'default') {
+        try {
+          _sceneValidation = await api!.validateScene(api!.sceneCode);
+        } catch (_) {
+          // 核验失败静默，下次轮询重试
+        }
       }
       syncError = null;
       _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
@@ -378,8 +401,12 @@ class AppController extends ChangeNotifier {
   /// 结束任务（归档）：服务端标记本场景已结束并分配新场景码 → 本机切换。
   /// 其他设备轮询检测到归档后经 [switchToNewScene] 汇聚到同一新场景。
   Future<String> endTask({String? opId}) async {
+    if (api == null) {
+      // 边缘情况：api 未初始化（如 SharedPreferences 读取异常）→ 尝试重建
+      await refreshConfig();
+    }
     final a = api;
-    if (a == null) throw StateError('未连接服务器');
+    if (a == null) throw StateError('未连接服务器，请检查网络和服务器设置');
     final op = opId ?? '';
     OpLogService.instance.record(op, 'scene_end', '结束任务（归档场景）');
     final newCode = await a.endTask(opId: op);
@@ -473,14 +500,49 @@ class AppController extends ChangeNotifier {
       final hWords = (jsonDecode(sp.getString(_kCachedHotwords) ?? '[]') as List)
           .map((e) => e.toString())
           .toList();
-      if (fNames.isEmpty && hWords.isEmpty) return; // 无缓存：保持现状（首次使用需在线同步一次）
+      if (fNames.isEmpty && hWords.isEmpty) {
+        // 无缓存且服务器不可达：首次安装回退内置默认名单与热词
+        _loadBuiltinDefaults();
+        return;
+      }
       firefighters = fNames.map((n) => Firefighter(id: '', name: n)).toList();
       hotwords = hWords.map((w) => Hotword(id: '', word: w)).toList();
       notifyListeners();
     } catch (_) {
-      // 缓存损坏时忽略
+      // 缓存损坏时也回退内置默认
+      _loadBuiltinDefaults();
     }
   }
+
+  /// 内置默认名单与热词（与后端 seed 数据一致，首次安装/离线兜底）
+  void _loadBuiltinDefaults() {
+    firefighters = _defaultFirefighterNames.map((n) => Firefighter(id: '', name: n)).toList();
+    hotwords = _defaultHotwordTerms.map((w) => Hotword(id: '', word: w)).toList();
+    notifyListeners();
+  }
+
+  static const _defaultFirefighterNames = [
+    // 大队部
+    '李翔', '盛承华', '楼松超', '徐向相', '柯峰', '祝彪',
+    // 龙翔路消防救援站
+    '陆河圣', '洪辰', '沈松鹏', '金志明', '陈俊鹏', '叶华杰', '杨熙豪', '施豪杰', '袁超', '马李臣',
+    '邢中本', '何家琦', '余贤耀', '徐莘焕', '杨小杰', '祝徐迁', '方文斌', '徐昊扬', '郑丽文', '郑怡',
+    '郑涛', '占鑫涛', '叶健智', '胡海龙', '伊余健', '曹建罡', '马鑫', '徐康', '张烜烨', '李微',
+    '储嘉俊', '毛伟', '陈俊安', '赵建平', '吴拥军', '路康清', '毕灵珂', '刘羽杰', '陈鑫', '廖淑明', '毛泽旭',
+    // 永安路消防救援站
+    '林成成', '程晓波', '郭逸', '蓝程雄', '成帅', '姚肖江', '毕文龙', '周志峰', '吕文建', '刘林辉',
+    '齐征臣', '严仕华', '袁友顺', '劳凯董', '方罗进', '马俊', '刘振坤', '贺智成', '丁以强', '易子云',
+    '李瑞', '宋宇', '宁成鑫', '甲巴有拉', '吉布小夫', '方梦龙',
+    // 兴园消防救援站
+    '游方远', '巫垚东', '万自良', '戴晓明', '李志鹏', '徐小龙', '吴鹏晖', '叶程刚', '陈嘉豪', '姚顺',
+    '贺官', '孙国彬', '吴志云', '陈子俊', '何金伟', '周子俊', '何哲锴', '徐刚', '姜俊翰', '文闻',
+    '张文浩', '宋博韬',
+  ];
+
+  static const _defaultHotwordTerms = [
+    '龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站',
+    '头车', '两车', '三车', '四车', '内攻', '搜救',
+  ];
 
   List<String> get _rosterNames => firefighters.map((f) => f.name).toList();
 

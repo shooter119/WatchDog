@@ -1,7 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'scene_code.dart';
-
 class Settings {
   static const _kServer = 'server_url';
   static const _kScene = 'scene_code';
@@ -104,11 +102,9 @@ class Settings {
     final sp = await SharedPreferences.getInstance();
     final v = sp.getString(_kScene);
     if (v != null && v.isNotEmpty) return v;
-    // 首次安装：自动分配一个随机水果场景码（与服务器任务码同一词表），
-    // 已装设备保留原值（如旧版 default）不受影响
-    final code = generateSceneCode();
-    await sp.setString(_kScene, code);
-    return code;
+    // 首次安装默认场景码为 "default"，方便多设备测试时自动互通
+    await sp.setString(_kScene, 'default');
+    return 'default';
   }
 
   static Future<void> setSceneCode(String v) async {

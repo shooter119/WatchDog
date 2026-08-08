@@ -60,7 +60,7 @@ class ApiClient {
   }
 
   Future<List<Entry>> fetchEntries({bool activeOnly = false}) async {
-    final res = await http.get(_uri('/api/entries${activeOnly ? '?active=1' : ''}'), headers: _headers);
+    final res = await http.get(_uri('/api/entries${activeOnly ? '?active=1' : ''}'), headers: _headers).timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('获取记录失败(${res.statusCode})');
     final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
     return list.map((e) => Entry.fromJson(e as Map<String, dynamic>)).toList();
