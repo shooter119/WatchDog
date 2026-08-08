@@ -38,7 +38,7 @@ class AppController extends ChangeNotifier {
   CalcConfig calcConfig = CalcConfig(
     cylinderVolL: 6.8,
     fullPressureMpa: 30,
-    consumptionLpm: 40,
+    consumptionLpm: 80,
     warnMin: 10,
     alarmMin: 5,
   );

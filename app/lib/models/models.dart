@@ -321,7 +321,7 @@ class CalcConfig {
   factory CalcConfig.fromJson(Map<String, dynamic> json) => CalcConfig(
         cylinderVolL: ((json['calc']?['cylinderVolL']) ?? 6.8).toDouble(),
         fullPressureMpa: ((json['calc']?['fullPressureMpa']) ?? 30).toDouble(),
-        consumptionLpm: ((json['calc']?['consumptionLpm']) ?? 40).toDouble(),
+        consumptionLpm: ((json['calc']?['consumptionLpm']) ?? 80).toDouble(),
         warnMin: ((json['calc']?['warnMin']) ?? 10).toInt(),
         alarmMin: ((json['calc']?['alarmMin']) ?? 5).toInt(),
       );

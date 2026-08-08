@@ -26,7 +26,7 @@ const CFG = {
   calc: {
     cylinderVolL: Number(process.env.CYLINDER_VOL_L || 6.8),
     fullPressureMpa: Number(process.env.FULL_PRESSURE_MPA || 30),
-    consumptionLpm: Number(process.env.CONSUMPTION_LPM || 40),
+    consumptionLpm: Number(process.env.CONSUMPTION_LPM || 80),
     warnMin: Number(process.env.WARN_MIN || 10),
     alarmMin: Number(process.env.ALARM_MIN || 5),
   },

@@ -55,7 +55,7 @@ test('进场→列表→出场→active 过滤 全链路', async () => {
     body: JSON.stringify({ name: '李娜', pressure_mpa: 20, source: 'voice', raw_text: '李娜，20兆帕' }),
   })).json();
   assert.equal(created.name, '李娜');
-  assert.equal(created.duration_min, 34);
+  assert.equal(created.duration_min, 17);
   assert.equal(created.raw_text, '李娜，20兆帕');
 
   let list = await (await fetch(`${base}/api/entries?active=1`, { headers: H })).json();
@@ -147,8 +147,8 @@ test('PATCH /api/entries/:id 改名与压力复核（重新倒计时）', async 
     body: JSON.stringify({ pressure_mpa: 15 }),
   })).json();
   assert.equal(rechecked.pressure_mpa, 15);
-  assert.equal(rechecked.duration_min, 26); // 15MPa → 25.5min → 26
-  assert.ok(Math.abs(rechecked.exit_at - Date.now() - 25.5 * 60000) < 5000); // 从此刻重新倒计时
+  assert.equal(rechecked.duration_min, 13); // 15MPa 默认 80L/min → 12.75min → 13
+  assert.ok(Math.abs(rechecked.exit_at - Date.now() - 12.75 * 60000) < 5000); // 从此刻重新倒计时
 
   // 改名后同名不再冲突（旧名可再次进场）
   const conflict = await fetch(`${base}/api/entries`, {
@@ -183,15 +183,15 @@ test('压力报数复核：差分实测耗气率并据此重算倒计时', async
   })).json();
   assert.equal(created.consumption_actual_lpm, null);
 
-  // 首次报数间隔太短（毫秒级），差分超范围 → 实测为空，按默认 40 L/min
+  // 首次报数间隔太短（毫秒级），差分超范围 → 实测为空，按默认 80 L/min
   const first = await (await fetch(`${base}/api/entries/${created.id}`, {
     method: 'PATCH',
     headers: H,
     body: JSON.stringify({ pressure_mpa: 18 }),
   })).json();
   assert.equal(first.consumption_actual_lpm, null);
-  // 6.8 × 18 × 10 ÷ 40 = 30.6 → 31
-  assert.equal(first.duration_min, 31);
+  // 6.8 × 18 × 10 ÷ 80 = 15.3 → 15
+  assert.equal(first.duration_min, 15);
 
   // 模拟真实时间流逝：20MPa 采样在 10 分钟前，18MPa 采样在 5 分钟前（差分 5 分钟掉 3MPa）
   raw.prepare('UPDATE pressure_samples SET reported_at = ? WHERE entry_id = ? AND pressure_mpa = 20').run(Date.now() - 600000, created.id);

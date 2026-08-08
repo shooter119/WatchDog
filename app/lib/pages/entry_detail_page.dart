@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import '../services/op_log_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
@@ -40,6 +41,22 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
     if (confirmed != true) return;
     await widget.controller.markExited(e.id);
+    // 手工出火场同样自动写火场日志（与语音出场一致，只记名字+动作）
+    final opId = 'exit-${DateTime.now().millisecondsSinceEpoch}';
+    try {
+      await widget.controller.addNote('${e.name}出场', opId: opId);
+      OpLogService.instance.record(opId, 'exit_note', '出场事件已写入火场日志', data: {'text': '${e.name}出场'});
+    } catch (err) {
+      OpLogService.instance.record(opId, 'exit_note_fail', '出场日志写入失败: $err', level: 'error', data: {'text': '${e.name}出场'});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('出场已登记，但火场日志写入失败：$err'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
     widget.controller.tts.speak('${e.name} 已登记出火场');
     if (mounted) Navigator.pop(context);
   }

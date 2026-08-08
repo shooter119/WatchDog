@@ -17,7 +17,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '0.11.7+33';
+const appVersion = '0.11.8+34';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -373,7 +373,7 @@ class _SettingsPageState extends State<SettingsPage> {
       await Settings.setApiToken(_token.text.trim());
       await Settings.setCylinderVolL(double.tryParse(_volume.text) ?? 6.8);
       await Settings.setFullPressureMpa(double.tryParse(_full.text) ?? 30);
-      await Settings.setConsumptionLpm(double.tryParse(_consumption.text) ?? 40);
+      await Settings.setConsumptionLpm(double.tryParse(_consumption.text) ?? 80);
       await Settings.setThresholds(
         int.tryParse(_warn.text) ?? 10,
         int.tryParse(_alarm.text) ?? 5,
@@ -498,7 +498,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       Expanded(child: _field(_full, '满压', '30 MPa', icon: Icons.speed, focusNode: _fullFocus)),
                     ],
                   ),
-                  _field(_consumption, '消耗率', '40 L/min', icon: Icons.water_drop_outlined, focusNode: _consumptionFocus),
+                  _field(_consumption, '消耗率', '80 L/min', icon: Icons.water_drop_outlined, focusNode: _consumptionFocus),
                   const _GroupLabel('提醒阈值'),
                   Row(
                     children: [

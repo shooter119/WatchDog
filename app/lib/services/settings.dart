@@ -51,7 +51,7 @@ class Settings {
     return {
       'cylinder_vol_l': sp.getDouble(_kVolume) ?? 6.8,
       'full_pressure_mpa': sp.getDouble(_kFullPressure) ?? 30,
-      'consumption_lpm': sp.getDouble(_kConsumption) ?? 40,
+      'consumption_lpm': sp.getDouble(_kConsumption) ?? 80,
       'warn_min': sp.getInt(_kWarn) ?? 10,
       'alarm_min': sp.getInt(_kAlarm) ?? 5,
       'tts_enabled': sp.getBool(_kTts) ?? true,
@@ -154,7 +154,7 @@ class Settings {
   }
 
   static Future<double> get consumptionLpm async =>
-      (await SharedPreferences.getInstance()).getDouble(_kConsumption) ?? 40;
+      (await SharedPreferences.getInstance()).getDouble(_kConsumption) ?? 80;
 
   static Future<void> setConsumptionLpm(double v) async {
     final sp = await SharedPreferences.getInstance();

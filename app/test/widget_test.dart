@@ -956,7 +956,7 @@ void main() {
       expect(find.text('确认名单（2 人）：请下滑核对后一次性确认'), findsOneWidget);
       expect(find.text('1.张伟'), findsNothing); // 序号徽标为圆圈数字，无文字前缀
       expect(find.text('全部确认进入火场（2 人）'), findsOneWidget);
-      expect(find.text('可用时间 34 分钟'), findsWidgets);
+      expect(find.text('可用时间 17 分钟'), findsWidgets); // 默认消耗率 80L/min：6.8×20×10÷80=17
       expect(find.text('容量'), findsWidgets);
 
       // 点一次确认 → 两人全部提交（按钮在滚动卡片底部，先滚到可见）

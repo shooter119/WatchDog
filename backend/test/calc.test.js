@@ -10,8 +10,8 @@ test('满压 30MPa 时 = 51 分钟', () => {
   assert.equal(durationMinutes({ cylinderVolL: 6.8, pressureMpa: 30, consumptionLpm: 40 }), 51);
 });
 
-test('默认参数可省略', () => {
-  assert.equal(durationMinutes({ pressureMpa: 20 }), 34);
+test('默认参数可省略：默认消耗率 80L/min → 6.8 × 20 × 10 ÷ 80 = 17 分钟', () => {
+  assert.equal(durationMinutes({ pressureMpa: 20 }), 17);
 });
 
 test('压力缺失/为 0/负数 → 0', () => {
