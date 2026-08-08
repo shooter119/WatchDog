@@ -1032,42 +1032,63 @@ class HomePageState extends State<HomePage> {
       );
     }
     if (_transcript == null || _parsed == null) {
-      // 引导区：内容不足时居中，窄屏可滚动不溢出
+      // 引导区：统一卡片 + 图标网格，内容不足时居中，窄屏可滚动不溢出
       return LayoutBuilder(
         builder: (ctx, box) => SingleChildScrollView(
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: box.maxHeight),
             child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.surface,
-                      border: Border.all(color: AppColors.border),
+              child: AppCard(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 30,
+                          height: 30,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.voice,
+                          ),
+                          child: const Icon(Icons.mic_rounded, size: 17, color: Colors.white),
+                        ),
+                        const SizedBox(width: 10),
+                        const Text(
+                          '按住下方按钮说话',
+                          style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.record_voice_over, size: 44, color: AppColors.textTertiary),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text('按住下方按钮说话', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
-                  _guide('进场登记', '「张伟，20兆帕」→ 自动开始倒计时'),
-                  _guide('多人进场', '「张伟20兆帕，刘洋22兆帕」→ 一次确认全部进场'),
-                  _guide('出场登记', '「刘洋出来了」→ 登记出火场'),
-                  _guide('火场随手记', '「三楼破拆完成」→ 自动记入火场日志'),
-                  _guide('火场提问', '「浓烟太大看不清路怎么办？」→ 转给辅助智囊'),
-                  if (_peopleEditors.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed: _showPendingConfirm,
-                      icon: const Icon(Icons.fact_check_outlined),
-                      label: Text('继续确认已录入的 ${_peopleEditors.length} 人'),
+                    const SizedBox(height: 14),
+                    LayoutBuilder(
+                      builder: (ctx, c) {
+                        final itemW = (c.maxWidth - 10) / 2;
+                        return Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: [
+                            SizedBox(width: itemW, child: _guideItem(Icons.login_rounded, '进场登记', '「张伟，20兆帕」\n自动开始倒计时')),
+                            SizedBox(width: itemW, child: _guideItem(Icons.groups_rounded, '多人进场', '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场')),
+                            SizedBox(width: itemW, child: _guideItem(Icons.logout_rounded, '出场登记', '「刘洋出来了」\n登记出火场')),
+                            SizedBox(width: itemW, child: _guideItem(Icons.edit_note_rounded, '火场随手记', '「三楼破拆完成」\n自动记入火场日志')),
+                            SizedBox(width: itemW, child: _guideItem(Icons.assistant_rounded, '火场提问', '「浓烟太大看不清路怎么办？」\n转给辅助智囊')),
+                          ],
+                        );
+                      },
                     ),
+                    if (_peopleEditors.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      FilledButton.icon(
+                        onPressed: _showPendingConfirm,
+                        icon: const Icon(Icons.fact_check_outlined),
+                        label: Text('继续确认已录入的 ${_peopleEditors.length} 人'),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -1446,38 +1467,39 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  /// 引导行：分类标签 + 语音示例（覆盖全部语音意图）
-  Widget _guide(String label, String example) {
+  /// 引导网格项：图标 + 意图标签 + 语音示例（两行，覆盖全部语音意图）
+  Widget _guideItem(IconData icon, String label, String example) {
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        color: AppColors.surfaceSubtle.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.7)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(
-              color: AppColors.voice.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-            ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.voice,
-                fontWeight: FontWeight.w700,
+          Row(
+            children: [
+              Icon(icon, size: 15, color: AppColors.voice),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              example,
-              style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+          const SizedBox(height: 5),
+          Text(
+            example,
+            style: const TextStyle(
+              fontSize: 11.5,
+              height: 1.4,
+              color: AppColors.textSecondary,
             ),
           ),
         ],
