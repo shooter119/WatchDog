@@ -41,6 +41,9 @@ class _FakeController extends AppController {
     this.entries = entries;
     this.firefighters = firefighters;
     this.notes = notes;
+    // 测试环境无本地模型：语音测试默认走云端路径（生产默认已改为离线优先）
+    asrCloudEnabled = true;
+    parseCloudEnabled = true;
   }
   final exited = <String>[];
   final reported = <double>[];

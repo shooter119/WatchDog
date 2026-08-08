@@ -17,7 +17,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '0.11.9+35';
+const appVersion = '0.11.10+36';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -49,7 +49,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _sound = true;
   bool _keepScreenOn = true;
   bool _keepAlive = false;
-  bool _asrCloud = true;
+  bool _asrCloud = false; // 默认离线优先（火场无信号场景）；本地模型需先下载
   bool _parseCloud = true;
   bool? _modelInstalled;
   bool _downloading = false;

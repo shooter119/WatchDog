@@ -57,7 +57,7 @@ class Settings {
       'tts_enabled': sp.getBool(_kTts) ?? true,
       'alarm_sound_enabled': sp.getBool(_kAlarmSound) ?? true,
       'keep_screen_on': sp.getBool(_kKeepScreenOn) ?? true,
-      'asr_cloud_enabled': sp.getBool(_kAsrCloud) ?? true,
+      'asr_cloud_enabled': sp.getBool(_kAsrCloud) ?? false,
       'parse_cloud_enabled': sp.getBool(_kParseCloud) ?? true,
     };
   }
@@ -199,7 +199,7 @@ class Settings {
 
   /// 语音识别联网开关：开 = 云端优先、失败自动切本地；关 = 强制本地
   static Future<bool> get asrCloudEnabled async =>
-      (await SharedPreferences.getInstance()).getBool(_kAsrCloud) ?? true;
+      (await SharedPreferences.getInstance()).getBool(_kAsrCloud) ?? false;
 
   static Future<void> setAsrCloudEnabled(bool v) async {
     final sp = await SharedPreferences.getInstance();

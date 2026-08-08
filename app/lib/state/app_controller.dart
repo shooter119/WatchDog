@@ -23,8 +23,9 @@ class AppController extends ChangeNotifier {
   final AlarmService alarm = AlarmService();
   final TtsService tts = TtsService();
 
-  /// 语音识别联网开关：开 = 云端优先失败自动切本地；关 = 强制本地
-  bool asrCloudEnabled = true;
+  /// 语音识别联网开关：开 = 云端优先失败自动切本地；关 = 强制本地。
+  /// 默认关闭（离线优先，火场无信号场景；需先下载本地语音模型）
+  bool asrCloudEnabled = false;
 
   /// 语义解析联网开关：开 = 云端优先失败自动切本地；关 = 强制本地
   bool parseCloudEnabled = true;
