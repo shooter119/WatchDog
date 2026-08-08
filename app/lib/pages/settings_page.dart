@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/alarm_service.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../state/app_controller.dart';
@@ -49,6 +50,8 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _downloading = false;
   double? _downloadProgress;
   String? _downloadError;
+  bool _policyAccess = true; // 勿扰策略访问是否授权（bypassDnd 生效前提）
+  bool _fullScreenOk = true; // Android 14+ 全屏通知是否开启
   bool _loaded = false;
   bool _saving = false; // 防止失焦时 8 个输入框监听器并发触发多次保存
   _SaveState _saveState = _SaveState.idle; // 自动保存状态提示
@@ -91,7 +94,20 @@ class _SettingsPageState extends State<SettingsPage> {
     _parseCloud = await Settings.parseCloudEnabled;
     _loaded = true;
     _refreshModelStatus();
+    _refreshAlarmCaps();
     if (mounted) setState(() {});
+  }
+
+  /// 检测勿扰策略授权 / Android 14+ 全屏通知状态（不影响主流程，失败静默）
+  Future<void> _refreshAlarmCaps() async {
+    final policy = await AlarmNative.isNotificationPolicyAccessGranted();
+    final fullScreen = widget.controller.alarm.fullScreenIntentEnabled;
+    if (mounted) {
+      setState(() {
+        _policyAccess = policy;
+        _fullScreenOk = fullScreen;
+      });
+    }
   }
 
   Future<void> _refreshModelStatus() async {
@@ -350,6 +366,32 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
                       ),
                       subtitle: const Text('请在系统设置-应用-安全员助手中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                  if (!_policyAccess) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    ListTile(
+                      dense: true,
+                      onTap: AlarmNative.openNotificationPolicySettings,
+                      leading: const Icon(Icons.do_not_disturb_on_outlined, color: AppColors.caution, size: 20),
+                      title: const Text(
+                        '未允许勿扰访问，勿扰模式下报警提醒将被静音',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text('点击前往系统设置开启勿扰访问', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                  if (!_fullScreenOk) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    ListTile(
+                      dense: true,
+                      onTap: AlarmNative.openNotificationSettings,
+                      leading: const Icon(Icons.fullscreen_exit_outlined, color: AppColors.caution, size: 20),
+                      title: const Text(
+                        '未开启全屏通知，后台报警不会弹全屏提醒',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text('点击前往通知设置开启全屏显示', style: TextStyle(fontSize: 11)),
                     ),
                   ],
                 ],

@@ -1,9 +1,64 @@
+import 'dart:io';
+
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../models/models.dart';
+
+/// Android 原生通道：报警音量提升 / 勿扰策略 / 通知设置（watchdog/alarm）
+class AlarmNative {
+  static const MethodChannel _channel = MethodChannel('watchdog/alarm');
+
+  /// 把 ALARM 音频流音量拉到最大（火场高分贝环境确保听到）
+  static Future<void> maximizeAlarmVolume() async {
+    if (!Platform.isAndroid) return; // 非 Android（含测试环境）无此通道
+    try {
+      await _channel.invokeMethod('maxAlarmVolume').timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 平台不支持时静默忽略
+    }
+  }
+
+  /// 勿扰（免打扰）策略访问是否已授权（bypassDnd 生效的前提）
+  static Future<bool> isNotificationPolicyAccessGranted() async {
+    if (!Platform.isAndroid) return true; // 非 Android 视为已授权
+    try {
+      final ok = await _channel
+          .invokeMethod<bool>('isNotificationPolicyAccessGranted')
+          .timeout(const Duration(seconds: 2));
+      return ok ?? false;
+    } catch (_) {
+      return true; // 异常时视为已授权，避免误报引导
+    }
+  }
+
+  /// 跳系统勿扰设置页（策略访问被拒后的恢复路径）
+  static Future<void> openNotificationPolicySettings() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel
+          .invokeMethod('openNotificationPolicySettings')
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 平台不支持时静默忽略
+    }
+  }
+
+  /// 跳本应用通知设置页（Android 14+ 全屏通知默认关闭，需手动开启）
+  static Future<void> openNotificationSettings() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel
+          .invokeMethod('openNotificationSettings')
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 平台不支持时静默忽略
+    }
+  }
+}
 
 /// 闹钟/提醒服务：
 /// - 前台：播放警报音 + 语音播报
@@ -11,6 +66,7 @@ import '../models/models.dart';
 class AlarmService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
+  // 报警音走 ALARM 音频流（不随媒体音量/静音，配合音量强制提升）；stayAwake 持锁屏唤醒
   final AudioPlayer _player = AudioPlayer();
   bool soundEnabled = true;
   bool _inited = false;
@@ -19,6 +75,8 @@ class AlarmService {
   bool _looping = false;
   /// 精确闹钟是否可用（Android 12+ 可能被系统/用户关闭）
   bool exactAlarmAvailable = true;
+  /// Android 14+ 全屏通知是否可用（默认被系统关闭，需用户手动开启）
+  bool fullScreenIntentEnabled = true;
 
   Future<void> init() async {
     if (_inited) return;
@@ -33,6 +91,16 @@ class AlarmService {
     await _notifications.initialize(
       const InitializationSettings(android: androidInit, iOS: iosInit),
     );
+    // 报警音走 ALARM 音频流（不受媒体音量/静音影响，配合音量强制提升），锁屏时持唤醒锁
+    await _player.setAudioContext(
+      AudioContext(
+        android: const AudioContextAndroid(
+          usageType: AndroidUsageType.alarm,
+          audioFocus: AndroidAudioFocus.gain,
+          stayAwake: true,
+        ),
+      ),
+    );
     // Android 13+：运行时申请通知权限
     await _notifications
         .resolvePlatformSpecificImplementation<
@@ -44,6 +112,13 @@ class AlarmService {
             .resolvePlatformSpecificImplementation<
                 AndroidFlutterLocalNotificationsPlugin>()
             ?.canScheduleExactNotifications() ??
+        true;
+    // Android 14+：全屏通知（API 34 起默认关闭，需用户手动开启；request 返回 true=已开启）
+    fullScreenIntentEnabled =
+        await _notifications
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>()
+            ?.requestFullScreenIntentPermission() ??
         true;
     await _player.setPlayerMode(PlayerMode.lowLatency);
     await _player.setSource(AssetSource('sounds/alarm.wav'));
@@ -73,6 +148,7 @@ class AlarmService {
             channelDescription: '剩余10分钟提醒',
             importance: Importance.high,
             priority: Priority.high,
+            channelBypassDnd: true,
           ),
           iOS: DarwinNotificationDetails(),
         ),
@@ -94,6 +170,8 @@ class AlarmService {
             priority: Priority.max,
             sound: RawResourceAndroidNotificationSound('alarm'),
             fullScreenIntent: true,
+            channelBypassDnd: true,
+            audioAttributesUsage: AudioAttributesUsage.alarm,
           ),
           iOS: DarwinNotificationDetails(),
         ),
@@ -115,6 +193,8 @@ class AlarmService {
             priority: Priority.max,
             sound: RawResourceAndroidNotificationSound('alarm'),
             fullScreenIntent: true,
+            channelBypassDnd: true,
+            audioAttributesUsage: AudioAttributesUsage.alarm,
           ),
           iOS: DarwinNotificationDetails(),
         ),
@@ -137,6 +217,8 @@ class AlarmService {
     if (!soundEnabled) return;
     if (_looping) return;
     _looping = true;
+    // 火场高分贝环境：把 ALARM 流音量拉到最大（报警音走 ALARM 流）
+    await AlarmNative.maximizeAlarmVolume();
     await _player.setPlayerMode(PlayerMode.lowLatency);
     await _player.setSource(AssetSource('sounds/alarm.wav'));
     await _player.setReleaseMode(ReleaseMode.loop);

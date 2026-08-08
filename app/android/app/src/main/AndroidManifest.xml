@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <!-- 勿扰模式下仍能发出报警提醒（bypassDnd），需用户在系统设置中授予策略访问 -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY"/>
     <application
         android:label="安全员助手"
         android:name="${applicationName}"
