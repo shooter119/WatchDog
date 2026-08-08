@@ -216,6 +216,54 @@ async function chatWithDeepSeek({ apiKey, baseUrl, model, messages, timeoutMs = 
   return content;
 }
 
+/// 智能体问答（流式 SSE）：yield 每次增量文本，供 /api/chat stream 模式逐段转发。
+/// DeepSeek 原生 stream 输出 `data: {...delta...}` 行，[DONE] 结束。
+async function* chatWithDeepSeekStream({ apiKey, baseUrl, model, messages, timeoutMs = 60000, temperature = 0.3, maxTokens = 800 }) {
+  const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: model || 'deepseek-chat',
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream: true,
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`DeepSeek API ${res.status}: ${body.slice(0, 200)}`);
+  }
+  if (!res.body) throw new Error('DeepSeek 无响应流');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data === '[DONE]') return;
+      try {
+        const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
+        if (delta) yield delta;
+      } catch (_) {
+        // 忽略无法解析的片段（如 keep-alive 行）
+      }
+    }
+  }
+}
+
 /// 智能体问答（Responses API + 服务端联网搜索）：返回完整回复文本。
 /// 目前仅 deepseek-v4-flash 支持 Responses API，失败抛错由调用方决定是否回退。
 async function chatWithWebSearch({ apiKey, baseUrl, model, messages, timeoutMs = 90000, temperature = 0.3, maxOutputTokens = 800 }) {
@@ -271,4 +319,4 @@ async function reviseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighte
   return corrected || text;
 }
 
-module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch, looksMultiPerson, guardrailAction, guardrailIntent };
+module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithDeepSeekStream, chatWithWebSearch, looksMultiPerson, guardrailAction, guardrailIntent };

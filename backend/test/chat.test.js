@@ -113,6 +113,51 @@ test('POST /api/chat 联网搜索失败回退普通问答', async () => {
   assert.ok(fellBack, 'Responses 失败后应回退 chat/completions');
 });
 
+test('POST /api/chat 流式（stream=1）：SSE 增量输出并落库', async () => {
+  let streamed = false;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).match(/chat\/completions$/)) {
+      const body = JSON.parse(opts.body);
+      assert.equal(body.stream, true, '流式应请求 stream: true');
+      assert.equal(body.model, 'deepseek-v4-flash');
+      streamed = true;
+      const enc = new TextEncoder();
+      const sse = [
+        'data: {"choices":[{"delta":{"content":"先"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"确认"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ].join('');
+      return Promise.resolve({
+        ok: true,
+        body: new ReadableStream({
+          start(c) {
+            c.enqueue(enc.encode(sse));
+            c.close();
+          },
+        }),
+      });
+    }
+    return realFetch(url, opts);
+  };
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ message: '流式问题', stream: 1 }),
+  });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/event-stream/);
+  const text = await res.text();
+  assert.ok(text.includes('"content":"先"'), '应包含第一段增量');
+  assert.ok(text.includes('"content":"确认"'), '应包含第二段增量');
+  assert.ok(text.includes('[DONE]'), '应以 [DONE] 结束');
+  assert.ok(streamed, '应命中 chat/completions 流式端点');
+
+  const list = await (await fetch(`${base}/api/chat`, { headers: H })).json();
+  const last = list[list.length - 1];
+  assert.equal(last.role, 'assistant');
+  assert.equal(last.content, '先确认');
+});
+
 test('GET /api/chat 场景隔离', async () => {
   const other = await (
     await fetch(`${base}/api/chat`, { headers: { ...H, 'X-Scene-Code': 'other-scene' } })

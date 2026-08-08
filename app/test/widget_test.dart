@@ -259,6 +259,19 @@ class _FakeApi extends ApiClient {
       createdAt: DateTime.now().millisecondsSinceEpoch,
     );
   }
+
+  @override
+  Future<String> sendChatMessageStream(
+    String message, {
+    required void Function(String delta) onChunk,
+    String? opId,
+  }) async {
+    // 模拟 SSE 流式：一次回调完整回复（占位"思考中"先渲染，随后切换为内容气泡）
+    final reply = '回答：$message';
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    onChunk(reply);
+    return reply;
+  }
 }
 
 /// 测试专用 AudioService：无真实录音

@@ -126,6 +126,13 @@ class ChatPageState extends State<ChatPage> {
           content: clean,
           createdAt: DateTime.now().millisecondsSinceEpoch,
         ),
+        // 流式占位：内容为空时渲染"思考中"，收到首段增量后变为正常气泡
+        ChatMessage(
+          id: 'stream-$opId',
+          role: 'assistant',
+          content: '',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       ];
       _sending = true;
       _error = null;
@@ -133,17 +140,34 @@ class ChatPageState extends State<ChatPage> {
     widget.onSendingChanged?.call(true);
     _scrollToBottom();
     try {
-      final reply = await widget.controller.askAssistant(clean, opId: opId);
+      await widget.controller.askAssistantStream(
+        clean,
+        opId: opId,
+        onChunk: (delta) {
+          if (!mounted || _messages.isEmpty) return;
+          setState(() {
+            final last = _messages[_messages.length - 1];
+            _messages[_messages.length - 1] = ChatMessage(
+              id: last.id,
+              role: last.role,
+              content: last.content + delta,
+              createdAt: last.createdAt,
+            );
+          });
+          _scrollToBottom();
+        },
+      );
       if (!mounted) return;
-      setState(() {
-        _messages = [..._messages, reply];
-        _sending = false;
-      });
+      setState(() => _sending = false);
       widget.onSendingChanged?.call(false);
       _scrollToBottom();
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        // 流式失败：丢弃空占位（已流出的部分保留可见），避免假"思考中"卡住
+        if (_messages.isNotEmpty && _messages.last.content.isEmpty) {
+          _messages = _messages.take(_messages.length - 1).toList();
+        }
         _sending = false;
         _error = '辅助回复失败：$e';
       });
@@ -456,16 +480,16 @@ class ChatPageState extends State<ChatPage> {
           child: ListView.builder(
             controller: _scroll,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            itemCount: _messages.length + (_sending ? 1 : 0),
+            itemCount: _messages.length,
             itemBuilder: (context, i) {
-              if (i == _messages.length && _sending) {
+              final m = _messages[i];
+              // 流式占位（内容为空）：显示"水元素思考中…"气泡，首段增量到达后自动切换
+              if (m.role == 'assistant' && m.content.isEmpty) {
                 return const _ThinkingBubble();
               }
               return _MessageBubble(
-                message: _messages[i],
-                onFollowUpTap: _messages[i].isUser
-                    ? null
-                    : (q) => submitQuestion(q),
+                message: m,
+                onFollowUpTap: m.isUser ? null : (q) => submitQuestion(q),
               );
             },
           ),

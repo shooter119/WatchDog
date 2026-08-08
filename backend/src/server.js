@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { transcribe } = require('./asr');
-const { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch } = require('./parse');
+const { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithDeepSeekStream, chatWithWebSearch } = require('./parse');
 const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
@@ -287,7 +287,38 @@ app.post('/api/chat', async (req, res, next) => {
       { role: 'user', content: clean },
     ];
     const t0 = Date.now();
-    logOp(req, 'info', 'chat_req', '收到问答请求', { text: clean.slice(0, 100), history: history.length });
+    logOp(req, 'info', 'chat_req', '收到问答请求', { text: clean.slice(0, 100), history: history.length, stream: !!req.body?.stream });
+    // 流式模式：SSE 逐段转发（低延迟优先，不走联网搜索——搜索会阻塞首字），回复完成后落库
+    if (req.body?.stream) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      let reply = '';
+      try {
+        for await (const delta of chatWithDeepSeekStream({
+          apiKey: CFG.llm.apiKey,
+          baseUrl: CFG.llm.baseUrl,
+          model: CFG.llm.chatModel,
+          messages,
+        })) {
+          reply += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        }
+      } catch (e) {
+        logOp(req, 'error', 'chat_stream_err', `流式问答失败: ${e.message || e}`);
+        res.write(`data: ${JSON.stringify({ error: String(e.message || e) })}\n\n`);
+      }
+      res.write('data: [DONE]\n\n');
+      res.end();
+      if (reply) {
+        db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'user', content: clean });
+        db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'assistant', content: reply });
+      }
+      logOp(req, 'info', 'chat_stream_done', '流式问答完成', { ms: Date.now() - t0, replyLen: reply.length });
+      return;
+    }
     let reply;
     if (CFG.llm.chatSearch) {
       try {

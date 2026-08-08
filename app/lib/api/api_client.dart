@@ -252,6 +252,44 @@ class ApiClient {
     );
   }
 
+  /// 流式提问（SSE）：每收到一段增量内容回调 [onChunk]，返回完整回复文本。
+  /// 服务端回复完成才落库，本地无需额外保存。
+  Future<String> sendChatMessageStream(
+    String message, {
+    required void Function(String delta) onChunk,
+    String? opId,
+  }) async {
+    final client = http.Client();
+    try {
+      final req = http.Request('POST', _uri('/api/chat'));
+      req.headers.addAll(_opHeaders(opId));
+      req.headers['Content-Type'] = 'application/json';
+      req.body = jsonEncode({'message': message, 'stream': 1});
+      // 首字节 15s 超时（流式下无需等待整条回复，60s 总超时问题随之消失）
+      final res = await client.send(req).timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) {
+        final body = await res.stream.bytesToString();
+        final m = jsonDecode(body) as Map?;
+        throw ApiException(m?['error']?.toString() ?? '提问失败(${res.statusCode})');
+      }
+      final full = StringBuffer();
+      final parser = SseLineParser();
+      await for (final chunk in res.stream.transform(utf8.decoder)) {
+        for (final ev in parser.push(chunk)) {
+          if (ev.done) return full.toString();
+          if (ev.error != null) throw ApiException(ev.error!);
+          if (ev.content != null) {
+            full.write(ev.content);
+            onChunk(ev.content!);
+          }
+        }
+      }
+      return full.toString();
+    } finally {
+      client.close();
+    }
+  }
+
   /// 清空本场景问答记录
   Future<void> clearChatMessages() async {
     final res = await http.delete(_uri('/api/chat'), headers: _headers).timeout(const Duration(seconds: 10));
@@ -328,6 +366,52 @@ class ApiException implements Exception {
   ApiException(this.message);
   @override
   String toString() => message;
+}
+
+/// SSE 事件：增量内容 / 错误 / 结束
+class SseEvent {
+  final String? content;
+  final String? error;
+  final bool done;
+  const SseEvent.content(String this.content) : error = null, done = false;
+  const SseEvent.error(String this.error) : content = null, done = false;
+  const SseEvent.done() : content = null, error = null, done = true;
+}
+
+/// SSE 行解析：缓冲跨 chunk 的半行，产出完整事件（协议：`data: {...}` 行 + [DONE]）
+class SseLineParser {
+  String _buf = '';
+  final List<SseEvent> _events = [];
+
+  List<SseEvent> push(String chunk) {
+    _events.clear();
+    _buf += chunk;
+    var idx = -1;
+    while ((idx = _buf.indexOf('\n')) >= 0) {
+      final line = _buf.substring(0, idx);
+      _buf = _buf.substring(idx + 1);
+      final trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      final data = trimmed.substring(5).trim();
+      if (data == '[DONE]') {
+        _events.add(const SseEvent.done());
+        continue;
+      }
+      try {
+        final m = jsonDecode(data) as Map<String, dynamic>;
+        final error = m['error'] as String?;
+        if (error != null) {
+          _events.add(SseEvent.error(error));
+        } else {
+          final content = m['content'] as String?;
+          if (content != null) _events.add(SseEvent.content(content));
+        }
+      } catch (_) {
+        // 忽略无法解析的行（服务端可能发送 keep-alive）
+      }
+    }
+    return _events;
+  }
 }
 
 /// 同名人员已在火场内（409）：携带已有在场记录，供确认页二选一处理
