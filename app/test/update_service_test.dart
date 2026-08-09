@@ -81,7 +81,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
             calls.add(call.method);
-            if (call.method == 'hasDownloadedUpdate') return true;
+            if (call.method == 'verifyDownloadedUpdate') return true;
             return null;
           });
 
@@ -91,8 +91,21 @@ void main() {
         onInstalling: () => installing = true,
       );
 
-      expect(calls, ['hasDownloadedUpdate', 'installDownloadedUpdate']);
+      expect(calls, ['verifyDownloadedUpdate', 'installDownloadedUpdate']);
       expect(installing, isTrue);
+    });
+
+    test('不同版本使用不同安装包文件名', () {
+      expect(
+        UpdateService.filenameFor(update),
+        'watchdog-update-v0.11.12_38.apk',
+      );
+      expect(
+        UpdateService.filenameFor(
+          const UpdateInfo(tagName: 'v0.11.13+39', apkUrl: 'x'),
+        ),
+        isNot(UpdateService.filenameFor(update)),
+      );
     });
 
     test('版本不匹配时不复用旧安装包', () async {

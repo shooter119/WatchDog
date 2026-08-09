@@ -10,7 +10,6 @@ import '../services/op_log_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import '../theme/assistant_avatar.dart';
-import '../api/api_client.dart' show ApiClient;
 
 /// 智能体问答页「辅助」：文字输入 + 就地语音提问，AI 解答火场困难。
 /// 语音识别结果按意图路由：提问留本页发送；进出场/日志交 main 跳转对应页面。
@@ -46,7 +45,8 @@ class ChatPageState extends State<ChatPage> {
   final ScrollController _scroll = ScrollController();
 
   List<ChatMessage> _messages = [];
-  bool _loading = true;
+  // 本机历史异步读取不应阻塞辅助页首屏；未读完时先展示欢迎态。
+  bool _loading = false;
   bool _sending = false;
   bool _recording = false;
   bool _processing = false;
@@ -56,32 +56,11 @@ class ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onConfigChanged);
-    _lastIncidentId = widget.controller.currentIncident?.id;
     _loadHistory();
-  }
-
-  /// 配置就绪（api 从空变为可用）后自动重试加载历史：
-  /// 首次打开辅助页时尚未配置服务器 → 加载失败 → 设置页保存配置后无需重启即可恢复
-  ApiClient? _lastRetryApi; // 已重试过的 api 实例（避免每秒 notify 重复请求）
-  String? _lastIncidentId; // 上次加载历史的警情（切换警情后重载）
-  void _onConfigChanged() {
-    final a = widget.controller.api;
-    final incident = widget.controller.currentIncident?.id;
-    if (incident != null && incident != _lastIncidentId) {
-      _lastIncidentId = incident;
-      _loadHistory();
-      return;
-    }
-    if (_error != null && a != null && !identical(a, _lastRetryApi)) {
-      _lastRetryApi = a;
-      _loadHistory();
-    }
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onConfigChanged);
     _scroll.dispose();
     _audio.dispose();
     super.dispose();
@@ -109,6 +88,9 @@ class ChatPageState extends State<ChatPage> {
   Future<void> submitQuestion(String text) async {
     final clean = text.trim();
     if (clean.isEmpty || _sending) return;
+    final history = _messages
+        .where((message) => message.content.trim().isNotEmpty)
+        .toList(growable: false);
     final opId =
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     OpLogService.instance.record(
@@ -116,6 +98,7 @@ class ChatPageState extends State<ChatPage> {
       'chat_submit',
       '提交问题',
       data: {'text': clean},
+      sync: false,
     );
     setState(() {
       _messages = [
@@ -143,6 +126,7 @@ class ChatPageState extends State<ChatPage> {
       await widget.controller.askAssistantStream(
         clean,
         opId: opId,
+        history: history,
         onChunk: (delta) {
           if (!mounted || _messages.isEmpty) return;
           setState(() {
@@ -177,9 +161,9 @@ class ChatPageState extends State<ChatPage> {
         'chat_err',
         '回复失败: $e',
         level: 'error',
+        sync: false,
       );
     }
-    OpLogService.instance.flush(api: widget.controller.api);
   }
 
   void _scrollToBottom() {
@@ -195,7 +179,7 @@ class ChatPageState extends State<ChatPage> {
     if (_recording || _processing || _sending) return;
     _opId =
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
-    OpLogService.instance.record(_opId!, 'record_start', '开始录音');
+    OpLogService.instance.record(_opId!, 'record_start', '开始录音', sync: false);
     final ok = await _audio.hasPermission();
     if (!ok) {
       if (mounted) {
@@ -211,6 +195,7 @@ class ChatPageState extends State<ChatPage> {
         'record_perm_denied',
         '缺少麦克风权限',
         level: 'warn',
+        sync: false,
       );
       _endOp('perm_denied');
       return;
@@ -226,6 +211,7 @@ class ChatPageState extends State<ChatPage> {
         'record_start_err',
         '录音启动失败: $e',
         level: 'error',
+        sync: false,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -259,6 +245,7 @@ class ChatPageState extends State<ChatPage> {
           'transcribe_ok',
           '转写成功',
           data: {'text': text},
+          sync: false,
         );
       } catch (e) {
         OpLogService.instance.record(
@@ -266,6 +253,7 @@ class ChatPageState extends State<ChatPage> {
           'transcribe_err',
           '转写失败: $e',
           level: 'error',
+          sync: false,
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -291,6 +279,7 @@ class ChatPageState extends State<ChatPage> {
           'transcribe_empty',
           '未识别到语音',
           level: 'warn',
+          sync: false,
         );
         return;
       }
@@ -302,6 +291,7 @@ class ChatPageState extends State<ChatPage> {
           'parse_ok',
           '语义解析完成',
           data: {'text': text, 'intent': parsed.intent},
+          sync: false,
         );
       } catch (e) {
         OpLogService.instance.record(
@@ -309,6 +299,7 @@ class ChatPageState extends State<ChatPage> {
           'parse_err',
           '解析失败: $e',
           level: 'error',
+          sync: false,
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -372,8 +363,8 @@ class ChatPageState extends State<ChatPage> {
       'op_end',
       '本次操作结束',
       data: {'outcome': outcome},
+      sync: false,
     );
-    OpLogService.instance.flush(api: widget.controller.api);
   }
 
   Future<void> _confirmClear() async {

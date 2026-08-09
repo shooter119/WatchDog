@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/alarm_service.dart';
+import '../services/chat_history.dart';
 import '../services/foreground_keep_alive.dart';
 import '../services/local_asr_service.dart';
 import '../services/local_parser.dart';
@@ -50,6 +51,11 @@ class AppController extends ChangeNotifier {
   Timer? _pollTimer;
   Timer? _tickTimer;
   final Map<String, int> _announced = {};
+  bool _alarmReady = false;
+
+  // 页面会先于异步初始化完成而显示。保留初始化 Future，确保用户在启动
+  // 瞬间点击“新建警情”时，操作会等待 ApiClient 就绪，而不是被误判为断线。
+  Future<void>? _initFuture;
 
   /// 最近一次同步成功时间戳（0 = 从未成功过）
   int _lastSyncSuccessAt = 0;
@@ -103,9 +109,17 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> init() async {
-    await tts.init();
-    await alarm.init();
+  Future<void> init() {
+    final existing = _initFuture;
+    if (existing != null) return existing;
+    final future = _initInternal();
+    _initFuture = future;
+    return future;
+  }
+
+  Future<void> _initInternal() async {
+    // 先建立 API 客户端并启动核心同步。TTS、通知和后台值守属于可选
+    // 能力，不能阻断新建/加入警情等核心服务器操作。
     await refreshConfig();
     startSync();
     loadRoster();
@@ -113,8 +127,38 @@ class AppController extends ChangeNotifier {
     syncSettings();
     // 启动后补传上次未上传完的操作日志（fire-and-forget）
     OpLogService.instance.flush(api: api);
-    // 后台值守：开关开启则拉起前台服务（进程保活 + 常驻通知栏）
-    await syncKeepAlive();
+    // 报警、TTS 和后台值守在后台初始化，任何系统权限/插件问题都不影响
+    // 活跃警情列表与新建警情。
+    unawaited(_initOptionalServices());
+  }
+
+  Future<void> _initOptionalServices() async {
+    try {
+      await tts.init();
+    } catch (e) {
+      debugPrint('TtsService init failed: $e');
+    }
+    try {
+      await alarm.init();
+      _alarmReady = true;
+      await _rescheduleNotifications();
+    } catch (e) {
+      debugPrint('AlarmService init failed: $e');
+    }
+    try {
+      await syncKeepAlive();
+    } catch (e) {
+      debugPrint('ForegroundKeepAlive start failed: $e');
+    }
+  }
+
+  /// 等待启动初始化完成。某些页面在初始化 Future 完成前就可以交互，
+  /// 需要使用 API 的操作必须先经过这里。
+  Future<void> _ensureApiReady() async {
+    if (api != null) return;
+    final initFuture = _initFuture;
+    if (initFuture != null) await initFuture;
+    if (api == null) await refreshConfig();
   }
 
   /// 保活服务与本地设置同步：开启时启动并更新配置，关闭时停止
@@ -142,7 +186,10 @@ class AppController extends ChangeNotifier {
       final remoteAt = remote['updatedAt'] as int;
       final localAt = await Settings.modifiedAt;
       if (remoteAt > localAt) {
-        await Settings.applyFromServer(remote['settings'] as Map<String, dynamic>, updatedAt: remoteAt);
+        await Settings.applyFromServer(
+          remote['settings'] as Map<String, dynamic>,
+          updatedAt: remoteAt,
+        );
         await refreshConfig();
       } else if (remoteAt < localAt) {
         await a.pushUserSettings(await Settings.toSyncMap());
@@ -162,6 +209,12 @@ class AppController extends ChangeNotifier {
       apiToken: token,
       deviceId: await OpLogService.instance.deviceId,
       actorName: await Settings.realName,
+    );
+    debugPrint(
+      'WatchDog config ready: url=$serverUrl, '
+      'incident=${incidentId.isEmpty ? 'none' : 'selected'}, '
+      'token=${token.isNotEmpty ? 'configured' : 'empty'}, '
+      'actor=${(await Settings.realName).isEmpty ? 'empty' : 'configured'}',
     );
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
@@ -213,8 +266,12 @@ class AppController extends ChangeNotifier {
         } else {
           currentIncident = incident;
           entries = await api!.fetchEntries();
-          try { notes = await api!.fetchNotes(); } catch (_) {}
-          try { forces = await api!.fetchIncidentForces(); } catch (_) {}
+          try {
+            notes = await api!.fetchNotes();
+          } catch (_) {}
+          try {
+            forces = await api!.fetchIncidentForces();
+          } catch (_) {}
         }
       }
       syncError = null;
@@ -222,6 +279,7 @@ class AppController extends ChangeNotifier {
       await _rescheduleNotifications();
     } catch (e) {
       syncError = e.toString();
+      debugPrint('WatchDog sync failed: $e');
     } finally {
       syncing = false;
       notifyListeners();
@@ -235,6 +293,7 @@ class AppController extends ChangeNotifier {
   final Map<String, int> _scheduled = {};
 
   Future<void> _rescheduleNotifications() async {
+    if (!_alarmReady) return;
     final active = entries.where((e) => e.isActive).toList();
     final activeIds = active.map((e) => e.id).toSet();
     final allIds = entries.map((e) => e.id).toSet();
@@ -243,7 +302,11 @@ class AppController extends ChangeNotifier {
       if (_scheduled[e.id] != e.exitAt) {
         _scheduled[e.id] = e.exitAt;
         await alarm.cancelForEntry(e.id);
-        await alarm.scheduleForEntry(e, warnMin: calcConfig.warnMin, alarmMin: calcConfig.alarmMin);
+        await alarm.scheduleForEntry(
+          e,
+          warnMin: calcConfig.warnMin,
+          alarmMin: calcConfig.alarmMin,
+        );
       }
     }
     // 已出火场或已消失的条目：取消通知
@@ -266,9 +329,17 @@ class AppController extends ChangeNotifier {
         _announce(e, 'timeout', '${e.name}超时！${e.name}超时！立即确认！');
       } else if (remaining <= calcConfig.alarmMin * 60000) {
         inDanger = true;
-        _announce(e, 'alarm', '${e.name}，气瓶剩余${(remaining / 60000).ceil()}分钟，立即撤离！');
+        _announce(
+          e,
+          'alarm',
+          '${e.name}，气瓶剩余${(remaining / 60000).ceil()}分钟，立即撤离！',
+        );
       } else if (remaining <= calcConfig.warnMin * 60000) {
-        _announce(e, 'warn', '${e.name}，气瓶剩余${(remaining / 60000).ceil()}分钟，准备撤离。');
+        _announce(
+          e,
+          'warn',
+          '${e.name}，气瓶剩余${(remaining / 60000).ceil()}分钟，准备撤离。',
+        );
       }
     }
     // 红色（alarm/timeout）状态持续循环警报，全部脱险后停止
@@ -313,9 +384,34 @@ class AppController extends ChangeNotifier {
       if (!_isNetworkError(error)) rethrow;
       final id = 'offline-entry-${DateTime.now().microsecondsSinceEpoch}';
       final at = DateTime.now().millisecondsSinceEpoch;
-      final duration = (calcConfig.cylinderVolL * pressureMpa * 10 / calcConfig.consumptionLpm).round();
-      await OfflineQueue.instance.enqueue(incidentId: incident.id, type: 'entry', occurredAt: at, clientOpId: opId ?? id, payload: {'entry_id': id, 'name': name, 'pressure_mpa': pressureMpa, 'raw_text': rawText});
-      e = Entry(id: id, name: name, pressureMpa: pressureMpa, durationMin: duration, entryAt: at, exitAt: at + duration * 60000, source: 'offline', rawText: rawText);
+      final duration =
+          (calcConfig.cylinderVolL *
+                  pressureMpa *
+                  10 /
+                  calcConfig.consumptionLpm)
+              .round();
+      await OfflineQueue.instance.enqueue(
+        incidentId: incident.id,
+        type: 'entry',
+        occurredAt: at,
+        clientOpId: opId ?? id,
+        payload: {
+          'entry_id': id,
+          'name': name,
+          'pressure_mpa': pressureMpa,
+          'raw_text': rawText,
+        },
+      );
+      e = Entry(
+        id: id,
+        name: name,
+        pressureMpa: pressureMpa,
+        durationMin: duration,
+        entryAt: at,
+        exitAt: at + duration * 60000,
+        source: 'offline',
+        rawText: rawText,
+      );
     }
     // 提交成功立即插入本地列表并通知（看板即时显示倒计时），
     // 不依赖 sync 网络结果——网络不稳时同步失败也不影响本地展示
@@ -326,23 +422,48 @@ class AppController extends ChangeNotifier {
   }
 
   /// 合并：同名已在场的记录按本次复核压力重新倒计时（保留原记录，不重复计数）
-  Future<Entry> mergeEntryPressure({required String id, required double pressureMpa, String? opId}) async {
-    final e = await updatePressure(id: id, pressureMpa: pressureMpa, opId: opId);
+  Future<Entry> mergeEntryPressure({
+    required String id,
+    required double pressureMpa,
+    String? opId,
+  }) async {
+    final e = await updatePressure(
+      id: id,
+      pressureMpa: pressureMpa,
+      opId: opId,
+    );
     await sync();
     return e;
   }
 
   /// 更新压力：对在场人员提交一次压力读数（动态耗气率的采样点，服务端差分重算倒计时）
-  Future<Entry> updatePressure({required String id, required double pressureMpa, String? opId}) async {
+  Future<Entry> updatePressure({
+    required String id,
+    required double pressureMpa,
+    String? opId,
+  }) async {
     final op = opId ?? '';
-    OpLogService.instance.record(op, 'pressure_report', '更新压力 ${pressureMpa}MPa', data: {'entryId': id});
+    OpLogService.instance.record(
+      op,
+      'pressure_report',
+      '更新压力 ${pressureMpa}MPa',
+      data: {'entryId': id},
+    );
     final current = entries.firstWhere((entry) => entry.id == id);
     Entry e;
     try {
       e = await api!.updateEntry(id: id, pressureMpa: pressureMpa, opId: op);
     } catch (error) {
       if (!_isNetworkError(error) || currentIncident == null) rethrow;
-      await OfflineQueue.instance.enqueue(incidentId: currentIncident!.id, type: 'pressure', occurredAt: DateTime.now().millisecondsSinceEpoch, clientOpId: op.isEmpty ? 'offline-pressure-${DateTime.now().microsecondsSinceEpoch}' : op, payload: {'entry_id': id, 'pressure_mpa': pressureMpa});
+      await OfflineQueue.instance.enqueue(
+        incidentId: currentIncident!.id,
+        type: 'pressure',
+        occurredAt: DateTime.now().millisecondsSinceEpoch,
+        clientOpId: op.isEmpty
+            ? 'offline-pressure-${DateTime.now().microsecondsSinceEpoch}'
+            : op,
+        payload: {'entry_id': id, 'pressure_mpa': pressureMpa},
+      );
       e = current;
     }
     await sync();
@@ -354,7 +475,14 @@ class AppController extends ChangeNotifier {
       await api!.markExited(id, opId: opId);
     } catch (error) {
       if (!_isNetworkError(error) || currentIncident == null) rethrow;
-      await OfflineQueue.instance.enqueue(incidentId: currentIncident!.id, type: 'exit', occurredAt: DateTime.now().millisecondsSinceEpoch, clientOpId: opId ?? 'offline-exit-${DateTime.now().microsecondsSinceEpoch}', payload: {'entry_id': id});
+      await OfflineQueue.instance.enqueue(
+        incidentId: currentIncident!.id,
+        type: 'exit',
+        occurredAt: DateTime.now().millisecondsSinceEpoch,
+        clientOpId:
+            opId ?? 'offline-exit-${DateTime.now().microsecondsSinceEpoch}',
+        payload: {'entry_id': id},
+      );
     }
     await sync();
   }
@@ -368,9 +496,21 @@ class AppController extends ChangeNotifier {
   Future<Incident> createIncident() async {
     final name = await Settings.realName;
     if (name.isEmpty) throw StateError('请先在设置中填写真实姓名');
-    final a = api;
-    if (a == null) throw StateError('未连接服务器');
-    final incident = await a.createIncident(realName: name);
+    await _ensureApiReady();
+    // 新建警情是核心链路，不能因为启动时某个可选插件失败而没有
+    // ApiClient。按当前设置现场补建客户端，确保请求得到真实的网络/服务端错误。
+    final a = api ??= ApiClient(
+      baseUrl: await Settings.serverUrl,
+      incidentId: await Settings.currentIncidentId,
+      apiToken: await Settings.apiToken,
+      deviceId: await OpLogService.instance.deviceId,
+      actorName: name,
+    );
+    debugPrint('WatchDog createIncident: api=ready, actor=configured');
+    final incident = await a.createIncident(
+      realName: name,
+      opId: 'incident-create-${DateTime.now().microsecondsSinceEpoch}',
+    );
     await Settings.setCurrentIncidentId(incident.id);
     await refreshConfig();
     await sync();
@@ -381,7 +521,11 @@ class AppController extends ChangeNotifier {
     final incident = currentIncident;
     final a = api;
     if (incident == null || a == null) throw StateError('未选择警情');
-    final updated = await a.updateIncidentTitle(incident.id, title.trim().isEmpty ? null : title.trim(), expectedVersion: incident.version);
+    final updated = await a.updateIncidentTitle(
+      incident.id,
+      title.trim().isEmpty ? null : title.trim(),
+      expectedVersion: incident.version,
+    );
     currentIncident = updated;
     notifyListeners();
     return updated;
@@ -400,10 +544,36 @@ class AppController extends ChangeNotifier {
     await sync();
   }
 
-  Future<void> saveForce({String? forceId, required String stationName, String? stationId, required int vehicleCount, required int personnelCount, int? expectedVersion}) async {
+  /// 退出当前警情只清除本机选择，不归档服务器档案；之后仍可从活跃列表重新加入。
+  Future<void> exitCurrentIncident() async {
+    if (currentIncident == null) return;
+    await Settings.setCurrentIncidentId('');
+    currentIncident = null;
+    entries = [];
+    notes = [];
+    forces = [];
+    await refreshConfig();
+    await sync();
+  }
+
+  Future<void> saveForce({
+    String? forceId,
+    required String stationName,
+    String? stationId,
+    required int vehicleCount,
+    required int personnelCount,
+    int? expectedVersion,
+  }) async {
     final a = api;
     if (a == null || currentIncident == null) throw StateError('未选择警情');
-    await a.saveIncidentForce(forceId: forceId, stationName: stationName, stationId: stationId, vehicleCount: vehicleCount, personnelCount: personnelCount, expectedVersion: expectedVersion);
+    await a.saveIncidentForce(
+      forceId: forceId,
+      stationName: stationName,
+      stationId: stationId,
+      vehicleCount: vehicleCount,
+      personnelCount: personnelCount,
+      expectedVersion: expectedVersion,
+    );
     forces = await a.fetchIncidentForces();
     currentIncident = await a.fetchIncident(currentIncident!.id);
     notifyListeners();
@@ -427,7 +597,11 @@ class AppController extends ChangeNotifier {
   Future<Incident> renameIncident(Incident incident, String title) async {
     final a = api;
     if (a == null) throw StateError('未连接服务器');
-    return a.updateIncidentTitle(incident.id, title.trim().isEmpty ? null : title.trim(), expectedVersion: incident.version);
+    return a.updateIncidentTitle(
+      incident.id,
+      title.trim().isEmpty ? null : title.trim(),
+      expectedVersion: incident.version,
+    );
   }
 
   /// 新增火场随手记（语音分流自动入日志 / 手动添加）。
@@ -437,41 +611,69 @@ class AppController extends ChangeNotifier {
     final author = await Settings.realName;
     Note note;
     try {
-      note = await api!.createNote(text: text, category: cat, opId: opId, author: author);
+      note = await api!.createNote(
+        text: text,
+        category: cat,
+        opId: opId,
+        author: author,
+      );
     } catch (error) {
       if (!_isNetworkError(error) || currentIncident == null) rethrow;
       final at = DateTime.now().millisecondsSinceEpoch;
       final noteId = 'offline-note-${DateTime.now().microsecondsSinceEpoch}';
-      await OfflineQueue.instance.enqueue(incidentId: currentIncident!.id, type: 'note', occurredAt: at, clientOpId: opId ?? noteId, payload: {'note_id': noteId, 'text': text, 'category': cat});
-      note = Note(id: noteId, text: text, category: cat, author: author, createdAt: at, updatedAt: at);
+      await OfflineQueue.instance.enqueue(
+        incidentId: currentIncident!.id,
+        type: 'note',
+        occurredAt: at,
+        clientOpId: opId ?? noteId,
+        payload: {'note_id': noteId, 'text': text, 'category': cat},
+      );
+      note = Note(
+        id: noteId,
+        text: text,
+        category: cat,
+        author: author,
+        createdAt: at,
+        updatedAt: at,
+      );
     }
     notes = [note, ...notes];
     notifyListeners();
     return note;
   }
 
-  bool _isNetworkError(Object error) => error is TimeoutException || error.toString().contains('SocketException') || error.toString().contains('ClientException') || error.toString().contains('Connection closed');
+  bool _isNetworkError(Object error) =>
+      error is TimeoutException ||
+      error.toString().contains('SocketException') ||
+      error.toString().contains('ClientException') ||
+      error.toString().contains('Connection closed');
 
   /// 编辑日志条目：text/category 传 null 表示不改
   Future<Note> updateNote(String id, {String? text, String? category}) async {
-    final updated = await api!.updateNote(id: id, text: text, category: category);
+    final updated = await api!.updateNote(
+      id: id,
+      text: text,
+      category: category,
+    );
     notes = notes.map((n) => n.id == id ? updated : n).toList();
     notifyListeners();
     return updated;
   }
 
-  /// 智能体问答：拉取历史（旧→新）
-  Future<List<ChatMessage>> fetchChatHistory() async {
-    final a = api;
-    if (a == null) throw StateError('未连接服务器');
-    return a.fetchChatMessages();
-  }
+  /// 智能体问答：读取本机历史（旧→新），不依赖警情或云端。
+  Future<List<ChatMessage>> fetchChatHistory() => ChatHistory.load();
 
   /// 智能体问答：提问并返回 AI 回复
   Future<ChatMessage> askAssistant(String message, {String? opId}) async {
-    final op = opId ?? '';
-    OpLogService.instance.record(op, 'chat_ask', '向辅助提问', data: {'text': message});
-    return await api!.sendChatMessage(message, opId: op);
+    final a = api;
+    if (a == null) throw StateError('AI 服务未连接');
+    final reply = await a.sendChatMessage(message, opId: opId);
+    await ChatHistory.appendExchange(
+      question: message,
+      reply: reply.content,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    return reply;
   }
 
   /// 流式提问：onChunk 逐段回调增量内容，返回完整回复文本（低延迟逐字显示）
@@ -479,17 +681,29 @@ class AppController extends ChangeNotifier {
     String message, {
     required void Function(String delta) onChunk,
     String? opId,
+    List<ChatMessage> history = const [],
   }) async {
-    final op = opId ?? '';
-    OpLogService.instance.record(op, 'chat_ask', '向辅助提问', data: {'text': message});
-    return await api!.sendChatMessageStream(message, onChunk: onChunk, opId: op);
+    final a = api;
+    if (a == null) throw StateError('AI 服务未连接');
+    final reply = await a.sendChatMessageStream(
+      message,
+      onChunk: onChunk,
+      opId: opId,
+      history: history,
+    );
+    unawaited(
+      ChatHistory.appendExchange(
+        question: message,
+        reply: reply,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ).catchError((_) {}),
+    );
+    return reply;
   }
 
-  /// 清空本场景问答记录
+  /// 清空本机辅助问答记录
   Future<void> clearChatHistory() async {
-    final a = api;
-    if (a == null) return;
-    await a.clearChatMessages();
+    await ChatHistory.clear();
   }
 
   Future<void> deleteNote(String id) async {
@@ -501,14 +715,21 @@ class AppController extends ChangeNotifier {
   /// 名单/热词本地缓存键（断网/服务器不可达时回退，保证本地识别热词与名单查看离线可用）
   static const _kCachedFirefighters = 'cached_firefighters';
   static const _kCachedHotwords = 'cached_hotwords';
+  static const _kRosterInitialized = 'builtin_roster_initialized_v1';
 
   /// 拉取名单与热词：成功写入本地缓存；失败（断网/服务器不可达）回退缓存。
   /// 名单热词是本地识别的热词来源，火场无信号时也必须生效。
   Future<void> loadRoster() async {
+    await _ensureLocalRoster();
     if (api == null) return;
     try {
       final f = await api!.fetchFirefighters();
       final h = await api!.fetchHotwords();
+      // 服务器尚未完成种子初始化时，不要把装机自带名单和热词清空。
+      if (f.isEmpty && h.isEmpty) {
+        await _restoreCachedRoster();
+        return;
+      }
       firefighters = f;
       hotwords = h;
       notifyListeners();
@@ -525,7 +746,11 @@ class AppController extends ChangeNotifier {
         _kCachedFirefighters,
         jsonEncode(firefighters.map((f) => f.name).toList()),
       );
-      await sp.setString(_kCachedHotwords, jsonEncode(hotwords.map((h) => h.word).toList()));
+      await sp.setString(
+        _kCachedHotwords,
+        jsonEncode(hotwords.map((h) => h.word).toList()),
+      );
+      await sp.setBool(_kRosterInitialized, true);
     } catch (_) {
       // 缓存失败不影响主流程
     }
@@ -534,17 +759,14 @@ class AppController extends ChangeNotifier {
   Future<void> _restoreCachedRoster() async {
     try {
       final sp = await SharedPreferences.getInstance();
-      final fNames = (jsonDecode(sp.getString(_kCachedFirefighters) ?? '[]') as List)
-          .map((e) => e.toString())
-          .toList();
-      final hWords = (jsonDecode(sp.getString(_kCachedHotwords) ?? '[]') as List)
-          .map((e) => e.toString())
-          .toList();
-      if (fNames.isEmpty && hWords.isEmpty) {
-        // 无缓存且服务器不可达：首次安装回退内置默认名单与热词
-        _loadBuiltinDefaults();
-        return;
-      }
+      final fNames =
+          (jsonDecode(sp.getString(_kCachedFirefighters) ?? '[]') as List)
+              .map((e) => e.toString())
+              .toList();
+      final hWords =
+          (jsonDecode(sp.getString(_kCachedHotwords) ?? '[]') as List)
+              .map((e) => e.toString())
+              .toList();
       firefighters = fNames.map((n) => Firefighter(id: '', name: n)).toList();
       hotwords = hWords.map((w) => Hotword(id: '', word: w)).toList();
       notifyListeners();
@@ -554,10 +776,31 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> _ensureLocalRoster() async {
+    final sp = await SharedPreferences.getInstance();
+    if (sp.getBool(_kRosterInitialized) != true) {
+      // 兼容旧版本已经写入的本地缓存，不能被首次初始化的默认值覆盖。
+      if (sp.containsKey(_kCachedFirefighters) ||
+          sp.containsKey(_kCachedHotwords)) {
+        await sp.setBool(_kRosterInitialized, true);
+        await _restoreCachedRoster();
+        return;
+      }
+      _loadBuiltinDefaults();
+      await _cacheRoster();
+      return;
+    }
+    await _restoreCachedRoster();
+  }
+
   /// 内置默认名单与热词（与后端 seed 数据一致，首次安装/离线兜底）
   void _loadBuiltinDefaults() {
-    firefighters = _defaultFirefighterNames.map((n) => Firefighter(id: '', name: n)).toList();
-    hotwords = _defaultHotwordTerms.map((w) => Hotword(id: '', word: w)).toList();
+    firefighters = _defaultFirefighterNames
+        .map((n) => Firefighter(id: '', name: n))
+        .toList();
+    hotwords = _defaultHotwordTerms
+        .map((w) => Hotword(id: '', word: w))
+        .toList();
     notifyListeners();
   }
 
@@ -580,8 +823,17 @@ class AppController extends ChangeNotifier {
   ];
 
   static const _defaultHotwordTerms = [
-    '龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站',
-    '头车', '两车', '三车', '四车', '内攻', '搜救',
+    '龙游大队',
+    '龙游',
+    '龙翔路站',
+    '永安路站',
+    '兴园站',
+    '头车',
+    '两车',
+    '三车',
+    '四车',
+    '内攻',
+    '搜救',
   ];
 
   List<String> get _rosterNames => firefighters.map((f) => f.name).toList();
@@ -654,7 +906,11 @@ class AppController extends ChangeNotifier {
 /// 平滑断线判定纯函数（可单测）：
 /// 从未同步成功（lastSyncSuccessAt == 0）→ 乐观视为已连接；
 /// 距上次成功超过 [thresholdMs] 毫秒 → 断线。
-bool isConnectionLost({required int lastSyncSuccessAt, required int nowMs, int thresholdMs = 30000}) {
+bool isConnectionLost({
+  required int lastSyncSuccessAt,
+  required int nowMs,
+  int thresholdMs = 30000,
+}) {
   if (lastSyncSuccessAt <= 0) return false;
   return nowMs - lastSyncSuccessAt > thresholdMs;
 }

@@ -42,6 +42,14 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('AppController 名单热词离线缓存', () {
+    testWidgets('首次安装即有内置名单和热词，不依赖警情或服务器', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = AppController();
+      await c.loadRoster();
+      expect(c.firefighters.length, 95);
+      expect(c.hotwords.length, 11);
+    });
+
     testWidgets('服务器不可达时回退本地缓存，名单热词仍可用', (tester) async {
       SharedPreferences.setMockInitialValues({
         'cached_firefighters': '["张三","李四"]',

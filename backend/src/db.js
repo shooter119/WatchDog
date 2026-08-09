@@ -125,16 +125,19 @@ db.exec(
 
 function incidentNumberFor(timestamp) {
   const date = new Date(timestamp);
-  return date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate() + '-' +
-    date.getHours() + '-' + String(date.getMinutes()).padStart(2, '0');
+  return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日' +
+    String(date.getHours()).padStart(2, '0') + '时' + String(date.getMinutes()).padStart(2, '0') + '分';
 }
 
 function uniqueIncidentNumber(timestamp) {
   const base = incidentNumberFor(timestamp);
-  if (!db.prepare('SELECT 1 FROM incidents WHERE number = ?').get(base)) return base;
-  let suffix = 2;
-  while (db.prepare('SELECT 1 FROM incidents WHERE number = ?').get(base + '-' + suffix)) suffix++;
-  return base + '-' + suffix;
+  let sequence = 1;
+  let candidate = base + sequence + '#警情';
+  while (db.prepare('SELECT 1 FROM incidents WHERE number = ?').get(candidate)) {
+    sequence++;
+    candidate = base + sequence + '#警情';
+  }
+  return candidate;
 }
 
 function parseEventPayload(value) {
@@ -609,6 +612,16 @@ function listIncidents(status = null) {
   return db.prepare('SELECT * FROM incidents ORDER BY CASE WHEN status = \'active\' THEN 0 ELSE 1 END, COALESCE(archived_at, last_activity_at) DESC, created_at DESC').all();
 }
 
+// 只把通过新建接口产生过 incident_created 事件的记录作为建档冷却依据，
+// 避免维护迁移或单元测试直接写入的兼容警情阻塞真实用户建档。
+function findRecentActiveIncident(createdAfter) {
+  return db.prepare(
+    'SELECT i.* FROM incidents i WHERE i.status = \'active\' AND i.created_at >= ? ' +
+      'AND EXISTS (SELECT 1 FROM incident_events e WHERE e.incident_id = i.id AND e.type = \'incident_created\') ' +
+      'ORDER BY i.created_at DESC LIMIT 1'
+  ).get(Number(createdAfter) || 0) || null;
+}
+
 function updateIncidentTitle(id, title, { expectedVersion = null } = {}) {
   const current = getIncident(id);
   if (!current) return null;
@@ -794,12 +807,42 @@ function backfillIncidentEvents() {
   }
 }
 
+// 旧版进退场会同时写入 entries 和一条同内容随手记。迁移到统一事件流后，
+// 对“同一姓名 + 同一动作 + 30 秒内”的 legacy 随手记做确定性去重；
+// 其他无法确定的历史记录继续保留，避免误删真实现场记录。
+function dedupeLegacyIncidentEvents() {
+  let removed = 0;
+  for (const incident of db.prepare('SELECT id FROM incidents').all()) {
+    const events = db.prepare(
+      'SELECT id, type, occurred_at, payload FROM incident_events WHERE incident_id = ? AND source = \'legacy\' ORDER BY occurred_at ASC, recorded_at ASC'
+    ).all(incident.id);
+    const actions = events.filter((event) => event.type === 'entry' || event.type === 'exit').map((event) => ({
+      ...event,
+      payload: parseEventPayload(event.payload) || {},
+    }));
+    for (const event of events.filter((item) => item.type === 'note')) {
+      const payload = parseEventPayload(event.payload) || {};
+      const text = String(payload.text || '').trim();
+      const duplicate = actions.find((action) => {
+        const name = String(action.payload.name || '').trim();
+        if (!name || Math.abs(Number(action.occurred_at) - Number(event.occurred_at)) > 30 * 1000) return false;
+        return text === `${name}${action.type === 'entry' ? '进场' : '出场'}`;
+      });
+      if (!duplicate) continue;
+      removed += db.prepare('DELETE FROM incident_events WHERE id = ?').run(event.id).changes;
+    }
+  }
+  return removed;
+}
+
 backfillIncidentEvents();
+dedupeLegacyIncidentEvents();
 
 module.exports = {
   getIncident,
   createIncident,
   listIncidents,
+  findRecentActiveIncident,
   updateIncidentTitle,
   setIncidentSuggestedTitle,
   touchIncidentActivity,
@@ -809,6 +852,7 @@ module.exports = {
   getIncidentEvent,
   getIncidentEventByClientOp,
   listIncidentEvents,
+  dedupeLegacyIncidentEvents,
   listStations,
   addStation,
   listIncidentForces,

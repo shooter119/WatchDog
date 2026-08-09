@@ -329,7 +329,7 @@ class ParsePerson {
 }
 
 /// 语音输入意图（App 依据它路由到对应界面）
-/// entry/exit → 语音页确认登记；note → 记入火场日志并跳日志页；
+/// entry/exit → 警情处置页确认登记；note → 记入火场日志并跳日志页；
 /// ask → 跳智能体问答页并发送；ignore → 环境音，丢弃并提示重新录入
 class VoiceIntent {
   static const String entry = 'entry';
@@ -427,6 +427,13 @@ class ChatMessage {  final String id;
   });
 
   bool get isUser => role == 'user';
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'role': role,
+        'content': content,
+        'created_at': createdAt,
+      };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
         id: json['id'] as String,

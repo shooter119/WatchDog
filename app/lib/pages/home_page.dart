@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -108,7 +109,8 @@ class HomePageState extends State<HomePage> {
   Future<void> beginRecording() async {
     widget.onAutoRecordConsumed?.call();
     if (_recording || _processing) return;
-    _opId = 'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
+    _opId =
+        'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     OpLogService.instance.record(_opId!, 'record_start', '开始录音');
     setState(() {
       _error = null;
@@ -120,7 +122,12 @@ class HomePageState extends State<HomePage> {
     // 不清空已录入人员：支持多人分批次语音录入，最后一次性统一确认
     final ok = await _audio.hasPermission();
     if (!ok) {
-      OpLogService.instance.record(_opId!, 'record_perm_denied', '缺少麦克风权限', level: 'warn');
+      OpLogService.instance.record(
+        _opId!,
+        'record_perm_denied',
+        '缺少麦克风权限',
+        level: 'warn',
+      );
       if (mounted) {
         setState(() {
           _error = '需要麦克风权限';
@@ -139,7 +146,12 @@ class HomePageState extends State<HomePage> {
         if (mounted) setState(() => _amp = a);
       });
     } catch (e) {
-      OpLogService.instance.record(_opId!, 'record_start_err', '录音启动失败: $e', level: 'error');
+      OpLogService.instance.record(
+        _opId!,
+        'record_start_err',
+        '录音启动失败: $e',
+        level: 'error',
+      );
       if (mounted) setState(() => _error = '录音启动失败: $e');
       _endOp('record_error');
     }
@@ -160,19 +172,37 @@ class HomePageState extends State<HomePage> {
     try {
       final sw = Stopwatch()..start();
       final bytes = await _audio.stop();
-      OpLogService.instance
-          .record(opId, 'record_stop', '录音结束', data: {'bytes': bytes.length, 'ms': sw.elapsedMilliseconds});
+      OpLogService.instance.record(
+        opId,
+        'record_stop',
+        '录音结束',
+        data: {'bytes': bytes.length, 'ms': sw.elapsedMilliseconds},
+      );
       String text;
       try {
         text = await widget.controller.transcribeAudio(bytes, opId: opId);
-        OpLogService.instance
-            .record(opId, 'transcribe_ok', '转写成功', data: {'text': text, 'ms': sw.elapsedMilliseconds});
+        OpLogService.instance.record(
+          opId,
+          'transcribe_ok',
+          '转写成功',
+          data: {'text': text, 'ms': sw.elapsedMilliseconds},
+        );
       } catch (e) {
-        OpLogService.instance.record(opId, 'transcribe_err', '转写失败: $e', level: 'error');
+        OpLogService.instance.record(
+          opId,
+          'transcribe_err',
+          '转写失败: $e',
+          level: 'error',
+        );
         rethrow;
       }
       if (text.isEmpty) {
-        OpLogService.instance.record(opId, 'transcribe_empty', '未识别到语音，请再说一次', level: 'warn');
+        OpLogService.instance.record(
+          opId,
+          'transcribe_empty',
+          '未识别到语音，请再说一次',
+          level: 'warn',
+        );
         if (mounted) {
           setState(() {
             _processing = false;
@@ -186,10 +216,23 @@ class HomePageState extends State<HomePage> {
       ParseResult parsed;
       try {
         parsed = await widget.controller.parseText(text, opId: opId);
-        OpLogService.instance.record(opId, 'parse_ok', '语义解析完成',
-            data: {'text': text, 'parsed': parsed.toJson(), 'ms': sw.elapsedMilliseconds});
+        OpLogService.instance.record(
+          opId,
+          'parse_ok',
+          '语义解析完成',
+          data: {
+            'text': text,
+            'parsed': parsed.toJson(),
+            'ms': sw.elapsedMilliseconds,
+          },
+        );
       } catch (e) {
-        OpLogService.instance.record(opId, 'parse_err', '解析失败: $e', level: 'error');
+        OpLogService.instance.record(
+          opId,
+          'parse_err',
+          '解析失败: $e',
+          level: 'error',
+        );
         rethrow;
       }
       if (!mounted) return;
@@ -197,15 +240,24 @@ class HomePageState extends State<HomePage> {
       final statedVol = _extractVolumeL(text);
       if (statedVol != null) {
         _statedVolumeL = statedVol;
-        OpLogService.instance
-            .record(opId, 'volume_detected', '识别到气瓶容积', data: {'text': text, 'volume_l': statedVol});
+        OpLogService.instance.record(
+          opId,
+          'volume_detected',
+          '识别到气瓶容积',
+          data: {'text': text, 'volume_l': statedVol},
+        );
         for (final ed in _peopleEditors) {
           ed.volumeCtrl.text = statedVol.toStringAsFixed(1);
         }
       }
       // 意图路由：日志 → 交 main 记入并跳转；提问 → 跳问答页；环境音 → 提示重新录入
       if (parsed.intent == VoiceIntent.note) {
-        OpLogService.instance.record(opId, 'note_auto', '识别为火场日志，跳转日志页', data: {'text': text});
+        OpLogService.instance.record(
+          opId,
+          'note_auto',
+          '识别为火场日志，跳转日志页',
+          data: {'text': text},
+        );
         setState(() {
           _transcript = null;
           _parsed = null;
@@ -218,7 +270,12 @@ class HomePageState extends State<HomePage> {
         return;
       }
       if (parsed.intent == VoiceIntent.ask) {
-        OpLogService.instance.record(opId, 'ask_auto', '识别为提问，跳转辅助问答', data: {'text': text});
+        OpLogService.instance.record(
+          opId,
+          'ask_auto',
+          '识别为提问，跳转辅助问答',
+          data: {'text': text},
+        );
         setState(() {
           _transcript = null;
           _parsed = null;
@@ -231,7 +288,12 @@ class HomePageState extends State<HomePage> {
         return;
       }
       if (parsed.intent == VoiceIntent.ignore) {
-        OpLogService.instance.record(opId, 'ignore_auto', '环境音/无关内容，丢弃', data: {'text': text});
+        OpLogService.instance.record(
+          opId,
+          'ignore_auto',
+          '环境音/无关内容，丢弃',
+          data: {'text': text},
+        );
         setState(() {
           _transcript = null;
           _parsed = null;
@@ -244,10 +306,15 @@ class HomePageState extends State<HomePage> {
       }
       // 追加到已录入名单：同名人员更新压力（更正），其余新增一行
       for (final p in parsed.people) {
-        final idx = _peopleEditors
-            .indexWhere((ed) => (ed.name == p.name && ed.name.isNotEmpty) || ed.sourceName == p.name);
+        final idx = _peopleEditors.indexWhere(
+          (ed) =>
+              (ed.name == p.name && ed.name.isNotEmpty) ||
+              ed.sourceName == p.name,
+        );
         if (idx >= 0) {
-          if (p.pressureMpa != null) _peopleEditors[idx].pressureCtrl.text = p.pressureMpa.toString();
+          if (p.pressureMpa != null) {
+            _peopleEditors[idx].pressureCtrl.text = p.pressureMpa.toString();
+          }
           continue;
         }
         final ed = _PersonEdit(onChanged: _onEditsChanged);
@@ -257,8 +324,11 @@ class HomePageState extends State<HomePage> {
         } else {
           ed.sourceName = p.name;
         }
-        if (p.pressureMpa != null) ed.pressureCtrl.text = p.pressureMpa.toString();
-        final defaultVol = _statedVolumeL ?? widget.controller.calcConfig.cylinderVolL;
+        if (p.pressureMpa != null) {
+          ed.pressureCtrl.text = p.pressureMpa.toString();
+        }
+        final defaultVol =
+            _statedVolumeL ?? widget.controller.calcConfig.cylinderVolL;
         ed.volumeCtrl.text = defaultVol.toStringAsFixed(1);
         _peopleEditors.add(ed);
       }
@@ -270,7 +340,12 @@ class HomePageState extends State<HomePage> {
       widget.onProcessingChanged?.call(false);
       // 进场意图但未识别到任何姓名：不进空确认页，提示重新报读
       if (parsed.action == 'enter' && parsed.people.isEmpty) {
-        OpLogService.instance.record(opId, 'entry_empty', '进场意图未识别到姓名', data: {'text': text});
+        OpLogService.instance.record(
+          opId,
+          'entry_empty',
+          '进场意图未识别到姓名',
+          data: {'text': text},
+        );
         setState(() {
           _transcript = null;
           _parsed = null;
@@ -311,12 +386,21 @@ class HomePageState extends State<HomePage> {
   }
 
   /// 本次操作收尾：记录结束步 + 把待上传日志批量同步到服务器
-  void _endOp(String outcome, {String level = 'info', Map<String, dynamic>? data}) {
+  void _endOp(
+    String outcome, {
+    String level = 'info',
+    Map<String, dynamic>? data,
+  }) {
     final opId = _opId;
     _opId = null;
     if (opId == null) return;
-    OpLogService.instance
-        .record(opId, 'op_end', '本次操作结束', level: level, data: {'outcome': outcome, ...?data});
+    OpLogService.instance.record(
+      opId,
+      'op_end',
+      '本次操作结束',
+      level: level,
+      data: {'outcome': outcome, ...?data},
+    );
     OpLogService.instance.flush(api: widget.controller.api);
   }
 
@@ -324,17 +408,30 @@ class HomePageState extends State<HomePage> {
     final notFound = <String>[];
     var exited = 0;
     for (final name in names) {
-      final active = widget.controller.entries.where((e) => e.isActive && e.name == name).toList();
+      final active = widget.controller.entries
+          .where((e) => e.isActive && e.name == name)
+          .toList();
       if (active.isEmpty) {
         notFound.add(name);
-        OpLogService.instance
-            .record(_opId ?? '', 'exit_skip', '未找到在场人员「$name」', level: 'warn');
+        OpLogService.instance.record(
+          _opId ?? '',
+          'exit_skip',
+          '未找到在场人员「$name」',
+          level: 'warn',
+        );
         continue;
       }
       for (final e in active) {
-        await widget.controller.markExited(e.id, opId: '${_opId ?? 'exit'}-${e.id}');
-        OpLogService.instance
-            .record(_opId ?? '', 'exit_ok', '已登记「$name」出火场', data: {'entryId': e.id, 'name': name});
+        await widget.controller.markExited(
+          e.id,
+          opId: '${_opId ?? 'exit'}-${e.id}',
+        );
+        OpLogService.instance.record(
+          _opId ?? '',
+          'exit_ok',
+          '已登记「$name」出火场',
+          data: {'entryId': e.id, 'name': name},
+        );
       }
       exited++;
     }
@@ -344,7 +441,10 @@ class HomePageState extends State<HomePage> {
       widget.controller.tts.speak('$done 已登记出火场');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$done 已登记出火场'), duration: const Duration(seconds: 2)),
+          SnackBar(
+            content: Text('$done 已登记出火场'),
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
     }
@@ -370,7 +470,10 @@ class HomePageState extends State<HomePage> {
           title: const Text('全员离场'),
           content: const Text('当前没有在场人员，无需全员离场'),
           actions: [
-            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('知道了'),
+            ),
           ],
         ),
       );
@@ -388,15 +491,28 @@ class HomePageState extends State<HomePage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('全员离场确认'),
-        content: Text('识别到全员离场指令，当前在场 ${active.length} 人：${active.map((e) => e.name).join('、')}\n\n语音原文：「$voiceText」\n\n确认全部登记离场？'),
+        content: Text(
+          '识别到全员离场指令，当前在场 ${active.length} 人：${active.map((e) => e.name).join('、')}\n\n语音原文：「$voiceText」\n\n确认全部登记离场？',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确认全员离场')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认全员离场'),
+          ),
         ],
       ),
     );
     if (confirmed != true) {
-      OpLogService.instance.record(_opId ?? '', 'exit_all_cancelled', '用户取消全员离场', level: 'info');
+      OpLogService.instance.record(
+        _opId ?? '',
+        'exit_all_cancelled',
+        '用户取消全员离场',
+        level: 'info',
+      );
       if (mounted) {
         setState(() {
           _transcript = null;
@@ -404,7 +520,10 @@ class HomePageState extends State<HomePage> {
           _error = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已取消全员离场'), duration: Duration(seconds: 2)),
+          const SnackBar(
+            content: Text('已取消全员离场'),
+            duration: Duration(seconds: 2),
+          ),
         );
       }
       _endOp('exit_all_cancel');
@@ -412,15 +531,25 @@ class HomePageState extends State<HomePage> {
     }
     var exited = 0;
     for (final e in active) {
-      await widget.controller.markExited(e.id, opId: '${_opId ?? 'exit'}-${e.id}');
-      OpLogService.instance
-          .record(_opId ?? '', 'exit_all_ok', '全员离场已登记「${e.name}」', data: {'entryId': e.id, 'name': e.name});
+      await widget.controller.markExited(
+        e.id,
+        opId: '${_opId ?? 'exit'}-${e.id}',
+      );
+      OpLogService.instance.record(
+        _opId ?? '',
+        'exit_all_ok',
+        '全员离场已登记「${e.name}」',
+        data: {'entryId': e.id, 'name': e.name},
+      );
       exited++;
     }
     if (!mounted) return;
     widget.controller.tts.speak('全体人员已登记离场');
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已全员离场（$exited 人）'), duration: const Duration(seconds: 2)),
+      SnackBar(
+        content: Text('已全员离场（$exited 人）'),
+        duration: const Duration(seconds: 2),
+      ),
     );
     setState(() {
       _transcript = null;
@@ -439,7 +568,9 @@ class HomePageState extends State<HomePage> {
 
   /// 从语音文本中提取气瓶容积升数（如"9升"/"九升"），未提及返回 null
   double? _extractVolumeL(String text) {
-    final m = RegExp(r'([0-9]+(?:\.[0-9]+)?|[一二两三四五六七八九十]+)\s*(?:公升|升)').firstMatch(text);
+    final m = RegExp(
+      r'([0-9]+(?:\.[0-9]+)?|[一二两三四五六七八九十]+)\s*(?:公升|升)',
+    ).firstMatch(text);
     if (m == null) return null;
     final v = double.tryParse(m.group(1)!) ?? _cnNum(m.group(1)!);
     if (v == null || v <= 0 || v > 20) return null;
@@ -448,8 +579,17 @@ class HomePageState extends State<HomePage> {
 
   double? _cnNum(String s) {
     const digits = {
-      '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
-      '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+      '一': 1,
+      '二': 2,
+      '两': 2,
+      '三': 3,
+      '四': 4,
+      '五': 5,
+      '六': 6,
+      '七': 7,
+      '八': 8,
+      '九': 9,
+      '十': 10,
     };
     if (digits.containsKey(s)) return digits[s]!.toDouble();
     if (s.contains('十')) {
@@ -484,10 +624,12 @@ class HomePageState extends State<HomePage> {
       _parsed = ParseResult(
         action: 'enter',
         people: _peopleEditors
-            .map((ed) => ParsePerson(
-                  name: ed.name.isEmpty ? (ed.sourceName ?? '') : ed.name,
-                  pressureMpa: ed.pressure,
-                ))
+            .map(
+              (ed) => ParsePerson(
+                name: ed.name.isEmpty ? (ed.sourceName ?? '') : ed.name,
+                pressureMpa: ed.pressure,
+              ),
+            )
             .toList(),
       );
       _error = null;
@@ -529,14 +671,24 @@ class HomePageState extends State<HomePage> {
       final result = await _submitPerson(ed.name, ed.pressure!, ed.volume!);
       if (!mounted) return;
       if (result == _SubmitResult.created || result == _SubmitResult.merged) {
-        OpLogService.instance.record(_opId ?? '', 'confirm_enter', '已登记「${ed.name}」进场', data: {
-          'name': ed.name,
-          'pressure_mpa': ed.pressure,
-          'volume_l': ed.volume,
-          'result': result == _SubmitResult.created ? 'created' : 'merged',
-        });
+        OpLogService.instance.record(
+          _opId ?? '',
+          'confirm_enter',
+          '已登记「${ed.name}」进场',
+          data: {
+            'name': ed.name,
+            'pressure_mpa': ed.pressure,
+            'volume_l': ed.volume,
+            'result': result == _SubmitResult.created ? 'created' : 'merged',
+          },
+        );
       } else if (result == _SubmitResult.error) {
-        OpLogService.instance.record(_opId ?? '', 'confirm_err', '「${ed.name}」登记进场失败', level: 'error');
+        OpLogService.instance.record(
+          _opId ?? '',
+          'confirm_err',
+          '「${ed.name}」登记进场失败',
+          level: 'error',
+        );
       }
       results.add((ed: ed, result: result));
       if (result == _SubmitResult.cancelled) break;
@@ -602,7 +754,11 @@ class HomePageState extends State<HomePage> {
   }
 
   /// 提交单个人：本地预检同名 → 弹窗合并/另建；服务端 409 时兜底再弹一次
-  Future<_SubmitResult> _submitPerson(String name, double p, double volumeL) async {
+  Future<_SubmitResult> _submitPerson(
+    String name,
+    double p,
+    double volumeL,
+  ) async {
     final existing = widget.controller.entries
         .where((e) => e.isActive && e.name == name)
         .toList();
@@ -639,16 +795,30 @@ class HomePageState extends State<HomePage> {
 
   Future<_SubmitResult> _tryMerge(Entry existing, double p) async {
     try {
-      await widget.controller.mergeEntryPressure(id: existing.id, pressureMpa: p, opId: _opId);
+      await widget.controller.mergeEntryPressure(
+        id: existing.id,
+        pressureMpa: p,
+        opId: _opId,
+      );
       return _SubmitResult.merged;
     } catch (e) {
-      OpLogService.instance.record(_opId ?? '', 'merge_err', '合并压力失败: $e', level: 'error');
+      OpLogService.instance.record(
+        _opId ?? '',
+        'merge_err',
+        '合并压力失败: $e',
+        level: 'error',
+      );
       if (mounted) setState(() => _error = '$e');
       return _SubmitResult.error;
     }
   }
 
-  Future<_SubmitResult> _tryCreate(String name, double p, {bool force = false, double? volumeL}) async {
+  Future<_SubmitResult> _tryCreate(
+    String name,
+    double p, {
+    bool force = false,
+    double? volumeL,
+  }) async {
     try {
       await widget.controller.createEntryFromVoice(
         name: name,
@@ -656,7 +826,10 @@ class HomePageState extends State<HomePage> {
         rawText: _transcript,
         force: force,
         volumeL: volumeL,
-        opId: '${_opId ?? 'entry'}-$name',
+        // X-Op-Id 是 HTTP 头，只能使用 ASCII。姓名仍要参与每个人员请求的
+        // 唯一标识，因此将姓名按 URL-safe Base64 编码后再拼接。
+        opId:
+            '${_opId ?? 'entry'}-${base64Url.encode(utf8.encode(name)).replaceAll('=', '')}',
       );
       return _SubmitResult.created;
     } on EntryConflictException catch (e) {
@@ -669,7 +842,12 @@ class HomePageState extends State<HomePage> {
       }
       return await _tryCreate(name, p, force: true, volumeL: volumeL);
     } catch (e) {
-      OpLogService.instance.record(_opId ?? '', 'create_err', '登记进场失败: $e', level: 'error');
+      OpLogService.instance.record(
+        _opId ?? '',
+        'create_err',
+        '登记进场失败: $e',
+        level: 'error',
+      );
       if (mounted) setState(() => _error = '$e');
       return _SubmitResult.error;
     }
@@ -679,9 +857,15 @@ class HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final cfg = widget.controller.calcConfig;
     final incident = widget.controller.currentIncident;
+    // 录入确认时把警情卡收起，确认区只保留人员和压力信息，避免重复占用屏幕。
+    final compactEntryFlow =
+        _recording ||
+        _processing ||
+        _peopleEditors.isNotEmpty ||
+        (_transcript != null && _parsed != null);
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: Column(
           children: [
             Row(
@@ -696,25 +880,45 @@ class HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 8),
             if (incident == null)
-              _IncidentPicker(
-                activeIncidents: widget.controller.activeIncidents,
-                onSelect: _selectIncident,
-                onCreate: _createIncident,
+              Expanded(
+                flex: 4,
+                child: _IncidentPicker(
+                  activeIncidents: widget.controller.activeIncidents,
+                  onSelect: _selectIncident,
+                  onCreate: _createIncident,
+                ),
               )
-            else
+            else if (!compactEntryFlow)
               _TaskBar(
                 incident: incident,
                 forces: widget.controller.forces,
-                activeCount: widget.controller.entries.where((e) => e.isActive).length,
-                dangerCount: widget.controller.entries.where((e) => e.isActive && e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin) != 'normal').length,
+                activeCount: widget.controller.entries
+                    .where((e) => e.isActive)
+                    .length,
+                dangerCount: widget.controller.entries
+                    .where(
+                      (e) =>
+                          e.isActive &&
+                          e.statusAt(
+                                warnMin: cfg.warnMin,
+                                alarmMin: cfg.alarmMin,
+                              ) !=
+                              'normal',
+                    )
+                    .length,
                 onRename: _renameIncident,
                 onAddForce: () => _editForce(),
                 onEditForce: (force) => _editForce(force),
                 onRemoveForce: (force) => _removeForce(force),
                 onArchive: _confirmArchive,
+                onExit: _confirmExitIncident,
               ),
             const SizedBox(height: 8),
-            Expanded(child: incident == null ? _buildIncidentEmpty() : _buildResultCard(context, cfg)),
+            Expanded(
+              child: incident == null
+                  ? const SizedBox.shrink()
+                  : _buildResultCard(context, cfg),
+            ),
             const SizedBox(height: 24),
           ],
         ),
@@ -722,15 +926,15 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildIncidentEmpty() => const Center(
-        child: Text('请选择一场进行中的警情，或新建警情后开始记录', style: TextStyle(color: AppColors.textSecondary)),
-      );
-
   Future<void> _selectIncident(String id) async {
     try {
       await widget.controller.selectIncident(id);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加入警情失败：$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('加入警情失败：$e')));
+      }
     }
   }
 
@@ -738,12 +942,48 @@ class HomePageState extends State<HomePage> {
     try {
       final incident = await widget.controller.createIncident();
       if (mounted) await _renameIncident(incident: incident, prompt: true);
+    } on IncidentCreateConflictException catch (e) {
+      if (!mounted) return;
+      final join = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('已有刚创建的警情'),
+          content: Text('${e.existing.displayName}\n\n${e.message}'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('暂不加入'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('加入现有警情'),
+            ),
+          ],
+        ),
+      );
+      if (join != true) return;
+      try {
+        await widget.controller.selectIncident(e.existing.id);
+      } catch (joinError) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('加入警情失败：$joinError')));
+        }
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
+      }
     }
   }
 
-  Future<void> _renameIncident({Incident? incident, bool prompt = false}) async {
+  Future<void> _renameIncident({
+    Incident? incident,
+    bool prompt = false,
+  }) async {
     final target = incident ?? widget.controller.currentIncident;
     if (target == null) return;
     final edit = TextEditingController(text: target.title ?? '');
@@ -751,8 +991,22 @@ class HomePageState extends State<HomePage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(prompt ? '补充警情名称' : '修改警情名称'),
-        content: TextField(controller: edit, autofocus: true, maxLength: 120, decoration: const InputDecoration(hintText: '如：幸福小区住宅火灾')),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍后')), FilledButton(onPressed: () => Navigator.pop(ctx, edit.text.trim()), child: const Text('保存'))],
+        content: TextField(
+          controller: edit,
+          autofocus: true,
+          maxLength: 120,
+          decoration: const InputDecoration(hintText: '如：幸福小区住宅火灾'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('稍后'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, edit.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
       ),
     );
     edit.dispose();
@@ -760,7 +1014,11 @@ class HomePageState extends State<HomePage> {
     try {
       await widget.controller.renameCurrent(title);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('修改名称失败：$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('修改名称失败：$e')));
+      }
     }
   }
 
@@ -771,8 +1029,15 @@ class HomePageState extends State<HomePage> {
         title: const Text('归档警情'),
         content: const Text('归档后现场数据只读，名称仍可在归档警情列表中修改。请确认处置已经结束。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(style: FilledButton.styleFrom(backgroundColor: AppColors.alarm), onPressed: () => Navigator.pop(ctx, true), child: const Text('确认归档')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认归档'),
+          ),
         ],
       ),
     );
@@ -780,7 +1045,41 @@ class HomePageState extends State<HomePage> {
     try {
       await widget.controller.archiveCurrent();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('归档失败：$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('归档失败：$e')));
+      }
+    }
+  }
+
+  Future<void> _confirmExitIncident() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('退出当前警情'),
+        content: const Text('退出后不会归档警情，仍可从正在处置的警情列表重新加入。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认退出'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await widget.controller.exitCurrentIncident();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('退出警情失败：$e')));
+      }
     }
   }
 
@@ -788,7 +1087,11 @@ class HomePageState extends State<HomePage> {
     try {
       await widget.controller.removeForce(force.id);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除参战力量失败：$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('删除参战力量失败：$e')));
+      }
     }
   }
 
@@ -808,46 +1111,94 @@ class HomePageState extends State<HomePage> {
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (ctx) {
-        String selected = force?.stationName ?? (names.isEmpty ? '' : names.first);
+        String selected =
+            force?.stationName ?? (names.isEmpty ? '' : names.first);
         bool custom = names.isEmpty || !names.contains(selected);
-        final customStation = TextEditingController(text: custom ? force?.stationName ?? '' : '');
-        final vehicles = TextEditingController(text: '${force?.vehicleCount ?? 1}');
-        final people = TextEditingController(text: '${force?.personnelCount ?? 1}');
+        final customStation = TextEditingController(
+          text: custom ? force?.stationName ?? '' : '',
+        );
+        final vehicles = TextEditingController(
+          text: '${force?.vehicleCount ?? 1}',
+        );
+        final people = TextEditingController(
+          text: '${force?.personnelCount ?? 1}',
+        );
         return StatefulBuilder(
           builder: (ctx, setDialogState) => AlertDialog(
             title: Text(force == null ? '添加参战力量' : '编辑参战力量'),
-            content: Column(mainAxisSize: MainAxisSize.min, children: [
-              if (!custom && names.isNotEmpty)
-                DropdownButtonFormField<String>(
-                  initialValue: selected,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: '消防站名称'),
-                  items: names.map((name) => DropdownMenuItem(value: name, child: Text(name))).toList(),
-                  onChanged: (value) => setDialogState(() => selected = value ?? selected),
-                )
-              else
-                TextField(controller: customStation, autofocus: true, decoration: const InputDecoration(labelText: '消防站名称', hintText: '如：龙翔路站')),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: names.isEmpty ? null : () => setDialogState(() => custom = !custom),
-                  icon: const Icon(Icons.edit_location_alt_outlined, size: 16),
-                  label: Text(custom ? '返回名录选择' : '现场新增消防站'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!custom && names.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    initialValue: selected,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: '消防站名称'),
+                    items: names
+                        .map(
+                          (name) =>
+                              DropdownMenuItem(value: name, child: Text(name)),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setDialogState(() => selected = value ?? selected),
+                  )
+                else
+                  TextField(
+                    controller: customStation,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: '消防站名称',
+                      hintText: '如：龙翔路站',
+                    ),
+                  ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: names.isEmpty
+                        ? null
+                        : () => setDialogState(() => custom = !custom),
+                    icon: const Icon(
+                      Icons.edit_location_alt_outlined,
+                      size: 16,
+                    ),
+                    label: Text(custom ? '返回名录选择' : '现场新增消防站'),
+                  ),
                 ),
-              ),
-              Row(children: [
-                Expanded(child: TextField(controller: vehicles, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '车辆数'))),
-                const SizedBox(width: 12),
-                Expanded(child: TextField(controller: people, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '人员数'))),
-              ]),
-            ]),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: vehicles,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: '车辆数'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: people,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: '人员数'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-              FilledButton(onPressed: () => Navigator.pop(ctx, {
-                'station': custom ? customStation.text.trim() : selected,
-                'vehicles': vehicles.text,
-                'people': people.text,
-              }), child: const Text('保存')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, {
+                  'station': custom ? customStation.text.trim() : selected,
+                  'vehicles': vehicles.text,
+                  'people': people.text,
+                }),
+                child: const Text('保存'),
+              ),
             ],
           ),
         );
@@ -855,15 +1206,26 @@ class HomePageState extends State<HomePage> {
     );
     if (result == null) return;
     final stationName = result['station']?.toString().trim() ?? '';
-    final vehicleCount = int.tryParse(result['vehicles']?.toString() ?? '') ?? 0;
-    final personnelCount = int.tryParse(result['people']?.toString() ?? '') ?? 0;
+    final vehicleCount =
+        int.tryParse(result['vehicles']?.toString() ?? '') ?? 0;
+    final personnelCount =
+        int.tryParse(result['people']?.toString() ?? '') ?? 0;
     try {
-      await widget.controller.saveForce(forceId: force?.id, stationName: stationName, vehicleCount: vehicleCount, personnelCount: personnelCount, expectedVersion: force?.version);
+      await widget.controller.saveForce(
+        forceId: force?.id,
+        stationName: stationName,
+        vehicleCount: vehicleCount,
+        personnelCount: personnelCount,
+        expectedVersion: force?.version,
+      );
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存参战力量失败：$e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('保存参战力量失败：$e')));
+      }
     }
   }
-
 
   Widget _buildResultCard(BuildContext context, CalcConfig cfg) {
     if (_recording) {
@@ -875,10 +1237,17 @@ class HomePageState extends State<HomePage> {
             const SizedBox(height: 24),
             const Text(
               '请清晰说出：姓名 + 气瓶压力',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
-            const Text('或：出火场人员姓名', style: TextStyle(color: AppColors.textTertiary, fontSize: 14)),
+            const Text(
+              '或：出火场人员姓名',
+              style: TextStyle(color: AppColors.textTertiary, fontSize: 14),
+            ),
             if (_peopleEditors.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
@@ -905,7 +1274,10 @@ class HomePageState extends State<HomePage> {
               child: CircularProgressIndicator(strokeWidth: 3),
             ),
             const SizedBox(height: 18),
-            const Text('语音转文字中…', style: TextStyle(color: AppColors.textSecondary)),
+            const Text(
+              '语音转文字中…',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ],
         ),
       );
@@ -917,17 +1289,27 @@ class HomePageState extends State<HomePage> {
           decoration: BoxDecoration(
             color: AppColors.caution.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.caution.withValues(alpha: 0.35)),
+            border: Border.all(
+              color: AppColors.caution.withValues(alpha: 0.35),
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: AppColors.caution, size: 36),
+              const Icon(
+                Icons.error_outline,
+                color: AppColors.caution,
+                size: 36,
+              ),
               const SizedBox(height: 12),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 14),
               if (_permDenied) ...[
@@ -977,12 +1359,20 @@ class HomePageState extends State<HomePage> {
                             shape: BoxShape.circle,
                             color: AppColors.voice,
                           ),
-                          child: const Icon(Icons.mic_rounded, size: 17, color: Colors.white),
+                          child: const Icon(
+                            Icons.mic_rounded,
+                            size: 17,
+                            color: Colors.white,
+                          ),
                         ),
                         const SizedBox(width: 10),
                         const Text(
                           '按住下方按钮说话',
-                          style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ],
                     ),
@@ -997,24 +1387,48 @@ class HomePageState extends State<HomePage> {
                               Expanded(
                                 child: _guideRow(
                                   itemW,
-                                  _guideItem(Icons.login_rounded, '进场登记', '「张伟，20兆帕」\n自动开始倒计时'),
-                                  _guideItem(Icons.groups_rounded, '多人进场', '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场'),
+                                  _guideItem(
+                                    Icons.login_rounded,
+                                    '进场登记',
+                                    '「张伟，20兆帕」\n自动开始倒计时',
+                                  ),
+                                  _guideItem(
+                                    Icons.groups_rounded,
+                                    '多人进场',
+                                    '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场',
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 10),
                               Expanded(
                                 child: _guideRow(
                                   itemW,
-                                  _guideItem(Icons.logout_rounded, '出场登记', '「刘洋出来了」\n登记出火场'),
-                                  _guideItem(Icons.update_rounded, '压力复核', '「张伟，15兆帕」\n场中报数，更新倒计时'),
+                                  _guideItem(
+                                    Icons.logout_rounded,
+                                    '出场登记',
+                                    '「刘洋出来了」\n登记出火场',
+                                  ),
+                                  _guideItem(
+                                    Icons.update_rounded,
+                                    '压力复核',
+                                    '「张伟，15兆帕」\n场中报数，更新倒计时',
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 10),
                               Expanded(
                                 child: _guideRow(
                                   itemW,
-                                  _guideItem(Icons.edit_note_rounded, '火场随手记', '「三楼破拆完成」\n自动记入火场日志'),
-                                  _guideItem(Icons.assistant_rounded, '火场提问', '「浓烟太大看不清路怎么办？」\n转给辅助智囊'),
+                                  _guideItem(
+                                    Icons.edit_note_rounded,
+                                    '火场随手记',
+                                    '「三楼破拆完成」\n自动记入火场日志',
+                                  ),
+                                  _guideItem(
+                                    Icons.assistant_rounded,
+                                    '火场提问',
+                                    '「浓烟太大看不清路怎么办？」\n转给辅助智囊',
+                                  ),
                                 ),
                               ),
                             ],
@@ -1052,11 +1466,25 @@ class HomePageState extends State<HomePage> {
                   children: [
                     Icon(Icons.graphic_eq, size: 16, color: AppColors.voice),
                     const SizedBox(width: 6),
-                    const Text('转写结果', style: TextStyle(color: AppColors.textTertiary, fontSize: 12, letterSpacing: 0.5)),
+                    const Text(
+                      '转写结果',
+                      style: TextStyle(
+                        color: AppColors.textTertiary,
+                        fontSize: 12,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(_transcript!, style: const TextStyle(fontSize: 17, height: 1.4, color: AppColors.textPrimary)),
+                Text(
+                  _transcript!,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    height: 1.4,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1077,7 +1505,11 @@ class HomePageState extends State<HomePage> {
                           _parsed!.people.isEmpty
                               ? '识别为全员离场指令，正在等待确认'
                               : '识别为出火场指令：${_parsed!.people.map((p) => p.name).join('、')}',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
                       ),
                     ],
@@ -1102,7 +1534,11 @@ class HomePageState extends State<HomePage> {
                   const Text(
                     '未识别到人员信息，请重新语音输入',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   OutlinedButton.icon(
@@ -1135,7 +1571,10 @@ class HomePageState extends State<HomePage> {
                     child: FilledButton.icon(
                       onPressed: _confirmAll,
                       icon: const Icon(Icons.check_circle_outline),
-                      label: const Text('确认进入火场，开始倒计时', style: TextStyle(fontSize: 16)),
+                      label: const Text(
+                        '确认进入火场，开始倒计时',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1174,11 +1613,19 @@ class HomePageState extends State<HomePage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.fact_check_outlined, size: 16, color: AppColors.voice),
+              const Icon(
+                Icons.fact_check_outlined,
+                size: 16,
+                color: AppColors.voice,
+              ),
               const SizedBox(width: 6),
               Text(
                 '确认名单（${_peopleEditors.length} 人）：请下滑核对后一次性确认',
-                style: const TextStyle(color: AppColors.textTertiary, fontSize: 12, letterSpacing: 0.5),
+                style: const TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 12,
+                  letterSpacing: 0.5,
+                ),
               ),
             ],
           ),
@@ -1308,14 +1755,21 @@ class HomePageState extends State<HomePage> {
     final p = ed.pressure;
     final v = ed.volume ?? cfg.cylinderVolL;
     final dup = name.isNotEmpty
-        ? widget.controller.entries.where((e) => e.isActive && e.name == name).toList()
+        ? widget.controller.entries
+              .where((e) => e.isActive && e.name == name)
+              .toList()
         : <Entry>[];
     final boxStyle = BoxDecoration(
       color: AppColors.caution.withValues(alpha: 0.10),
       borderRadius: BorderRadius.circular(AppRadius.sm),
       border: Border.all(color: AppColors.caution.withValues(alpha: 0.4)),
     );
-    final style = const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600, height: 1.4);
+    final style = const TextStyle(
+      fontSize: 13,
+      color: AppColors.textSecondary,
+      fontWeight: FontWeight.w600,
+      height: 1.4,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1346,27 +1800,54 @@ class HomePageState extends State<HomePage> {
             decoration: boxStyle,
             child: Row(
               children: [
-                const Icon(Icons.gas_meter_outlined, size: 16, color: AppColors.textTertiary),
+                const Icon(
+                  Icons.gas_meter_outlined,
+                  size: 16,
+                  color: AppColors.textTertiary,
+                ),
                 const SizedBox(width: 6),
-                const Text('容量', style: TextStyle(fontSize: 12.5, color: AppColors.textTertiary, fontWeight: FontWeight.w600)),
+                const Text(
+                  '容量',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textTertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(width: 4),
                 SizedBox(
                   width: 62,
                   height: 34,
                   child: TextField(
                     controller: ed.volumeCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
                     decoration: const InputDecoration(
                       isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 6,
+                      ),
                       border: OutlineInputBorder(),
                     ),
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Text('L', style: TextStyle(fontSize: 12.5, color: AppColors.textTertiary, fontWeight: FontWeight.w600)),
+                const Text(
+                  'L',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textTertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -1385,7 +1866,11 @@ class HomePageState extends State<HomePage> {
             child: const Text(
               '未识别到气瓶压力，请手动填写（如 20）',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
       ],
@@ -1493,10 +1978,17 @@ class _IndexBadge extends StatelessWidget {
       width: 24,
       height: 24,
       alignment: Alignment.center,
-      decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.voice),
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.voice,
+      ),
       child: Text(
         '${index + 1}',
-        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -1534,35 +2026,217 @@ class _PulseMic extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(Icons.mic_rounded, size: 46, color: AppColors.voice),
+          child: const Icon(
+            Icons.mic_rounded,
+            size: 46,
+            color: AppColors.voice,
+          ),
         ),
       ),
     );
   }
 }
 
-
 class _IncidentPicker extends StatelessWidget {
   final List<Incident> activeIncidents;
   final ValueChanged<String> onSelect;
   final VoidCallback onCreate;
-  const _IncidentPicker({required this.activeIncidents, required this.onSelect, required this.onCreate});
+  const _IncidentPicker({
+    required this.activeIncidents,
+    required this.onSelect,
+    required this.onCreate,
+  });
 
   @override
-  Widget build(BuildContext context) => Container(
-        key: const Key('incident-picker'),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.md), border: Border.all(color: AppColors.border), boxShadow: AppShadow.card),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('选择正在处置的警情', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 4),
-          const Text('加入后，进场、压力和随手记都会归入这份档案。', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+  Widget build(BuildContext context) {
+    final isEmpty = activeIncidents.isEmpty;
+    return Padding(
+      key: const Key('incident-picker'),
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Row(
+            children: [
+              SizedBox(
+                width: 4,
+                height: 22,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppColors.voice,
+                    borderRadius: BorderRadius.all(Radius.circular(2)),
+                  ),
+                ),
+              ),
+              SizedBox(width: 10),
+              Text(
+                '选择正在处置的警情',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '加入后，现场记录都会归入这份档案。',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
           const SizedBox(height: 12),
-          ...activeIncidents.map((incident) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.local_fire_department_outlined), title: Text(incident.displayName), subtitle: Text(incident.number), trailing: const Icon(Icons.chevron_right), onTap: () => onSelect(incident.id))),
-          if (activeIncidents.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('当前没有进行中的警情', style: TextStyle(color: AppColors.textTertiary))),
-          OutlinedButton.icon(onPressed: onCreate, icon: const Icon(Icons.add), label: const Text('新建警情')),
-        ]),
-      );
+          Expanded(
+            child: isEmpty
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.folder_copy_outlined,
+                          size: 88,
+                          color: AppColors.textTertiary,
+                        ),
+                        SizedBox(height: 18),
+                        Text(
+                          '当前没有进行中的警情',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          '如果你是第一位到达的用户，可以新建警情',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.separated(
+                    padding: EdgeInsets.zero,
+                    itemCount: activeIncidents.length,
+                    separatorBuilder: (_, __) => const Divider(
+                      height: 1,
+                      indent: 12,
+                      endIndent: 12,
+                      color: AppColors.border,
+                    ),
+                    itemBuilder: (context, index) {
+                      final incident = activeIncidents[index];
+                      final hasManualTitle = (incident.title ?? '')
+                          .trim()
+                          .isNotEmpty;
+                      return Material(
+                        color: AppColors.surface,
+                        child: InkWell(
+                          onTap: () => onSelect(incident.id),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      SizedBox(
+                                        height: 25,
+                                        width: double.infinity,
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            incident.displayName,
+                                            maxLines: 1,
+                                            style: const TextStyle(
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 5),
+                                      Text(
+                                        hasManualTitle
+                                            ? '${incident.number} · 处置中'
+                                            : '处置中',
+                                        style: const TextStyle(
+                                          color: AppColors.voice,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () => onSelect(incident.id),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: AppColors.voice,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    minimumSize: const Size(64, 44),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        '加入',
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      SizedBox(width: 2),
+                                      Icon(Icons.chevron_right, size: 20),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          const SizedBox(height: 12),
+          if (isEmpty)
+            FilledButton.icon(
+              onPressed: onCreate,
+              icon: const Icon(Icons.add),
+              label: const Text('新建警情'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.voice,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(50),
+              ),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: onCreate,
+              icon: const Icon(Icons.add),
+              label: const Text('新建警情'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.voice,
+                side: const BorderSide(color: AppColors.voice),
+                minimumSize: const Size.fromHeight(50),
+              ),
+            ),
+          const SizedBox(height: 5),
+          Center(
+            child: Text(
+              isEmpty ? '系统将自动生成临时名称' : '新建后可补充中文名称',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _TaskBar extends StatelessWidget {
@@ -1575,22 +2249,192 @@ class _TaskBar extends StatelessWidget {
   final ValueChanged<IncidentForce> onEditForce;
   final ValueChanged<IncidentForce> onRemoveForce;
   final VoidCallback onArchive;
+  final VoidCallback onExit;
 
-  const _TaskBar({required this.incident, required this.forces, required this.activeCount, required this.dangerCount, required this.onRename, required this.onAddForce, required this.onEditForce, required this.onRemoveForce, required this.onArchive});
+  const _TaskBar({
+    required this.incident,
+    required this.forces,
+    required this.activeCount,
+    required this.dangerCount,
+    required this.onRename,
+    required this.onAddForce,
+    required this.onEditForce,
+    required this.onRemoveForce,
+    required this.onArchive,
+    required this.onExit,
+  });
 
   @override
   Widget build(BuildContext context) => Container(
-        key: const Key('incident-card'),
-        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.md), border: Border.all(color: AppColors.border), boxShadow: AppShadow.card),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [Expanded(child: Text(incident.displayName, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800), maxLines: 1, overflow: TextOverflow.ellipsis)), TextButton.icon(onPressed: onRename, icon: const Icon(Icons.edit_outlined, size: 16), label: const Text('修改名称'))]),
-          Text('编号 ${incident.number}', style: const TextStyle(fontSize: 11, color: AppColors.textTertiary)),
-          const SizedBox(height: 10),
-          Row(children: [const Expanded(child: Text('参战力量', style: TextStyle(fontWeight: FontWeight.w700))), TextButton.icon(onPressed: onAddForce, icon: const Icon(Icons.add, size: 17), label: const Text('添加'))]),
-          if (forces.isEmpty) const Text('尚未登记参战力量', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)) else ...forces.map((force) => Row(children: [Expanded(child: Text('${force.stationName} ${force.vehicleCount}车${force.personnelCount}人', style: const TextStyle(fontSize: 13))), IconButton(tooltip: '编辑', onPressed: () => onEditForce(force), icon: const Icon(Icons.edit_outlined, size: 17), visualDensity: VisualDensity.compact), IconButton(tooltip: '删除', onPressed: () => onRemoveForce(force), icon: const Icon(Icons.delete_outline, size: 17), visualDensity: VisualDensity.compact)])),
-          const Divider(height: 16),
-          Row(children: [Expanded(child: Text('在场 $activeCount人', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700))), Expanded(child: Text(dangerCount > 0 ? '需关注 $dangerCount' : '状态正常', style: TextStyle(fontSize: 12, color: dangerCount > 0 ? AppColors.alarm : AppColors.textTertiary, fontWeight: FontWeight.w700))), TextButton.icon(onPressed: onArchive, icon: const Icon(Icons.archive_outlined, size: 17), label: const Text('归档'))]),
-        ]),
-      );
+    key: const Key('incident-card'),
+    padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      border: Border.all(color: AppColors.border),
+      boxShadow: AppShadow.card,
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                incident.displayName,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: onRename,
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('修改名称'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            const Icon(
+              Icons.schedule_outlined,
+              size: 14,
+              color: AppColors.textTertiary,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                incident.number,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textTertiary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.online.withValues(alpha: .1),
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
+              child: const Text(
+                '处置中',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppColors.online,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                '参战力量',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: onAddForce,
+              icon: const Icon(Icons.add, size: 17),
+              label: const Text('添加'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+            ),
+          ],
+        ),
+        if (forces.isEmpty)
+          const Text(
+            '尚未登记参战力量',
+            style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+          )
+        else
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final force in forces)
+                InputChip(
+                  label: Text(
+                    '${force.stationName} ${force.vehicleCount}车${force.personnelCount}人',
+                  ),
+                  onPressed: () => onEditForce(force),
+                  onDeleted: () => onRemoveForce(force),
+                  deleteIcon: const Icon(Icons.close, size: 15),
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  labelStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+        const Divider(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '在场 $activeCount人',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                dangerCount > 0 ? '需关注 $dangerCount' : '状态正常',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: dangerCount > 0
+                      ? AppColors.alarm
+                      : AppColors.textTertiary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton.icon(
+              onPressed: onExit,
+              icon: const Icon(Icons.logout_outlined, size: 16),
+              label: const Text('退出当前警情'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: onArchive,
+              icon: const Icon(Icons.archive_outlined, size: 16),
+              label: const Text('归档'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
 }

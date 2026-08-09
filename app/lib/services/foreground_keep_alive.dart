@@ -24,30 +24,35 @@ class ForegroundKeepAlive {
   static bool _inited = false;
 
   /// 必须在 runApp 前调用一次（注册静态 TaskHandler，供服务 isolate 恢复）
-  static void init() {
+  static Future<void> init() async {
     if (_inited) return;
     _inited = true;
-    FlutterForegroundTask.init(
-      androidNotificationOptions: AndroidNotificationOptions(
-        channelId: channelId,
-        channelName: channelName,
-        channelDescription: channelDesc,
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
-        onlyAlertOnce: true,
-        showBadge: false,
-      ),
-      iosNotificationOptions: const IOSNotificationOptions(),
-      foregroundTaskOptions: ForegroundTaskOptions(
-        // 服务内用 5s 周期回调拉数据刷通知栏（同步主 isolate 轮询节奏）
-        eventAction: ForegroundTaskEventAction.repeat(5000),
-        autoRunOnBoot: true,
-        autoRunOnMyPackageReplaced: true,
-        allowWakeLock: true,
-        allowWifiLock: true,
-      ),
-    );
-    FlutterForegroundTask.setTaskHandler(WatchdogTaskHandler());
+    try {
+      FlutterForegroundTask.init(
+        androidNotificationOptions: AndroidNotificationOptions(
+          channelId: channelId,
+          channelName: channelName,
+          channelDescription: channelDesc,
+          channelImportance: NotificationChannelImportance.LOW,
+          priority: NotificationPriority.LOW,
+          onlyAlertOnce: true,
+          showBadge: false,
+        ),
+        iosNotificationOptions: const IOSNotificationOptions(),
+        foregroundTaskOptions: ForegroundTaskOptions(
+          // 服务内用 5s 周期回调拉数据刷通知栏（同步主 isolate 轮询节奏）
+          eventAction: ForegroundTaskEventAction.repeat(5000),
+          autoRunOnBoot: true,
+          autoRunOnMyPackageReplaced: true,
+          allowWakeLock: true,
+          allowWifiLock: true,
+        ),
+      );
+    } catch (error) {
+      // 允许下一次真正使用前台服务时重试；启动阶段失败不应影响核心业务。
+      _inited = false;
+      rethrow;
+    }
   }
 
   /// 启动保活服务：先把轮询所需配置写入服务数据，再启动（服务内独立拉看板数据）
@@ -69,6 +74,7 @@ class ForegroundKeepAlive {
       serviceTypes: const [ForegroundServiceTypes.specialUse],
       notificationTitle: '火场指挥中',
       notificationText: '后台轮询与报警保护已开启',
+      callback: watchdogStartCallback,
     );
   }
 
@@ -98,6 +104,14 @@ class ForegroundKeepAlive {
   }
 }
 
+/// 前台服务启动后在独立 isolate 中注册任务处理器。
+/// 不能在主 isolate 初始化时调用 setTaskHandler，否则会向尚未创建的
+/// background channel 发送消息，产生 MissingPluginException。
+@pragma('vm:entry-point')
+void watchdogStartCallback() {
+  FlutterForegroundTask.setTaskHandler(WatchdogTaskHandler());
+}
+
 /// 服务 isolate 内的任务处理器：每 5 秒拉一次看板数据，刷新常驻通知栏
 class WatchdogTaskHandler extends TaskHandler {
   String _serverUrl = '';
@@ -110,15 +124,24 @@ class WatchdogTaskHandler extends TaskHandler {
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // 服务 isolate 运行在独立后台 isolate：Flutter 3.38+ 引擎启动 isolate 时自动注册插件
     _serverUrl =
-        await FlutterForegroundTask.getData<String>(key: 'keepalive_server_url') ?? '';
+        await FlutterForegroundTask.getData<String>(
+          key: 'keepalive_server_url',
+        ) ??
+        '';
     _incidentId =
-        await FlutterForegroundTask.getData<String>(key: 'keepalive_incident_id') ?? '';
+        await FlutterForegroundTask.getData<String>(
+          key: 'keepalive_incident_id',
+        ) ??
+        '';
     _token =
-        await FlutterForegroundTask.getData<String>(key: 'keepalive_token') ?? '';
+        await FlutterForegroundTask.getData<String>(key: 'keepalive_token') ??
+        '';
     _warnMin =
-        await FlutterForegroundTask.getData<int>(key: 'keepalive_warn_min') ?? 10;
+        await FlutterForegroundTask.getData<int>(key: 'keepalive_warn_min') ??
+        10;
     _alarmMin =
-        await FlutterForegroundTask.getData<int>(key: 'keepalive_alarm_min') ?? 5;
+        await FlutterForegroundTask.getData<int>(key: 'keepalive_alarm_min') ??
+        5;
     await _refresh();
   }
 
@@ -134,10 +157,12 @@ class WatchdogTaskHandler extends TaskHandler {
   Future<void> _refresh() async {
     if (_serverUrl.isEmpty || _incidentId.isEmpty) return;
     try {
-      final res = await http.get(
-        Uri.parse('$_serverUrl/api/entries?active=1'),
-        headers: {'X-Incident-Id': _incidentId, 'X-Api-Token': _token},
-      ).timeout(const Duration(seconds: 8));
+      final res = await http
+          .get(
+            Uri.parse('$_serverUrl/api/entries?active=1'),
+            headers: {'X-Incident-Id': _incidentId, 'X-Api-Token': _token},
+          )
+          .timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return;
       final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -162,10 +187,10 @@ class WatchdogTaskHandler extends TaskHandler {
         final status = leftMs < 0
             ? '超时！'
             : leftMs <= alarmMs
-                ? '报警！'
-                : leftMs <= warnMs
-                    ? '注意'
-                    : '';
+            ? '报警！'
+            : leftMs <= warnMs
+            ? '注意'
+            : '';
         title = '火场指挥中 · 在场 ${active.length} 人$status';
         text = '最早剩余 ${_fmt(leftMs)}（$name）';
       }

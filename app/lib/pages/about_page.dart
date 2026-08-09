@@ -132,7 +132,7 @@ class _FeaturesCard extends StatelessWidget {
     (
       Icons.smart_toy_outlined,
       '辅助问答',
-      '火场智囊「水元素」，浓烟里拿不准主意就问它：按结论/立即行动/注意事项支招，回答会联网检索最新规范与器材资料，拿不准时不瞎编，追问一点就发',
+      '火场智囊「水元素」，浓烟里拿不准主意就问它：按结论/立即行动/注意事项支招；对话历史只保存在本机，不关联警情，生成回答需联网调用 AI 服务',
     ),
     (Icons.receipt_long_outlined, '火场日志', '说一句「搜救出一人」自动记进日志时间线，按实战环节分类，回头好复盘'),
     (Icons.calculate_outlined, '自动计算', '气瓶容量、压力、消耗率交给我们算，剩余 10 分钟提醒、5 分钟报警'),
@@ -140,7 +140,7 @@ class _FeaturesCard extends StatelessWidget {
     (Icons.offline_bolt_outlined, '断网可用', '语音识别与语义解析支持本机运行，火场没信号也能录'),
     (Icons.folder_copy_outlined, '警情档案', '多台设备加入同一场警情协同记录；名称、参战消防站和力量数量可共同维护'),
     (Icons.history_outlined, '离线补传与复盘', '现场操作断网持久化暂存，恢复网络后幂等补传；归档后按晚到早查看完整事件时间线'),
-    (Icons.group_outlined, '名单与热词', '把班组名单录进去，语音识别对你的人名和叫法更准'),
+    (Icons.group_outlined, '名单与热词', '首次安装自带消防员名单和专业热词，也可按班组实际情况增删'),
     (Icons.bar_chart_rounded, '数据统计', '每人的进出场次数、时长一清二楚，训练复盘心里有数'),
     (Icons.touch_app_outlined, '火场友好', '屏幕常亮、后台保活、按键式录音，戴着手套、满场嘈杂也能用'),
   ];

@@ -308,7 +308,7 @@ test('GET /api/incidents 支持按归档状态筛选并按归档时间倒序', a
 test('警情编号只读且同一分钟通过后缀区分', async () => {
   const a = db.createIncident({ createdAt: 946684800000 });
   const b = db.createIncident({ createdAt: a.created_at });
-  assert.equal(b.number, `${a.number}-2`);
+  assert.equal(b.number, a.number.replace('1#警情', '2#警情'));
   const rename = await fetch(`${base}/api/incidents/${a.id}`, {
     method: 'PATCH',
     headers: { ...H, 'X-Incident-Id': a.id },

@@ -1,9 +1,12 @@
-import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+import 'package:convert/convert.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:ota_update/ota_update.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -32,7 +35,7 @@ class UpdateInfo {
 }
 
 /// OTA 更新服务：查询 GitHub Releases 最新版（公开仓库免 token），
-/// ota_update 下载（内部目录免存储权限 + sha256 校验）并拉起系统安装。
+/// 由 App 自己下载并校验 APK，再交给原生 FileProvider 拉起系统安装。
 ///
 /// 版本查询走 github.com 主站（releases/latest 302 → 最新 tag 页，从 HTML
 /// 提取 SHA256），不依赖 api.github.com——匿名 API 限流 60 次/小时/出口 IP，
@@ -43,9 +46,14 @@ class UpdateService {
   static const userAgent = 'watchdog-app-updater/1.0';
 
   static const MethodChannel _installChannel = MethodChannel('watchdog/screen');
-  static const _apkFilename = 'watchdog-update.apk';
   static const _cachedTagKey = 'ota_cached_tag';
   static const _cachedShaKey = 'ota_cached_sha256';
+
+  /// 使用版本化文件名，避免不同版本之间复用同一个残留 APK。
+  static String filenameFor(UpdateInfo update) {
+    final safeTag = update.tagName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return 'watchdog-update-$safeTag.apk';
+  }
 
   /// Android 8+ 安装 APK 需要"安装未知来源应用"授权。
   /// 返回 false 时下载后也无法弹出安装界面，应先引导用户授权。
@@ -85,9 +93,15 @@ class UpdateService {
           prefs.getString(_cachedShaKey) != update.sha256) {
         return false;
       }
+      // 原生层重新计算文件 SHA256，并读取 APK 内部包名/ versionCode，
+      // 不再仅凭“文件存在”复用可能已经被替换的安装包。
       return await _installChannel
-              .invokeMethod<bool>('hasDownloadedUpdate')
-              .timeout(const Duration(seconds: 2)) ??
+              .invokeMethod<bool>('verifyDownloadedUpdate', {
+                'filename': filenameFor(update),
+                'sha256': update.sha256,
+                'versionCode': update.versionCode,
+              })
+              .timeout(const Duration(seconds: 5)) ??
           false;
     } catch (_) {
       return false;
@@ -95,9 +109,11 @@ class UpdateService {
   }
 
   /// 重新拉起系统安装器，不重复下载已校验的 APK。
-  static Future<void> installReadyPackage() async {
+  static Future<void> installReadyPackage(UpdateInfo update) async {
     await _installChannel
-        .invokeMethod<void>('installDownloadedUpdate')
+        .invokeMethod<void>('installDownloadedUpdate', {
+          'filename': filenameFor(update),
+        })
         .timeout(const Duration(seconds: 5));
   }
 
@@ -107,8 +123,6 @@ class UpdateService {
     await prefs.setString(_cachedTagKey, update.tagName);
     await prefs.setString(_cachedShaKey, update.sha256!);
   }
-
-  final OtaUpdate _ota = OtaUpdate();
 
   /// 检查更新。返回 (更新信息, 错误信息)：
   /// - 更新信息非空 → 有新版可下载
@@ -165,93 +179,88 @@ class UpdateService {
 
   /// 下载并安装（下载进度 0-100 通过回调上报；错误通过回调 message 返回）。
   ///
-  /// 普通应用使用 ACTION_INSTALL_PACKAGE 直接拉起系统安装界面。PackageInstaller
-  /// 的待确认结果依赖广播接收器，部分系统会限制从该后台回调启动 Activity；
-  /// 它更适合系统应用/静默安装，不适合这里的用户确认式 OTA。
+  /// 下载、校验和拉起安装器全部由本服务控制，避免 ota_update 插件在下载完成后
+  /// 走另一套旧的安装 Intent。系统安装器被成功拉起后，用户仍需在系统界面确认。
   Future<void> downloadAndInstall(
     UpdateInfo update, {
     void Function(int percent)? onProgress,
     void Function(String message)? onError,
     void Function()? onInstalling,
   }) async {
-    final completer = Completer<void>();
-    StreamSubscription<OtaEvent>? sub;
-    Future<void>? rememberPackage;
     try {
+      if (update.sha256 == null) {
+        throw StateError('发布版本缺少 SHA256，已阻止安装');
+      }
       if (await hasReadyPackage(update)) {
-        await installReadyPackage();
+        await installReadyPackage(update);
         onInstalling?.call();
         onProgress?.call(100);
         return;
       }
-      final stream = _ota.execute(
-        update.apkUrl,
-        headers: {'User-Agent': userAgent},
-        destinationFilename: _apkFilename,
-        sha256checksum: update.sha256,
-        usePackageInstaller: false,
-      );
-      sub = stream.listen(
-        (event) {
-          switch (event.status) {
-            case OtaStatus.DOWNLOADING:
-              onProgress?.call(int.tryParse(event.value ?? '') ?? 0);
-            case OtaStatus.INSTALLING:
-              // 该事件只会在下载完成、SHA256 校验通过且系统安装 Intent 已发出后到达。
-              rememberPackage ??= _rememberReadyPackage(update);
-              onInstalling?.call();
-              onProgress?.call(100);
-            case OtaStatus.INSTALLATION_DONE:
-              if (!completer.isCompleted) completer.complete();
-            case OtaStatus.ALREADY_RUNNING_ERROR:
-            case OtaStatus.INSTALLATION_ERROR:
-            case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
-            case OtaStatus.INTERNAL_ERROR:
-            case OtaStatus.DOWNLOAD_ERROR:
-            case OtaStatus.CHECKSUM_ERROR:
-            case OtaStatus.CANCELED:
-              if (!completer.isCompleted) {
-                completer.completeError(_errorText(event));
-              }
-          }
-        },
-        onError: (Object e) {
-          if (!completer.isCompleted) {
-            completer.completeError(
-              _errorText(OtaEvent(OtaStatus.INTERNAL_ERROR, '$e')),
-            );
-          }
-        },
-        onDone: () {
-          if (!completer.isCompleted) completer.complete();
-        },
-      );
-      await completer.future.timeout(const Duration(minutes: 15));
+      await _downloadAndVerify(
+        update,
+        onProgress: onProgress,
+      ).timeout(const Duration(minutes: 15));
+      // 只在本地文件已通过校验后记录待安装版本；系统安装器取消时可安全重试。
+      await _rememberReadyPackage(update);
+      await installReadyPackage(update);
+      onInstalling?.call();
+      onProgress?.call(100);
     } catch (e) {
       onError?.call(e.toString());
-    } finally {
-      await rememberPackage;
-      await sub?.cancel();
     }
   }
 
-  String _errorText(OtaEvent event) {
-    final detail = event.value ?? '';
-    switch (event.status) {
-      case OtaStatus.CHECKSUM_ERROR:
-        return '安装包校验失败，请重试';
-      case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
-        return '需要允许安装未知来源应用';
-      case OtaStatus.INSTALLATION_ERROR:
-        return '安装未完成：$detail\n\n如未弹出安装界面，请在系统设置 → 应用 → 本应用 → 安装未知应用 中允许安装';
-      case OtaStatus.DOWNLOAD_ERROR:
-        return '下载失败（网络异常）$detail';
-      case OtaStatus.ALREADY_RUNNING_ERROR:
-        return '已有下载任务进行中';
-      case OtaStatus.CANCELED:
-        return '已取消下载';
-      default:
-        return '更新失败：${detail.isEmpty ? event.status.name : detail}';
+  Future<void> _downloadAndVerify(
+    UpdateInfo update, {
+    void Function(int percent)? onProgress,
+  }) async {
+    final client = http.Client();
+    IOSink? sink;
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      final otaDir = Directory(path.join(supportDir.path, 'ota_update'));
+      await otaDir.create(recursive: true);
+      final apk = File(path.join(otaDir.path, filenameFor(update)));
+      if (await apk.exists()) await apk.delete();
+
+      final request = http.Request('GET', Uri.parse(update.apkUrl))
+        ..headers['User-Agent'] = userAgent;
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('下载失败（HTTP ${response.statusCode}）');
+      }
+
+      final total = response.contentLength ?? update.sizeBytes ?? 0;
+      var received = 0;
+      final digestSink = AccumulatorSink<Digest>();
+      final digestInput = sha256.startChunkedConversion(digestSink);
+      final fileSink = apk.openWrite();
+      sink = fileSink;
+      onProgress?.call(0);
+      await for (final chunk in response.stream) {
+        fileSink.add(chunk);
+        digestInput.add(chunk);
+        received += chunk.length;
+        if (total > 0) {
+          onProgress?.call((received * 100 / total).clamp(0, 99).round());
+        }
+      }
+      await fileSink.flush();
+      await fileSink.close();
+      sink = null;
+      digestInput.close();
+
+      final actualSha = digestSink.events.single.toString();
+      if (actualSha.toLowerCase() != update.sha256!.trim().toLowerCase()) {
+        await apk.delete();
+        throw StateError('安装包校验失败，请重试');
+      }
+    } finally {
+      await sink?.close();
+      client.close();
     }
   }
 }

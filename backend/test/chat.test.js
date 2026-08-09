@@ -22,10 +22,8 @@ before(async () => {
 
 after(() => new Promise((r) => server.close(r)));
 
-const H = { 'Content-Type': 'application/json', 'X-Incident-Id': 'chatscene', 'X-Device-Id': 'chat-device', 'X-Actor-Name': 'tester' };
+const H = { 'Content-Type': 'application/json', 'X-Device-Id': 'chat-device', 'X-Actor-Name': 'tester' };
 const REPLY = '先确认气瓶余量和空气呼吸器状态';
-
-for (const id of ['chatscene', 'other-scene']) db.createIncident({ id });
 
 // 保留原始 fetch：只 mock 发往 LLM 的请求，本服务自身的 HTTP 调用走真实 fetch
 const realFetch = globalThis.fetch;
@@ -52,7 +50,7 @@ test('POST /api/chat 缺 message 400', async () => {
   assert.equal(res.status, 400);
 });
 
-test('POST /api/chat 问答全链路：回复落库成对写入', async () => {
+test('POST /api/chat 无警情也可问答且不落云端历史', async () => {
   mockChat();
   const res = await fetch(`${base}/api/chat`, {
     method: 'POST',
@@ -64,11 +62,7 @@ test('POST /api/chat 问答全链路：回复落库成对写入', async () => {
   assert.equal(body.reply, REPLY);
 
   const list = await (await fetch(`${base}/api/chat`, { headers: H })).json();
-  assert.equal(list.length, 2);
-  assert.equal(list[0].role, 'user');
-  assert.equal(list[0].content, '浓烟太大看不清怎么办');
-  assert.equal(list[1].role, 'assistant');
-  assert.equal(list[1].content, REPLY);
+  assert.deepEqual(list, []);
 });
 
 test('POST /api/chat 历史上下文带入请求', async () => {
@@ -83,7 +77,14 @@ test('POST /api/chat 历史上下文带入请求', async () => {
       },
     });
   };
-  await fetch(`${base}/api/chat`, { method: 'POST', headers: H, body: JSON.stringify({ message: '再问一个' }) });
+  await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({
+      message: '再问一个',
+      history: [{ role: 'user', content: '浓烟太大看不清怎么办' }, { role: 'assistant', content: REPLY }],
+    }),
+  });
   const userMsgs = captured.input.filter((m) => m.role === 'user').map((m) => m.content);
   assert.ok(userMsgs.includes('再问一个'), '新问题应传入');
   assert.ok(userMsgs.includes('浓烟太大看不清怎么办'), '历史问题应带入上下文');
@@ -116,7 +117,7 @@ test('POST /api/chat 联网搜索失败回退普通问答', async () => {
   assert.ok(fellBack, 'Responses 失败后应回退 chat/completions');
 });
 
-test('POST /api/chat 流式（stream=1）：SSE 增量输出并落库', async () => {
+test('POST /api/chat 流式（stream=1）：SSE 增量输出且不落云端历史', async () => {
   let streamed = false;
   globalThis.fetch = (url, opts) => {
     if (String(url).match(/chat\/completions$/)) {
@@ -156,23 +157,18 @@ test('POST /api/chat 流式（stream=1）：SSE 增量输出并落库', async ()
   assert.ok(streamed, '应命中 chat/completions 流式端点');
 
   const list = await (await fetch(`${base}/api/chat`, { headers: H })).json();
-  const last = list[list.length - 1];
-  assert.equal(last.role, 'assistant');
-  assert.equal(last.content, '先确认');
+  assert.deepEqual(list, []);
 });
 
-test('GET /api/chat 警情隔离', async () => {
-  const other = await (
-    await fetch(`${base}/api/chat`, { headers: { ...H, 'X-Incident-Id': 'other-scene' } })
-  ).json();
-  assert.equal(other.length, 0);
+test('GET /api/chat 无警情也返回空历史', async () => {
+  const list = await (await fetch(`${base}/api/chat`, { headers: H })).json();
+  assert.deepEqual(list, []);
 });
 
-test('DELETE /api/chat 清空记录', async () => {
+test('DELETE /api/chat 兼容旧客户端但不操作云端记录', async () => {
   const res = await (await fetch(`${base}/api/chat`, { method: 'DELETE', headers: H })).json();
   assert.ok(res.ok);
-  const list = await (await fetch(`${base}/api/chat`, { headers: H })).json();
-  assert.equal(list.length, 0);
+  assert.equal(res.deleted, 0);
 });
 
 test('POST /api/chat 限流：30 次内必然触发 429（按分钟桶）', async () => {

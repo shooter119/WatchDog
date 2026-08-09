@@ -151,6 +151,16 @@ test('警情事件按 client_op_id 幂等并按晚到早读取', () => {
   assert.equal(events[0].payload.name, '甲');
 });
 
+test('旧版进退场随手记迁移时确定性去重', () => {
+  const incident = db.createIncident({ id: 'incident-legacy-dedupe' });
+  db.appendIncidentEvent({ incidentId: incident.id, type: 'entry', source: 'legacy', occurredAt: 1000, payload: { name: '甲' } });
+  db.appendIncidentEvent({ incidentId: incident.id, type: 'note', source: 'legacy', occurredAt: 1005, payload: { text: '甲进场' } });
+  db.appendIncidentEvent({ incidentId: incident.id, type: 'note', source: 'legacy', occurredAt: 50000, payload: { text: '甲进场' } });
+  assert.equal(db.dedupeLegacyIncidentEvents(), 1);
+  const events = db.listIncidentEvents(incident.id);
+  assert.deepEqual(events.map((event) => event.payload.text || event.payload.name), ['甲进场', '甲']);
+});
+
 test('参战力量同站点只保留一条汇总记录', () => {
   const incident = db.createIncident({ id: 'incident-forces' });
   const first = db.upsertIncidentForce({ incidentId: incident.id, stationName: '龙翔路站', vehicleCount: 5, personnelCount: 25 });

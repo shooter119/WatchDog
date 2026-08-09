@@ -16,7 +16,9 @@ class AlarmNative {
   static Future<void> maximizeAlarmVolume() async {
     if (!Platform.isAndroid) return; // 非 Android（含测试环境）无此通道
     try {
-      await _channel.invokeMethod('maxAlarmVolume').timeout(const Duration(seconds: 2));
+      await _channel
+          .invokeMethod('maxAlarmVolume')
+          .timeout(const Duration(seconds: 2));
     } catch (_) {
       // 平台不支持时静默忽略
     }
@@ -73,8 +75,10 @@ class AlarmService {
   final Set<String> _firedLocal = {};
   String _lastSpokenKey = '';
   bool _looping = false;
+
   /// 精确闹钟是否可用（Android 12+ 可能被系统/用户关闭）
   bool exactAlarmAvailable = true;
+
   /// Android 14+ 全屏通知是否可用（默认被系统关闭，需用户手动开启）
   bool fullScreenIntentEnabled = true;
 
@@ -82,7 +86,12 @@ class AlarmService {
     if (_inited) return;
     _inited = true;
     tzdata.initializeTimeZones();
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // 应用使用 drawable 中的正式图标。Release 开启 shrinkResources 后，
+    // 未被 Android 清单直接引用的 mipmap 图标可能被移除，导致通知插件
+    // 初始化抛出 invalid_icon，进而阻断 AppController 的服务器初始化。
+    const androidInit = AndroidInitializationSettings(
+      '@drawable/fire_control_logo',
+    );
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -104,20 +113,23 @@ class AlarmService {
     // Android 13+：运行时申请通知权限
     await _notifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.requestNotificationsPermission();
     // Android 12+：检测精确闹钟授权（USE_EXACT_ALARM 默认授予；SCHEDULE_EXACT_ALARM 需手动）
     exactAlarmAvailable =
         await _notifications
             .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>()
+              AndroidFlutterLocalNotificationsPlugin
+            >()
             ?.canScheduleExactNotifications() ??
         true;
     // Android 14+：全屏通知（API 34 起默认关闭，需用户手动开启；request 返回 true=已开启）
     fullScreenIntentEnabled =
         await _notifications
             .resolvePlatformSpecificImplementation<
-                AndroidFlutterLocalNotificationsPlugin>()
+              AndroidFlutterLocalNotificationsPlugin
+            >()
             ?.requestFullScreenIntentPermission() ??
         true;
     await _player.setPlayerMode(PlayerMode.lowLatency);
@@ -129,9 +141,16 @@ class AlarmService {
       : AndroidScheduleMode.inexactAllowWhileIdle;
 
   /// 每个条目调度本地通知：warn 提醒、alarm 报警、timeout 超时（已过时间点跳过）
-  Future<void> scheduleForEntry(Entry e, {required int warnMin, required int alarmMin}) async {
+  Future<void> scheduleForEntry(
+    Entry e, {
+    required int warnMin,
+    required int alarmMin,
+  }) async {
     final now = tz.TZDateTime.now(tz.local);
-    final exit = tz.TZDateTime.from(DateTime.fromMillisecondsSinceEpoch(e.exitAt), tz.local);
+    final exit = tz.TZDateTime.from(
+      DateTime.fromMillisecondsSinceEpoch(e.exitAt),
+      tz.local,
+    );
     final warnAt = exit.subtract(Duration(minutes: warnMin));
     final alarmAt = exit.subtract(Duration(minutes: alarmMin));
 
@@ -203,7 +222,8 @@ class AlarmService {
     }
   }
 
-  int _id(String kind, String entryId) => ('$kind:$entryId'.hashCode & 0x7fffffff);
+  int _id(String kind, String entryId) =>
+      ('$kind:$entryId'.hashCode & 0x7fffffff);
 
   /// 取消条目的所有通知
   Future<void> cancelForEntry(String entryId) async {

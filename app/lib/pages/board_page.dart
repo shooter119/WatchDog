@@ -303,7 +303,7 @@ class _EmptyBoard extends StatelessWidget {
               child: FilledButton.icon(
                 onPressed: onGoVoice,
                 icon: const Icon(Icons.mic_rounded),
-                label: const Text('去语音录入'),
+                label: const Text('去警情处置'),
               ),
             ),
           ];

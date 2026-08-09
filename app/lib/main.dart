@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -17,8 +19,6 @@ import 'theme/nav_icons.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // 注册后台值守前台服务（TaskHandler 必须全局注册一次，供服务 isolate 恢复）
-  ForegroundKeepAlive.init();
   runApp(const WatchDogApp());
 }
 
@@ -36,9 +36,9 @@ class _WatchDogAppState extends State<WatchDogApp> {
   final TextEditingController _chatInput =
       TextEditingController(); // 辅助页输入条（全局底部聊天操作条）
   final FocusNode _chatInputFocus = FocusNode(); // 辅助页文字输入切换按钮聚焦目标
-  int _tab = 2; // 警情处置默认进入语音页（tab 顺序：日志0/看板1/语音2/辅助3/设置4）
+  int _tab = 2; // 警情处置默认进入（tab 顺序：日志0/看板1/警情处置2/辅助3/设置4）
   int _preChatTab = 2; // 进入辅助页前的 tab（顶部返回/系统返回都回来源页而非固定看板）
-  bool _pendingVoice = false; // 底部语音按钮长按 → 切换语音页后自动开始录音
+  bool _pendingVoice = false; // 底部语音按钮长按 → 切换到警情处置后自动开始录音
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
   bool _processing = false; // 识别/确认中（禁用语音按钮，避免重复触发）
   bool _chatSending = false; // 问答请求中（底部发送按钮转圈禁用）
@@ -47,6 +47,15 @@ class _WatchDogAppState extends State<WatchDogApp> {
   @override
   void initState() {
     super.initState();
+    // 等 FlutterActivity 完成插件注册后再初始化后台值守；过早在 main()
+    // 调用会触发 flutter_foreground_task 的 MissingPluginException。
+    // 前台服务属于可选能力，平台插件不可用或系统权限流程卡住时，不能
+    // 阻塞警情同步和新建警情等核心链路。
+    unawaited(
+      ForegroundKeepAlive.init().catchError((error, stackTrace) {
+        debugPrint('ForegroundKeepAlive init failed: $error');
+      }),
+    );
     controller.init();
     // 启动即静默检查更新：有新版本时设置页「检查更新」卡片显示提示（失败静默）
     controller.checkUpdateSilently();
@@ -141,7 +150,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
     _chatKey.currentState?.submitQuestion(text);
   }
 
-  /// 问答页就地录音识别为进出场：切语音页并展示确认面板
+  /// 问答页就地录音识别为进出场：切警情处置页并展示确认面板
   void _routeEntryExit(String text, ParseResult parsed) {
     _selectTab(2);
     _homeKey.currentState?.applyVoiceResult(text, parsed);
@@ -394,10 +403,8 @@ class _BottomNav extends StatelessWidget {
     return Container(
       key: const Key('bottom-nav-surface'),
       height: 68 + safeBottom,
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
+      // 普通警情处置页的麦克风是底部主操作，不再用顶部灰色横线切割它。
+      decoration: const BoxDecoration(color: AppColors.surface),
       child: Stack(
         clipBehavior: Clip.none,
         children: [

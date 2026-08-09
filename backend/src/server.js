@@ -36,7 +36,7 @@ app.use(express.json({ limit: '5mb' }));
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Incident-Id, X-Api-Token, X-Device-Id, X-Actor-Name, X-Op-Id, X-Expected-Version');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Incident-Id, X-Api-Token, X-Device-Id, X-Actor-Name, X-Actor-Name-B64, X-Op-Id, X-Expected-Version');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -72,8 +72,18 @@ function opKey(req) {
   return (req.headers['x-op-id'] || '').toString().slice(0, 64) || null;
 }
 
+function encodedActorName(req) {
+  const value = req.headers['x-actor-name-b64'];
+  if (!value) return '';
+  try {
+    return Buffer.from(String(value), 'base64').toString('utf8');
+  } catch (_) {
+    return '';
+  }
+}
+
 function actorName(req) {
-  const submitted = String(req.body?.actor_name || req.headers['x-actor-name'] || '').trim().slice(0, 32);
+  const submitted = String(req.body?.actor_name || req.headers['x-actor-name'] || encodedActorName(req) || '').trim().slice(0, 32);
   if (submitted) return submitted;
   const device = deviceKey(req);
   return device ? String(db.getDeviceProfile(device).real_name || '').trim() : '';
@@ -204,6 +214,18 @@ app.post('/api/incidents', (req, res, next) => {
     if (previous?.type === 'incident_created') {
       const existing = db.getIncident(previous.incident_id);
       if (existing) return res.json(incidentView(existing));
+    }
+    // 服务端串行执行这段检查和后续 INSERT，作为多设备共同遵守的建档闸门。
+    // 只限制“仍在处置中且刚刚创建”的警情；已经归档后可以正常开始下一场处置。
+    const now = Date.now();
+    const recent = db.findRecentActiveIncident(now - 60 * 1000);
+    if (recent) {
+      return res.status(409).json({
+        error: '为避免多人同时建档，1分钟内暂不允许再次新建警情，请优先加入现有警情',
+        code: 'INCIDENT_CREATE_COOLDOWN',
+        retry_after_seconds: Math.max(0, Math.ceil((60 * 1000 - (now - Number(recent.created_at))) / 1000)),
+        incident: incidentView(recent),
+      });
     }
     const created = db.createIncident({ createdBy: device });
     db.appendIncidentEvent({
@@ -628,40 +650,49 @@ const CHAT_SYSTEM_PROMPT = `你是"水元素"，消防救援现场安全管控�
    - 注意事项：指出风险点与禁忌，必要时追问一句关键信息帮助判断现场情况
 7. 问题简单明确时可不分段，直接简洁作答，但需保留安全提示要点`;
 
-// 智能体问答限流：按场景内存计数（单实例部署），每分钟最多 10 次提问
+// 智能体问答限流：按设备内存计数（单实例部署），每分钟最多 10 次提问。
+// 辅助页是设备级 AI 工具，不属于任何警情。
 const chatRateBuckets = new Map();
-function chatRateLimited(scene) {
+function chatRateLimited(clientKey) {
   const minute = Math.floor(Date.now() / 60000);
-  const bucket = chatRateBuckets.get(scene);
+  const bucket = chatRateBuckets.get(clientKey);
   if (!bucket || bucket.minute !== minute) {
-    chatRateBuckets.set(scene, { minute, count: 1 });
+    chatRateBuckets.set(clientKey, { minute, count: 1 });
     return false;
   }
   bucket.count++;
   return bucket.count > 10;
 }
 
-// 智能体问答：带场景隔离的历史上下文，回复同时落库（user + assistant 成对写入）
+function chatHistoryFromRequest(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => item && (item.role === 'user' || item.role === 'assistant'))
+    .map((item) => ({ role: item.role, content: String(item.content || '').trim().slice(0, 2000) }))
+    .filter((item) => item.content)
+    .slice(-40);
+}
+
+// 智能体问答：不依赖警情、不写入云端聊天历史。
+// 客户端保留本机历史，并在每次提问时按需提交上下文。
 app.post('/api/chat', async (req, res, next) => {
   try {
-    const incident = requireIncident(req, res);
-    if (!incident) return;
     const { message } = req.body || {};
     const clean = String(message || '').trim();
     if (!clean) return res.status(400).json({ error: '缺少 message' });
     if (clean.length > 2000) return res.status(400).json({ error: '问题过长（最多 2000 字）' });
     if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置 DEEPSEEK_API_KEY' });
-    const scene = incident.id;
-    if (chatRateLimited(scene)) return res.status(429).json({ error: '提问过于频繁，请稍后再试' });
-    const history = db.listChatMessages({ scene, limit: 40 });
+    const clientKey = deviceKey(req) || req.ip || 'anonymous';
+    if (chatRateLimited(clientKey)) return res.status(429).json({ error: '提问过于频繁，请稍后再试' });
+    const history = chatHistoryFromRequest(req.body?.history);
     const messages = [
       { role: 'system', content: CHAT_SYSTEM_PROMPT },
-      ...history.map((m) => ({ role: m.role, content: m.content })),
+      ...history,
       { role: 'user', content: clean },
     ];
     const t0 = Date.now();
-    logOp(req, 'info', 'chat_req', '收到问答请求', { text: clean.slice(0, 100), history: history.length, stream: !!req.body?.stream });
-    // 流式模式：SSE 逐段转发（低延迟优先，不走联网搜索——搜索会阻塞首字），回复完成后落库
+    logOp(req, 'info', 'chat_req', '收到辅助提问请求', { history: history.length, stream: !!req.body?.stream });
+    // 流式模式：SSE 逐段转发（低延迟优先，不走联网搜索——搜索会阻塞首字）。
     if (req.body?.stream) {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -685,10 +716,6 @@ app.post('/api/chat', async (req, res, next) => {
       }
       res.write('data: [DONE]\n\n');
       res.end();
-      if (reply) {
-        db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'user', content: clean });
-        db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'assistant', content: reply });
-      }
       logOp(req, 'info', 'chat_stream_done', '流式问答完成', { ms: Date.now() - t0, replyLen: reply.length });
       return;
     }
@@ -718,8 +745,6 @@ app.post('/api/chat', async (req, res, next) => {
         messages,
       });
     }
-    db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'user', content: clean });
-    db.createChatMessage({ id: crypto.randomUUID(), scene, role: 'assistant', content: reply });
     logOp(req, 'info', 'chat_done', '问答完成', { ms: Date.now() - t0, replyLen: reply.length });
     res.json({ reply, created_at: Date.now() });
   } catch (e) {
@@ -729,19 +754,13 @@ app.post('/api/chat', async (req, res, next) => {
 });
 
 app.get('/api/chat', (req, res) => {
-  const limit = Number(req.query.limit) || 100;
-  const incident = requireIncident(req, res);
-  if (!incident) return;
-  res.json(db.listChatMessages({ scene: incident.id, limit }));
+  // 历史在客户端本地保存，保留空响应兼容旧版客户端。
+  res.json([]);
 });
 
 app.delete('/api/chat', (req, res, next) => {
   try {
-    const incident = requireIncident(req, res);
-    if (!incident) return;
-    const n = db.clearChatMessages(incident.id);
-    logOp(req, 'info', 'chat_cleared', '已清空问答记录', { deleted: n });
-    res.json({ ok: true, deleted: n });
+    res.json({ ok: true, deleted: 0 });
   } catch (e) {
     next(e);
   }

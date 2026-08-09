@@ -18,6 +18,7 @@ import 'package:watchdog/pages/same_name_dialog.dart';
 import 'package:watchdog/pages/settings_page.dart';
 import 'package:watchdog/pages/stats_page.dart';
 import 'package:watchdog/services/audio_service.dart';
+import 'package:watchdog/services/chat_history.dart';
 import 'package:watchdog/services/op_log_service.dart';
 import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/services/update_service.dart';
@@ -36,7 +37,13 @@ class _FakeController extends AppController {
     List<Entry> entries = const [],
     List<Firefighter> firefighters = const [],
     List<Note> notes = const [],
-    Incident? currentIncident = const Incident(id: 'test-incident', number: '2026-8-9-8-59', status: 'active', createdAt: 1, lastActivityAt: 1),
+    Incident? currentIncident = const Incident(
+      id: 'test-incident',
+      number: '2026-8-9-8-59',
+      status: 'active',
+      createdAt: 1,
+      lastActivityAt: 1,
+    ),
   }) : super() {
     this.entries = entries;
     this.firefighters = firefighters;
@@ -54,6 +61,12 @@ class _FakeController extends AppController {
 
   @override
   Future<void> sync() async {} // 测试环境不发网络请求
+
+  @override
+  Future<List<ChatMessage>> fetchChatHistory() async {
+    final a = api;
+    return a is _FakeApi ? a.chatHistory : super.fetchChatHistory();
+  }
 
   @override
   Future<void> markExited(String id, {String? opId}) async {
@@ -144,7 +157,8 @@ Entry _entry({
 }
 
 /// 测试专用 ApiClient：固定返回 张伟+李娜 的转写/解析结果
-class _FakeApi extends ApiClient {  _FakeApi({
+class _FakeApi extends ApiClient {
+  _FakeApi({
     this.multiPressure = true,
     this.rounds = const [],
     this.exitOnCall = 0,
@@ -237,7 +251,11 @@ class _FakeApi extends ApiClient {  _FakeApi({
   Future<List<ChatMessage>> fetchChatMessages() async => chatHistory;
 
   @override
-  Future<ChatMessage> sendChatMessage(String message, {String? opId}) async {
+  Future<ChatMessage> sendChatMessage(
+    String message, {
+    String? opId,
+    List<ChatMessage> history = const [],
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 10));
     return ChatMessage(
       id: 'r-${chatHistory.length}',
@@ -252,6 +270,7 @@ class _FakeApi extends ApiClient {  _FakeApi({
     String message, {
     required void Function(String delta) onChunk,
     String? opId,
+    List<ChatMessage> history = const [],
   }) async {
     // 模拟 SSE 流式：一次回调完整回复（占位"思考中"先渲染，随后切换为内容气泡）
     final reply = '回答：$message';
@@ -797,13 +816,15 @@ void main() {
       final list = find.byType(Scrollable).first;
       await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
       await tester.pump();
-      await tester.tap(find.descendant(
-        of: find.ancestor(
-          of: find.text('屏幕常亮'),
-          matching: find.byType(SwitchListTile),
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('屏幕常亮'),
+            matching: find.byType(SwitchListTile),
+          ),
+          matching: find.byType(Switch),
         ),
-        matching: find.byType(Switch),
-      ));
+      );
       await tester.pumpAndSettle();
       expect(await Settings.keepScreenOn, isFalse);
     });
@@ -819,7 +840,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(find.text('语音录入全流程记录'), 400, scrollable: list);
+      await tester.scrollUntilVisible(
+        find.text('语音录入全流程记录'),
+        400,
+        scrollable: list,
+      );
       await tester.tap(find.text('语音录入全流程记录'));
       await tester.pumpAndSettle();
       expect(find.byType(OpLogPage), findsOneWidget);
@@ -946,7 +971,10 @@ void main() {
       expect(find.text('确认名单（2 人）：请下滑核对后一次性确认'), findsOneWidget);
       expect(find.text('1.张伟'), findsNothing); // 序号徽标为圆圈数字，无文字前缀
       expect(find.text('全部确认进入火场（2 人）'), findsOneWidget);
-      expect(find.text('可用时间 17 分钟'), findsWidgets); // 默认消耗率 80L/min：6.8×20×10÷80=17
+      expect(
+        find.text('可用时间 17 分钟'),
+        findsWidgets,
+      ); // 默认消耗率 80L/min：6.8×20×10÷80=17
       expect(find.text('容量'), findsWidgets);
 
       // 点一次确认 → 两人全部提交（按钮在滚动卡片底部，先滚到可见）
@@ -1557,8 +1585,7 @@ void main() {
           ),
         ),
       );
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.text('之前的问题'), findsOneWidget);
       expect(find.text('之前的回答'), findsOneWidget);
 
@@ -1589,8 +1616,7 @@ void main() {
           ),
         ),
       );
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.text('你好，我是水元素'), findsOneWidget);
       await tester.tap(find.text('气瓶压力下降太快怎么办？'));
       await tester.pump();
@@ -1613,8 +1639,7 @@ void main() {
           ),
         ),
       );
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
       final state = tester.state<ChatPageState>(find.byType(ChatPage));
       for (var i = 1; i <= 3; i++) {
         unawaited(state.submitQuestion('第 $i 问'));
@@ -1650,8 +1675,7 @@ void main() {
           ),
         ),
       );
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
       // 追问段被解析出来：正文不含"追问"，气泡下方显示可点击胶囊
       expect(find.textContaining('立即撤离'), findsOneWidget);
       expect(find.textContaining('追问：当前气瓶压力多少？'), findsOneWidget);
@@ -1687,8 +1711,7 @@ void main() {
           ),
         ),
       );
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.textContaining('停止剧烈活动'), findsOneWidget);
       expect(find.textContaining('关键'), findsNothing);
       expect(find.textContaining('追问：当前压力表读数多少？'), findsOneWidget);
@@ -1697,6 +1720,10 @@ void main() {
   });
 
   group('main.dart 导航', () {
+    setUp(() async {
+      await ChatHistory.clear();
+    });
+
     testWidgets('默认进入语音页，底部五个入口对称存在', (tester) async {
       await tester.pumpWidget(const WatchDogApp());
       await tester.pump();
@@ -1969,18 +1996,18 @@ void main() {
     testWidgets('ConnectionStatus 两态渲染：已连接绿 / 已中断红并可重试', (tester) async {
       var retried = 0;
       Future<void> pump(bool connected) => tester.pumpWidget(
-            MaterialApp(
-              theme: buildAppTheme(),
-              home: Scaffold(
-                body: Center(
-                  child: ConnectionStatus(
-                    connected: connected,
-                    onRetry: () => retried++,
-                  ),
-                ),
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: Center(
+              child: ConnectionStatus(
+                connected: connected,
+                onRetry: () => retried++,
               ),
             ),
-          );
+          ),
+        ),
+      );
       await pump(true);
       expect(find.text('已连接'), findsOneWidget);
       expect(find.byIcon(Icons.cloud_done_outlined), findsOneWidget);
@@ -2003,26 +2030,65 @@ void main() {
       // 从未成功过 → 已连接（乐观）
       expect(isConnectionLost(lastSyncSuccessAt: 0, nowMs: now), false);
       // 刚成功 → 已连接
-      expect(isConnectionLost(lastSyncSuccessAt: now - 1000, nowMs: now), false);
+      expect(
+        isConnectionLost(lastSyncSuccessAt: now - 1000, nowMs: now),
+        false,
+      );
       // 29 秒内 → 已连接（瞬时抖动不红）
-      expect(isConnectionLost(lastSyncSuccessAt: now - 29000, nowMs: now), false);
+      expect(
+        isConnectionLost(lastSyncSuccessAt: now - 29000, nowMs: now),
+        false,
+      );
       // 恰好 30 秒 → 仍未红（严格大于）
-      expect(isConnectionLost(lastSyncSuccessAt: now - 30000, nowMs: now), false);
+      expect(
+        isConnectionLost(lastSyncSuccessAt: now - 30000, nowMs: now),
+        false,
+      );
       // 超过 30 秒 → 断线
-      expect(isConnectionLost(lastSyncSuccessAt: now - 30001, nowMs: now), true);
-      expect(isConnectionLost(lastSyncSuccessAt: now - 60000, nowMs: now), true);
+      expect(
+        isConnectionLost(lastSyncSuccessAt: now - 30001, nowMs: now),
+        true,
+      );
+      expect(
+        isConnectionLost(lastSyncSuccessAt: now - 60000, nowMs: now),
+        true,
+      );
     });
   });
 
   group('警情卡与选择流程', () {
     Future<void> pumpTask(WidgetTester tester, _FakeController c) async {
-      await tester.pumpWidget(MaterialApp(theme: buildAppTheme(), home: Scaffold(body: AnimatedBuilder(animation: c, builder: (_, __) => HomePage(controller: c, audioService: _FakeAudio())))));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: AnimatedBuilder(
+              animation: c,
+              builder: (_, __) =>
+                  HomePage(controller: c, audioService: _FakeAudio()),
+            ),
+          ),
+        ),
+      );
       await tester.pump();
     }
 
     testWidgets('当前警情卡显示名称、编号、在场和需关注人数', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20), _entry(name: '李娜', remainingMin: 2)])
-        ..currentIncident = const Incident(id: 'i1', number: '2026-8-9-8-59', title: '小区火灾', status: 'active', createdAt: 1, lastActivityAt: 1);
+      final c =
+          _FakeController(
+              entries: [
+                _entry(name: '张伟', remainingMin: 20),
+                _entry(name: '李娜', remainingMin: 2),
+              ],
+            )
+            ..currentIncident = const Incident(
+              id: 'i1',
+              number: '2026-8-9-8-59',
+              title: '小区火灾',
+              status: 'active',
+              createdAt: 1,
+              lastActivityAt: 1,
+            );
       await pumpTask(tester, c);
       expect(find.byKey(const Key('incident-card')), findsOneWidget);
       expect(find.text('小区火灾'), findsOneWidget);
@@ -2031,42 +2097,110 @@ void main() {
     });
 
     testWidgets('无当前警情显示活跃列表和新建入口', (tester) async {
-      final c = _FakeController(currentIncident: null)..currentIncident = null..activeIncidents = const [Incident(id: 'i1', number: '2026-8-9-8-59', status: 'active', createdAt: 1, lastActivityAt: 1)];
+      final c = _FakeController(currentIncident: null)
+        ..currentIncident = null
+        ..activeIncidents = const [
+          Incident(
+            id: 'i1',
+            number: '2026-8-9-8-59',
+            status: 'active',
+            createdAt: 1,
+            lastActivityAt: 1,
+          ),
+        ];
       await pumpTask(tester, c);
       expect(find.byKey(const Key('incident-picker')), findsOneWidget);
-      expect(find.text('2026-8-9-8-59'), findsNWidgets(2));
+      expect(find.text('2026-8-9-8-59'), findsOneWidget);
       expect(find.text('新建警情'), findsOneWidget);
+    });
+
+    testWidgets('选择警情列表长名称单行缩放不换行', (tester) async {
+      final c = _FakeController(currentIncident: null)
+        ..currentIncident = null
+        ..activeIncidents = const [
+          Incident(
+            id: 'long-incident',
+            number: '2026年8月9日13时24分1#警情',
+            title: '幸福小区住宅楼地下车库及周边商铺火灾现场处置警情',
+            status: 'active',
+            createdAt: 1,
+            lastActivityAt: 1,
+          ),
+        ];
+      await pumpTask(tester, c);
+      expect(find.text('幸福小区住宅楼地下车库及周边商铺火灾现场处置警情'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('参战力量显示站点、车辆和人员汇总', (tester) async {
       final c = _FakeController()
-        ..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1)
-        ..forces = const [IncidentForce(id: 'f1', incidentId: 'i1', stationName: '龙翔路站', vehicleCount: 5, personnelCount: 25, createdAt: 1, updatedAt: 1, version: 1)];
+        ..currentIncident = const Incident(
+          id: 'i1',
+          number: 'n',
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        )
+        ..forces = const [
+          IncidentForce(
+            id: 'f1',
+            incidentId: 'i1',
+            stationName: '龙翔路站',
+            vehicleCount: 5,
+            personnelCount: 25,
+            createdAt: 1,
+            updatedAt: 1,
+            version: 1,
+          ),
+        ];
       await pumpTask(tester, c);
       expect(find.text('龙翔路站 5车25人'), findsOneWidget);
     });
 
     testWidgets('新建警情后可看到补充名称提示', (tester) async {
-      final c = _FakeController(currentIncident: null)..currentIncident = null..api = _FakeApi(incidentId: '');
+      final c = _FakeController(currentIncident: null)
+        ..currentIncident = null
+        ..api = _FakeApi(incidentId: '');
       await pumpTask(tester, c);
       expect(find.text('新建警情'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('活动警情提供修改名称入口', (tester) async {
-      final c = _FakeController()..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1);
+      final c = _FakeController()
+        ..currentIncident = const Incident(
+          id: 'i1',
+          number: 'n',
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        );
       await pumpTask(tester, c);
       expect(find.text('修改名称'), findsOneWidget);
     });
 
     testWidgets('活动警情提供参战力量添加入口', (tester) async {
-      final c = _FakeController()..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1);
+      final c = _FakeController()
+        ..currentIncident = const Incident(
+          id: 'i1',
+          number: 'n',
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        );
       await pumpTask(tester, c);
       expect(find.text('添加'), findsOneWidget);
     });
 
     testWidgets('活动警情提供手动归档入口并二次确认', (tester) async {
-      final c = _FakeController()..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1);
+      final c = _FakeController()
+        ..currentIncident = const Incident(
+          id: 'i1',
+          number: 'n',
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        );
       await pumpTask(tester, c);
       await tester.tap(find.text('归档'));
       await tester.pumpAndSettle();
@@ -2075,7 +2209,14 @@ void main() {
     });
 
     testWidgets('当前警情默认可进入语音录入区域', (tester) async {
-      final c = _FakeController()..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1);
+      final c = _FakeController()
+        ..currentIncident = const Incident(
+          id: 'i1',
+          number: 'n',
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        );
       await pumpTask(tester, c);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
       expect(tester.takeException(), isNull);

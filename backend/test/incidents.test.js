@@ -1,4 +1,4 @@
-const { test, before, after } = require('node:test');
+const { test, before, after, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
@@ -21,6 +21,12 @@ before(async () => {
 
 after(() => new Promise((resolve) => server.close(resolve)));
 
+afterEach(() => {
+  for (const incident of db.listIncidents('active')) {
+    db.archiveIncident(incident.id, { archivedBy: 'test-cleanup', now: Date.now() });
+  }
+});
+
 const headers = (extra = {}) => ({
   'Content-Type': 'application/json',
   'X-Device-Id': 'incident-device-1',
@@ -39,18 +45,53 @@ async function createIncident(opId = `create-${Date.now()}-${Math.random()}`) {
   return json(response);
 }
 
+test('新建警情服务端限制 1 分钟内重复建档，并返回可加入的现有警情', async () => {
+  const first = await createIncident('cooldown-first');
+  const response = await fetch(`${base}/api/incidents`, {
+    method: 'POST',
+    headers: headers({ 'X-Op-Id': 'cooldown-second' }),
+    body: JSON.stringify({ actor_name: '测试员' }),
+  });
+  assert.equal(response.status, 409);
+  const body = await json(response);
+  assert.equal(body.code, 'INCIDENT_CREATE_COOLDOWN');
+  assert.equal(body.incident.id, first.id);
+  assert.ok(body.retry_after_seconds > 0);
+});
+
 test('新建警情使用 UUID 主键、可读编号，并处理同一分钟编号冲突', async () => {
   const now = Date.now();
   const first = db.createIncident({ createdAt: now });
   const second = db.createIncident({ createdAt: now });
   assert.match(first.id, /^[0-9a-f-]{36}$/);
-  assert.match(first.number, /^\d{4}-\d{1,2}-\d{1,2}-\d{1,2}-\d{2}$/);
-  assert.equal(second.number, `${first.number}-2`);
+  const firstNumber = first.number.match(/^(\d{4}年\d{1,2}月\d{1,2}日\d{2}时\d{2}分)(\d+)#警情$/);
+  const secondNumber = second.number.match(/^(\d{4}年\d{1,2}月\d{1,2}日\d{2}时\d{2}分)(\d+)#警情$/);
+  assert.ok(firstNumber);
+  assert.ok(secondNumber);
+  assert.equal(secondNumber[1], firstNumber[1]);
+  assert.equal(Number(secondNumber[2]), Number(firstNumber[2]) + 1);
 
   const created = await createIncident();
   assert.equal(created.status, 'active');
   assert.equal(created.display_name, created.number);
   assert.ok(Array.isArray(created.forces));
+});
+
+test('支持中文实名的 Base64 请求头，不因 HTTP 头编码失败', async () => {
+  const utf8Headers = headers({ 'X-Op-Id': 'create-utf8-actor' });
+  delete utf8Headers['X-Actor-Name'];
+  utf8Headers['X-Actor-Name-B64'] = Buffer.from('李翔', 'utf8').toString('base64');
+  const response = await fetch(`${base}/api/incidents`, {
+    method: 'POST',
+    headers: utf8Headers,
+    body: '{}',
+  });
+  assert.equal(response.status, 201);
+  const created = await json(response);
+  const timeline = await json(await fetch(`${base}/api/incidents/${created.id}/timeline`, {
+    headers: headers({ 'X-Incident-Id': created.id }),
+  }));
+  assert.equal(timeline.events[0].actor_name, '李翔');
 });
 
 test('改名使用版本控制，未实名管理操作被拒绝', async () => {

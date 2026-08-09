@@ -100,10 +100,10 @@ class OpLogService {
   }
 
   /// 记录一步操作日志；本地始终保留，是否进待上传缓冲取决于同步开关
-  void record(String opId, String stage, String msg, {String level = 'info', Map<String, dynamic>? data}) {
+  void record(String opId, String stage, String msg, {String level = 'info', Map<String, dynamic>? data, bool sync = true}) {
     _logs.add(OpLogEntry(ts: DateTime.now().millisecondsSinceEpoch, opId: opId, stage: stage, level: level, msg: msg, data: data));
     if (_logs.length > maxLocal) _logs.removeRange(0, _logs.length - maxLocal);
-    if (_syncEnabled) {
+    if (_syncEnabled && sync) {
       _pending.add(_logs.last);
       if (_pending.length > maxPending) _pending.removeAt(0);
     }

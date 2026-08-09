@@ -594,7 +594,7 @@ class _VoiceButtonState extends State<VoiceButton>
         ? '识别处理中，请稍候'
         : widget.recording
         ? '松开结束录音'
-        : '长按开始录音，点击进入语音页';
+        : '长按开始录音，点击进入警情处置';
     return Semantics(
       label: widget.processing
           ? '识别处理中'

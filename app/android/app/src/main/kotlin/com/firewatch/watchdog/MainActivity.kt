@@ -11,6 +11,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.security.MessageDigest
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
     private val channelName = "watchdog/screen"
@@ -76,8 +78,17 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "hasDownloadedUpdate" -> {
-                    val apk = downloadedUpdateFile()
-                    result.success(apk.isFile && apk.length() > 0L)
+                    val apk = downloadedUpdateFile(call.argument<String>("filename"))
+                    result.success(apk?.let { it.isFile && it.length() > 0L } ?: false)
+                }
+                "verifyDownloadedUpdate" -> {
+                    val apk = downloadedUpdateFile(call.argument<String>("filename"))
+                    val expectedSha = call.argument<String>("sha256")
+                    val expectedVersionCode = call.argument<Number>("versionCode")?.toLong()
+                    result.success(
+                        apk != null && expectedSha != null && expectedVersionCode != null &&
+                            verifyDownloadedUpdate(apk, expectedSha, expectedVersionCode),
+                    )
                 }
                 "installDownloadedUpdate" -> {
                     // 用户取消安装或系统安装页被打断后，直接复用已校验的 APK，
@@ -90,8 +101,8 @@ class MainActivity : FlutterActivity() {
                                 result.error("install_permission_denied", "尚未允许安装未知来源应用", null)
                                 return@runOnUiThread
                             }
-                            val apk = downloadedUpdateFile()
-                            if (!apk.isFile || apk.length() == 0L) {
+                            val apk = downloadedUpdateFile(call.argument<String>("filename"))
+                            if (apk == null || !apk.isFile || apk.length() == 0L) {
                                 result.error("apk_not_found", "已下载的安装包不存在", null)
                                 return@runOnUiThread
                             }
@@ -165,6 +176,54 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun downloadedUpdateFile(): File =
-        File(filesDir, "ota_update/watchdog-update.apk")
+    private fun downloadedUpdateFile(filename: String?): File? {
+        val actualName = filename ?: "watchdog-update.apk"
+        // 文件名由 Dart 端生成，但原生端仍拒绝路径穿越，避免 FileProvider 暴露任意文件。
+        if (actualName.isBlank() || actualName != File(actualName).name ||
+            !actualName.endsWith(".apk", ignoreCase = true)
+        ) {
+            return null
+        }
+        return File(filesDir, "ota_update/$actualName")
+    }
+
+    private fun verifyDownloadedUpdate(apk: File, expectedSha: String, expectedVersionCode: Long): Boolean {
+        return try {
+            if (!apk.isFile || apk.length() == 0L) return false
+            val actualSha = sha256(apk)
+            if (!actualSha.equals(expectedSha.trim(), ignoreCase = true)) return false
+
+            val packageInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageArchiveInfo(apk.path, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageArchiveInfo(apk.path, 0)
+            } ?: return false
+            if (packageInfo.packageName != packageName) return false
+            val actualVersionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode.toLong()
+            }
+            actualVersionCode == expectedVersionCode
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            var count = input.read(buffer)
+            while (count > 0) {
+                digest.update(buffer, 0, count)
+                count = input.read(buffer)
+            }
+        }
+        return digest.digest().joinToString("") { byte ->
+            String.format(Locale.US, "%02x", byte.toInt() and 0xff)
+        }
+    }
 }
