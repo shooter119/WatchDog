@@ -189,7 +189,11 @@ class _FakeApi extends ApiClient {
   final List<ChatMessage> chatHistory;
 
   final created = <String>[];
+  int chatCalls = 0;
+  int chatStreamCalls = 0;
   int _parseCalls = 0;
+
+  int get parseCalls => _parseCalls;
 
   @override
   Future<String> transcribe(Uint8List audioBytes, {String? opId}) async =>
@@ -256,6 +260,7 @@ class _FakeApi extends ApiClient {
     String? opId,
     List<ChatMessage> history = const [],
   }) async {
+    chatCalls++;
     await Future<void>.delayed(const Duration(milliseconds: 10));
     return ChatMessage(
       id: 'r-${chatHistory.length}',
@@ -272,6 +277,7 @@ class _FakeApi extends ApiClient {
     String? opId,
     List<ChatMessage> history = const [],
   }) async {
+    chatStreamCalls++;
     // 模拟 SSE 流式：一次回调完整回复（占位"思考中"先渲染，随后切换为内容气泡）
     final reply = '回答：$message';
     await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -663,6 +669,8 @@ void main() {
       await tester.tap(find.text('确认出火场'));
       await tester.pumpAndSettle();
       expect(c.exited, ['e-李娜']);
+      expect(c.notes.single.text, '李娜出场');
+      expect(c.notes.single.category, NoteCategory.withdraw);
       // 登记完成后返回上一页
       expect(find.text('打开详情'), findsOneWidget);
     });
@@ -984,6 +992,8 @@ void main() {
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜']);
+      expect(c.notes.single.text, '张伟进场、李娜进场');
+      expect(c.notes.single.category, NoteCategory.deploy);
       expect(find.text('全部确认进入火场（2 人）'), findsNothing);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
     });
@@ -1192,6 +1202,8 @@ void main() {
       await tester.tap(find.text('确认全员离场'));
       await tester.pumpAndSettle();
       expect(c.exited, ['e-张伟', 'e-李娜']);
+      expect(c.notes.single.text, '张伟出场、李娜出场');
+      expect(c.notes.single.category, NoteCategory.withdraw);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
     });
 
@@ -1602,6 +1614,8 @@ void main() {
       expect(find.text('如何破拆卷帘门？'), findsOneWidget);
       expect(find.text('回答：如何破拆卷帘门？'), findsOneWidget);
       expect(find.text('水元素思考中…'), findsNothing);
+      expect(api.chatCalls, 1);
+      expect(api.chatStreamCalls, 0);
       expect(tester.takeException(), isNull);
     });
 
@@ -1651,6 +1665,32 @@ void main() {
       }
       expect(find.text('第 1 问'), findsOneWidget);
       expect(find.text('回答：第 3 问'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页语音转写直接作为问答文本，不发布到火场日志', (tester) async {
+      final api = _FakeApi(transcribeText: '三楼发现明火，请问下一步怎么处置？');
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(find.text('三楼发现明火，请问下一步怎么处置？'), findsOneWidget);
+      expect(find.text('回答：三楼发现明火，请问下一步怎么处置？'), findsOneWidget);
+      expect(c.notes, isEmpty);
+      expect(api.parseCalls, 0);
       expect(tester.takeException(), isNull);
     });
 
@@ -2073,7 +2113,7 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('当前警情卡显示名称、编号、在场和需关注人数', (tester) async {
+    testWidgets('当前警情卡显示名称和编号，不显示在场与状态汇总', (tester) async {
       final c =
           _FakeController(
               entries: [
@@ -2092,8 +2132,11 @@ void main() {
       await pumpTask(tester, c);
       expect(find.byKey(const Key('incident-card')), findsOneWidget);
       expect(find.text('小区火灾'), findsOneWidget);
-      expect(find.text('在场 2人'), findsOneWidget);
-      expect(find.text('需关注 1'), findsOneWidget);
+      expect(find.text('2026-8-9-8-59'), findsOneWidget);
+      expect(find.text('在场 2人'), findsNothing);
+      expect(find.text('需关注 1'), findsNothing);
+      expect(find.text('状态正常'), findsNothing);
+      expect(find.text('处置中'), findsNothing);
     });
 
     testWidgets('无当前警情显示活跃列表和新建入口', (tester) async {
@@ -2155,6 +2198,7 @@ void main() {
         ];
       await pumpTask(tester, c);
       expect(find.text('龙翔路站 5车25人'), findsOneWidget);
+      expect(find.byType(InputChip), findsNothing);
     });
 
     testWidgets('新建警情后可看到补充名称提示', (tester) async {
@@ -2176,7 +2220,8 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
-      expect(find.text('修改名称'), findsOneWidget);
+      expect(find.byKey(const Key('rename-incident')), findsOneWidget);
+      expect(find.text('修改名称'), findsNothing);
     });
 
     testWidgets('活动警情提供参战力量添加入口', (tester) async {
@@ -2202,9 +2247,15 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
-      await tester.tap(find.text('归档'));
+      await tester.tap(find.byIcon(Icons.archive_outlined));
       await tester.pumpAndSettle();
-      expect(find.text('归档警情'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('归档警情'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('确认归档'), findsOneWidget);
     });
 

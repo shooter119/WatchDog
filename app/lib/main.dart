@@ -8,7 +8,6 @@ import 'pages/chat_page.dart';
 import 'pages/home_page.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
-import 'models/models.dart';
 import 'services/foreground_keep_alive.dart';
 import 'services/local_asr_service.dart';
 import 'services/op_log_service.dart';
@@ -96,7 +95,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   void _voiceLongPressStart(LongPressStartDetails _) {
     HapticFeedback.mediumImpact();
     if (_processing) return;
-    // 问答页就地录音：识别为提问直接发本页，其余按意图路由
+    // 问答页就地录音：转写文本直接发给辅助 AI
     if (_tab == 3) {
       _chatKey.currentState?.beginRecording();
       return;
@@ -150,12 +149,6 @@ class _WatchDogAppState extends State<WatchDogApp> {
     _chatKey.currentState?.submitQuestion(text);
   }
 
-  /// 问答页就地录音识别为进出场：切警情处置页并展示确认面板
-  void _routeEntryExit(String text, ParseResult parsed) {
-    _selectTab(2);
-    _homeKey.currentState?.applyVoiceResult(text, parsed);
-  }
-
   /// 辅助页底部操作条发送（文字/语音识别为提问）
   void _chatSubmit(String text) {
     final clean = text.trim();
@@ -190,8 +183,6 @@ class _WatchDogAppState extends State<WatchDogApp> {
               key: _chatKey,
               controller: controller,
               onBack: () => _selectTab(_preChatTab),
-              onEntryExit: _routeEntryExit,
-              onNote: _routeNote,
               onRecordingChanged: (v) => setState(() => _recording = v),
               onProcessingChanged: (v) => setState(() => _processing = v),
               onSendingChanged: (v) => setState(() => _chatSending = v),

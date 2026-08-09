@@ -311,20 +311,47 @@ class _EmptyBoard extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 96,
-            height: 96,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.surface,
-              border: Border.all(color: AppColors.border),
+          Semantics(
+            container: true,
+            label: '当前在场人员 0 人',
+            child: Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.surface,
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '0',
+                    style: TextStyle(
+                      fontSize: 36,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '在场',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            child: const Icon(Icons.shield_outlined, size: 44, color: AppColors.textTertiary),
           ),
           const SizedBox(height: 20),
           const Text('暂无人员在场', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
-          const Text('可通过语音录入完成进场登记', style: TextStyle(color: AppColors.textTertiary, fontSize: 13)),
+          const Text('按住底部语音按钮登记进场', style: TextStyle(color: AppColors.textTertiary, fontSize: 13)),
           ...?voiceGuide,
         ],
       ),

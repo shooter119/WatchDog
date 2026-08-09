@@ -12,13 +12,10 @@ import '../theme/app_widgets.dart';
 import '../theme/assistant_avatar.dart';
 
 /// 智能体问答页「辅助」：文字输入 + 就地语音提问，AI 解答火场困难。
-/// 语音识别结果按意图路由：提问留本页发送；进出场/日志交 main 跳转对应页面。
+/// 辅助页语音转写结果只作为本页提问发送，不参与火场语音意图路由。
 class ChatPage extends StatefulWidget {
   final AppController controller;
   final VoidCallback? onBack; // 顶部返回按钮（回进入前的来源页），辅助页底部不再展示全部导航入口
-  final void Function(String text, ParseResult parsed)?
-  onEntryExit; // 语音识别为进出场：交语音页确认
-  final ValueChanged<String>? onNote; // 语音识别为日志：记入日志并跳日志页
   final ValueChanged<bool>? onRecordingChanged;
   final ValueChanged<bool>? onProcessingChanged;
   final ValueChanged<bool>? onSendingChanged; // 问答请求中（驱动底部发送按钮禁用态）
@@ -28,8 +25,6 @@ class ChatPage extends StatefulWidget {
     super.key,
     required this.controller,
     this.onBack,
-    this.onEntryExit,
-    this.onNote,
     this.onRecordingChanged,
     this.onProcessingChanged,
     this.onSendingChanged,
@@ -109,7 +104,7 @@ class ChatPageState extends State<ChatPage> {
           content: clean,
           createdAt: DateTime.now().millisecondsSinceEpoch,
         ),
-        // 流式占位：内容为空时渲染"思考中"，收到首段增量后变为正常气泡
+        // 普通联网问答占位：内容为空时渲染"思考中"，完整回复返回后替换
         ChatMessage(
           id: 'stream-$opId',
           role: 'assistant',
@@ -123,32 +118,30 @@ class ChatPageState extends State<ChatPage> {
     widget.onSendingChanged?.call(true);
     _scrollToBottom();
     try {
-      await widget.controller.askAssistantStream(
+      final reply = await widget.controller.askAssistant(
         clean,
         opId: opId,
         history: history,
-        onChunk: (delta) {
-          if (!mounted || _messages.isEmpty) return;
-          setState(() {
-            final last = _messages[_messages.length - 1];
-            _messages[_messages.length - 1] = ChatMessage(
-              id: last.id,
-              role: last.role,
-              content: last.content + delta,
-              createdAt: last.createdAt,
-            );
-          });
-          _scrollToBottom();
-        },
       );
       if (!mounted) return;
-      setState(() => _sending = false);
+      setState(() {
+        if (_messages.isNotEmpty && _messages.last.role == 'assistant') {
+          final last = _messages.last;
+          _messages[_messages.length - 1] = ChatMessage(
+            id: last.id,
+            role: last.role,
+            content: reply.content,
+            createdAt: reply.createdAt,
+          );
+        }
+        _sending = false;
+      });
       widget.onSendingChanged?.call(false);
       _scrollToBottom();
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        // 流式失败：丢弃空占位（已流出的部分保留可见），避免假"思考中"卡住
+        // 请求失败：丢弃空占位，避免假"思考中"卡住
         if (_messages.isNotEmpty && _messages.last.content.isEmpty) {
           _messages = _messages.take(_messages.length - 1).toList();
         }
@@ -225,7 +218,7 @@ class ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// 结束录音 → 转写 → 意图判断 → 路由
+  /// 结束录音 → 转写 → 直接作为本页提问发送
   Future<void> finishRecording() async {
     if (!_recording) return;
     setState(() {
@@ -283,36 +276,9 @@ class ChatPageState extends State<ChatPage> {
         );
         return;
       }
-      ParseResult parsed;
-      try {
-        parsed = await widget.controller.parseText(text, opId: opId);
-        OpLogService.instance.record(
-          opId,
-          'parse_ok',
-          '语义解析完成',
-          data: {'text': text, 'intent': parsed.intent},
-          sync: false,
-        );
-      } catch (e) {
-        OpLogService.instance.record(
-          opId,
-          'parse_err',
-          '解析失败: $e',
-          level: 'error',
-          sync: false,
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('解析失败：$e'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-        return;
-      }
       if (!mounted) return;
-      _routeIntent(parsed, text, opId);
+      _endOp('chat');
+      unawaited(submitQuestion(text));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -326,31 +292,6 @@ class ChatPageState extends State<ChatPage> {
     } finally {
       if (mounted) setState(() => _processing = false);
       widget.onProcessingChanged?.call(false);
-    }
-  }
-
-  void _routeIntent(ParseResult parsed, String text, String opId) {
-    switch (parsed.intent) {
-      case VoiceIntent.entry:
-      case VoiceIntent.exit:
-        _endOp(parsed.intent);
-        widget.onEntryExit?.call(text, parsed);
-      case VoiceIntent.note:
-        _endOp('note');
-        widget.onNote?.call(text);
-      case VoiceIntent.ask:
-        _endOp('ask');
-        submitQuestion(text);
-      case VoiceIntent.ignore:
-        _endOp('ignore');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('未识别到有效指令，请重新录入'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
     }
   }
 
@@ -474,7 +415,7 @@ class ChatPageState extends State<ChatPage> {
             itemCount: _messages.length,
             itemBuilder: (context, i) {
               final m = _messages[i];
-              // 流式占位（内容为空）：显示"水元素思考中…"气泡，首段增量到达后自动切换
+              // 请求占位（内容为空）：显示"水元素思考中…"气泡，完整回复到达后自动切换
               if (m.role == 'assistant' && m.content.isEmpty) {
                 return const _ThinkingBubble();
               }

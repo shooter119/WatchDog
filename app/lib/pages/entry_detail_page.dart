@@ -14,7 +14,6 @@ class EntryDetailPage extends StatefulWidget {
   @override
   State<EntryDetailPage> createState() => _EntryDetailPageState();
 }
-
 class _EntryDetailPageState extends State<EntryDetailPage> {
   Entry? _find() {
     for (final e in widget.controller.entries) {
@@ -40,6 +39,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
     if (confirmed != true) return;
     await widget.controller.markExited(e.id);
+    try {
+      await widget.controller.addActionLog(
+        names: [e.name],
+        action: '出场',
+        category: NoteCategory.withdraw,
+        opId: 'manual-exit-note-${e.id}-${DateTime.now().millisecondsSinceEpoch}',
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已登记出场，但火场日志写入失败：$error')),
+        );
+      }
+    }
     widget.controller.tts.speak('${e.name} 已登记出火场');
     if (mounted) Navigator.pop(context);
   }

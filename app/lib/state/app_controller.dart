@@ -642,6 +642,22 @@ class AppController extends ChangeNotifier {
     return note;
   }
 
+  /// 进出场确认同步写入火场日志，只保留姓名和动作，不记录压力等业务字段。
+  Future<Note> addActionLog({
+    required Iterable<String> names,
+    required String action,
+    required String category,
+    String? opId,
+  }) {
+    final cleanNames = names
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
+    if (cleanNames.isEmpty) throw StateError('缺少火场日志人员');
+    final text = cleanNames.map((name) => '$name$action').join('、');
+    return addNote(text, category: category, opId: opId);
+  }
+
   bool _isNetworkError(Object error) =>
       error is TimeoutException ||
       error.toString().contains('SocketException') ||
@@ -663,11 +679,19 @@ class AppController extends ChangeNotifier {
   /// 智能体问答：读取本机历史（旧→新），不依赖警情或云端。
   Future<List<ChatMessage>> fetchChatHistory() => ChatHistory.load();
 
-  /// 智能体问答：提问并返回 AI 回复
-  Future<ChatMessage> askAssistant(String message, {String? opId}) async {
+  /// 智能体问答：提问并返回 AI 回复。普通请求由服务端负责联网检索。
+  Future<ChatMessage> askAssistant(
+    String message, {
+    String? opId,
+    List<ChatMessage> history = const [],
+  }) async {
     final a = api;
     if (a == null) throw StateError('AI 服务未连接');
-    final reply = await a.sendChatMessage(message, opId: opId);
+    final reply = await a.sendChatMessage(
+      message,
+      opId: opId,
+      history: history,
+    );
     await ChatHistory.appendExchange(
       question: message,
       reply: reply.content,
@@ -676,7 +700,7 @@ class AppController extends ChangeNotifier {
     return reply;
   }
 
-  /// 流式提问：onChunk 逐段回调增量内容，返回完整回复文本（低延迟逐字显示）
+  /// 兼容旧客户端的流式提问；当前辅助页默认使用 [askAssistant]，以支持联网检索。
   Future<String> askAssistantStream(
     String message, {
     required void Function(String delta) onChunk,

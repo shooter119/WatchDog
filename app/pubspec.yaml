@@ -1,7 +1,7 @@
 name: watchdog
 description: 消防救援现场安全管控 - 语音录入与气瓶倒计时
 publish_to: "none"
-version: 0.13.1+42
+version: 0.14.0+43
 
 environment:
   sdk: ^3.10.0
@@ -36,6 +36,7 @@ flutter:
   assets:
     - assets/sounds/
     - assets/branding/fire-control-mark.svg
+    - assets/avatars/water-element-avatar-selected.png
 
 dependency_overrides:
   package_info_plus:

@@ -436,8 +436,15 @@ class HomePageState extends State<HomePage> {
       exited++;
     }
     if (!mounted) return;
-    final done = names.where((n) => !notFound.contains(n)).join('、');
+    final doneNames = names.where((n) => !notFound.contains(n)).toList();
+    final done = doneNames.join('、');
     if (exited > 0) {
+      await _writeActionLog(
+        doneNames,
+        action: '出场',
+        category: NoteCategory.withdraw,
+        opSuffix: 'exit-note',
+      );
       widget.controller.tts.speak('$done 已登记出火场');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -543,6 +550,13 @@ class HomePageState extends State<HomePage> {
       );
       exited++;
     }
+    if (!mounted) return;
+    await _writeActionLog(
+      active.map((e) => e.name),
+      action: '出场',
+      category: NoteCategory.withdraw,
+      opSuffix: 'exit-all-note',
+    );
     if (!mounted) return;
     widget.controller.tts.speak('全体人员已登记离场');
     ScaffoldMessenger.of(context).showSnackBar(
@@ -749,7 +763,51 @@ class HomePageState extends State<HomePage> {
       );
     }
     if (allDone) {
+      await _writeActionLog(
+        done,
+        action: '进场',
+        category: NoteCategory.deploy,
+        opSuffix: 'entry-note',
+      );
       _endOp('enter_ok', data: {'names': done});
+    }
+  }
+
+  /// 进出场成功后同步写入火场日志；登记已经成功时，日志失败不能回滚进出场结果。
+  Future<void> _writeActionLog(
+    Iterable<String> names, {
+    required String action,
+    required String category,
+    required String opSuffix,
+  }) async {
+    final opId = _opId;
+    final cleanNames = names.toList();
+    try {
+      await widget.controller.addActionLog(
+        names: cleanNames,
+        action: action,
+        category: category,
+        opId: '${opId ?? 'action'}-$opSuffix',
+      );
+      OpLogService.instance.record(
+        opId ?? '',
+        'action_note_created',
+        '同步生成火场日志',
+        data: {'action': action, 'names': cleanNames},
+      );
+    } catch (e) {
+      OpLogService.instance.record(
+        opId ?? '',
+        'action_note_failed',
+        '同步生成火场日志失败：$e',
+        level: 'error',
+        data: {'action': action, 'names': cleanNames},
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('进出场已登记，但火场日志写入失败：$e')));
+      }
     }
   }
 
@@ -892,20 +950,6 @@ class HomePageState extends State<HomePage> {
               _TaskBar(
                 incident: incident,
                 forces: widget.controller.forces,
-                activeCount: widget.controller.entries
-                    .where((e) => e.isActive)
-                    .length,
-                dangerCount: widget.controller.entries
-                    .where(
-                      (e) =>
-                          e.isActive &&
-                          e.statusAt(
-                                warnMin: cfg.warnMin,
-                                alarmMin: cfg.alarmMin,
-                              ) !=
-                              'normal',
-                    )
-                    .length,
                 onRename: _renameIncident,
                 onAddForce: () => _editForce(),
                 onEditForce: (force) => _editForce(force),
@@ -2242,8 +2286,6 @@ class _IncidentPicker extends StatelessWidget {
 class _TaskBar extends StatelessWidget {
   final Incident incident;
   final List<IncidentForce> forces;
-  final int activeCount;
-  final int dangerCount;
   final VoidCallback onRename;
   final VoidCallback onAddForce;
   final ValueChanged<IncidentForce> onEditForce;
@@ -2254,8 +2296,6 @@ class _TaskBar extends StatelessWidget {
   const _TaskBar({
     required this.incident,
     required this.forces,
-    required this.activeCount,
-    required this.dangerCount,
     required this.onRename,
     required this.onAddForce,
     required this.onEditForce,
@@ -2267,10 +2307,10 @@ class _TaskBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     key: const Key('incident-card'),
-    padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
+    padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
     decoration: BoxDecoration(
       color: AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      borderRadius: BorderRadius.circular(AppRadius.lg),
       border: Border.all(color: AppColors.border),
       boxShadow: AppShadow.card,
     ),
@@ -2279,25 +2319,26 @@ class _TaskBar extends StatelessWidget {
       children: [
         Row(
           children: [
-            Expanded(
+            Flexible(
               child: Text(
                 incident.displayName,
                 style: const TextStyle(
-                  fontSize: 17,
+                  fontSize: 20,
                   fontWeight: FontWeight.w800,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            TextButton.icon(
+            const SizedBox(width: 4),
+            IconButton(
+              key: const Key('rename-incident'),
               onPressed: onRename,
               icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('修改名称'),
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-              ),
+              tooltip: '修改名称',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             ),
           ],
         ),
@@ -2313,31 +2354,16 @@ class _TaskBar extends StatelessWidget {
               child: Text(
                 incident.number,
                 style: const TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   color: AppColors.textTertiary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.online.withValues(alpha: .1),
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-              ),
-              child: const Text(
-                '处置中',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppColors.online,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 12),
         Row(
           children: [
             const Expanded(
@@ -2363,73 +2389,45 @@ class _TaskBar extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
           )
         else
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final force in forces)
-                InputChip(
-                  label: Text(
-                    '${force.stationName} ${force.vehicleCount}车${force.personnelCount}人',
-                  ),
-                  onPressed: () => onEditForce(force),
-                  onDeleted: () => onRemoveForce(force),
-                  deleteIcon: const Icon(Icons.close, size: 15),
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  labelStyle: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+              for (var i = 0; i < forces.length; i++) ...[
+                _ForceRow(
+                  force: forces[i],
+                  onEdit: () => onEditForce(forces[i]),
+                  onRemove: () => onRemoveForce(forces[i]),
                 ),
+                if (i < forces.length - 1) const SizedBox(height: 8),
+              ],
             ],
           ),
-        const Divider(height: 12),
+        const SizedBox(height: 10),
         Row(
           children: [
             Expanded(
-              child: Text(
-                '在场 $activeCount人',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+              child: TextButton.icon(
+                onPressed: onExit,
+                icon: const Icon(Icons.logout_outlined, size: 18),
+                label: const Text('退出当前警情'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size.fromHeight(42),
                 ),
               ),
             ),
             Expanded(
-              child: Text(
-                dangerCount > 0 ? '需关注 $dangerCount' : '状态正常',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: dangerCount > 0
-                      ? AppColors.alarm
-                      : AppColors.textTertiary,
-                  fontWeight: FontWeight.w700,
+              child: TextButton.icon(
+                onPressed: onArchive,
+                icon: const Icon(Icons.archive_outlined, size: 18),
+                label: const Text('归档警情'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.alarm,
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size.fromHeight(42),
                 ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 2),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            TextButton.icon(
-              onPressed: onExit,
-              icon: const Icon(Icons.logout_outlined, size: 16),
-              label: const Text('退出当前警情'),
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-              ),
-            ),
-            TextButton.icon(
-              onPressed: onArchive,
-              icon: const Icon(Icons.archive_outlined, size: 16),
-              label: const Text('归档'),
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
               ),
             ),
           ],
@@ -2437,4 +2435,86 @@ class _TaskBar extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _ForceRow extends StatelessWidget {
+  final IncidentForce force;
+  final VoidCallback onEdit;
+  final VoidCallback onRemove;
+
+  const _ForceRow({
+    required this.force,
+    required this.onEdit,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label =
+        '${force.stationName} ${force.vehicleCount}车${force.personnelCount}人';
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      side: const BorderSide(color: AppColors.border),
+    );
+
+    return Material(
+      color: AppColors.surfaceSubtle.withValues(alpha: .42),
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onEdit,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppColors.surfaceSubtle,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.local_shipping_outlined,
+                  size: 19,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: onEdit,
+                tooltip: '编辑参战力量',
+                icon: const Icon(Icons.edit_outlined, size: 19),
+                color: AppColors.textTertiary,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+              ),
+              IconButton(
+                onPressed: onRemove,
+                tooltip: '删除参战力量',
+                icon: const Icon(Icons.close, size: 21),
+                color: AppColors.textTertiary,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

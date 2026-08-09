@@ -325,7 +325,7 @@ class ApiClient {
         .toList();
   }
 
-  /// 发送提问。历史由客户端保存在本机，按需带入本轮请求，不在服务端落库。
+  /// 发送普通提问。服务端默认联网检索；历史由客户端保存在本机，按需带入本轮请求，不在服务端落库。
   Future<ChatMessage> sendChatMessage(
     String message, {
     String? opId,
@@ -340,7 +340,8 @@ class ApiClient {
             if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
           }),
         )
-        .timeout(const Duration(seconds: 60));
+        // 服务端联网检索最长约 90 秒，客户端留出少量网络传输余量。
+        .timeout(const Duration(seconds: 100));
     final body = jsonDecode(utf8.decode(res.bodyBytes));
     if (res.statusCode != 200) {
       throw ApiException(
@@ -358,7 +359,7 @@ class ApiClient {
     );
   }
 
-  /// 流式提问（SSE）：每收到一段增量内容回调 [onChunk]，返回完整回复文本。
+  /// 兼容旧客户端的流式提问（SSE）；当前辅助页不使用此接口，因为它不走联网检索。
   /// 服务端回复完成才落库，本地无需额外保存。
   Future<String> sendChatMessageStream(
     String message, {
