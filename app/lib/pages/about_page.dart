@@ -59,6 +59,13 @@ class AboutPage extends StatelessWidget {
                 '我们不是软件公司，就是一群想让安全员轻松一点的战友。如果你的队伍也用得上，欢迎提需求、提 bug——'
                 '每一个意见，都可能救下一个兄弟。',
           ),
+          SizedBox(height: 18),
+          SectionTitle(text: '后端部署'),
+          _SectionCard(
+            body:
+                '当前线上服务部署在 ByteVirt VPS，同时提供 CloudBase 云托管的并行部署配置。'
+                '迁移时先验证新环境，再切换 App，不会自动中断现有服务；详细说明见项目仓库中的 CloudBase 并行部署文档。',
+          ),
         ],
       ),
     );
