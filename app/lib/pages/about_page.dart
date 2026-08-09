@@ -64,7 +64,7 @@ class AboutPage extends StatelessWidget {
           _SectionCard(
             body:
                 '当前线上服务部署在 ByteVirt VPS，同时提供 CloudBase 云托管的并行部署配置。'
-                '迁移时先验证新环境，再切换 App，不会自动中断现有服务；详细说明见项目仓库中的 CloudBase 并行部署文档。',
+                'CloudBase 方案使用 PostgreSQL 持久化数据，并可接入 CloudBase AI；迁移时先验证新环境，再切换 App，不会自动中断现有服务；详细说明见项目仓库中的 CloudBase 并行部署文档。',
           ),
         ],
       ),

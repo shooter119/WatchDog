@@ -52,4 +52,4 @@
 
 ## 后端部署
 
-当前线上服务仍部署在 ByteVirt VPS。项目同时提供 CloudBase 云托管的并行迁移配置：先部署并验证新环境，再切换 App 的服务器地址，迁移期间不会自动中断现有服务。详见 [CloudBase 并行部署说明](deploy/cloudbase/README.md)。
+当前线上服务仍部署在 ByteVirt VPS。项目同时提供 CloudBase 云托管的并行迁移配置：后端可使用 CloudBase PostgreSQL 持久化数据，并通过 CloudBase AI 的 OpenAI 兼容接口调用模型；先部署并验证新环境，再切换 App 的服务器地址，迁移期间不会自动中断现有服务。详见 [CloudBase 并行部署说明](deploy/cloudbase/README.md)。
