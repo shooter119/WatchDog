@@ -777,14 +777,23 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(Scrollable).first;
-      expect(find.text('服务端'), findsOneWidget);
-      expect(find.text('计算参数'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('屏幕常亮'));
-      expect(find.text('提醒方式'), findsOneWidget);
+      expect(find.text('实名认证'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('名单与热词'));
       expect(find.text('名单与热词'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('警情档案'));
+      expect(find.text('警情档案'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('数据统计'));
+      expect(find.text('数据统计'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('计算参数'));
+      expect(find.text('计算参数'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('语音识别'));
+      expect(find.text('语音识别'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('提醒方式'));
+      expect(find.text('提醒方式'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('操作日志'));
       expect(find.text('操作日志'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('服务端'));
+      expect(find.text('服务端'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('关于我们'));
       expect(find.text('关于我们'), findsOneWidget);
       // 版本号只在设置页最底部展示
@@ -802,6 +811,8 @@ void main() {
           home: Scaffold(body: SettingsPage(controller: c)),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('计算参数'));
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, '消耗率'), '55');
       // 模拟失焦（真实设备点击空白处/收起键盘）
@@ -822,6 +833,9 @@ void main() {
       await tester.pumpAndSettle();
       // 屏幕常亮开关：切换后立即落库（开关按文字定位，避免新增开关改变顺序）
       final list = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(find.text('提醒方式'), 200, scrollable: list);
+      await tester.tap(find.text('提醒方式'));
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
       await tester.pump();
       await tester.tap(
@@ -1632,6 +1646,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('你好，我是水元素'), findsOneWidget);
+      expect(
+        tester.getSize(find.byType(AssistantAvatar)),
+        const Size(112, 112),
+      );
       await tester.tap(find.text('气瓶压力下降太快怎么办？'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 5));
@@ -1822,6 +1840,8 @@ void main() {
       expect(find.text('火场日志'), findsOneWidget);
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
+      final settingsList = find.byType(Scrollable).first;
+      await tester.scrollUntilVisible(find.text('服务端'), 200, scrollable: settingsList);
       expect(find.text('服务端'), findsOneWidget);
       expect(find.text('计算参数'), findsOneWidget);
     });

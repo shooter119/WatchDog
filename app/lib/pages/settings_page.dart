@@ -484,196 +484,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 18),
-          _CollapsibleSection(
-            title: '服务端',
-            child: AppCard(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _field(_server, '服务器地址', '默认 https://bytevirt.meiyou.xyz:8443', icon: Icons.dns_outlined, keyboard: TextInputType.url, focusNode: _serverFocus),
-                  _field(
-                    _token,
-                    '访问令牌',
-                    '与服务器 API_TOKEN 一致',
-                    icon: Icons.key_outlined,
-                    obscure: !_tokenVisible,
-                    focusNode: _tokenFocus,
-                    suffix: IconButton(
-                      icon: Icon(_tokenVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                      onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _CollapsibleSection(
-            title: '计算参数',
-            initiallyExpanded: true,
-            child: AppCard(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _GroupLabel('气瓶参数'),
-                  Row(
-                    children: [
-                      Expanded(child: _field(_volume, '气瓶容量', '6.8 L', icon: Icons.local_fire_department_outlined, focusNode: _volumeFocus)),
-                      const SizedBox(width: 10),
-                      Expanded(child: _field(_full, '满压', '30 MPa', icon: Icons.speed, focusNode: _fullFocus)),
-                    ],
-                  ),
-                  _field(_consumption, '消耗率', '80 L/min', icon: Icons.water_drop_outlined, focusNode: _consumptionFocus),
-                  const _GroupLabel('提醒阈值'),
-                  Row(
-                    children: [
-                      Expanded(child: _field(_warn, '提醒剩余', '10 min', icon: Icons.notifications_active_outlined, focusNode: _warnFocus)),
-                      const SizedBox(width: 10),
-                      Expanded(child: _field(_alarm, '报警剩余', '5 min', icon: Icons.warning_amber_rounded, focusNode: _alarmFocus)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _CollapsibleSection(
-            title: '语音识别',
-            initiallyExpanded: true,
-            child: AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    title: const Text('联网语音识别', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    subtitle: const Text('开：豆包云端识别，失败自动切本地；关：强制本地识别'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _asrCloud,
-                    onChanged: (v) {
-                      if (!v) _checkModelBeforeOffline();
-                      setState(() => _asrCloud = v);
-                      _autoSave();
-                    },
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  SwitchListTile(
-                    title: const Text('联网语义解析', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    subtitle: const Text('开：DeepSeek 云端解析，失败自动切本地；关：强制本地规则解析'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _parseCloud,
-                    onChanged: (v) {
-                      setState(() => _parseCloud = v);
-                      _autoSave();
-                    },
-                  ),
-                  if (widget.controller.localAsr != null) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    _buildModelTile(),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _CollapsibleSection(
-            title: '提醒方式',
-            initiallyExpanded: true,
-            child: AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    title: const Text('语音播报', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    subtitle: const Text('确认/提醒/报警时播报中文语音'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _tts,
-                    onChanged: (v) {
-                      setState(() => _tts = v);
-                      _autoSave();
-                    },
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  SwitchListTile(
-                    title: const Text('报警音', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    subtitle: const Text('前台警报音 + 后台本地通知'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _sound,
-                    onChanged: (v) {
-                      setState(() => _sound = v);
-                      _autoSave();
-                    },
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  SwitchListTile(
-                    title: const Text('屏幕常亮', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    subtitle: const Text('看板页保持屏幕常亮，适合火场值守'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _keepScreenOn,
-                    onChanged: (v) {
-                      setState(() => _keepScreenOn = v);
-                      _autoSave();
-                    },
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  SwitchListTile(
-                    title: const Text('后台值守模式', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    subtitle: const Text('前台服务常驻：切后台/锁屏后轮询与报警不停，通知栏显示指挥状态'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _keepAlive,
-                    onChanged: _toggleKeepAlive,
-                  ),
-                  if (!_keepAlive)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Text(
-                        '开启时请允许通知与电池白名单，否则保活可能被系统中断',
-                        style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
-                      ),
-                    ),
-                  if (!widget.controller.alarm.exactAlarmAvailable) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.notifications_off_outlined, color: AppColors.caution, size: 20),
-                      title: const Text(
-                        '系统已关闭精确闹钟权限，后台提醒可能延迟',
-                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: const Text('请在系统设置-应用-火场智控中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
-                    ),
-                  ],
-                  if (!_policyAccess) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    ListTile(
-                      dense: true,
-                      onTap: AlarmNative.openNotificationPolicySettings,
-                      leading: const Icon(Icons.do_not_disturb_on_outlined, color: AppColors.caution, size: 20),
-                      title: const Text(
-                        '未允许勿扰访问，勿扰模式下报警提醒将被静音',
-                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: const Text('点击前往系统设置开启勿扰访问', style: TextStyle(fontSize: 11)),
-                    ),
-                  ],
-                  if (!_fullScreenOk) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    ListTile(
-                      dense: true,
-                      onTap: AlarmNative.openNotificationSettings,
-                      leading: const Icon(Icons.fullscreen_exit_outlined, color: AppColors.caution, size: 20),
-                      title: const Text(
-                        '未开启全屏通知，后台报警不会弹全屏提醒',
-                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: const Text('点击前往通知设置开启全屏显示', style: TextStyle(fontSize: 11)),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
           const SectionTitle(text: '实名认证'),
           AppCard(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -775,6 +585,169 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           const SizedBox(height: 16),
+          _CollapsibleSection(
+            title: '计算参数',
+            child: AppCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _GroupLabel('气瓶参数'),
+                  Row(
+                    children: [
+                      Expanded(child: _field(_volume, '气瓶容量', '6.8 L', icon: Icons.local_fire_department_outlined, focusNode: _volumeFocus)),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_full, '满压', '30 MPa', icon: Icons.speed, focusNode: _fullFocus)),
+                    ],
+                  ),
+                  _field(_consumption, '消耗率', '80 L/min', icon: Icons.water_drop_outlined, focusNode: _consumptionFocus),
+                  const _GroupLabel('提醒阈值'),
+                  Row(
+                    children: [
+                      Expanded(child: _field(_warn, '提醒剩余', '10 min', icon: Icons.notifications_active_outlined, focusNode: _warnFocus)),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_alarm, '报警剩余', '5 min', icon: Icons.warning_amber_rounded, focusNode: _alarmFocus)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _CollapsibleSection(
+            title: '语音识别',
+            child: AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: const Text('联网语音识别', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('开：豆包云端识别，失败自动切本地；关：强制本地识别'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _asrCloud,
+                    onChanged: (v) {
+                      if (!v) _checkModelBeforeOffline();
+                      setState(() => _asrCloud = v);
+                      _autoSave();
+                    },
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('联网语义解析', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('开：DeepSeek 云端解析，失败自动切本地；关：强制本地规则解析'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _parseCloud,
+                    onChanged: (v) {
+                      setState(() => _parseCloud = v);
+                      _autoSave();
+                    },
+                  ),
+                  if (widget.controller.localAsr != null) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    _buildModelTile(),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _CollapsibleSection(
+            title: '提醒方式',
+            child: AppCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: const Text('语音播报', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('确认/提醒/报警时播报中文语音'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _tts,
+                    onChanged: (v) {
+                      setState(() => _tts = v);
+                      _autoSave();
+                    },
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('报警音', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('前台警报音 + 后台本地通知'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _sound,
+                    onChanged: (v) {
+                      setState(() => _sound = v);
+                      _autoSave();
+                    },
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('屏幕常亮', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('看板页保持屏幕常亮，适合火场值守'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _keepScreenOn,
+                    onChanged: (v) {
+                      setState(() => _keepScreenOn = v);
+                      _autoSave();
+                    },
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('后台值守模式', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    subtitle: const Text('前台服务常驻：切后台/锁屏后轮询与报警不停，通知栏显示指挥状态'),
+                    activeThumbColor: AppColors.actionPrimary,
+                    value: _keepAlive,
+                    onChanged: _toggleKeepAlive,
+                  ),
+                  if (!_keepAlive)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Text(
+                        '开启时请允许通知与电池白名单，否则保活可能被系统中断',
+                        style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                      ),
+                    ),
+                  if (!widget.controller.alarm.exactAlarmAvailable) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.notifications_off_outlined, color: AppColors.caution, size: 20),
+                      title: const Text(
+                        '系统已关闭精确闹钟权限，后台提醒可能延迟',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text('请在系统设置-应用-火场智控中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                  if (!_policyAccess) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    ListTile(
+                      dense: true,
+                      onTap: AlarmNative.openNotificationPolicySettings,
+                      leading: const Icon(Icons.do_not_disturb_on_outlined, color: AppColors.caution, size: 20),
+                      title: const Text(
+                        '未允许勿扰访问，勿扰模式下报警提醒将被静音',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text('点击前往系统设置开启勿扰访问', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                  if (!_fullScreenOk) ...[
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    ListTile(
+                      dense: true,
+                      onTap: AlarmNative.openNotificationSettings,
+                      leading: const Icon(Icons.fullscreen_exit_outlined, color: AppColors.caution, size: 20),
+                      title: const Text(
+                        '未开启全屏通知，后台报警不会弹全屏提醒',
+                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text('点击前往通知设置开启全屏显示', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           const SectionTitle(text: '操作日志'),
           AppCard(
             onTap: () => Navigator.push(
@@ -806,6 +779,30 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Icon(Icons.chevron_right, color: AppColors.textTertiary),
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _CollapsibleSection(
+            title: '服务端',
+            child: AppCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _field(_server, '服务器地址', '默认 https://bytevirt.meiyou.xyz:8443', icon: Icons.dns_outlined, keyboard: TextInputType.url, focusNode: _serverFocus),
+                  _field(
+                    _token,
+                    '访问令牌',
+                    '与服务器 API_TOKEN 一致',
+                    icon: Icons.key_outlined,
+                    obscure: !_tokenVisible,
+                    focusNode: _tokenFocus,
+                    suffix: IconButton(
+                      icon: Icon(_tokenVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                      onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -1120,13 +1117,11 @@ class _GroupLabel extends StatelessWidget {
 /// 可折叠分区：点击标题展开/收起，标题文字后带方向箭头符号
 class _CollapsibleSection extends StatefulWidget {
   final String title;
-  final bool initiallyExpanded;
   final Widget child;
 
   const _CollapsibleSection({
     required this.title,
     required this.child,
-    this.initiallyExpanded = false,
   });
 
   @override
@@ -1134,7 +1129,7 @@ class _CollapsibleSection extends StatefulWidget {
 }
 
 class _CollapsibleSectionState extends State<_CollapsibleSection> {
-  late bool _expanded = widget.initiallyExpanded;
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {

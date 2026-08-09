@@ -302,9 +302,23 @@ async function* chatWithDeepSeekStream({ apiKey, baseUrl, model, messages, timeo
   }
 }
 
+function responsesText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
+    return data.output_text.trim();
+  }
+  if (!Array.isArray(data?.output)) return '';
+  return data.output
+    .filter((item) => item?.type === 'message' && Array.isArray(item.content))
+    .flatMap((item) => item.content)
+    .filter((part) => part?.type === 'output_text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('')
+    .trim();
+}
+
 /// 智能体问答（Responses API + 服务端联网搜索）：返回完整回复文本。
 /// 目前仅 deepseek-v4-flash 支持 Responses API，失败抛错由调用方决定是否回退。
-async function chatWithWebSearch({ apiKey, baseUrl, model, messages, timeoutMs = 90000, temperature = 0.3, maxOutputTokens = 800 }) {
+async function chatWithWebSearch({ apiKey, baseUrl, model, messages, timeoutMs = 90000, temperature = 0.3, maxOutputTokens = 2000 }) {
   const url = (baseUrl || 'https://api.deepseek.com') + '/responses';
   const system = messages.find((m) => m.role === 'system')?.content || '';
   const input = messages
@@ -333,8 +347,11 @@ async function chatWithWebSearch({ apiKey, baseUrl, model, messages, timeoutMs =
     throw new Error(`DeepSeek Responses API ${res.status}: ${body.slice(0, 200)}`);
   }
   const data = await res.json();
-  const content = data?.output_text || '';
-  if (!content) throw new Error('DeepSeek Responses 返回空内容');
+  const content = responsesText(data);
+  if (!content) {
+    const status = data?.status ? `（status=${data.status}）` : '';
+    throw new Error(`DeepSeek Responses 返回空内容${status}`);
+  }
   return content;
 }
 

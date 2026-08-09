@@ -38,6 +38,38 @@ void main() {
     });
   });
 
+  group('GitHub Releases API 清单解析', () {
+    test('从 API JSON 提取版本、APK 地址、大小和 SHA256', () {
+      const sha =
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      final info = UpdateService.parseReleaseJson('''
+{
+  "tag_name": "v0.14.0+43",
+  "body": "## v0.14.0+43\\nSHA256: $sha\\n",
+  "assets": [
+    {"name": "checksums.txt", "size": 100},
+    {
+      "name": "watchdog-0.14.0+43-arm64-v8a.apk",
+      "size": 12345678,
+      "browser_download_url": "https://release-assets.example/watchdog.apk"
+    }
+  ]
+}
+''');
+
+      expect(info?.tagName, 'v0.14.0+43');
+      expect(info?.versionCode, 43);
+      expect(info?.apkUrl, 'https://release-assets.example/watchdog.apk');
+      expect(info?.sizeBytes, 12345678);
+      expect(info?.sha256, sha);
+    });
+
+    test('没有 arm64 APK 时视为无效清单', () {
+      const body = '{"tag_name":"v0.14.0+43","assets":[]}';
+      expect(UpdateService.parseReleaseJson(body), isNull);
+    });
+  });
+
   group('releases/latest 302 页提取约定（免 api.github.com 限流）', () {
     test('从 og:url meta 提取 tag（%2B 编码，需 decode）', () {
       const ogUrl = '/shooter119/WatchDog/releases/tag/v0.8.5%2B22';
@@ -53,6 +85,18 @@ void main() {
           '${Uri.encodeComponent(tagName)}/watchdog-$version-arm64-v8a.apk';
       expect(apkUrl, contains('watchdog-0.8.5+22-arm64-v8a.apk'));
       expect(apkUrl, contains('releases/download/v0.8.5%2B22/'));
+    });
+
+    test('从发布页提取版本和 SHA256', () {
+      const sha =
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+      final info = UpdateService.parseReleaseHtml('''
+<meta property="og:url" content="/shooter119/WatchDog/releases/tag/v0.8.5%2B22">
+<div>SHA256: $sha</div>
+''');
+      expect(info?.tagName, 'v0.8.5+22');
+      expect(info?.sha256, sha);
+      expect(info?.apkUrl, contains('releases/download/v0.8.5%2B22/'));
     });
   });
 

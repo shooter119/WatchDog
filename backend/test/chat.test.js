@@ -25,6 +25,13 @@ after(() => new Promise((r) => server.close(r)));
 const H = { 'Content-Type': 'application/json', 'X-Device-Id': 'chat-device', 'X-Actor-Name': 'tester' };
 const REPLY = '先确认气瓶余量和空气呼吸器状态';
 
+const responsesReply = (text) => ({
+  output: [{
+    type: 'message',
+    content: [{ type: 'output_text', text }],
+  }],
+});
+
 // 保留原始 fetch：只 mock 发往 LLM 的请求，本服务自身的 HTTP 调用走真实 fetch
 const realFetch = globalThis.fetch;
 
@@ -36,10 +43,12 @@ const mockChat = () => {
     assert.equal(body.model, 'deepseek-v4-flash');
     assert.match(body.instructions, /水元素/);
     assert.deepEqual(body.tools, [{ type: 'web_search' }]);
+    assert.equal(body.tool_choice, 'auto');
+    assert.ok(body.max_output_tokens >= 2000);
     return Promise.resolve({
       ok: true,
       async json() {
-        return { output_text: REPLY };
+        return responsesReply(REPLY);
       },
     });
   };
@@ -74,7 +83,7 @@ test('POST /api/chat 历史上下文带入请求', async () => {
     return Promise.resolve({
       ok: true,
       async json() {
-        return { output_text: '收到' };
+        return responsesReply('收到');
       },
     });
   };

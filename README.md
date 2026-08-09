@@ -49,3 +49,7 @@
 我们不是软件公司，就是一群想让安全员轻松一点的战友。如果你的队伍也用得上，欢迎提需求、提 bug——每一个意见，都可能救下一个兄弟。
 
 当前界面规范见 [火场安全管控 App UI 设计规范 V0.2](fire-rescue-safety-app-ui-spec-v0.2.md)。
+
+## 后端部署
+
+当前线上服务仍部署在 ByteVirt VPS。项目同时提供 CloudBase 云托管的并行迁移配置：先部署并验证新环境，再切换 App 的服务器地址，迁移期间不会自动中断现有服务。详见 [CloudBase 并行部署说明](deploy/cloudbase/README.md)。

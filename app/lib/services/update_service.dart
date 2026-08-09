@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -37,13 +38,16 @@ class UpdateInfo {
 /// OTA 更新服务：查询 GitHub Releases 最新版（公开仓库免 token），
 /// 由 App 自己下载并校验 APK，再交给原生 FileProvider 拉起系统安装。
 ///
-/// 版本查询走 github.com 主站（releases/latest 302 → 最新 tag 页，从 HTML
-/// 提取 SHA256），不依赖 api.github.com——匿名 API 限流 60 次/小时/出口 IP，
-/// 调试工具与多台设备共享 IP 时极易撞上 403。
+/// 版本查询优先走 GitHub Releases API（响应小，避免下载整张发布页），
+/// API 限流或不可达时回退到 github.com 发布页解析。两条路径都从发布
+/// 信息中读取 SHA256，下载后仍必须校验，不能只凭版本号安装。
 class UpdateService {
   static const repoHome = 'https://github.com/shooter119/WatchDog';
+  static const releaseApiUrl =
+      'https://api.github.com/repos/shooter119/WatchDog/releases/latest';
   static const latestUrl = '$repoHome/releases/latest';
   static const userAgent = 'watchdog-app-updater/1.0';
+  static const _metadataTimeout = Duration(seconds: 15);
 
   static const MethodChannel _installChannel = MethodChannel('watchdog/screen');
   static const _cachedTagKey = 'ota_cached_tag';
@@ -138,43 +142,119 @@ class UpdateService {
   }
 
   Future<(UpdateInfo?, String?)> _fetchLatestRelease() async {
+    Object? apiError;
     try {
-      // releases/latest 302 到最新 tag 页（http 包跟随重定向后 body 已是
-      // 最终页，但 request.url 仍是最初地址），从 og:url meta 提取 tag
+      final res = await http
+          .get(
+            Uri.parse(releaseApiUrl),
+            headers: {
+              'Accept': 'application/vnd.github+json',
+              'User-Agent': userAgent,
+            },
+          )
+          .timeout(_metadataTimeout);
+      if (res.statusCode == 200) {
+        final parsed = parseReleaseJson(utf8.decode(res.bodyBytes));
+        if (parsed != null) return (parsed, null);
+        apiError = const FormatException('GitHub API 返回的更新清单不完整');
+      } else {
+        apiError = HttpException('GitHub API HTTP ${res.statusCode}');
+      }
+    } catch (e) {
+      apiError = e;
+    }
+
+    // API 可能因匿名限流或特定网络环境不可用，保留网页路径作为兜底。
+    try {
       final res = await http
           .get(Uri.parse(latestUrl), headers: {'User-Agent': userAgent})
-          .timeout(const Duration(seconds: 10));
+          .timeout(_metadataTimeout);
       if (res.statusCode != 200) {
         return (null, '更新服务不可达（HTTP ${res.statusCode}）');
       }
-      final html = utf8.decode(res.bodyBytes);
-      final ogMatch = RegExp(r'og:url"\s+content="([^"]+)"').firstMatch(html);
-      final tagMatch = RegExp(
-        r'/releases/tag/([^/?]+)',
-      ).firstMatch(ogMatch?.group(1) ?? '');
-      if (tagMatch == null) return (null, '更新清单解析失败');
-      final tagName = Uri.decodeComponent(tagMatch.group(1)!);
-      if (tagName.isEmpty) return (null, '更新清单解析失败');
-
-      final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
-      // asset 命名约定：watchdog-<版本>-arm64-v8a.apk（CI 构建产出）
-      final apkUrl =
-          '$repoHome/releases/download/${Uri.encodeComponent(tagName)}/'
-          'watchdog-$version-arm64-v8a.apk';
-      // sha256 约定写在 release body 的 `SHA256: <hex>` 行（CI 自动生成），
-      // markdown 渲染进 HTML 后以纯文本保留
-      final shaMatch = RegExp(r'SHA256:\s*([0-9a-fA-F]{64})').firstMatch(html);
-      return (
-        UpdateInfo(
-          tagName: tagName,
-          apkUrl: apkUrl,
-          sha256: shaMatch?.group(1),
-        ),
-        null,
-      );
+      final parsed = parseReleaseHtml(utf8.decode(res.bodyBytes));
+      if (parsed != null) return (parsed, null);
+      return (null, '更新清单解析失败');
     } catch (e) {
-      return (null, '检查更新失败：$e');
+      // 优先展示最后一次（网页兜底）错误；API 错误仅作为诊断信息保留，
+      // 避免用户看到两个重复的异常堆叠。
+      if (apiError is TimeoutException && e is TimeoutException) {
+        return (null, 'GitHub 响应超时，请稍后重试');
+      }
+      return (null, _friendlyNetworkError(e));
     }
+  }
+
+  /// 解析 GitHub Releases API 返回的 JSON。公开保留便于单测覆盖发布格式。
+  static UpdateInfo? parseReleaseJson(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) return null;
+      final tagName = decoded['tag_name'];
+      if (tagName is! String || tagName.isEmpty) return null;
+
+      final rawAssets = decoded['assets'];
+      if (rawAssets is! List) return null;
+      Map<String, dynamic>? apkAsset;
+      for (final rawAsset in rawAssets) {
+        if (rawAsset is! Map) continue;
+        final name = rawAsset['name'];
+        if (name is String &&
+            name.startsWith('watchdog-') &&
+            name.endsWith('-arm64-v8a.apk')) {
+          apkAsset = Map<String, dynamic>.from(rawAsset);
+          break;
+        }
+      }
+      if (apkAsset == null) return null;
+
+      final assetName = apkAsset['name'] as String;
+      final assetUrl =
+          apkAsset['browser_download_url'] as String? ??
+          '$repoHome/releases/download/${Uri.encodeComponent(tagName)}/$assetName';
+      final rawSize = apkAsset['size'];
+      final bodyText = decoded['body'] as String? ?? '';
+      return UpdateInfo(
+        tagName: tagName,
+        apkUrl: assetUrl,
+        sizeBytes: rawSize is num ? rawSize.toInt() : null,
+        sha256: _extractSha256(bodyText),
+        changelog: bodyText,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 兼容旧版本发布页格式，作为 API 不可用时的兜底解析器。
+  static UpdateInfo? parseReleaseHtml(String html) {
+    final ogMatch = RegExp(r'og:url"\s+content="([^"]+)"').firstMatch(html);
+    final tagMatch = RegExp(
+      r'/releases/tag/[^/?]+',
+    ).firstMatch(ogMatch?.group(1) ?? '');
+    if (tagMatch == null) return null;
+    final encodedTag = tagMatch.group(0)!.split('/').last;
+    final tagName = Uri.decodeComponent(encodedTag);
+    if (tagName.isEmpty) return null;
+
+    final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
+    final assetName = 'watchdog-$version-arm64-v8a.apk';
+    return UpdateInfo(
+      tagName: tagName,
+      apkUrl:
+          '$repoHome/releases/download/${Uri.encodeComponent(tagName)}/$assetName',
+      sha256: _extractSha256(html),
+    );
+  }
+
+  static String? _extractSha256(String source) {
+    return RegExp(r'SHA256:\s*([0-9a-fA-F]{64})').firstMatch(source)?.group(1);
+  }
+
+  static String _friendlyNetworkError(Object error) {
+    if (error is TimeoutException) return 'GitHub 响应超时，请稍后重试';
+    if (error is SocketException) return '无法连接 GitHub，请检查网络后重试';
+    return '检查更新失败：$error';
   }
 
   /// 下载并安装（下载进度 0-100 通过回调上报；错误通过回调 message 返回）。

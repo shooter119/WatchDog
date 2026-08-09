@@ -439,7 +439,7 @@ class ChatPageState extends State<ChatPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const AssistantAvatar(size: 56),
+              const AssistantAvatar(size: 112),
               const SizedBox(height: 12),
               const Text(
                 '你好，我是水元素',
