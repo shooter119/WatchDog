@@ -12,12 +12,13 @@ import '../services/update_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import 'about_page.dart';
+import 'archived_incidents_page.dart';
 import 'op_log_page.dart';
 import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '0.12.0+40';
+const appVersion = '0.13.0+41';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -49,7 +50,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _sound = true;
   bool _keepScreenOn = true;
   bool _keepAlive = false;
-  bool _asrCloud = false; // 默认离线优先（火场无信号场景）；本地模型需先下载
+  bool _asrCloud = true; // 默认云端优先，精度高
   bool _parseCloud = true;
   bool? _modelInstalled;
   bool _downloading = false;
@@ -106,8 +107,8 @@ class _SettingsPageState extends State<SettingsPage> {
     _asrCloud = await Settings.asrCloudEnabled;
     _parseCloud = await Settings.parseCloudEnabled;
     _realName.text = await Settings.realName;
+    await _refreshModelStatus();
     _loaded = true;
-    _refreshModelStatus();
     _refreshAlarmCaps();
     _loadRuntimeVersion();
     if (mounted) setState(() {});
@@ -328,6 +329,31 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+
+  /// 关闭联网语音识别时：检查本地模型是否已安装，未安装则提示下载
+  Future<void> _checkModelBeforeOffline() async {
+    final alreadyInstalled = _modelInstalled;
+    if (alreadyInstalled == true) return;
+    // 尚未检查过：先查询
+    final installed = alreadyInstalled ?? await widget.controller.localAsr?.isModelInstalled() ?? false;
+    if (mounted) setState(() => _modelInstalled = installed);
+    if (installed) return;
+    if (!mounted) return;
+    final download = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('未下载本地语音模型'),
+        content: const Text('关闭联网识别后将使用本地模型，但本地模型尚未下载（约 75MB）。\n\n是否现在下载？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('稍后')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('下载')),
+        ],
+      ),
+    );
+    if (download == true) {
+      await _downloadModel();
+    }
+  }
   Future<void> _refreshModelStatus() async {
     final asr = widget.controller.localAsr;
     if (asr == null) return;
@@ -525,6 +551,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     activeThumbColor: AppColors.actionPrimary,
                     value: _asrCloud,
                     onChanged: (v) {
+                      if (!v) _checkModelBeforeOffline();
                       setState(() => _asrCloud = v);
                       _autoSave();
                     },
@@ -700,6 +727,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 const Icon(Icons.chevron_right, color: AppColors.textTertiary),
               ],
             ),
+          ),
+          const SizedBox(height: 16),
+          const SectionTitle(text: '警情档案'),
+          AppCard(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ArchivedIncidentsPage(controller: widget.controller))),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(children: [
+              Container(width: 40, height: 40, decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceSubtle), child: const Icon(Icons.archive_outlined, size: 20, color: AppColors.textPrimary)),
+              const SizedBox(width: 12),
+              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('已归档警情', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)), SizedBox(height: 2), Text('查看火场复盘并修改归档警情名称', style: TextStyle(fontSize: 12, color: AppColors.textTertiary))])),
+              const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+            ]),
           ),
           const SizedBox(height: 16),
           const SectionTitle(text: '数据统计'),

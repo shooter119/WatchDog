@@ -2,20 +2,17 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import '../services/audio_service.dart';
 import '../services/op_log_service.dart';
-import '../services/scene_code.dart';
 import '../services/screen_on.dart';
-import '../services/settings.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
-/// 任务主页面（核心 hub）：语音录入 + 任务身份（任务码）+ 任务状态 + 任务管理（结束任务）。
+/// 警情主页面（核心 hub）：语音录入 + 当前警情 + 现场状态。
 /// 识别结果按 AI 意图分流：进出场本页确认；日志/提问/环境音交 main 统一路由。
 class HomePage extends StatefulWidget {
   final AppController controller;
@@ -335,7 +332,7 @@ class HomePageState extends State<HomePage> {
         continue;
       }
       for (final e in active) {
-        await widget.controller.markExited(e.id, opId: _opId);
+        await widget.controller.markExited(e.id, opId: '${_opId ?? 'exit'}-${e.id}');
         OpLogService.instance
             .record(_opId ?? '', 'exit_ok', '已登记「$name」出火场', data: {'entryId': e.id, 'name': name});
       }
@@ -344,22 +341,6 @@ class HomePageState extends State<HomePage> {
     if (!mounted) return;
     final done = names.where((n) => !notFound.contains(n)).join('、');
     if (exited > 0) {
-      // 进出场同步写火场日志：合并一条，只记名字+动作
-      final noteText = names.where((n) => !notFound.contains(n)).map((n) => '$n出场').join('、');
-      try {
-        await widget.controller.addNote(noteText, opId: _opId);
-        OpLogService.instance.record(_opId ?? '', 'exit_note', '出场事件已写入火场日志', data: {'text': noteText});
-      } catch (e) {
-        OpLogService.instance.record(_opId ?? '', 'exit_note_fail', '出场日志写入失败: $e', level: 'error', data: {'text': noteText});
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('出场已登记，但火场日志写入失败：$e'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
       widget.controller.tts.speak('$done 已登记出火场');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -431,7 +412,7 @@ class HomePageState extends State<HomePage> {
     }
     var exited = 0;
     for (final e in active) {
-      await widget.controller.markExited(e.id, opId: _opId);
+      await widget.controller.markExited(e.id, opId: '${_opId ?? 'exit'}-${e.id}');
       OpLogService.instance
           .record(_opId ?? '', 'exit_all_ok', '全员离场已登记「${e.name}」', data: {'entryId': e.id, 'name': e.name});
       exited++;
@@ -441,22 +422,6 @@ class HomePageState extends State<HomePage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已全员离场（$exited 人）'), duration: const Duration(seconds: 2)),
     );
-    // 进出场同步写火场日志：合并一条，只记名字+动作
-    final noteText = active.map((e) => '${e.name}出场').join('、');
-    try {
-      await widget.controller.addNote(noteText, opId: _opId);
-      OpLogService.instance.record(_opId ?? '', 'exit_all_note', '全员离场已写入火场日志', data: {'text': noteText});
-    } catch (e) {
-      OpLogService.instance.record(_opId ?? '', 'exit_all_note_fail', '全员离场日志写入失败: $e', level: 'error', data: {'text': noteText});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('离场已登记，但火场日志写入失败：$e'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
     setState(() {
       _transcript = null;
       _parsed = null;
@@ -601,23 +566,6 @@ class HomePageState extends State<HomePage> {
       ..addAll(kept);
 
     if (done.isNotEmpty) {
-      // 进出场同步写火场日志：合并一条，只记名字+动作
-      final noteText = done.map((n) => '$n进场').join('、');
-      try {
-        await widget.controller.addNote(noteText, opId: _opId);
-        OpLogService.instance.record(_opId ?? '', 'enter_note', '进场事件已写入火场日志', data: {'text': noteText});
-      } catch (e) {
-        // 写日志失败要可见，避免"登记成功但日志没出现"无从排查
-        OpLogService.instance.record(_opId ?? '', 'enter_note_fail', '进场日志写入失败: $e', level: 'error', data: {'text': noteText});
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('登记已成功，但火场日志写入失败：$e'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
       widget.controller.tts.speak('${done.join('、')}，已开始倒计时');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -708,7 +656,7 @@ class HomePageState extends State<HomePage> {
         rawText: _transcript,
         force: force,
         volumeL: volumeL,
-        opId: _opId,
+        opId: '${_opId ?? 'entry'}-$name',
       );
       return _SubmitResult.created;
     } on EntryConflictException catch (e) {
@@ -730,7 +678,7 @@ class HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final cfg = widget.controller.calcConfig;
-    final sceneEnded = widget.controller.sceneEnded;
+    final incident = widget.controller.currentIncident;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -738,7 +686,7 @@ class HomePageState extends State<HomePage> {
           children: [
             Row(
               children: [
-                const Text('任务', style: AppTextStyles.h1),
+                const Text('警情处置', style: AppTextStyles.h1),
                 const Spacer(),
                 ConnectionStatus(
                   connected: !widget.controller.connectionLost,
@@ -747,27 +695,26 @@ class HomePageState extends State<HomePage> {
               ],
             ),
             const SizedBox(height: 8),
-            _TaskBar(
-              sceneCode: widget.controller.api?.sceneCode ?? 'default',
-              activeCount: widget.controller.entries.where((e) => e.isActive).length,
-              dangerCount: widget.controller.entries
-                  .where((e) =>
-                      e.isActive &&
-                      e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin) != 'normal')
-                  .length,
-              onCopy: _copySceneCode,
-              onChange: _changeSceneCode,
-              onEndTask: _confirmEndTask,
-            ),
-            if (sceneEnded != null) ...[
-              const SizedBox(height: 8),
-              _SceneEndedBanner(
-                state: sceneEnded,
-                onSwitch: _switchScene,
+            if (incident == null)
+              _IncidentPicker(
+                activeIncidents: widget.controller.activeIncidents,
+                onSelect: _selectIncident,
+                onCreate: _createIncident,
+              )
+            else
+              _TaskBar(
+                incident: incident,
+                forces: widget.controller.forces,
+                activeCount: widget.controller.entries.where((e) => e.isActive).length,
+                dangerCount: widget.controller.entries.where((e) => e.isActive && e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin) != 'normal').length,
+                onRename: _renameIncident,
+                onAddForce: () => _editForce(),
+                onEditForce: (force) => _editForce(force),
+                onRemoveForce: (force) => _removeForce(force),
+                onArchive: _confirmArchive,
               ),
-            ],
             const SizedBox(height: 8),
-            Expanded(child: _buildResultCard(context, cfg)),
+            Expanded(child: incident == null ? _buildIncidentEmpty() : _buildResultCard(context, cfg)),
             const SizedBox(height: 24),
           ],
         ),
@@ -775,251 +722,148 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  /// 复制当前任务码（新设备加入本任务时使用）
-  Future<void> _copySceneCode() async {
-    final code = widget.controller.api?.sceneCode ?? 'default';
-    await Clipboard.setData(ClipboardData(text: code));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('任务码 $code 已复制，新设备输入即可加入本任务'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  /// 更换任务码：输入其他设备正在使用的任务码即可加入该任务（替代设置页入口）
-  Future<void> _changeSceneCode() async {
-    final current = widget.controller.api?.sceneCode ?? 'default';
-    String input = current;
-    final newCode = await showDialog<String>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('更换任务码'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '输入其他设备正在使用的任务码，即可加入该任务。',
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                autofocus: true,
-                textCapitalization: TextCapitalization.characters,
-                onChanged: (v) => input = v,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  labelText: '任务码',
-                  hintText: '如 苹果',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, input.trim()),
-              child: const Text('确认更换'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (newCode == null || newCode.isEmpty || !mounted) return;
-    final code = newCode.trim();
-    // 核验 1：本地前置校验（空/超长等明显无效输入直接拦截，不发网络请求）
-    if (!isPlausibleSceneCode(code)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('任务码不正确，请确认输入与其他设备一致'),
-          duration: Duration(seconds: 3),
-        ),
+  Widget _buildIncidentEmpty() => const Center(
+        child: Text('请选择一场进行中的警情，或新建警情后开始记录', style: TextStyle(color: AppColors.textSecondary)),
       );
-      return; // 维持原场景码，避免设备失联
+
+  Future<void> _selectIncident(String id) async {
+    try {
+      await widget.controller.selectIncident(id);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加入警情失败：$e')));
     }
-    if (code == current) return;
-    // 核验 2：服务器核验（水果词表 / default / 活跃历史场景均合法）；
-    // 任何失败都维持原场景
-    final api = widget.controller.api;
-    if (api != null) {
-      try {
-        final v = await api.validateScene(code);
-        if (!mounted) return;
-        if (!v.valid) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('任务码不正确，请确认输入与其他设备一致'),
-              duration: Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-        if (v.ended) {
-          final hint = v.newScene == null ? '' : '，新任务码：${v.newScene}';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('该任务已结束$hint'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-          return;
-        }
-        // 合法但服务器无数据（DB 清空 / 新环境）：二次确认，避免切到空场景造成"已连接但空白"
-        if (!v.exists) {
-          final ok = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('任务码暂无数据'),
-              content: const Text('服务器上该任务码没有任何记录，切换后看板将为空白。\n\n如果这是新任务的第一台设备，可以继续；否则请确认任务码是否正确。'),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-                FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('仍然切换')),
-              ],
-            ),
-          );
-          if (ok != true || !mounted) return;
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('任务码核验失败（$e），已保持原任务码'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        return;
-      }
-    }
-    await Settings.setSceneCode(code);
-    await widget.controller.refreshConfig();
-    await widget.controller.sync();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('已切换到任务码 $code'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
-  /// 结束任务（归档）：二次确认（影响场景内所有设备，要求确认灾情处置已结束）
-  Future<void> _confirmEndTask() async {
+  Future<void> _createIncident() async {
+    try {
+      final incident = await widget.controller.createIncident();
+      if (mounted) await _renameIncident(incident: incident, prompt: true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _renameIncident({Incident? incident, bool prompt = false}) async {
+    final target = incident ?? widget.controller.currentIncident;
+    if (target == null) return;
+    final edit = TextEditingController(text: target.title ?? '');
+    final title = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(prompt ? '补充警情名称' : '修改警情名称'),
+        content: TextField(controller: edit, autofocus: true, maxLength: 120, decoration: const InputDecoration(hintText: '如：幸福小区住宅火灾')),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍后')), FilledButton(onPressed: () => Navigator.pop(ctx, edit.text.trim()), child: const Text('保存'))],
+      ),
+    );
+    edit.dispose();
+    if (title == null) return;
+    try {
+      await widget.controller.renameCurrent(title);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('修改名称失败：$e')));
+    }
+  }
+
+  Future<void> _confirmArchive() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('结束任务（归档）'),
-        content: const Text(
-          '将结束当前灾情处置任务，所有连接本场景的设备将被提示切换到新任务。\n\n'
-          '• 新场景码由服务器统一分配\n'
-          '• 本机各页数据将清零（旧数据服务器保留，7-30 天后自动清理）\n\n'
-          '请确认灾情处置是否已结束？',
-        ),
+        title: const Text('归档警情'),
+        content: const Text('归档后现场数据只读，名称仍可在归档警情列表中修改。请确认处置已经结束。'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认结束'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(style: FilledButton.styleFrom(backgroundColor: AppColors.alarm), onPressed: () => Navigator.pop(ctx, true), child: const Text('确认归档')),
         ],
       ),
     );
-    if (ok != true || !mounted) return;
+    if (ok != true) return;
     try {
-      final newCode = await widget.controller.endTask();
-      if (!mounted) return;
-      await _showNewSceneCode(newCode);
+      await widget.controller.archiveCurrent();
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('结束任务失败：$e'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('归档失败：$e')));
     }
   }
 
-  /// 展示服务端分配的新场景码（新设备加入需手输此码）
-  Future<void> _showNewSceneCode(String newCode) async {
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('任务已结束'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('本机已切换到新任务，各页数据已清零。'),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceSubtle,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: SelectableText(
-                newCode,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 6,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '其他设备会自动收到切换提示；新设备加入时请输入此任务码。',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: newCode));
-              if (ctx.mounted) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(
-                    content: Text('任务码已复制'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              }
-            },
-            child: const Text('复制'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('知道了'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _removeForce(IncidentForce force) async {
+    try {
+      await widget.controller.removeForce(force.id);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('删除参战力量失败：$e')));
+    }
   }
 
-  /// 其他设备响应归档横幅：一键切换到服务端分配的新场景码
-  Future<void> _switchScene() async {
-    await widget.controller.switchToNewScene();
+  Future<void> _editForce([IncidentForce? force]) async {
+    final api = widget.controller.api;
+    List<Station> stations = const [];
+    if (api != null) {
+      try {
+        stations = await api.fetchStations();
+      } catch (_) {
+        // 名录加载失败时仍允许现场手动填写站名。
+      }
+    }
+    final names = <String>{...stations.map((s) => s.name)};
+    if (force != null) names.add(force.stationName);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已切换到新任务'),
-        duration: Duration(seconds: 2),
-      ),
+    final result = await showDialog<Map<String, dynamic>?>(
+      context: context,
+      builder: (ctx) {
+        String selected = force?.stationName ?? (names.isEmpty ? '' : names.first);
+        bool custom = names.isEmpty || !names.contains(selected);
+        final customStation = TextEditingController(text: custom ? force?.stationName ?? '' : '');
+        final vehicles = TextEditingController(text: '${force?.vehicleCount ?? 1}');
+        final people = TextEditingController(text: '${force?.personnelCount ?? 1}');
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Text(force == null ? '添加参战力量' : '编辑参战力量'),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (!custom && names.isNotEmpty)
+                DropdownButtonFormField<String>(
+                  initialValue: selected,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: '消防站名称'),
+                  items: names.map((name) => DropdownMenuItem(value: name, child: Text(name))).toList(),
+                  onChanged: (value) => setDialogState(() => selected = value ?? selected),
+                )
+              else
+                TextField(controller: customStation, autofocus: true, decoration: const InputDecoration(labelText: '消防站名称', hintText: '如：龙翔路站')),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: names.isEmpty ? null : () => setDialogState(() => custom = !custom),
+                  icon: const Icon(Icons.edit_location_alt_outlined, size: 16),
+                  label: Text(custom ? '返回名录选择' : '现场新增消防站'),
+                ),
+              ),
+              Row(children: [
+                Expanded(child: TextField(controller: vehicles, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '车辆数'))),
+                const SizedBox(width: 12),
+                Expanded(child: TextField(controller: people, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '人员数'))),
+              ]),
+            ]),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, {
+                'station': custom ? customStation.text.trim() : selected,
+                'vehicles': vehicles.text,
+                'people': people.text,
+              }), child: const Text('保存')),
+            ],
+          ),
+        );
+      },
     );
+    if (result == null) return;
+    final stationName = result['station']?.toString().trim() ?? '';
+    final vehicleCount = int.tryParse(result['vehicles']?.toString() ?? '') ?? 0;
+    final personnelCount = int.tryParse(result['people']?.toString() ?? '') ?? 0;
+    try {
+      await widget.controller.saveForce(forceId: force?.id, stationName: stationName, vehicleCount: vehicleCount, personnelCount: personnelCount, expectedVersion: force?.version);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存参战力量失败：$e')));
+    }
   }
+
 
   Widget _buildResultCard(BuildContext context, CalcConfig cfg) {
     if (_recording) {
@@ -1697,165 +1541,56 @@ class _PulseMic extends StatelessWidget {
   }
 }
 
-/// 任务卡：任务码（复制/更换）+ 在场概览 + 结束任务入口。
-/// 任务身份与任务管理都收在核心 hub 页面，设置页不再承载任务码。
-class _TaskBar extends StatelessWidget {
-  final String sceneCode;
-  final int activeCount;
-  final int dangerCount;
-  final VoidCallback onCopy;
-  final VoidCallback onChange;
-  final VoidCallback onEndTask;
 
-  const _TaskBar({
-    required this.sceneCode,
-    required this.activeCount,
-    required this.dangerCount,
-    required this.onCopy,
-    required this.onChange,
-    required this.onEndTask,
-  });
+class _IncidentPicker extends StatelessWidget {
+  final List<Incident> activeIncidents;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onCreate;
+  const _IncidentPicker({required this.activeIncidents, required this.onSelect, required this.onCreate});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('task-bar'),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
-        boxShadow: AppShadow.card,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      '任务码',
-                      style: TextStyle(fontSize: 10.5, color: AppColors.textTertiary, letterSpacing: 0.5),
-                    ),
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap: onCopy,
-                      child: const Padding(
-                        padding: EdgeInsets.all(2),
-                        child: Icon(Icons.copy_rounded, size: 13, color: AppColors.textTertiary),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    InkWell(
-                      onTap: onChange,
-                      child: const Padding(
-                        padding: EdgeInsets.all(2),
-                        child: Icon(Icons.edit_outlined, size: 13, color: AppColors.textTertiary),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                SelectableText(
-                  sceneCode,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 3,
-                    color: AppColors.textPrimary,
-                    fontFeatures: [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(width: 1, height: 36, color: AppColors.border),
-          const SizedBox(width: 12),
-          Tooltip(
-            message: '进入火场内部、正在气瓶倒计时管控的人数',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '在场 $activeCount 人',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  dangerCount > 0 ? '需关注 $dangerCount' : '状态正常',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: dangerCount > 0 ? AppColors.alarm : AppColors.textTertiary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: '结束任务',
-            child: IconButton(
-              onPressed: onEndTask,
-              icon: const Icon(Icons.flag_outlined, size: 22),
-              color: AppColors.alarm,
-              visualDensity: VisualDensity.compact,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        key: const Key('incident-picker'),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.md), border: Border.all(color: AppColors.border), boxShadow: AppShadow.card),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('选择正在处置的警情', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text('加入后，进场、压力和随手记都会归入这份档案。', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          const SizedBox(height: 12),
+          ...activeIncidents.map((incident) => ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.local_fire_department_outlined), title: Text(incident.displayName), subtitle: Text(incident.number), trailing: const Icon(Icons.chevron_right), onTap: () => onSelect(incident.id))),
+          if (activeIncidents.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('当前没有进行中的警情', style: TextStyle(color: AppColors.textTertiary))),
+          OutlinedButton.icon(onPressed: onCreate, icon: const Icon(Icons.add), label: const Text('新建警情')),
+        ]),
+      );
 }
 
-/// 归档横幅：本场景已被某设备结束任务，常驻提示可一键切换（不弹窗打断）
-class _SceneEndedBanner extends StatelessWidget {
-  final SceneState state;
-  final VoidCallback onSwitch;
+class _TaskBar extends StatelessWidget {
+  final Incident incident;
+  final List<IncidentForce> forces;
+  final int activeCount;
+  final int dangerCount;
+  final VoidCallback onRename;
+  final VoidCallback onAddForce;
+  final ValueChanged<IncidentForce> onEditForce;
+  final ValueChanged<IncidentForce> onRemoveForce;
+  final VoidCallback onArchive;
 
-  const _SceneEndedBanner({required this.state, required this.onSwitch});
-
-  String get _timeText {
-    final t = DateTime.fromMillisecondsSinceEpoch(state.endedAt);
-    return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-  }
+  const _TaskBar({required this.incident, required this.forces, required this.activeCount, required this.dangerCount, required this.onRename, required this.onAddForce, required this.onEditForce, required this.onRemoveForce, required this.onArchive});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('scene-ended-banner'),
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-      decoration: BoxDecoration(
-        color: AppColors.caution.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.caution.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.flag_rounded, size: 17, color: AppColors.caution),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '本场景任务已结束（$_timeText）',
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: onSwitch,
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              visualDensity: VisualDensity.compact,
-            ),
-            child: const Text('切换到新任务', style: TextStyle(fontSize: 12.5)),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        key: const Key('incident-card'),
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(AppRadius.md), border: Border.all(color: AppColors.border), boxShadow: AppShadow.card),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [Expanded(child: Text(incident.displayName, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800), maxLines: 1, overflow: TextOverflow.ellipsis)), TextButton.icon(onPressed: onRename, icon: const Icon(Icons.edit_outlined, size: 16), label: const Text('修改名称'))]),
+          Text('编号 ${incident.number}', style: const TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+          const SizedBox(height: 10),
+          Row(children: [const Expanded(child: Text('参战力量', style: TextStyle(fontWeight: FontWeight.w700))), TextButton.icon(onPressed: onAddForce, icon: const Icon(Icons.add, size: 17), label: const Text('添加'))]),
+          if (forces.isEmpty) const Text('尚未登记参战力量', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)) else ...forces.map((force) => Row(children: [Expanded(child: Text('${force.stationName} ${force.vehicleCount}车${force.personnelCount}人', style: const TextStyle(fontSize: 13))), IconButton(tooltip: '编辑', onPressed: () => onEditForce(force), icon: const Icon(Icons.edit_outlined, size: 17), visualDensity: VisualDensity.compact), IconButton(tooltip: '删除', onPressed: () => onRemoveForce(force), icon: const Icon(Icons.delete_outline, size: 17), visualDensity: VisualDensity.compact)])),
+          const Divider(height: 16),
+          Row(children: [Expanded(child: Text('在场 $activeCount人', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700))), Expanded(child: Text(dangerCount > 0 ? '需关注 $dangerCount' : '状态正常', style: TextStyle(fontSize: 12, color: dangerCount > 0 ? AppColors.alarm : AppColors.textTertiary, fontWeight: FontWeight.w700))), TextButton.icon(onPressed: onArchive, icon: const Icon(Icons.archive_outlined, size: 17), label: const Text('归档'))]),
+        ]),
+      );
 }

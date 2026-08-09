@@ -23,19 +23,19 @@ after(() => new Promise((r) => server.close(r)));
 
 const H = {
   'Content-Type': 'application/json',
-  'X-Scene-Code': 'us-scene',
+  'X-Incident-Id': 'us-scene',
   'X-Device-Id': 'user-aaaa-1111',
 };
 const j = (r) => r.json();
 
-test('db: saveUserSettings 按用户+场景 upsert 并可读回', () => {
-  const s1 = db.saveUserSettings('user-aaaa-1111', 'us-scene', { warn_min: 12, tts_enabled: true });
+test('db: saveUserSettings 按设备全局 upsert 并可读回', () => {
+  const s1 = db.saveUserSettings('user-aaaa-1111', 'default', { warn_min: 12, tts_enabled: true });
   assert.equal(s1.settings.warn_min, 12);
   assert.equal(s1.settings.tts_enabled, true);
   assert.ok(s1.updatedAt > 0);
 
   // 覆盖已有键 + 新增键，updatedAt 更新
-  const s2 = db.saveUserSettings('user-aaaa-1111', 'us-scene', { warn_min: 15 });
+  const s2 = db.saveUserSettings('user-aaaa-1111', 'default', { warn_min: 15 });
   assert.equal(s2.settings.warn_min, 15);
   assert.equal(s2.settings.tts_enabled, true);
   assert.ok(s2.updatedAt >= s1.updatedAt);
@@ -45,14 +45,14 @@ test('db: saveUserSettings 按用户+场景 upsert 并可读回', () => {
   assert.deepEqual(other.settings, {});
   assert.equal(other.updatedAt, 0);
 
-  // 场景隔离：同用户不同场景读不到
-  const otherScene = db.getUserSettings('user-aaaa-1111', 'other-scene');
-  assert.deepEqual(otherScene.settings, {});
+  // 设备设置不再按警情隔离，任意警情都使用同一份设备配置。
+  const sameDevice = db.getUserSettings('user-aaaa-1111', 'default');
+  assert.equal(sameDevice.settings.warn_min, 15);
 });
 
 test('GET /api/user-settings 缺 X-Device-Id 返回 400', async () => {
   const res = await fetch(`${base}/api/user-settings`, {
-    headers: { 'Content-Type': 'application/json', 'X-Scene-Code': 'us-scene' },
+    headers: { 'Content-Type': 'application/json', 'X-Incident-Id': 'us-scene' },
   });
   assert.equal(res.status, 400);
 });
@@ -67,7 +67,7 @@ test('GET /api/user-settings 无记录返回空设置', async () => {
   assert.equal(body.updated_at, 0);
 });
 
-test('PUT → GET 全链路：白名单过滤 + 类型校验 + 用户/场景隔离', async () => {
+test('PUT → GET 全链路：白名单过滤 + 类型校验 + 设备隔离', async () => {
   // 上传含非法键与非法类型
   const put = await fetch(`${base}/api/user-settings`, {
     method: 'PUT',
@@ -98,14 +98,6 @@ test('PUT → GET 全链路：白名单过滤 + 类型校验 + 用户/场景隔�
     body: JSON.stringify({ settings: { junk: 1 } }),
   });
   assert.equal(bad.status, 400);
-
-  // 场景隔离：同用户不同场景互不可见
-  const otherScene = await j(
-    await fetch(`${base}/api/user-settings`, {
-      headers: { ...H, 'X-Scene-Code': 'us-other' },
-    })
-  );
-  assert.deepEqual(otherScene.settings, {});
 
   // 用户隔离：同场景不同用户互不可见
   const otherUser = await j(

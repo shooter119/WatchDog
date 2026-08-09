@@ -29,7 +29,6 @@ test('createEntry 保存完整字段并可读回', () => {
   assert.equal(e.source, 'voice');
   assert.equal(e.exited_at, null);
 });
-
 test('场景隔离：不同场景互不可见', () => {
   db.createEntry({ id: 'a1', scene: 'A', name: '甲', pressureMpa: 20, entryAtMs: 1, exitAtMs: 2, durationMin: 1 });
   db.createEntry({ id: 'b1', scene: 'B', name: '乙', pressureMpa: 20, entryAtMs: 1, exitAtMs: 2, durationMin: 1 });
@@ -122,64 +121,41 @@ test('updateEntry 支持写入实测耗气率', () => {
   assert.equal(u.consumption_actual_lpm, 68);
 });
 
-test('listScenes 仅由 entries 产生（名单/热词全局共享不产生场景）', () => {
-  db.createEntry({ id: 's1', scene: 'x', name: 'n', pressureMpa: 20, entryAtMs: 1, exitAtMs: 2, durationMin: 1 });
-  db.addFirefighter('sf1', '全局姓名');
-  db.addHotword('sh1', '全局词');
-  const scenes = db.listScenes();
-  assert.ok(scenes.includes('x'));
-  assert.ok(!scenes.includes('y'));
+test('警情列表按状态和档案时间排序', () => {
+  const first = db.createIncident({ id: 'incident-list-1', createdAt: 946684800000 });
+  const second = db.createIncident({ id: 'incident-list-2', createdAt: 946684860000 });
+  assert.ok(db.listIncidents('active').some((item) => item.id === first.id));
+  assert.ok(db.listIncidents('active').some((item) => item.id === second.id));
+  assert.ok(db.getIncident(first.id));
 });
 
-test('markSceneEnded：分配可读新码、幂等、不与既有场景冲突', () => {
-  const s1 = db.markSceneEnded('sceneEnd', 'dev-abc');
-  assert.match(s1.new_scene, /^[一-鿿]{2}$/);
-  assert.ok(s1.ended_at > 0);
-  assert.equal(s1.ended_by, 'dev-abc');
-  // 幂等：已结束场景返回既有记录（新码不变）
-  const s2 = db.markSceneEnded('sceneEnd', 'dev-other');
-  assert.equal(s2.new_scene, s1.new_scene);
-  assert.equal(s2.ended_by, 'dev-abc');
-  // 新码不与既有场景码冲突
-  const scenes = db.listScenes();
-  assert.ok(!scenes.includes(s1.new_scene));
-  // getSceneStates 返回含该场景
-  const states = db.getSceneStates();
-  assert.ok(states.some((s) => s.scene === 'sceneEnd'));
-  assert.ok(states.some((s) => s.new_scene === s1.new_scene));
+test('警情归档记录方式和未确认离场人数', () => {
+  const now = Date.now();
+  const incident = db.createIncident({ id: 'incident-archive', createdAt: now });
+  db.createEntry({ id: 'archive-entry', scene: incident.id, name: '未离场', pressureMpa: 20, entryAtMs: now, exitAtMs: now + 60000, durationMin: 1 });
+  const archived = db.archiveIncident(incident.id, { archivedBy: 'device-a', now: now + 1000 });
+  assert.equal(archived.status, 'archived');
+  assert.equal(archived.archived_by, 'device-a');
+  assert.equal(archived.unresolved_active_count, 1);
+  assert.equal(archived.auto_archived, 0);
 });
 
-test('purgeOldSceneStates 清理结束标记', () => {
-  db.markSceneEnded('scenePurge', 'dev-x');
-  assert.ok(db.getSceneStates().some((s) => s.scene === 'scenePurge'));
-  db.purgeOldSceneStates(-1);
-  assert.ok(!db.getSceneStates().some((s) => s.scene === 'scenePurge'));
+test('警情事件按 client_op_id 幂等并按晚到早读取', () => {
+  const incident = db.createIncident({ id: 'incident-events' });
+  const first = db.appendIncidentEvent({ incidentId: incident.id, type: 'note', clientOpId: 'event-once', occurredAt: 2, payload: { text: '晚' } });
+  const duplicate = db.appendIncidentEvent({ incidentId: incident.id, type: 'note', clientOpId: 'event-once', occurredAt: 1, payload: { text: '不应重复' } });
+  assert.equal(duplicate.id, first.id);
+  db.appendIncidentEvent({ incidentId: incident.id, type: 'entry', occurredAt: 3, payload: { name: '甲' } });
+  const events = db.listIncidentEvents(incident.id);
+  assert.equal(events.length, 2);
+  assert.equal(events[0].payload.name, '甲');
 });
 
-test('中文任务码：近 7 天内新码计入占用，词表耗尽抛错，清理后恢复', () => {
-  // 连续分配若干场景：新码均为两字中文且互不重复
-  const codes = new Set();
-  for (let i = 0; i < 10; i++) {
-    const s = db.markSceneEnded(`fruit-${i}`, 'dev-x');
-    assert.match(s.new_scene, /^[\u4e00-\u9fff]{2}$/);
-    codes.add(s.new_scene);
-  }
-  assert.equal(codes.size, 10, '10 个场景应分配到互不重复的中文任务码');
-  // 新码不与既有场景码冲突
-  const scenes = db.listScenes();
-  for (const c of codes) {
-    assert.ok(!scenes.includes(c));
-  }
-  // 词表耗尽：持续分配直到抛错（防死循环，词表规模应在合理区间）
-  let n = 0;
-  try {
-    for (n = 0; n < 100; n++) db.markSceneEnded(`fruit-full-${n}`, 'dev-x');
-  } catch (e) {
-    assert.match(String(e.message), /词表已全部占用/);
-  }
-  assert.ok(n >= 10 && n < 100, `词表应 10~99 个（实际耗尽于 ${n} 个）`);
-  // 清理结束标记（模拟 7 天复用窗口过后）→ 恢复可分配
-  db.purgeOldSceneStates(-1);
-  const s = db.markSceneEnded('fruit-reuse', 'dev-x');
-  assert.match(s.new_scene, /^[\u4e00-\u9fff]{2}$/);
+test('参战力量同站点只保留一条汇总记录', () => {
+  const incident = db.createIncident({ id: 'incident-forces' });
+  const first = db.upsertIncidentForce({ incidentId: incident.id, stationName: '龙翔路站', vehicleCount: 5, personnelCount: 25 });
+  const second = db.upsertIncidentForce({ incidentId: incident.id, stationName: '龙翔路站', vehicleCount: 6, personnelCount: 30, expectedVersion: first.version });
+  assert.equal(second.id, first.id);
+  assert.equal(second.version, 2);
+  assert.equal(db.listIncidentForces(incident.id).length, 1);
 });

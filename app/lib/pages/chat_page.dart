@@ -57,19 +57,19 @@ class ChatPageState extends State<ChatPage> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onConfigChanged);
-    _lastSceneCode = widget.controller.api?.sceneCode;
+    _lastIncidentId = widget.controller.currentIncident?.id;
     _loadHistory();
   }
 
   /// 配置就绪（api 从空变为可用）后自动重试加载历史：
   /// 首次打开辅助页时尚未配置服务器 → 加载失败 → 设置页保存配置后无需重启即可恢复
   ApiClient? _lastRetryApi; // 已重试过的 api 实例（避免每秒 notify 重复请求）
-  String? _lastSceneCode; // 上次加载历史的场景码（结束任务换码后重载清零）
+  String? _lastIncidentId; // 上次加载历史的警情（切换警情后重载）
   void _onConfigChanged() {
     final a = widget.controller.api;
-    final scene = a?.sceneCode;
-    if (scene != null && scene != _lastSceneCode) {
-      _lastSceneCode = scene;
+    final incident = widget.controller.currentIncident?.id;
+    if (incident != null && incident != _lastIncidentId) {
+      _lastIncidentId = incident;
       _loadHistory();
       return;
     }

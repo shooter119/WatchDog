@@ -7,19 +7,21 @@ import '../models/models.dart';
 
 class ApiClient {
   final String baseUrl;
-  final String sceneCode;
+  final String incidentId;
   final String apiToken;
   final String deviceId;
+  final String actorName;
 
-  ApiClient({required this.baseUrl, required this.sceneCode, this.apiToken = '', this.deviceId = ''});
+  ApiClient({required this.baseUrl, required this.incidentId, this.apiToken = '', this.deviceId = '', this.actorName = ''});
+
+  ApiClient forIncident(String id) => ApiClient(baseUrl: baseUrl, incidentId: id, apiToken: apiToken, deviceId: deviceId, actorName: actorName);
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        // 中文场景码（水果名）必须 URL 编码：dart:io 拒绝非 ASCII 头值，
-        // 直接放中文会抛 FormatException 导致请求发不出去（服务端 sceneKey 会解码还原）
-        'X-Scene-Code': Uri.encodeComponent(sceneCode),
+        if (incidentId.isNotEmpty) 'X-Incident-Id': incidentId,
         if (apiToken.isNotEmpty) 'X-Api-Token': apiToken,
         if (deviceId.isNotEmpty) 'X-Device-Id': deviceId,
+        if (actorName.isNotEmpty) 'X-Actor-Name': actorName,
       };
 
   /// 带操作 ID 的头（opId 贯穿一次语音操作的完整链路，服务端埋点与客户端对齐）
@@ -337,51 +339,108 @@ class ApiClient {
     if (res.statusCode != 200) throw ApiException('同步设置失败(${res.statusCode})');
   }
 
-  /// 结束任务：标记当前场景已归档，返回服务端统一分配的新场景码（幂等）
-  Future<String> endTask({String? opId}) async {
-    final res = await http
-        .post(_uri('/api/scenes/end'), headers: _opHeaders(opId))
-        .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
-    if (res.statusCode != 200) {
-      throw ApiException((body as Map)['error']?.toString() ?? '结束任务失败(${res.statusCode})');
-    }
-    return (body as Map)['new_scene']?.toString() ?? '';
-  }
-
-  /// 核验场景码（更换任务码前调用）：格式（水果词表/default）+ 存在性 + 是否已归档。
-  /// 核验不通过时 App 必须维持原场景码，避免切换后设备失联。
-  Future<SceneValidation> validateScene(String code) async {
-    final uri = Uri.parse('$baseUrl/api/scenes/validate')
-        .replace(queryParameters: {'code': code});
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('核验失败(${res.statusCode})');
-    final m = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-    return SceneValidation(
-      valid: m['valid'] == true,
-      exists: m['exists'] == true,
-      ended: m['ended'] == true,
-      newScene: m['new_scene']?.toString(),
-    );
-  }
-
-  /// 查询当前场景是否已被归档（其他设备发起），返回 null 表示场景未结束
-  Future<SceneState?> fetchSceneState() async {
-    final res = await http.get(_uri('/api/scenes'), headers: _headers).timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('获取场景状态失败(${res.statusCode})');
+  Future<List<Incident>> fetchIncidents({String? status}) async {
+    final path = status == null ? '/api/incidents' : '/api/incidents?status=${Uri.encodeQueryComponent(status)}';
+    final res = await http.get(_uri(path), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('获取警情列表失败(${res.statusCode})');
     final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
-    for (final item in list) {
-      final m = item as Map<String, dynamic>;
-      if (m['code'] == sceneCode && m['ended_at'] != null) {
-        return SceneState(
-          endedAt: (m['ended_at'] as num).toInt(),
-          endedBy: m['ended_by']?.toString(),
-          newScene: m['new_scene']?.toString(),
-        );
-      }
-    }
-    return null;
+    return list.map((e) => Incident.fromJson(e as Map<String, dynamic>)).toList();
   }
+
+  Future<Incident> createIncident({required String realName}) async {
+    final res = await http.post(_uri('/api/incidents'), headers: _opHeaders(null), body: jsonEncode({'actor_name': realName})).timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 201) throw ApiException((body as Map)['error']?.toString() ?? '新建警情失败(${res.statusCode})');
+    return Incident.fromJson(body as Map<String, dynamic>);
+  }
+
+  Future<Incident> fetchIncident(String id) async {
+    final res = await http.get(_uri('/api/incidents/$id'), headers: _headers).timeout(const Duration(seconds: 10));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) throw ApiException((body as Map)['error']?.toString() ?? '获取警情失败(${res.statusCode})');
+    return Incident.fromJson(body as Map<String, dynamic>);
+  }
+
+  Future<Incident> updateIncidentTitle(String id, String? title, {required int expectedVersion}) async {
+    final res = await http.patch(_uri('/api/incidents/$id'), headers: {..._headers, 'X-Expected-Version': '$expectedVersion'}, body: jsonEncode({'title': title, 'expected_version': expectedVersion})).timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode == 409) throw ApiException('警情已被其他设备修改，请刷新后重试');
+    if (res.statusCode != 200) throw ApiException((body as Map)['error']?.toString() ?? '修改警情名称失败(${res.statusCode})');
+    return Incident.fromJson(body as Map<String, dynamic>);
+  }
+
+  Future<Incident> archiveIncident(String id) async {
+    final res = await http.post(_uri('/api/incidents/$id/archive'), headers: _headers, body: jsonEncode({'confirm': true})).timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) throw ApiException((body as Map)['error']?.toString() ?? '归档警情失败(${res.statusCode})');
+    return Incident.fromJson(body as Map<String, dynamic>);
+  }
+
+  Future<List<IncidentForce>> fetchIncidentForces({String? forIncidentId}) async {
+    final id = forIncidentId ?? incidentId;
+    final res = await http.get(_uri('/api/incidents/$id/forces'), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('获取参战力量失败(${res.statusCode})');
+    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    return list.map((e) => IncidentForce.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<IncidentForce> saveIncidentForce({String? forceId, required String stationName, String? stationId, required int vehicleCount, required int personnelCount, int? expectedVersion}) async {
+    final path = forceId == null ? '/api/incidents/$incidentId/forces' : '/api/incidents/$incidentId/forces/$forceId';
+    final method = forceId == null ? http.post : http.patch;
+    final res = await method(_uri(path), headers: _headers, body: jsonEncode({'station_name': stationName, if (stationId != null) 'station_id': stationId, 'vehicle_count': vehicleCount, 'personnel_count': personnelCount, if (expectedVersion != null) 'expected_version': expectedVersion})).timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode == 409) throw ApiException('参战力量已被其他设备修改，请刷新后重试');
+    if (res.statusCode != 200 && res.statusCode != 201) throw ApiException((body as Map)['error']?.toString() ?? '保存参战力量失败(${res.statusCode})');
+    return IncidentForce.fromJson(body as Map<String, dynamic>);
+  }
+
+  Future<void> deleteIncidentForce(String forceId) async {
+    final res = await http.delete(_uri('/api/incidents/$incidentId/forces/$forceId'), headers: _headers).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) throw ApiException('删除参战力量失败(${res.statusCode})');
+  }
+
+  Future<List<Station>> fetchStations() async {
+    final res = await http.get(_uri('/api/stations'), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('获取消防站名录失败(${res.statusCode})');
+    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    return list.map((e) => Station.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<Station> createStation(String name) async {
+    final res = await http.post(_uri('/api/stations'), headers: _headers, body: jsonEncode({'name': name})).timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 201 && res.statusCode != 409) throw ApiException((body as Map)['error']?.toString() ?? '新增消防站失败(${res.statusCode})');
+    return Station.fromJson(body as Map<String, dynamic>);
+  }
+
+  Future<List<IncidentEvent>> fetchTimeline(String id, {int limit = 2000}) async {
+    final res = await http.get(_uri('/api/incidents/$id/timeline?limit=$limit'), headers: _headers).timeout(const Duration(seconds: 15));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) throw ApiException((body as Map)['error']?.toString() ?? '获取火场复盘失败(${res.statusCode})');
+    final list = (body as Map)['events'] as List? ?? const [];
+    return list.map((e) => IncidentEvent.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<Map<String, dynamic>> uploadOfflineOperations(List<Map<String, dynamic>> operations) async {
+    final res = await http.post(_uri('/api/incidents/$incidentId/offline-operations'), headers: _headers, body: jsonEncode({'operations': operations})).timeout(const Duration(seconds: 20));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) throw ApiException((body as Map)['error']?.toString() ?? '离线数据补传失败(${res.statusCode})');
+    return Map<String, dynamic>.from(body as Map);
+  }
+
+  Future<Map<String, dynamic>> fetchProfile() async {
+    final res = await http.get(_uri('/api/profile'), headers: _headers).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) throw ApiException('获取实名信息失败(${res.statusCode})');
+    return Map<String, dynamic>.from(jsonDecode(utf8.decode(res.bodyBytes)) as Map);
+  }
+
+  Future<Map<String, dynamic>> saveProfile(String realName) async {
+    final res = await http.put(_uri('/api/profile'), headers: _headers, body: jsonEncode({'real_name': realName})).timeout(const Duration(seconds: 10));
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) throw ApiException((body as Map)['error']?.toString() ?? '保存实名失败(${res.statusCode})');
+    return Map<String, dynamic>.from(body as Map);
+  }
+
 }
 
 class ApiException implements Exception {
@@ -389,21 +448,6 @@ class ApiException implements Exception {
   ApiException(this.message);
   @override
   String toString() => message;
-}
-
-/// 场景码核验结果（GET /api/scenes/validate）
-class SceneValidation {
-  final bool valid; // 合法任务码（水果词表或 default）
-  final bool exists; // 服务器上已有该场景数据
-  final bool ended; // 该场景已被归档（任务已结束）
-  final String? newScene; // ended 时服务端分配的新场景码
-
-  const SceneValidation({
-    required this.valid,
-    required this.exists,
-    required this.ended,
-    this.newScene,
-  });
 }
 
 /// SSE 事件：增量内容 / 错误 / 结束

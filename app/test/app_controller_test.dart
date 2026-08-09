@@ -8,7 +8,7 @@ import 'package:watchdog/state/app_controller.dart';
 
 /// 模拟服务器不可达的 ApiClient（拉名单/热词必然失败）
 class _OfflineApi extends ApiClient {
-  _OfflineApi() : super(baseUrl: 'http://offline', sceneCode: 'test');
+  _OfflineApi() : super(baseUrl: 'http://offline', incidentId: 'test');
 
   @override
   Future<List<Firefighter>> fetchFirefighters() async => throw Exception('网络不可达');
@@ -19,7 +19,7 @@ class _OfflineApi extends ApiClient {
 
 /// 记录 createNote 收到的 author，验证实名随日志提交
 class _RecordingApi extends ApiClient {
-  _RecordingApi() : super(baseUrl: 'http://rec', sceneCode: 'test');
+  _RecordingApi() : super(baseUrl: 'http://rec', incidentId: 'test');
   String? lastAuthor;
 
   @override

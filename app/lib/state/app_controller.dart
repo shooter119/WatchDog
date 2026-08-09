@@ -11,6 +11,7 @@ import '../services/foreground_keep_alive.dart';
 import '../services/local_asr_service.dart';
 import '../services/local_parser.dart';
 import '../services/op_log_service.dart';
+import '../services/offline_queue.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/tts_service.dart';
@@ -24,8 +25,8 @@ class AppController extends ChangeNotifier {
   final TtsService tts = TtsService();
 
   /// 语音识别联网开关：开 = 云端优先失败自动切本地；关 = 强制本地。
-  /// 默认关闭（离线优先，火场无信号场景；需先下载本地语音模型）
-  bool asrCloudEnabled = false;
+  /// 默认开启（云端优先，精度高）；手动关闭时提示下载本地模型
+  bool asrCloudEnabled = true;
 
   /// 语义解析联网开关：开 = 云端优先失败自动切本地；关 = 强制本地
   bool parseCloudEnabled = true;
@@ -66,14 +67,10 @@ class AppController extends ChangeNotifier {
     return now - _lastSyncSuccessAt > connectionLostThreshold;
   }
 
-  /// 本场景已被某设备结束任务（归档）：非空时看板顶部显示"切换到新任务"横幅
-  SceneState? sceneEnded;
-
-  /// 当前场景码在服务器上是否有数据（启动后首连检测，用于提示"任务码可能不对"）
-  SceneValidation? _sceneValidation;
-
-  /// 外部只读：场景数据是否存在（null = 尚未检测）
-  SceneValidation? get sceneValidation => _sceneValidation;
+  Incident? currentIncident;
+  List<Incident> activeIncidents = [];
+  List<IncidentForce> forces = [];
+  bool get needsIncidentSelection => currentIncident == null;
 
   /// 启动时自动检查到的新版本（非空 = 有新版本可更新，设置页据此显示提示）
   UpdateInfo? pendingUpdate;
@@ -129,7 +126,7 @@ class AppController extends ChangeNotifier {
     }
     await ForegroundKeepAlive.start(
       serverUrl: await Settings.serverUrl,
-      sceneCode: await Settings.sceneCode,
+      incidentId: await Settings.currentIncidentId,
       token: await Settings.apiToken,
       warnMin: calcConfig.warnMin,
       alarmMin: calcConfig.alarmMin,
@@ -157,19 +154,15 @@ class AppController extends ChangeNotifier {
 
   Future<void> refreshConfig() async {
     final serverUrl = await Settings.serverUrl;
-    final sceneCode = await Settings.sceneCode;
+    final incidentId = await Settings.currentIncidentId;
     final token = await Settings.apiToken;
-    final oldScene = api?.sceneCode;
     api = ApiClient(
       baseUrl: serverUrl,
-      sceneCode: sceneCode,
+      incidentId: incidentId,
       apiToken: token,
       deviceId: await OpLogService.instance.deviceId,
+      actorName: await Settings.realName,
     );
-    // 换码后旧核验结果失效，下次空场景重新检测
-    if (oldScene != null && oldScene != sceneCode) {
-      _sceneValidation = null;
-    }
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
     await ScreenOn.setKeepScreenOn(await Settings.keepScreenOn);
@@ -201,28 +194,27 @@ class AppController extends ChangeNotifier {
     if (syncing || api == null) return;
     syncing = true;
     try {
-      entries = await api!.fetchEntries();
-      try {
-        notes = await api!.fetchNotes();
-      } catch (_) {
-        // 日志拉取失败不影响主流程（entries 已成功）
-      }
-      // 本场景被其他设备归档：检测后驱动看板横幅（失败静默，不阻断主流程）。
-      // identical 校验：结束任务换码瞬间，并发轮询可能仍持旧 api 实例，
-      // 其检测结果属于旧场景，忽略避免横幅残留在新场景。
-      if (sceneEnded == null) {
-        try {
-          final a2 = api;
-          final state = await api!.fetchSceneState();
-          if (identical(a2, api)) sceneEnded = state;
-        } catch (_) {}
-      }
-      // 首连后检测：entries 为空且场景码非 default → 可能是服务器数据被清/任务码不对
-      if (entries.isEmpty && _sceneValidation == null && api!.sceneCode != 'default') {
-        try {
-          _sceneValidation = await api!.validateScene(api!.sceneCode);
-        } catch (_) {
-          // 核验失败静默，下次轮询重试
+      await OfflineQueue.instance.drain((id) => api!.forIncident(id));
+      activeIncidents = await api!.fetchIncidents(status: 'active');
+      final savedId = await Settings.currentIncidentId;
+      if (savedId.isEmpty) {
+        currentIncident = null;
+        entries = [];
+        notes = [];
+        forces = [];
+      } else {
+        final incident = await api!.fetchIncident(savedId);
+        if (!incident.isActive) {
+          currentIncident = null;
+          await Settings.setCurrentIncidentId('');
+          entries = [];
+          notes = [];
+          forces = [];
+        } else {
+          currentIncident = incident;
+          entries = await api!.fetchEntries();
+          try { notes = await api!.fetchNotes(); } catch (_) {}
+          try { forces = await api!.fetchIncidentForces(); } catch (_) {}
         }
       }
       syncError = null;
@@ -303,16 +295,28 @@ class AppController extends ChangeNotifier {
     double? volumeL,
     String? opId,
   }) async {
-    final e = await api!.createEntry(
-      name: name,
-      pressureMpa: pressureMpa,
-      source: 'voice',
-      rawText: rawText,
-      force: force,
-      volumeL: volumeL,
-      consumptionLpm: calcConfig.consumptionLpm,
-      opId: opId,
-    );
+    final incident = currentIncident;
+    if (incident == null) throw StateError('请先选择或新建警情');
+    Entry e;
+    try {
+      e = await api!.createEntry(
+        name: name,
+        pressureMpa: pressureMpa,
+        source: 'voice',
+        rawText: rawText,
+        force: force,
+        volumeL: volumeL,
+        consumptionLpm: calcConfig.consumptionLpm,
+        opId: opId,
+      );
+    } catch (error) {
+      if (!_isNetworkError(error)) rethrow;
+      final id = 'offline-entry-${DateTime.now().microsecondsSinceEpoch}';
+      final at = DateTime.now().millisecondsSinceEpoch;
+      final duration = (calcConfig.cylinderVolL * pressureMpa * 10 / calcConfig.consumptionLpm).round();
+      await OfflineQueue.instance.enqueue(incidentId: incident.id, type: 'entry', occurredAt: at, clientOpId: opId ?? id, payload: {'entry_id': id, 'name': name, 'pressure_mpa': pressureMpa, 'raw_text': rawText});
+      e = Entry(id: id, name: name, pressureMpa: pressureMpa, durationMin: duration, entryAt: at, exitAt: at + duration * 60000, source: 'offline', rawText: rawText);
+    }
     // 提交成功立即插入本地列表并通知（看板即时显示倒计时），
     // 不依赖 sync 网络结果——网络不稳时同步失败也不影响本地展示
     entries = [e, ...entries.where((x) => x.id != e.id)];
@@ -323,12 +327,7 @@ class AppController extends ChangeNotifier {
 
   /// 合并：同名已在场的记录按本次复核压力重新倒计时（保留原记录，不重复计数）
   Future<Entry> mergeEntryPressure({required String id, required double pressureMpa, String? opId}) async {
-    final e = await api!.updateEntry(
-      id: id,
-      pressureMpa: pressureMpa,
-      consumptionLpm: calcConfig.consumptionLpm,
-      opId: opId,
-    );
+    final e = await updatePressure(id: id, pressureMpa: pressureMpa, opId: opId);
     await sync();
     return e;
   }
@@ -337,14 +336,98 @@ class AppController extends ChangeNotifier {
   Future<Entry> updatePressure({required String id, required double pressureMpa, String? opId}) async {
     final op = opId ?? '';
     OpLogService.instance.record(op, 'pressure_report', '更新压力 ${pressureMpa}MPa', data: {'entryId': id});
-    final e = await api!.updateEntry(id: id, pressureMpa: pressureMpa, opId: op);
+    final current = entries.firstWhere((entry) => entry.id == id);
+    Entry e;
+    try {
+      e = await api!.updateEntry(id: id, pressureMpa: pressureMpa, opId: op);
+    } catch (error) {
+      if (!_isNetworkError(error) || currentIncident == null) rethrow;
+      await OfflineQueue.instance.enqueue(incidentId: currentIncident!.id, type: 'pressure', occurredAt: DateTime.now().millisecondsSinceEpoch, clientOpId: op.isEmpty ? 'offline-pressure-${DateTime.now().microsecondsSinceEpoch}' : op, payload: {'entry_id': id, 'pressure_mpa': pressureMpa});
+      e = current;
+    }
     await sync();
     return e;
   }
 
   Future<void> markExited(String id, {String? opId}) async {
-    await api!.markExited(id, opId: opId);
+    try {
+      await api!.markExited(id, opId: opId);
+    } catch (error) {
+      if (!_isNetworkError(error) || currentIncident == null) rethrow;
+      await OfflineQueue.instance.enqueue(incidentId: currentIncident!.id, type: 'exit', occurredAt: DateTime.now().millisecondsSinceEpoch, clientOpId: opId ?? 'offline-exit-${DateTime.now().microsecondsSinceEpoch}', payload: {'entry_id': id});
+    }
     await sync();
+  }
+
+  Future<void> selectIncident(String id) async {
+    await Settings.setCurrentIncidentId(id);
+    await refreshConfig();
+    await sync();
+  }
+
+  Future<Incident> createIncident() async {
+    final name = await Settings.realName;
+    if (name.isEmpty) throw StateError('请先在设置中填写真实姓名');
+    final a = api;
+    if (a == null) throw StateError('未连接服务器');
+    final incident = await a.createIncident(realName: name);
+    await Settings.setCurrentIncidentId(incident.id);
+    await refreshConfig();
+    await sync();
+    return incident;
+  }
+
+  Future<Incident> renameCurrent(String title) async {
+    final incident = currentIncident;
+    final a = api;
+    if (incident == null || a == null) throw StateError('未选择警情');
+    final updated = await a.updateIncidentTitle(incident.id, title.trim().isEmpty ? null : title.trim(), expectedVersion: incident.version);
+    currentIncident = updated;
+    notifyListeners();
+    return updated;
+  }
+
+  Future<void> archiveCurrent() async {
+    final a = api;
+    if (a == null || currentIncident == null) throw StateError('未选择警情');
+    await a.archiveIncident(currentIncident!.id);
+    await Settings.setCurrentIncidentId('');
+    currentIncident = null;
+    entries = [];
+    notes = [];
+    forces = [];
+    await refreshConfig();
+    await sync();
+  }
+
+  Future<void> saveForce({String? forceId, required String stationName, String? stationId, required int vehicleCount, required int personnelCount, int? expectedVersion}) async {
+    final a = api;
+    if (a == null || currentIncident == null) throw StateError('未选择警情');
+    await a.saveIncidentForce(forceId: forceId, stationName: stationName, stationId: stationId, vehicleCount: vehicleCount, personnelCount: personnelCount, expectedVersion: expectedVersion);
+    forces = await a.fetchIncidentForces();
+    currentIncident = await a.fetchIncident(currentIncident!.id);
+    notifyListeners();
+  }
+
+  Future<void> removeForce(String forceId) async {
+    final a = api;
+    if (a == null || currentIncident == null) throw StateError('未选择警情');
+    await a.deleteIncidentForce(forceId);
+    forces = await a.fetchIncidentForces();
+    currentIncident = await a.fetchIncident(currentIncident!.id);
+    notifyListeners();
+  }
+
+  Future<List<Incident>> archivedIncidents() async {
+    final a = api;
+    if (a == null) return [];
+    return a.fetchIncidents(status: 'archived');
+  }
+
+  Future<Incident> renameIncident(Incident incident, String title) async {
+    final a = api;
+    if (a == null) throw StateError('未连接服务器');
+    return a.updateIncidentTitle(incident.id, title.trim().isEmpty ? null : title.trim(), expectedVersion: incident.version);
   }
 
   /// 新增火场随手记（语音分流自动入日志 / 手动添加）。
@@ -352,11 +435,22 @@ class AppController extends ChangeNotifier {
   Future<Note> addNote(String text, {String? category, String? opId}) async {
     final cat = category ?? NoteCategory.fromText(text);
     final author = await Settings.realName;
-    final note = await api!.createNote(text: text, category: cat, opId: opId, author: author);
+    Note note;
+    try {
+      note = await api!.createNote(text: text, category: cat, opId: opId, author: author);
+    } catch (error) {
+      if (!_isNetworkError(error) || currentIncident == null) rethrow;
+      final at = DateTime.now().millisecondsSinceEpoch;
+      final noteId = 'offline-note-${DateTime.now().microsecondsSinceEpoch}';
+      await OfflineQueue.instance.enqueue(incidentId: currentIncident!.id, type: 'note', occurredAt: at, clientOpId: opId ?? noteId, payload: {'note_id': noteId, 'text': text, 'category': cat});
+      note = Note(id: noteId, text: text, category: cat, author: author, createdAt: at, updatedAt: at);
+    }
     notes = [note, ...notes];
     notifyListeners();
     return note;
   }
+
+  bool _isNetworkError(Object error) => error is TimeoutException || error.toString().contains('SocketException') || error.toString().contains('ClientException') || error.toString().contains('Connection closed');
 
   /// 编辑日志条目：text/category 传 null 表示不改
   Future<Note> updateNote(String id, {String? text, String? category}) async {
@@ -396,60 +490,6 @@ class AppController extends ChangeNotifier {
     final a = api;
     if (a == null) return;
     await a.clearChatMessages();
-  }
-
-  /// 结束任务（归档）：服务端标记本场景已结束并分配新场景码 → 本机切换。
-  /// 其他设备轮询检测到归档后经 [switchToNewScene] 汇聚到同一新场景。
-  Future<String> endTask({String? opId}) async {
-    if (api == null) {
-      // 边缘情况：api 未初始化（如 SharedPreferences 读取异常）→ 尝试重建
-      await refreshConfig();
-    }
-    final a = api;
-    if (a == null) throw StateError('未连接服务器，请检查网络和服务器设置');
-    final op = opId ?? '';
-    OpLogService.instance.record(op, 'scene_end', '结束任务（归档场景）');
-    final newCode = await a.endTask(opId: op);
-    await Settings.setSceneCode(newCode);
-    // 换码瞬间并发轮询可能正用旧 api 检测到旧场景已归档，强制清状态与数据，
-    // 保证界面立即清零且不残留"本场景已结束"横幅（sync 若被轮询占用跳过，轮询随后会拉到新场景数据）
-    sceneEnded = null;
-    entries = [];
-    notes = [];
-    await refreshConfig();
-    await sync();
-    sceneEnded = null; // 兜底：旧 api 轮询在换码窗口写入的归档状态
-    notifyListeners();
-    OpLogService.instance.record(
-      op,
-      'scene_end_done',
-      '任务已结束，切换到新场景',
-      data: {'newScene': newCode},
-    );
-    OpLogService.instance.flush(api: api);
-    return newCode;
-  }
-
-  /// 其他设备响应归档横幅：切换到服务端统一分配的新场景码（各设备汇聚同一码）
-  Future<void> switchToNewScene() async {
-    final s = sceneEnded;
-    final newCode = s?.newScene;
-    if (newCode == null || newCode.isEmpty) return;
-    OpLogService.instance.record(
-      '',
-      'scene_switch',
-      '切换到已归档任务的新场景',
-      data: {'newScene': newCode},
-    );
-    await Settings.setSceneCode(newCode);
-    sceneEnded = null;
-    entries = [];
-    notes = [];
-    await refreshConfig();
-    await sync();
-    sceneEnded = null; // 兜底：换码窗口内旧 api 轮询写入的归档状态
-    notifyListeners();
-    OpLogService.instance.flush(api: api);
   }
 
   Future<void> deleteNote(String id) async {

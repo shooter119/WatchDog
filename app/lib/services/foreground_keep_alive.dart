@@ -16,7 +16,7 @@ class ForegroundKeepAlive {
   static const channelDesc = '火场指挥持续值守，保持后台轮询与报警';
 
   static const _kServerUrl = 'keepalive_server_url';
-  static const _kSceneCode = 'keepalive_scene_code';
+  static const _kIncidentId = 'keepalive_incident_id';
   static const _kToken = 'keepalive_token';
   static const _kWarnMin = 'keepalive_warn_min';
   static const _kAlarmMin = 'keepalive_alarm_min';
@@ -53,14 +53,14 @@ class ForegroundKeepAlive {
   /// 启动保活服务：先把轮询所需配置写入服务数据，再启动（服务内独立拉看板数据）
   static Future<void> start({
     required String serverUrl,
-    required String sceneCode,
+    required String incidentId,
     required String token,
     required int warnMin,
     required int alarmMin,
   }) async {
     if (!Platform.isAndroid) return; // 非 Android（含测试环境）无前台服务
     await FlutterForegroundTask.saveData(key: _kServerUrl, value: serverUrl);
-    await FlutterForegroundTask.saveData(key: _kSceneCode, value: sceneCode);
+    await FlutterForegroundTask.saveData(key: _kIncidentId, value: incidentId);
     await FlutterForegroundTask.saveData(key: _kToken, value: token);
     await FlutterForegroundTask.saveData(key: _kWarnMin, value: warnMin);
     await FlutterForegroundTask.saveData(key: _kAlarmMin, value: alarmMin);
@@ -101,7 +101,7 @@ class ForegroundKeepAlive {
 /// 服务 isolate 内的任务处理器：每 5 秒拉一次看板数据，刷新常驻通知栏
 class WatchdogTaskHandler extends TaskHandler {
   String _serverUrl = '';
-  String _sceneCode = '';
+  String _incidentId = '';
   String _token = '';
   int _warnMin = 10;
   int _alarmMin = 5;
@@ -111,8 +111,8 @@ class WatchdogTaskHandler extends TaskHandler {
     // 服务 isolate 运行在独立后台 isolate：Flutter 3.38+ 引擎启动 isolate 时自动注册插件
     _serverUrl =
         await FlutterForegroundTask.getData<String>(key: 'keepalive_server_url') ?? '';
-    _sceneCode =
-        await FlutterForegroundTask.getData<String>(key: 'keepalive_scene_code') ?? '';
+    _incidentId =
+        await FlutterForegroundTask.getData<String>(key: 'keepalive_incident_id') ?? '';
     _token =
         await FlutterForegroundTask.getData<String>(key: 'keepalive_token') ?? '';
     _warnMin =
@@ -132,12 +132,11 @@ class WatchdogTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
 
   Future<void> _refresh() async {
-    if (_serverUrl.isEmpty) return;
+    if (_serverUrl.isEmpty || _incidentId.isEmpty) return;
     try {
       final res = await http.get(
         Uri.parse('$_serverUrl/api/entries?active=1'),
-        // 中文场景码 URL 编码（dart:io 拒绝非 ASCII 头值，服务端 sceneKey 解码还原）
-        headers: {'X-Scene-Code': Uri.encodeComponent(_sceneCode), 'X-Api-Token': _token},
+        headers: {'X-Incident-Id': _incidentId, 'X-Api-Token': _token},
       ).timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return;
       final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;

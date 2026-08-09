@@ -8,6 +8,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-notes-'));
 process.env.WATCHDOG_DATA_DIR = tmpDir;
 
 const app = require('../src/server');
+const db = require('../src/db');
 
 let server;
 let base;
@@ -20,8 +21,10 @@ before(async () => {
 
 after(() => new Promise((r) => server.close(r)));
 
-const H = { 'Content-Type': 'application/json', 'X-Scene-Code': 'notescene' };
+const H = { 'Content-Type': 'application/json', 'X-Incident-Id': 'notescene', 'X-Device-Id': 'notes-device', 'X-Actor-Name': 'tester' };
 const j = (r) => r.json();
+
+for (const id of ['notescene', 'noteA', 'noteB']) db.createIncident({ id });
 
 test('火场随手记 CRUD 全链路：创建→列表→编辑→删除', async () => {
   // 缺内容 400
@@ -85,17 +88,17 @@ test('火场随手记 CRUD 全链路：创建→列表→编辑→删除', async
   assert.equal(afterDel.length, 2);
 });
 
-test('场景隔离：不同场景码的随手记互不可见', async () => {
+test('警情隔离：不同警情的随手记互不可见', async () => {
   const resA = await (await fetch(`${base}/api/notes`, {
     method: 'POST',
-    headers: { ...H, 'X-Scene-Code': 'noteA' },
+    headers: { ...H, 'X-Incident-Id': 'noteA' },
     body: JSON.stringify({ text: 'A 场景记录' }),
   })).json();
   assert.ok(resA.id);
 
-  const b = await (await fetch(`${base}/api/notes`, { headers: { ...H, 'X-Scene-Code': 'noteB' } })).json();
+  const b = await (await fetch(`${base}/api/notes`, { headers: { ...H, 'X-Incident-Id': 'noteB' } })).json();
   assert.equal(b.length, 0);
-  const a = await (await fetch(`${base}/api/notes`, { headers: { ...H, 'X-Scene-Code': 'noteA' } })).json();
+  const a = await (await fetch(`${base}/api/notes`, { headers: { ...H, 'X-Incident-Id': 'noteA' } })).json();
   assert.equal(a.length, 1);
   assert.equal(a[0].text, 'A 场景记录');
 });

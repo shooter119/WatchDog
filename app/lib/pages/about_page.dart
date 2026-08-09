@@ -38,7 +38,7 @@ class AboutPage extends StatelessWidget {
                 '· 退场时一句「张三退场」，记录自动归档\n\n'
                 '全程不用敲一个字，戴着战术手套也按得动。底部就五个入口：日志、看板、语音、辅助、设置。'
                 '中间那个橙色的麦克风就是最快的那只手——按住说话，松手完事。\n\n'
-                '几台手机连上同一个任务码，指挥员和多个安全员看到的是同一块看板，数据实时同步，谁也不用来回扯着嗓子问。',
+                '多台设备加入同一场警情档案后，指挥员和安全员可以实时协同记录进退场、压力和火场日志；处置结束后，档案自动归档并保留完整复盘时间线。',
           ),
           SizedBox(height: 18),
           SectionTitle(text: '它能帮你什么'),
@@ -138,6 +138,8 @@ class _FeaturesCard extends StatelessWidget {
     (Icons.calculate_outlined, '自动计算', '气瓶容量、压力、消耗率交给我们算，剩余 10 分钟提醒、5 分钟报警'),
     (Icons.dashboard_rounded, '实时看板', '在场谁、进去多久、还剩多久，一目了然；到点自动播报、响警报、锁屏也推通知'),
     (Icons.offline_bolt_outlined, '断网可用', '语音识别与语义解析支持本机运行，火场没信号也能录'),
+    (Icons.folder_copy_outlined, '警情档案', '多台设备加入同一场警情协同记录；名称、参战消防站和力量数量可共同维护'),
+    (Icons.history_outlined, '离线补传与复盘', '现场操作断网持久化暂存，恢复网络后幂等补传；归档后按晚到早查看完整事件时间线'),
     (Icons.group_outlined, '名单与热词', '把班组名单录进去，语音识别对你的人名和叫法更准'),
     (Icons.bar_chart_rounded, '数据统计', '每人的进出场次数、时长一清二楚，训练复盘心里有数'),
     (Icons.touch_app_outlined, '火场友好', '屏幕常亮、后台保活、按键式录音，戴着手套、满场嘈杂也能用'),

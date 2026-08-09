@@ -8,6 +8,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-logs-'));
 process.env.WATCHDOG_DATA_DIR = tmpDir;
 
 const app = require('../src/server');
+const db = require('../src/db');
 
 let server;
 let base;
@@ -20,10 +21,12 @@ before(async () => {
 
 after(() => new Promise((r) => server.close(r)));
 
-const H = { 'Content-Type': 'application/json', 'X-Scene-Code': 'logscene' };
+const H = { 'Content-Type': 'application/json', 'X-Incident-Id': 'logscene', 'X-Device-Id': 'logs-device', 'X-Actor-Name': 'tester' };
 const j = (r) => r.json();
 
-test('POST /api/logs 批量上报并按场景/设备/时间入库', async () => {
+for (const id of ['logscene', 'otherscene']) db.createIncident({ id });
+
+test('POST /api/logs 批量上报并按警情/设备/时间入库', async () => {
   const res = await fetch(`${base}/api/logs`, {
     method: 'POST',
     headers: { ...H, 'X-Device-Id': 'dev-abc' },
@@ -50,14 +53,14 @@ test('POST /api/logs 批量上报并按场景/设备/时间入库', async () => 
   assert.ok(typeof logs[2].created_at === 'number');
 });
 
-test('日志场景隔离：其他场景码不可见', async () => {
+test('日志警情隔离：其他警情不可见', async () => {
   await fetch(`${base}/api/logs`, {
     method: 'POST',
-    headers: { ...H, 'X-Scene-Code': 'otherscene' },
+    headers: { ...H, 'X-Incident-Id': 'otherscene' },
     body: JSON.stringify({ logs: [{ stage: 'record_start', msg: '别场景' }] }),
   });
   const logs = await (await fetch(`${base}/api/logs`, { headers: H })).json();
-  assert.equal(logs.length, 3); // 本场景数量不变
+  assert.equal(logs.length, 3); // 当前警情数量不变
 });
 
 test('GET /api/logs 支持 op_id/device 过滤与 limit', async () => {
@@ -98,7 +101,7 @@ test('POST /api/logs 参数校验：非数组/超量/空 stage 拒绝或忽略',
   assert.equal((await j(res)).count, 1);
 });
 
-test('DELETE /api/logs 清空本场景日志', async () => {
+test('DELETE /api/logs 清空当前警情日志', async () => {
   const del = await (await fetch(`${base}/api/logs`, { method: 'DELETE', headers: H })).json();
   assert.ok(del.deleted >= 4);
   const logs = await (await fetch(`${base}/api/logs`, { headers: H })).json();

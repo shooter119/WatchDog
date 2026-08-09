@@ -19,7 +19,6 @@ import 'package:watchdog/pages/settings_page.dart';
 import 'package:watchdog/pages/stats_page.dart';
 import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
-import 'package:watchdog/services/scene_code.dart';
 import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/services/update_service.dart';
 import 'package:watchdog/state/app_controller.dart';
@@ -37,38 +36,18 @@ class _FakeController extends AppController {
     List<Entry> entries = const [],
     List<Firefighter> firefighters = const [],
     List<Note> notes = const [],
+    Incident? currentIncident = const Incident(id: 'test-incident', number: '2026-8-9-8-59', status: 'active', createdAt: 1, lastActivityAt: 1),
   }) : super() {
     this.entries = entries;
     this.firefighters = firefighters;
     this.notes = notes;
+    this.currentIncident = currentIncident;
     // 测试环境无本地模型：语音测试默认走云端路径（生产默认已改为离线优先）
     asrCloudEnabled = true;
     parseCloudEnabled = true;
   }
   final exited = <String>[];
   final reported = <double>[];
-
-  /// 结束任务：非空时返回该新场景码（模拟服务端分配）
-  String? endTaskResult;
-  bool endTaskCalled = false;
-
-  /// 场景已归档（其他设备发起）：直接赋值 controller.sceneEnded 驱动横幅
-  int switchCount = 0;
-
-  @override
-  Future<String> endTask({String? opId}) async {
-    endTaskCalled = true;
-    sceneEnded = null;
-    notifyListeners();
-    return endTaskResult ?? 'NEWXYZ';
-  }
-
-  @override
-  Future<void> switchToNewScene() async {
-    switchCount++;
-    sceneEnded = null;
-    notifyListeners();
-  }
 
   @override
   void startSync() {} // 测试环境不启动轮询定时器（否则每秒刷新导致 pumpAndSettle 无法收敛）
@@ -173,8 +152,7 @@ class _FakeApi extends ApiClient {  _FakeApi({
     this.noteOnCall = 0,
     this.transcribeText,
     this.chatHistory = const [],
-    this.endedScene,
-    super.sceneCode = 'test',
+    super.incidentId = 'test',
   }) : super(baseUrl: 'http://test');
   final bool multiPressure;
 
@@ -196,23 +174,8 @@ class _FakeApi extends ApiClient {  _FakeApi({
   /// 智能体问答历史（旧→新）
   final List<ChatMessage> chatHistory;
 
-  /// 核验为已结束的场景码（输入该码时 App 提示任务已结束且不切换）
-  String? endedScene;
   final created = <String>[];
   int _parseCalls = 0;
-
-  @override
-  Future<SceneValidation> validateScene(String code) async {
-    if (endedScene != null && code == endedScene) {
-      return const SceneValidation(valid: true, exists: true, ended: true, newScene: '蜜桃');
-    }
-    // 模拟服务器核验：水果词表 / default / 活跃历史场景（如 firestation-1）合法
-    const active = {'苹果', 'TEST01', 'firestation-1'};
-    final valid = kFruitSceneNames.contains(code) ||
-        code == kLegacyDefaultScene ||
-        active.contains(code);
-    return SceneValidation(valid: valid, exists: active.contains(code), ended: false);
-  }
 
   @override
   Future<String> transcribe(Uint8List audioBytes, {String? opId}) async =>
@@ -359,7 +322,7 @@ void main() {
   const screenChannel = MethodChannel('watchdog/screen');
   TestWidgetsFlutterBinding.ensureInitialized().defaultBinaryMessenger
       .setMockMethodCallHandler(screenChannel, (call) async => null);
-  // 剪贴板等平台通道统一 mock（复制任务码/新场景码触发 Clipboard.setData）
+  // 剪贴板等平台通道统一 mock，避免测试依赖原生平台实现。
   TestWidgetsFlutterBinding.ensureInitialized().defaultBinaryMessenger
       .setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
 
@@ -856,7 +819,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(find.text('操作日志'), 200, scrollable: list);
+      await tester.scrollUntilVisible(find.text('语音录入全流程记录'), 400, scrollable: list);
       await tester.tap(find.text('语音录入全流程记录'));
       await tester.pumpAndSettle();
       expect(find.byType(OpLogPage), findsOneWidget);
@@ -1734,10 +1697,10 @@ void main() {
   });
 
   group('main.dart 导航', () {
-    testWidgets('默认进入看板，底部五个入口对称存在', (tester) async {
+    testWidgets('默认进入语音页，底部五个入口对称存在', (tester) async {
       await tester.pumpWidget(const WatchDogApp());
       await tester.pump();
-      expect(find.text('管控看板'), findsOneWidget);
+      expect(find.text('警情处置'), findsOneWidget);
       expect(find.text('日志'), findsOneWidget);
       expect(find.text('看板'), findsOneWidget);
       expect(find.text('辅助'), findsOneWidget);
@@ -1748,21 +1711,6 @@ void main() {
           .where((icon) => icon.glyph != NavGlyph.voice);
       expect(navIcons, hasLength(4));
       expect(navIcons.every((icon) => icon.size == 28), isTrue);
-      final selectedItem = find.ancestor(
-        of: find.text('看板'),
-        matching: find.byType(AnimatedContainer),
-      );
-      expect(selectedItem, findsOneWidget);
-      expect(
-        tester.widget<AnimatedContainer>(selectedItem).decoration,
-        isNull,
-        reason: '选中导航入口不应显示灰色圆形背景',
-      );
-      expect(tester.widget<Text>(find.text('看板')).style?.fontSize, 10.5);
-      expect(
-        tester.widget<Text>(find.text('看板')).style?.fontWeight,
-        FontWeight.w600,
-      );
       expect(
         tester.widget<Text>(find.text('日志')).style?.fontWeight,
         FontWeight.w400,
@@ -2066,204 +2014,70 @@ void main() {
     });
   });
 
-  group('任务页（核心 hub）与结束任务', () {
+  group('警情卡与选择流程', () {
     Future<void> pumpTask(WidgetTester tester, _FakeController c) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: buildAppTheme(),
-          home: Scaffold(
-            body: AnimatedBuilder(
-              animation: c,
-              builder: (_, __) => HomePage(controller: c, audioService: _FakeAudio()),
-            ),
-          ),
-        ),
-      );
+      await tester.pumpWidget(MaterialApp(theme: buildAppTheme(), home: Scaffold(body: AnimatedBuilder(animation: c, builder: (_, __) => HomePage(controller: c, audioService: _FakeAudio())))));
       await tester.pump();
     }
 
-    testWidgets('任务卡：显示任务码与在场概览（含需关注人数）', (tester) async {
-      final c = _FakeController(entries: [
-        _entry(name: '张伟', remainingMin: 20),
-        _entry(name: '李娜', remainingMin: 2), // 低于报警阈值 → 需关注
-      ])
-        ..api = _FakeApi(sceneCode: 'TEST01');
+    testWidgets('当前警情卡显示名称、编号、在场和需关注人数', (tester) async {
+      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20), _entry(name: '李娜', remainingMin: 2)])
+        ..currentIncident = const Incident(id: 'i1', number: '2026-8-9-8-59', title: '小区火灾', status: 'active', createdAt: 1, lastActivityAt: 1);
       await pumpTask(tester, c);
-      expect(find.byKey(const Key('task-bar')), findsOneWidget);
-      expect(find.text('TEST01'), findsOneWidget);
-      expect(find.text('在场 2 人'), findsOneWidget);
+      expect(find.byKey(const Key('incident-card')), findsOneWidget);
+      expect(find.text('小区火灾'), findsOneWidget);
+      expect(find.text('在场 2人'), findsOneWidget);
       expect(find.text('需关注 1'), findsOneWidget);
-      // 语音引导仍在主区（hub 改造不挤占语音主功能）
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
-      expect(tester.takeException(), isNull);
     });
 
-    testWidgets('语音引导：六个功能块文字行数不同也完全等高', (tester) async {
-      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
+    testWidgets('无当前警情显示活跃列表和新建入口', (tester) async {
+      final c = _FakeController(currentIncident: null)..currentIncident = null..activeIncidents = const [Incident(id: 'i1', number: '2026-8-9-8-59', status: 'active', createdAt: 1, lastActivityAt: 1)];
       await pumpTask(tester, c);
-      const labels = ['进场登记', '多人进场', '出场登记', '压力复核', '火场随手记', '火场提问'];
-      final heights = labels
-          .map((l) => tester.getSize(find.byKey(ValueKey('guide-$l'))).height)
-          .toSet();
-      expect(heights.length, 1, reason: '六个引导块应完全等高，不得因文字行数不同而参差');
-      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('incident-picker')), findsOneWidget);
+      expect(find.text('2026-8-9-8-59'), findsNWidgets(2));
+      expect(find.text('新建警情'), findsOneWidget);
     });
 
-    testWidgets('任务码复制：提示已复制', (tester) async {
-      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
-      await pumpTask(tester, c);
-      await tester.tap(find.byIcon(Icons.copy_rounded));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.textContaining('任务码 TEST01 已复制'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('更换任务码：合法水果码核验通过后保存并提示', (tester) async {
-      SharedPreferences.setMockInitialValues({});
-      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
-      await pumpTask(tester, c);
-      await tester.tap(find.byIcon(Icons.edit_outlined));
-      await tester.pumpAndSettle();
-      expect(find.text('更换任务码'), findsOneWidget);
-      await tester.enterText(find.byType(TextField).last, '苹果');
-      await tester.tap(find.text('确认更换'));
-      await tester.pumpAndSettle();
-      expect(await Settings.sceneCode, '苹果');
-      expect(find.textContaining('已切换到任务码 苹果'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('更换任务码：乱码被服务器核验拒绝，维持原场景码', (tester) async {
-      SharedPreferences.setMockInitialValues({'scene_code': 'TEST01'});
-      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
-      await pumpTask(tester, c);
-      await tester.tap(find.byIcon(Icons.edit_outlined));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).last, 'ABC123');
-      await tester.tap(find.text('确认更换'));
-      await tester.pumpAndSettle();
-      // 原场景码保持，不切换
-      expect(await Settings.sceneCode, 'TEST01');
-      expect(find.textContaining('任务码不正确'), findsOneWidget);
-      expect(find.textContaining('已切换到任务码'), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('更换任务码：服务器活跃的历史场景码（非水果）可切换', (tester) async {
-      SharedPreferences.setMockInitialValues({'scene_code': 'TEST01'});
-      final c = _FakeController()..api = _FakeApi(sceneCode: 'TEST01');
-      await pumpTask(tester, c);
-      await tester.tap(find.byIcon(Icons.edit_outlined));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).last, 'firestation-1');
-      await tester.tap(find.text('确认更换'));
-      await tester.pumpAndSettle();
-      expect(await Settings.sceneCode, 'firestation-1');
-      expect(find.textContaining('已切换到任务码 firestation-1'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('更换任务码：已结束任务码被拒绝并提示新码', (tester) async {
-      SharedPreferences.setMockInitialValues({'scene_code': 'TEST01'});
+    testWidgets('参战力量显示站点、车辆和人员汇总', (tester) async {
       final c = _FakeController()
-        ..api = _FakeApi(sceneCode: 'TEST01', endedScene: '桃子');
+        ..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1)
+        ..forces = const [IncidentForce(id: 'f1', incidentId: 'i1', stationName: '龙翔路站', vehicleCount: 5, personnelCount: 25, createdAt: 1, updatedAt: 1, version: 1)];
       await pumpTask(tester, c);
-      await tester.tap(find.byIcon(Icons.edit_outlined));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).last, '桃子');
-      await tester.tap(find.text('确认更换'));
-      await tester.pumpAndSettle();
-      // 原场景码保持，提示任务已结束并给出新码
-      expect(await Settings.sceneCode, 'TEST01');
-      expect(find.textContaining('该任务已结束'), findsOneWidget);
-      expect(find.textContaining('蜜桃'), findsOneWidget);
+      expect(find.text('龙翔路站 5车25人'), findsOneWidget);
+    });
+
+    testWidgets('新建警情后可看到补充名称提示', (tester) async {
+      final c = _FakeController(currentIncident: null)..currentIncident = null..api = _FakeApi(incidentId: '');
+      await pumpTask(tester, c);
+      expect(find.text('新建警情'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('任务页结束任务按钮：二次确认后展示新场景码，取消不触发', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])
-        ..endTaskResult = 'KX8MZP'
-        ..api = _FakeApi(sceneCode: 'TEST01');
+    testWidgets('活动警情提供修改名称入口', (tester) async {
+      final c = _FakeController()..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1);
       await pumpTask(tester, c);
-      // 结束任务按钮在任务卡内
-      expect(find.byTooltip('结束任务'), findsOneWidget);
-      // 先取消：不触发结束
-      await tester.tap(find.byTooltip('结束任务'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('请确认灾情处置是否已结束'), findsOneWidget);
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
-      expect(c.endTaskCalled, false);
-      // 再确认：展示新场景码
-      await tester.tap(find.byTooltip('结束任务'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('确认结束'));
-      await tester.pumpAndSettle();
-      expect(c.endTaskCalled, true);
-      expect(find.text('任务已结束'), findsOneWidget);
-      expect(find.text('KX8MZP'), findsOneWidget);
-      expect(find.text('复制'), findsOneWidget);
-      await tester.tap(find.text('知道了'));
-      await tester.pumpAndSettle();
-      expect(find.text('任务已结束'), findsNothing);
-      expect(tester.takeException(), isNull);
+      expect(find.text('修改名称'), findsOneWidget);
     });
 
-    testWidgets('其他设备：归档横幅常驻在任务页，一键切换到新任务后消失', (tester) async {
-      final c = _FakeController(entries: [_entry(name: '李娜', remainingMin: 15)])
-        ..sceneEnded = SceneState(
-          endedAt: DateTime.now().millisecondsSinceEpoch - 60000,
-          endedBy: 'dev-x',
-          newScene: 'KX8MZP',
-        )
-        ..api = _FakeApi(sceneCode: 'TEST01');
+    testWidgets('活动警情提供参战力量添加入口', (tester) async {
+      final c = _FakeController()..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1);
       await pumpTask(tester, c);
-      // 横幅提示本场景已结束，不弹窗
-      expect(find.byKey(const Key('scene-ended-banner')), findsOneWidget);
-      expect(find.textContaining('本场景任务已结束'), findsOneWidget);
-      expect(find.byType(AlertDialog), findsNothing);
-      // 一键切换到新任务
-      await tester.tap(find.text('切换到新任务'));
-      await tester.pumpAndSettle();
-      expect(c.switchCount, 1);
-      expect(find.byKey(const Key('scene-ended-banner')), findsNothing);
-      expect(tester.takeException(), isNull);
+      expect(find.text('添加'), findsOneWidget);
     });
 
-    testWidgets('辅助页：场景码变化后自动重载历史（归档换码清零）', (tester) async {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final oldApi = _FakeApi(
-        sceneCode: 'old',
-        chatHistory: [
-          ChatMessage(
-            id: 'h1',
-            role: 'user',
-            content: '旧场景的问题',
-            createdAt: now - 3600000,
-          ),
-        ],
-      );
-      final newApi = _FakeApi(sceneCode: 'new');
-      final c = _FakeController()..api = oldApi;
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: buildAppTheme(),
-          home: Scaffold(
-            body: ChatPage(controller: c, audioService: _FakeAudio()),
-          ),
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('旧场景的问题'), findsOneWidget);
-      // 模拟结束任务换码：api 换到新场景（服务端新场景无历史）并通知
-      c.api = newApi;
-      c.notifyListeners();
-      await tester.pump();
-      await tester.pump();
-      expect(find.text('旧场景的问题'), findsNothing);
-      expect(find.text('你好，我是水元素'), findsOneWidget);
+    testWidgets('活动警情提供手动归档入口并二次确认', (tester) async {
+      final c = _FakeController()..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1);
+      await pumpTask(tester, c);
+      await tester.tap(find.text('归档'));
+      await tester.pumpAndSettle();
+      expect(find.text('归档警情'), findsOneWidget);
+      expect(find.text('确认归档'), findsOneWidget);
+    });
+
+    testWidgets('当前警情默认可进入语音录入区域', (tester) async {
+      final c = _FakeController()..currentIncident = const Incident(id: 'i1', number: 'n', status: 'active', createdAt: 1, lastActivityAt: 1);
+      await pumpTask(tester, c);
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

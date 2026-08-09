@@ -56,6 +56,148 @@ class Entry {
       );
 }
 
+class Incident {
+  final String id;
+  final String number;
+  final String? title;
+  final String? suggestedTitle;
+  final String status;
+  final int createdAt;
+  final int lastActivityAt;
+  final int? archivedAt;
+  final String? archivedBy;
+  final bool autoArchived;
+  final int unresolvedActiveCount;
+  final int version;
+  final int forceStationCount;
+  final int vehicleCount;
+  final int personnelCount;
+
+  const Incident({
+    required this.id,
+    required this.number,
+    this.title,
+    this.suggestedTitle,
+    required this.status,
+    required this.createdAt,
+    required this.lastActivityAt,
+    this.archivedAt,
+    this.archivedBy,
+    this.autoArchived = false,
+    this.unresolvedActiveCount = 0,
+    this.version = 1,
+    this.forceStationCount = 0,
+    this.vehicleCount = 0,
+    this.personnelCount = 0,
+  });
+
+  String get displayName => (title ?? '').trim().isEmpty ? number : title!.trim();
+  bool get isActive => status == 'active';
+
+  factory Incident.fromJson(Map<String, dynamic> json) => Incident(
+        id: json['id']?.toString() ?? '',
+        number: json['number']?.toString() ?? '',
+        title: json['title']?.toString(),
+        suggestedTitle: json['suggested_title']?.toString(),
+        status: json['status']?.toString() ?? 'active',
+        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+        lastActivityAt: (json['last_activity_at'] as num?)?.toInt() ?? 0,
+        archivedAt: (json['archived_at'] as num?)?.toInt(),
+        archivedBy: json['archived_by']?.toString(),
+        autoArchived: json['auto_archived'] == true || json['auto_archived'] == 1,
+        unresolvedActiveCount: (json['unresolved_active_count'] as num?)?.toInt() ?? 0,
+        version: (json['version'] as num?)?.toInt() ?? 1,
+        forceStationCount: (json['force_station_count'] as num?)?.toInt() ?? 0,
+        vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
+        personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class IncidentForce {
+  final String id;
+  final String incidentId;
+  final String? stationId;
+  final String stationName;
+  final int vehicleCount;
+  final int personnelCount;
+  final int createdAt;
+  final int updatedAt;
+  final int version;
+
+  const IncidentForce({
+    required this.id,
+    required this.incidentId,
+    this.stationId,
+    required this.stationName,
+    required this.vehicleCount,
+    required this.personnelCount,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.version,
+  });
+
+  factory IncidentForce.fromJson(Map<String, dynamic> json) => IncidentForce(
+        id: json['id']?.toString() ?? '',
+        incidentId: json['incident_id']?.toString() ?? '',
+        stationId: json['station_id']?.toString(),
+        stationName: json['station_name']?.toString() ?? '',
+        vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
+        personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,
+        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+        updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
+        version: (json['version'] as num?)?.toInt() ?? 1,
+      );
+}
+
+class Station {
+  final String id;
+  final String name;
+  const Station({required this.id, required this.name});
+  factory Station.fromJson(Map<String, dynamic> json) => Station(id: json['id']?.toString() ?? '', name: json['name']?.toString() ?? '');
+}
+
+class IncidentEvent {
+  final String id;
+  final String incidentId;
+  final String type;
+  final int occurredAt;
+  final int recordedAt;
+  final String? actorName;
+  final String source;
+  final String? clientOpId;
+  final Map<String, dynamic> payload;
+  final String? revisionOf;
+  final String text;
+
+  const IncidentEvent({
+    required this.id,
+    required this.incidentId,
+    required this.type,
+    required this.occurredAt,
+    required this.recordedAt,
+    this.actorName,
+    required this.source,
+    this.clientOpId,
+    this.payload = const {},
+    this.revisionOf,
+    required this.text,
+  });
+
+  factory IncidentEvent.fromJson(Map<String, dynamic> json) => IncidentEvent(
+        id: json['id']?.toString() ?? '',
+        incidentId: json['incident_id']?.toString() ?? '',
+        type: json['type']?.toString() ?? '',
+        occurredAt: (json['occurred_at'] as num?)?.toInt() ?? 0,
+        recordedAt: (json['recorded_at'] as num?)?.toInt() ?? 0,
+        actorName: json['actor_name']?.toString(),
+        source: json['source']?.toString() ?? 'online',
+        clientOpId: json['client_op_id']?.toString(),
+        payload: json['payload'] is Map ? Map<String, dynamic>.from(json['payload'] as Map) : const {},
+        revisionOf: json['revision_of']?.toString(),
+        text: json['text']?.toString() ?? '',
+      );
+}
+
 /// 火场随手记分类（与后端白名单一致）
 /// 依据消防实战作战环节设计：接警出动→火情侦察→警戒→战斗展开→
 /// 救人搜救/疏散→灭火(控制/堵截/强攻/总攻/合围)→破拆→排烟→供水→消除残火→战斗结束
@@ -269,15 +411,6 @@ class ParseResult {
       note: (json['note'] as String?) ?? '',
     );
   }
-}
-
-/// 场景结束状态：本场景已被某设备结束任务（归档），携带服务端统一分配的新场景码
-class SceneState {
-  final int endedAt;
-  final String? endedBy;
-  final String? newScene;
-
-  const SceneState({required this.endedAt, this.endedBy, this.newScene});
 }
 
 /// 智能体问答消息（user 提问 / assistant 回复）

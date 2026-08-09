@@ -2,7 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class Settings {
   static const _kServer = 'server_url';
-  static const _kScene = 'scene_code';
+  static const _kIncident = 'current_incident_id';
   static const _kToken = 'api_token';
   static const _kVolume = 'cylinder_vol_l';
   static const _kFullPressure = 'full_pressure_mpa';
@@ -98,18 +98,18 @@ class Settings {
     await sp.setString(_kServer, v);
   }
 
-  static Future<String> get sceneCode async {
+  static Future<String> get currentIncidentId async {
     final sp = await SharedPreferences.getInstance();
-    final v = sp.getString(_kScene);
-    if (v != null && v.isNotEmpty) return v;
-    // 首次安装默认场景码为 "default"，方便多设备测试时自动互通
-    await sp.setString(_kScene, 'default');
-    return 'default';
+    return (sp.getString(_kIncident) ?? '').trim();
   }
 
-  static Future<void> setSceneCode(String v) async {
+  static Future<void> setCurrentIncidentId(String v) async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_kScene, v);
+    if (v.trim().isEmpty) {
+      await sp.remove(_kIncident);
+    } else {
+      await sp.setString(_kIncident, v.trim());
+    }
   }
 
   static Future<String> get apiToken async {
@@ -195,7 +195,7 @@ class Settings {
 
   /// 语音识别联网开关：开 = 云端优先、失败自动切本地；关 = 强制本地
   static Future<bool> get asrCloudEnabled async =>
-      (await SharedPreferences.getInstance()).getBool(_kAsrCloud) ?? false;
+      (await SharedPreferences.getInstance()).getBool(_kAsrCloud) ?? true;
 
   static Future<void> setAsrCloudEnabled(bool v) async {
     final sp = await SharedPreferences.getInstance();

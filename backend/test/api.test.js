@@ -21,8 +21,12 @@ before(async () => {
 
 after(() => new Promise((r) => server.close(r)));
 
-const H = { 'Content-Type': 'application/json', 'X-Scene-Code': 'testscene' };
+const H = { 'Content-Type': 'application/json', 'X-Incident-Id': 'testscene', 'X-Device-Id': 'api-device', 'X-Actor-Name': 'tester' };
 const j = (r) => r.json();
+
+for (const id of ['testscene', 'sceneA', 'sceneB', 'legacy-active-1', '苹果', 'BHYSQB', 'default']) {
+  db.createIncident({ id });
+}
 
 test('GET /api/health 免认证返回 ok', async () => {
   const res = await fetch(`${base}/api/health`);
@@ -71,18 +75,18 @@ test('进场→列表→出场→active 过滤 全链路', async () => {
   assert.equal(res404.status, 404);
 });
 
-test('场景隔离：同后端不同场景码互不可见', async () => {
+test('警情隔离：同后端不同警情互不可见', async () => {
   await fetch(`${base}/api/entries`, {
     method: 'POST',
-    headers: { ...H, 'X-Scene-Code': 'sceneA' },
+    headers: { ...H, 'X-Incident-Id': 'sceneA' },
     body: JSON.stringify({ name: '甲', pressure_mpa: 20 }),
   });
   const b = await (await fetch(`${base}/api/entries`, {
-    headers: { ...H, 'X-Scene-Code': 'sceneB' },
+    headers: { ...H, 'X-Incident-Id': 'sceneB' },
   })).json();
   assert.equal(b.length, 0);
   const a = await (await fetch(`${base}/api/entries`, {
-    headers: { ...H, 'X-Scene-Code': 'sceneA' },
+    headers: { ...H, 'X-Incident-Id': 'sceneA' },
   })).json();
   assert.equal(a.length, 1);
 });
@@ -262,104 +266,54 @@ test('消防员/热词 CRUD 与 409 查重', async () => {
   assert.ok(!list.some((f) => f.name === '王强'));
 });
 
-test('GET /api/scenes 列出活跃场景', async () => {
-  const scenes = await (await fetch(`${base}/api/scenes`, { headers: H })).json();
-  assert.ok(scenes.some((s) => s.code === 'testscene'));
-  assert.ok(scenes.some((s) => s.code === 'sceneA'));
-  // 未结束的场景不带归档字段
-  for (const s of scenes) {
-    assert.equal(s.ended_at, undefined);
+test('GET /api/incidents 列出活跃警情并返回汇总字段', async () => {
+  const incidents = await (await fetch(`${base}/api/incidents?status=active`, { headers: H })).json();
+  const current = incidents.find((item) => item.id === 'testscene');
+  assert.ok(current);
+  assert.equal(current.status, 'active');
+  assert.ok('display_name' in current);
+  assert.ok(Array.isArray(current.forces));
+});
+
+test('POST /api/incidents/archive 归档并幂等返回同一档案', async () => {
+  const created = await (await fetch(`${base}/api/incidents`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': 'api-create-archive' },
+    body: JSON.stringify({ actor_name: '测试员' }),
+  })).json();
+  const incidentHeaders = { ...H, 'X-Incident-Id': created.id };
+  const first = await (await fetch(`${base}/api/incidents/${created.id}/archive`, {
+    method: 'POST',
+    headers: { ...incidentHeaders, 'X-Op-Id': 'api-archive-1' },
+    body: '{}',
+  })).json();
+  assert.equal(first.status, 'archived');
+  const second = await (await fetch(`${base}/api/incidents/${created.id}/archive`, {
+    method: 'POST',
+    headers: { ...incidentHeaders, 'X-Op-Id': 'api-archive-1' },
+    body: '{}',
+  })).json();
+  assert.equal(second.id, first.id);
+  assert.equal(second.archived_at, first.archived_at);
+});
+
+test('GET /api/incidents 支持按归档状态筛选并按归档时间倒序', async () => {
+  const archived = await (await fetch(`${base}/api/incidents?status=archived`, { headers: H })).json();
+  assert.ok(archived.every((item) => item.status === 'archived'));
+  for (let i = 1; i < archived.length; i++) {
+    assert.ok(archived[i - 1].archived_at >= archived[i].archived_at);
   }
 });
 
-test('POST /api/scenes/end 结束任务：分配新场景码并标记，幂等返回同一码', async () => {
-  // 先在场景内产生一条记录，确保场景存在
-  await fetch(`${base}/api/entries`, {
-    method: 'POST',
-    headers: H,
-    body: JSON.stringify({ name: '归档测试', pressure_mpa: 25 }),
+test('警情编号只读且同一分钟通过后缀区分', async () => {
+  const a = db.createIncident({ createdAt: 946684800000 });
+  const b = db.createIncident({ createdAt: a.created_at });
+  assert.equal(b.number, `${a.number}-2`);
+  const rename = await fetch(`${base}/api/incidents/${a.id}`, {
+    method: 'PATCH',
+    headers: { ...H, 'X-Incident-Id': a.id },
+    body: JSON.stringify({ number: '不允许覆盖', expected_version: a.version }),
   });
-  const r1 = await (await fetch(`${base}/api/scenes/end`, { method: 'POST', headers: H })).json();
-  assert.equal(r1.ok, true);
-  assert.match(r1.new_scene, /^[一-鿿]{2}$/);
-  assert.ok(r1.ended_at > 0);
-  // 幂等：再次结束返回同一新码
-  const r2 = await (await fetch(`${base}/api/scenes/end`, { method: 'POST', headers: H })).json();
-  assert.equal(r2.new_scene, r1.new_scene);
-  // GET /api/scenes 带归档状态
-  const scenes = await (await fetch(`${base}/api/scenes`, { headers: H })).json();
-  const ended = scenes.find((s) => s.code === 'testscene');
-  assert.equal(ended.ended_at, r1.ended_at);
-  assert.equal(ended.new_scene, r1.new_scene);
-  // 新码不与既有场景冲突
-  assert.ok(!scenes.some((s) => s.code === r1.new_scene));
-});
-
-test('GET /api/scenes/validate 核验场景码：乱码拒绝、水果码通过、已结束带新码', async () => {
-  // 乱码：valid=false
-  let v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent('随便乱写')}`)).json();
-  assert.equal(v.valid, false);
-  assert.equal(v.exists, false);
-  assert.equal(v.ended, false);
-  // 不存在的非水果码：valid=false（App 应拒绝切换）
-  v = await (await fetch(`${base}/api/scenes/validate?code=legacy-nonexist`)).json();
-  assert.equal(v.valid, false);
-  // 活跃历史场景（非水果）：valid=true（老设备可加入，防锁死）。
-  // 顶层测试并发执行，用独立场景码自建数据，避免依赖其他测试的执行顺序/共享场景状态
-  const legacyAt = Date.now();
-  db.createEntry({ id: 'validate-legacy', scene: 'legacy-active-1', name: '历史场景', pressureMpa: 20, durationMin: 34, entryAtMs: legacyAt, exitAtMs: legacyAt + 1000, source: 'voice', rawText: null });
-  v = await (await fetch(`${base}/api/scenes/validate?code=legacy-active-1`)).json();
-  assert.equal(v.valid, true);
-  assert.equal(v.exists, true);
-  assert.equal(v.ended, false);
-  // 空码：invalid（App 端空输入不会提交）
-  v = await (await fetch(`${base}/api/scenes/validate?code=`)).json();
-  assert.equal(v.valid, false);
-  // 旧数据 default 场景兼容
-  v = await (await fetch(`${base}/api/scenes/validate?code=default`)).json();
-  assert.equal(v.valid, true);
-  // 合法水果码且场景存在：直写 db 造活跃水果场景（HTTP header 传中文受 undici 限制）
-  const entryAt = Date.now();
-  db.createEntry({ id: 'validate-apple', scene: '苹果', name: '核验测试', pressureMpa: 20, durationMin: 34, entryAtMs: entryAt, exitAtMs: entryAt + 34 * 60000, source: 'voice', rawText: null });
-  v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent('苹果')}`)).json();
-  assert.equal(v.valid, true);
-  assert.equal(v.exists, true);
-  assert.equal(v.ended, false);
-  // 合法水果码但服务器无数据：valid=true, exists=false（可加入新任务）
-  v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent('香蕉')}`)).json();
-  assert.equal(v.valid, true);
-  assert.equal(v.exists, false);
-  // 已结束场景：ended=true 且携带服务端新码（将苹果场景归档）
-  db.markSceneEnded('苹果', 'test-device');
-  v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent('苹果')}`)).json();
-  assert.equal(v.valid, true);
-  assert.equal(v.ended, true);
-  assert.ok(v.new_scene);
-  // 空格容错
-  v = await (await fetch(`${base}/api/scenes/validate?code=${encodeURIComponent(' 香蕉 ')}`)).json();
-  assert.equal(v.valid, true);
-});
-
-test('API_TOKEN 配置后未带令牌返回 401', async () => {
-  // 单测进程内 API_TOKEN 为空，改用中间件行为验证：401 分支仅在有 token 时生效
-  // 此处通过 spawn 子进程验证（见 token.e2e.test.js）
-  assert.equal(process.env.API_TOKEN || '', '');
-});
-
-test('中文场景码 URL 编码头：服务端解码还原并正确隔离', async () => {
-  // App 端 dart:io 拒绝非 ASCII 头值，中文场景码（如苹果）会 URL 编码发送
-  const encH = { ...H, 'X-Scene-Code': encodeURIComponent('苹果') };
-  const created = await (await fetch(`${base}/api/entries`, {
-    method: 'POST',
-    headers: encH,
-    body: JSON.stringify({ name: '编码场景测试', pressure_mpa: 20 }),
-  })).json();
-  // 服务端解码后按"苹果"场景存储
-  assert.equal(created.scene, '苹果');
-  // 同编码头查询能命中（解码一致）
-  const list = await (await fetch(`${base}/api/entries`, { headers: encH })).json();
-  assert.ok(list.some((e) => e.name === '编码场景测试'));
-  // 与原始中文头（undici 无法发送，这里用解码后的 ASCII 码验证隔离性：BHYSQB 场景不受影响）
-  const other = await (await fetch(`${base}/api/entries`, { headers: { ...H, 'X-Scene-Code': 'BHYSQB' } })).json();
-  assert.ok(!other.some((e) => e.name === '编码场景测试'));
-});
+  assert.equal(rename.status, 200);
+  assert.notEqual((await rename.json()).number, '不允许覆盖');
+});;

@@ -36,8 +36,8 @@ class _WatchDogAppState extends State<WatchDogApp> {
   final TextEditingController _chatInput =
       TextEditingController(); // 辅助页输入条（全局底部聊天操作条）
   final FocusNode _chatInputFocus = FocusNode(); // 辅助页文字输入切换按钮聚焦目标
-  int _tab = 1; // 规范 2.3：App 启动默认进入看板（tab 顺序：日志0/看板1/语音2/辅助3/设置4）
-  int _preChatTab = 1; // 进入辅助页前的 tab（顶部返回/系统返回都回来源页而非固定看板）
+  int _tab = 2; // 警情处置默认进入语音页（tab 顺序：日志0/看板1/语音2/辅助3/设置4）
+  int _preChatTab = 2; // 进入辅助页前的 tab（顶部返回/系统返回都回来源页而非固定看板）
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换语音页后自动开始录音
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
   bool _processing = false; // 识别/确认中（禁用语音按钮，避免重复触发）

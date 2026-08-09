@@ -9,6 +9,7 @@ process.env.WATCHDOG_DATA_DIR = tmpDir;
 process.env.DEEPSEEK_API_KEY = 'test-key';
 
 const app = require('../src/server');
+const db = require('../src/db');
 
 let server;
 let base;
@@ -21,8 +22,10 @@ before(async () => {
 
 after(() => new Promise((r) => server.close(r)));
 
-const H = { 'Content-Type': 'application/json', 'X-Scene-Code': 'chatscene' };
+const H = { 'Content-Type': 'application/json', 'X-Incident-Id': 'chatscene', 'X-Device-Id': 'chat-device', 'X-Actor-Name': 'tester' };
 const REPLY = '先确认气瓶余量和空气呼吸器状态';
+
+for (const id of ['chatscene', 'other-scene']) db.createIncident({ id });
 
 // 保留原始 fetch：只 mock 发往 LLM 的请求，本服务自身的 HTTP 调用走真实 fetch
 const realFetch = globalThis.fetch;
@@ -158,9 +161,9 @@ test('POST /api/chat 流式（stream=1）：SSE 增量输出并落库', async ()
   assert.equal(last.content, '先确认');
 });
 
-test('GET /api/chat 场景隔离', async () => {
+test('GET /api/chat 警情隔离', async () => {
   const other = await (
-    await fetch(`${base}/api/chat`, { headers: { ...H, 'X-Scene-Code': 'other-scene' } })
+    await fetch(`${base}/api/chat`, { headers: { ...H, 'X-Incident-Id': 'other-scene' } })
   ).json();
   assert.equal(other.length, 0);
 });

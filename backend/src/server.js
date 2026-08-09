@@ -36,7 +36,7 @@ app.use(express.json({ limit: '5mb' }));
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Scene-Code, X-Api-Token, X-Device-Id, X-Op-Id');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Incident-Id, X-Api-Token, X-Device-Id, X-Actor-Name, X-Op-Id, X-Expected-Version');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -60,16 +60,8 @@ app.use((req, res, next) => {
   next();
 });
 
-function sceneKey(req) {
-  // App 端中文场景码（水果名）会 URL 编码后放入 X-Scene-Code 头（dart:io 拒绝
-  // 非 ASCII 头值，否则 FormatException 请求发不出去）；此处统一解码还原。
-  // ASCII 场景码（历史 BHYSQB 等）编码后不变，解码后与原值一致。
-  const raw = (req.headers['x-scene-code'] || 'default').toString().slice(0, 64);
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
+function incidentKey(req) {
+  return String(req.headers['x-incident-id'] || '').trim().slice(0, 128);
 }
 
 function deviceKey(req) {
@@ -78,6 +70,49 @@ function deviceKey(req) {
 
 function opKey(req) {
   return (req.headers['x-op-id'] || '').toString().slice(0, 64) || null;
+}
+
+function actorName(req) {
+  const submitted = String(req.body?.actor_name || req.headers['x-actor-name'] || '').trim().slice(0, 32);
+  if (submitted) return submitted;
+  const device = deviceKey(req);
+  return device ? String(db.getDeviceProfile(device).real_name || '').trim() : '';
+}
+
+function requireIncident(req, res, { active = false, management = false } = {}) {
+  const id = incidentKey(req);
+  if (!id) {
+    res.status(409).json({ error: '请先新建或加入一场警情', code: 'INCIDENT_REQUIRED' });
+    return null;
+  }
+  const incident = db.getIncident(id);
+  if (!incident) {
+    res.status(404).json({ error: '警情不存在，请重新选择', code: 'INCIDENT_NOT_FOUND' });
+    return null;
+  }
+  if (active && incident.status !== 'active') {
+    res.status(409).json({ error: '警情已归档，不能继续写入现场数据', code: 'INCIDENT_ARCHIVED' });
+    return null;
+  }
+  if (management && !actorName(req)) {
+    res.status(403).json({ error: '请先在设置中填写真实姓名，再进行管理操作', code: 'REAL_NAME_REQUIRED' });
+    return null;
+  }
+  return incident;
+}
+
+function appendEvent(req, incidentId, type, payload, { occurredAt = Date.now(), source = 'online', revisionOf = null } = {}) {
+  return db.appendIncidentEvent({
+    incidentId,
+    type,
+    occurredAt,
+    actorDeviceId: deviceKey(req),
+    actorName: actorName(req) || null,
+    source,
+    clientOpId: opKey(req),
+    payload,
+    revisionOf,
+  });
 }
 
 // 允许同步到服务器的用户设置键（与 App 端 Settings 同步白名单一致）
@@ -99,7 +134,7 @@ const USER_SETTING_KEYS = [
 function logOp(req, level, stage, msg, data = null) {
   try {
     db.addLog({
-      scene: sceneKey(req),
+      scene: incidentKey(req),
       device: deviceKey(req),
       opId: opKey(req),
       level,
@@ -127,66 +162,366 @@ app.get('/api/config', (req, res) => {
   res.json({ calc: CFG.calc, asrConfigured: !!CFG.asr.appId, llmConfigured: !!CFG.llm.apiKey });
 });
 
-// 场景列表（供多设备确认场景码、查看活跃场景）；已结束的场景携带归档信息
-app.get('/api/scenes', (req, res, next) => {
+function incidentView(incident) {
+  if (!incident) return null;
+  if (incident.status === 'archived' && !incident.title && !incident.suggested_title) {
+    incident = db.setIncidentSuggestedTitle(incident.id, suggestIncidentTitle(incident.id));
+  }
+  return {
+    ...incident,
+    display_name: incident.title || incident.number,
+    forces: db.listIncidentForces(incident.id),
+  };
+}
+
+function suggestIncidentTitle(incidentId) {
+  const events = db.listIncidentEvents(incidentId, { limit: 100 });
+  const note = events.find((e) => e.type === 'note' && e.payload?.text);
+  if (!note) return null;
+  const text = String(note.payload.text).replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  return text.length > 30 ? `${text.slice(0, 29)}…` : text;
+}
+
+// 当前单位（共享 API Token）下的活跃/归档警情列表。
+app.get('/api/incidents', (req, res, next) => {
   try {
-    const states = new Map(db.getSceneStates().map((s) => [s.scene, s]));
-    res.json(db.listScenes().map((code) => ({ code, ...(states.get(code) || {}) })));
+    db.archiveStaleIncidents();
+    const status = ['active', 'archived'].includes(String(req.query.status || '')) ? String(req.query.status) : null;
+    res.json(db.listIncidents(status).map(incidentView));
   } catch (e) {
     next(e);
   }
 });
 
-// 场景码核验（App 更换任务码前调用，防止输错码导致设备失联）：
-// valid = 合法任务码（水果词表 或 default 兼容 或 服务器上活跃的历史场景）；
-// exists = 服务器上有该场景数据；ended = 该场景已被归档（携带服务端分配的新码 new_scene）
-app.get('/api/scenes/validate', (req, res, next) => {
+app.post('/api/incidents', (req, res, next) => {
   try {
-    const code = String(req.query.code || '').trim().slice(0, 64);
-    // 活跃场景列表（entries 产生）：历史非水果场景码（如 firestation-1）允许加入，避免老设备被锁死
-    const activeScenes = new Set(db.listScenes());
-    const valid = code === 'default' || db.FRUIT_NAMES.includes(code) || activeScenes.has(code);
-    const endedState = valid
-      ? db.getSceneStates().find((s) => s.scene === code)
-      : null;
-    res.json({
-      valid,
-      exists: valid && activeScenes.has(code),
-      ended: !!endedState,
-      ...(endedState ? { new_scene: endedState.new_scene } : {}),
-    });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// 结束任务：标记当前场景已归档并分配新场景码（幂等，多人同时发起返回同一新码）。
-// 本机换码 + 其它设备轮询检测横幅提示后一键切换，实现场景级"界面清零"。
-app.post('/api/scenes/end', (req, res, next) => {
-  try {
-    const scene = sceneKey(req);
     const device = deviceKey(req);
-    const state = db.markSceneEnded(scene, device);
-    logOp(req, 'info', 'scene_ended', '结束任务：场景已归档', {
-      newScene: state.new_scene,
-      endedAt: state.ended_at,
-      endedBy: state.ended_by,
+    const name = actorName(req);
+    if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再新建警情', code: 'REAL_NAME_REQUIRED' });
+    const opId = opKey(req);
+    const previous = db.getIncidentEventByClientOp(opId);
+    if (previous?.type === 'incident_created') {
+      const existing = db.getIncident(previous.incident_id);
+      if (existing) return res.json(incidentView(existing));
+    }
+    const created = db.createIncident({ createdBy: device });
+    db.appendIncidentEvent({
+      incidentId: created.id,
+      type: 'incident_created',
+      actorDeviceId: device,
+      actorName: name,
+      clientOpId: opId,
+      payload: { number: created.number },
     });
-    res.json({
-      ok: true,
-      new_scene: state.new_scene,
-      ended_at: state.ended_at,
-      ended_by: state.ended_by,
-    });
+    res.status(201).json(incidentView(created));
   } catch (e) {
-    logOp(req, 'error', 'scene_end_err', `结束任务失败: ${e.message || e}`);
     next(e);
   }
+});
+
+app.get('/api/incidents/:id', (req, res, next) => {
+  try {
+    const incident = db.getIncident(req.params.id);
+    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    res.json(incidentView(incident));
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.patch('/api/incidents/:id', (req, res, next) => {
+  try {
+    const incident = db.getIncident(req.params.id);
+    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const name = actorName(req);
+    if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再修改警情名称', code: 'REAL_NAME_REQUIRED' });
+    const previous = db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.type === 'incident_renamed' && previous.incident_id === req.params.id) return res.json(incidentView(db.getIncident(req.params.id)));
+    const updated = db.updateIncidentTitle(req.params.id, req.body?.title, {
+      expectedVersion: req.body?.expected_version ?? req.headers['x-expected-version'],
+    });
+    db.appendIncidentEvent({
+      incidentId: req.params.id,
+      type: 'incident_renamed',
+      actorDeviceId: deviceKey(req),
+      actorName: name,
+      clientOpId: opKey(req),
+      payload: { before: incident.title, after: updated.title },
+    });
+    res.json(incidentView(updated));
+  } catch (e) {
+    if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
+    next(e);
+  }
+});
+
+app.post('/api/incidents/:id/archive', (req, res, next) => {
+  try {
+    const incident = db.getIncident(req.params.id);
+    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const name = actorName(req);
+    if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再归档警情', code: 'REAL_NAME_REQUIRED' });
+    const previous = db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.type === 'incident_archived' && previous.incident_id === req.params.id) return res.json(incidentView(incident));
+    const archived = db.archiveIncident(req.params.id, { archivedBy: deviceKey(req), now: Date.now() });
+    if (!archived) return res.status(404).json({ error: '警情不存在' });
+    const suggested = archived.title || db.setIncidentSuggestedTitle(req.params.id, suggestIncidentTitle(req.params.id)).suggested_title;
+    db.appendIncidentEvent({
+      incidentId: req.params.id,
+      type: 'incident_archived',
+      actorDeviceId: deviceKey(req),
+      actorName: name,
+      clientOpId: opKey(req),
+      payload: { auto: false, unresolved_active_count: archived.unresolved_active_count },
+    });
+    res.json(incidentView({ ...db.getIncident(req.params.id), suggested_title: suggested }));
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.get('/api/incidents/:id/timeline', (req, res, next) => {
+  try {
+    const incident = db.getIncident(req.params.id);
+    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const events = db.listIncidentEvents(req.params.id, { limit: Number(req.query.limit) || 2000 });
+    res.json({ incident: incidentView(incident), events: events.map(formatTimelineEvent) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// 已加入警情后的离线现场操作批量补传。服务端以 client_op_id 幂等，
+// 归档后的补传只接受发生在归档前、且在归档后 24 小时内送达的数据。
+app.post('/api/incidents/:id/offline-operations', (req, res, next) => {
+  try {
+    const incident = db.getIncident(req.params.id);
+    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const operations = Array.isArray(req.body?.operations) ? req.body.operations : [];
+    if (operations.length > 100) return res.status(400).json({ error: '单次最多补传 100 条现场操作' });
+    const now = Date.now();
+    const actor = actorName(req);
+    if (!actor) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
+    const results = [];
+    for (const operation of operations) {
+      const opId = String(operation?.client_op_id || '').trim().slice(0, 64);
+      const type = String(operation?.type || '').trim();
+      if (!opId || !['entry', 'exit', 'pressure', 'note'].includes(type)) {
+        results.push({ client_op_id: opId, accepted: false, error: '操作类型或 client_op_id 无效' });
+        continue;
+      }
+      const duplicate = db.getIncidentEventByClientOp(opId);
+      if (duplicate) {
+        results.push({ client_op_id: opId, accepted: true, duplicate: true, event_id: duplicate.id });
+        continue;
+      }
+      const occurredAt = Number(operation.occurred_at) || now;
+      if (incident.status === 'archived') {
+        const archivedAt = Number(incident.archived_at || 0);
+        if (occurredAt > archivedAt || now > archivedAt + 24 * 3600 * 1000) {
+          results.push({ client_op_id: opId, accepted: false, error: '警情已归档，已超过离线补传窗口', code: 'OFFLINE_WINDOW_EXPIRED' });
+          continue;
+        }
+      }
+      const payload = operation.payload && typeof operation.payload === 'object' ? operation.payload : {};
+      let eventPayload;
+      if (type === 'entry') {
+        const name = String(payload.name || '').trim();
+        const pressure = Number(payload.pressure_mpa);
+        if (!name || !(pressure > 0) || pressure > 40) {
+          results.push({ client_op_id: opId, accepted: false, error: '进场操作缺少有效姓名或压力' });
+          continue;
+        }
+        const id = String(payload.entry_id || crypto.randomUUID());
+        const entryAt = occurredAt;
+        const durationMin = Math.round(durationMinutes({ ...CFG.calc, pressureMpa: pressure }));
+        db.createEntry({ id, scene: incident.id, name, pressureMpa: pressure, durationMin, entryAtMs: entryAt, exitAtMs: exitAtMs({ ...CFG.calc, pressureMpa: pressure, entryAtMs: entryAt }), source: 'offline', rawText: payload.raw_text || null });
+        eventPayload = { entry_id: id, name, pressure_mpa: pressure };
+      } else if (type === 'exit') {
+        const entry = db.getEntry(String(payload.entry_id || ''));
+        if (!entry || entry.scene !== incident.id) {
+          results.push({ client_op_id: opId, accepted: false, error: '出场记录不存在' });
+          continue;
+        }
+        db.markExited(entry.id, occurredAt);
+        eventPayload = { entry_id: entry.id, name: entry.name };
+      } else if (type === 'pressure') {
+        const entry = db.getEntry(String(payload.entry_id || ''));
+        const pressure = Number(payload.pressure_mpa);
+        if (!entry || entry.scene !== incident.id || !(pressure > 0) || pressure > 40) {
+          results.push({ client_op_id: opId, accepted: false, error: '压力复核记录无效' });
+          continue;
+        }
+        db.addPressureSample({ entryId: entry.id, scene: incident.id, name: entry.name, pressureMpa: pressure, reportedAtMs: occurredAt });
+        db.updateEntry(entry.id, { pressureMpa: pressure, durationMin: Math.round(durationMinutes({ ...CFG.calc, pressureMpa: pressure })), exitAtMs: exitAtMs({ ...CFG.calc, pressureMpa: pressure, entryAtMs: occurredAt }) });
+        eventPayload = { entry_id: entry.id, name: entry.name, pressure_mpa: pressure };
+      } else {
+        const text = String(payload.text || '').trim();
+        if (!text || text.length > 2000) {
+          results.push({ client_op_id: opId, accepted: false, error: '随手记内容无效' });
+          continue;
+        }
+        const note = db.createNote({ id: String(payload.note_id || crypto.randomUUID()), scene: incident.id, text, category: cleanCategory(payload.category), author: actor });
+        eventPayload = { note_id: note.id, text: note.text, category: note.category, author: actor };
+      }
+      const event = db.appendIncidentEvent({ incidentId: incident.id, type, occurredAt, recordedAt: now, actorDeviceId: deviceKey(req), actorName: actor, source: 'offline', clientOpId: opId, payload: eventPayload });
+      if (incident.status === 'active') db.touchIncidentActivity(incident.id, occurredAt);
+      results.push({ client_op_id: opId, accepted: true, event_id: event.id });
+    }
+    res.json({ incident_status: incident.status, results });
+  } catch (e) {
+    next(e);
+  }
+});
+
+function formatTimelineEvent(event) {
+  const payload = event.payload || {};
+  let text = '';
+  switch (event.type) {
+    case 'entry': text = `${payload.name || '未知人员'}进场`; break;
+    case 'exit': text = `${payload.name || '未知人员'}出场`; break;
+    case 'pressure': text = `${payload.name || '未知人员'}压力复核${payload.pressure_mpa == null ? '' : `：${payload.pressure_mpa}MPa`}`; break;
+    case 'note': text = payload.text || ''; break;
+    case 'note_updated': text = `修改随手记：${payload.after?.text || payload.text || ''}`; break;
+    case 'note_voided': text = `撤销随手记：${payload.before?.text || payload.text || ''}`; break;
+    case 'force_added': text = `新增参战力量：${payload.station_name || ''} ${payload.vehicle_count || 0}车${payload.personnel_count || 0}人`; break;
+    case 'force_updated': text = `调整参战力量：${payload.station_name || ''} ${payload.vehicle_count || 0}车${payload.personnel_count || 0}人`; break;
+    case 'force_removed': text = `移除参战力量：${payload.station_name || ''}`; break;
+    case 'incident_renamed': text = `警情名称由“${payload.before || '未命名'}”改为“${payload.after || '未命名'}”`; break;
+    case 'incident_archived': text = payload.auto ? '系统自动归档警情' : '手动归档警情'; break;
+    case 'incident_created': text = '创建警情'; break;
+    default: text = payload.text || event.type;
+  }
+  return { ...event, text };
+}
+
+app.get('/api/incidents/:id/forces', (req, res, next) => {
+  try {
+    if (!db.getIncident(req.params.id)) return res.status(404).json({ error: '警情不存在' });
+    res.json(db.listIncidentForces(req.params.id));
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.post('/api/incidents/:id/forces', (req, res, next) => {
+  try {
+    const incident = db.getIncident(req.params.id);
+    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
+    const name = actorName(req);
+    if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
+    const previous = db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === req.params.id && ['force_added', 'force_updated'].includes(previous.type)) {
+      const force = db.getIncidentForce(previous.payload?.force_id);
+      if (force) return res.json(force);
+    }
+    const existing = db.listIncidentForces(req.params.id).find((item) => item.station_name === String(req.body?.station_name || '').trim());
+    const force = db.upsertIncidentForce({
+      incidentId: req.params.id,
+      stationId: req.body?.station_id || null,
+      stationName: req.body?.station_name,
+      vehicleCount: req.body?.vehicle_count,
+      personnelCount: req.body?.personnel_count,
+      expectedVersion: req.body?.expected_version,
+    });
+    db.touchIncidentActivity(req.params.id);
+    db.appendIncidentEvent({
+      incidentId: req.params.id,
+      type: existing ? 'force_updated' : 'force_added',
+      actorDeviceId: deviceKey(req),
+      actorName: name,
+      clientOpId: opKey(req),
+      payload: {
+        force_id: force.id,
+        station_name: force.station_name,
+        vehicle_count: force.vehicle_count,
+        personnel_count: force.personnel_count,
+        before: existing ? { vehicle_count: existing.vehicle_count, personnel_count: existing.personnel_count } : null,
+      },
+    });
+    res.status(201).json(force);
+  } catch (e) {
+    if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
+    next(e);
+  }
+});
+
+app.patch('/api/incidents/:incidentId/forces/:forceId', (req, res, next) => {
+  req.params.id = req.params.incidentId;
+  req.body = { ...(req.body || {}), expected_version: req.body?.expected_version };
+  // 复用新增接口的幂等 upsert逻辑，但必须先核对目标记录。
+  try {
+    const incident = db.getIncident(req.params.incidentId);
+    const current = db.getIncidentForce(req.params.forceId);
+    if (!incident || !current || current.incident_id !== req.params.incidentId) return res.status(404).json({ error: '参战力量不存在' });
+    if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
+    const name = actorName(req);
+    if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
+    const previous = db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === incident.id && previous.type === 'force_updated') return res.json(current);
+    const force = db.upsertIncidentForce({
+      id: current.id,
+      incidentId: current.incident_id,
+      stationId: req.body?.station_id ?? current.station_id,
+      stationName: req.body?.station_name ?? current.station_name,
+      vehicleCount: req.body?.vehicle_count ?? current.vehicle_count,
+      personnelCount: req.body?.personnel_count ?? current.personnel_count,
+      expectedVersion: req.body?.expected_version,
+    });
+    db.touchIncidentActivity(incident.id);
+    db.appendIncidentEvent({ incidentId: incident.id, type: 'force_updated', actorDeviceId: deviceKey(req), actorName: name, clientOpId: opKey(req), payload: { force_id: force.id, station_name: force.station_name, vehicle_count: force.vehicle_count, personnel_count: force.personnel_count } });
+    res.json(force);
+  } catch (e) {
+    if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
+    next(e);
+  }
+});
+
+app.delete('/api/incidents/:incidentId/forces/:forceId', (req, res, next) => {
+  try {
+    const incident = db.getIncident(req.params.incidentId);
+    const force = db.getIncidentForce(req.params.forceId);
+    if (!incident || !force || force.incident_id !== req.params.incidentId) return res.status(404).json({ error: '参战力量不存在' });
+    if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
+    const name = actorName(req);
+    if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
+    const previous = db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === incident.id && previous.type === 'force_removed') return res.json({ ok: true, duplicate: true });
+    db.deleteIncidentForce(force.id);
+    db.touchIncidentActivity(incident.id);
+    db.appendIncidentEvent({ incidentId: incident.id, type: 'force_removed', actorDeviceId: deviceKey(req), actorName: name, clientOpId: opKey(req), payload: { force_id: force.id, station_name: force.station_name, vehicle_count: force.vehicle_count, personnel_count: force.personnel_count } });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.get('/api/stations', (req, res) => res.json(db.listStations()));
+app.post('/api/stations', (req, res, next) => {
+  try {
+    const name = actorName(req);
+    if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
+    res.status(201).json(db.addStation({ name: req.body?.name, createdBy: deviceKey(req) }));
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该消防站已存在' });
+    next(e);
+  }
+});
+
+app.get('/api/profile', (req, res) => res.json(db.getDeviceProfile(deviceKey(req))));
+app.put('/api/profile', (req, res) => {
+  const device = deviceKey(req);
+  if (!device) return res.status(400).json({ error: '缺少 X-Device-Id 请求头' });
+  res.json(db.saveDeviceProfile(device, req.body?.real_name));
 });
 
 app.post('/api/transcribe', (req, res, next) => {
   if (!CFG.asr.appId) return res.status(503).json({ error: 'ASR 未配置 VOLC_APP_KEY' });
-  const scene = sceneKey(req);
+  const incident = requireIncident(req, res);
+  if (!incident) return;
+  const scene = incident.id;
   const chunks = [];
   let total = 0;
   req.on('data', (c) => {
@@ -309,12 +644,14 @@ function chatRateLimited(scene) {
 // 智能体问答：带场景隔离的历史上下文，回复同时落库（user + assistant 成对写入）
 app.post('/api/chat', async (req, res, next) => {
   try {
+    const incident = requireIncident(req, res);
+    if (!incident) return;
     const { message } = req.body || {};
     const clean = String(message || '').trim();
     if (!clean) return res.status(400).json({ error: '缺少 message' });
     if (clean.length > 2000) return res.status(400).json({ error: '问题过长（最多 2000 字）' });
     if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置 DEEPSEEK_API_KEY' });
-    const scene = sceneKey(req);
+    const scene = incident.id;
     if (chatRateLimited(scene)) return res.status(429).json({ error: '提问过于频繁，请稍后再试' });
     const history = db.listChatMessages({ scene, limit: 40 });
     const messages = [
@@ -393,12 +730,16 @@ app.post('/api/chat', async (req, res, next) => {
 
 app.get('/api/chat', (req, res) => {
   const limit = Number(req.query.limit) || 100;
-  res.json(db.listChatMessages({ scene: sceneKey(req), limit }));
+  const incident = requireIncident(req, res);
+  if (!incident) return;
+  res.json(db.listChatMessages({ scene: incident.id, limit }));
 });
 
 app.delete('/api/chat', (req, res, next) => {
   try {
-    const n = db.clearChatMessages(sceneKey(req));
+    const incident = requireIncident(req, res);
+    if (!incident) return;
+    const n = db.clearChatMessages(incident.id);
     logOp(req, 'info', 'chat_cleared', '已清空问答记录', { deleted: n });
     res.json({ ok: true, deleted: n });
   } catch (e) {
@@ -408,13 +749,17 @@ app.delete('/api/chat', (req, res, next) => {
 
 app.get('/api/entries', (req, res) => {
   const activeOnly = req.query.active === '1';
-  res.json(db.listEntries({ activeOnly, scene: sceneKey(req) }));
+  const incident = requireIncident(req, res);
+  if (!incident) return;
+  res.json(db.listEntries({ activeOnly, scene: incident.id }));
 });
 
 app.post('/api/entries', (req, res, next) => {
   try {
     const { name, pressure_mpa, source = 'voice', raw_text = null, force = false, volume_l, consumption_lpm } = req.body || {};
-    const scene = sceneKey(req);
+    const incident = requireIncident(req, res, { active: true });
+    if (!incident) return;
+    const scene = incident.id;
     const cleanName = String(name || '').trim();
     if (!cleanName) return res.status(400).json({ error: '缺少姓名' });
     if (pressure_mpa == null) return res.status(400).json({ error: '缺少气瓶压力，请确认压力后再登记' });
@@ -472,6 +817,15 @@ app.post('/api/entries', (req, res, next) => {
       force,
       rawText: raw_text,
     });
+    if (incident) {
+      db.touchIncidentActivity(incident.id, now);
+      appendEvent(req, incident.id, 'entry', {
+        entry_id: entry.id,
+        name: entry.name,
+        pressure_mpa: entry.pressure_mpa,
+        source,
+      });
+    }
     res.status(201).json(entry);
   } catch (e) {
     logOp(req, 'error', 'entry_err', `登记进场失败: ${e.message || e}`);
@@ -482,8 +836,12 @@ app.post('/api/entries', (req, res, next) => {
 // 在场记录改名/复核压力（合并场景：保留原记录，不产生重复计数）
 app.patch('/api/entries/:id', (req, res, next) => {
   try {
+    const currentIncident = requireIncident(req, res, { active: true });
+    if (!currentIncident) return;
     const entry = db.getEntry(req.params.id);
     if (!entry) return res.status(404).json({ error: '记录不存在' });
+    if (entry.scene !== currentIncident.id) return res.status(404).json({ error: '记录不属于当前警情' });
+    const incident = currentIncident;
     const { name, pressure_mpa, consumption_lpm } = req.body || {};
     const newName = name != null ? String(name).trim() : null;
     if (name != null && !newName) return res.status(400).json({ error: '姓名不能为空' });
@@ -529,6 +887,15 @@ app.patch('/api/entries/:id', (req, res, next) => {
       actualConsumptionLpm: actualLpm,
       durationMin: updated.duration_min,
     });
+    if (incident && p != null) {
+      db.touchIncidentActivity(incident.id, now);
+      appendEvent(req, incident.id, 'pressure', {
+        entry_id: entry.id,
+        name: updated.name,
+        pressure_mpa: p,
+        actual_consumption_lpm: actualLpm,
+      });
+    }
     res.json(updated);
   } catch (e) {
     next(e);
@@ -537,13 +904,23 @@ app.patch('/api/entries/:id', (req, res, next) => {
 
 app.post('/api/entries/:id/exit', (req, res, next) => {
   try {
+    const currentIncident = requireIncident(req, res, { active: true });
+    if (!currentIncident) return;
     const entry = db.getEntry(req.params.id);
     if (!entry) {
       logOp(req, 'warn', 'exit_missing', `登记出火场失败：记录不存在`, { id: req.params.id });
       return res.status(404).json({ error: '记录不存在' });
     }
+    if (entry.scene !== currentIncident.id) return res.status(404).json({ error: '记录不属于当前警情' });
+    const incident = currentIncident;
+    const now = Date.now();
     logOp(req, 'info', 'entry_exited', `登记出火场`, { entryId: entry.id, name: entry.name });
-    res.json(db.markExited(entry.id, Date.now()));
+    const result = db.markExited(entry.id, now);
+    if (incident) {
+      db.touchIncidentActivity(incident.id, now);
+      appendEvent(req, incident.id, 'exit', { entry_id: entry.id, name: entry.name });
+    }
+    res.json(result);
   } catch (e) {
     logOp(req, 'error', 'exit_err', `登记出火场失败: ${e.message || e}`);
     next(e);
@@ -600,9 +977,11 @@ function cleanCategory(c) {
 }
 
 app.get('/api/notes', (req, res) => {
+  const incident = requireIncident(req, res);
+  if (!incident) return;
   res.json(
     db.listNotes({
-      scene: sceneKey(req),
+      scene: incident.id,
       limit: Number(req.query.limit) || 500,
     })
   );
@@ -610,6 +989,8 @@ app.get('/api/notes', (req, res) => {
 
 app.post('/api/notes', (req, res, next) => {
   try {
+    const incident = requireIncident(req, res, { active: true });
+    if (!incident) return;
     const { text, category } = req.body || {};
     const clean = String(text || '').trim();
     if (!clean) return res.status(400).json({ error: '缺少日志内容' });
@@ -621,18 +1002,22 @@ app.post('/api/notes', (req, res, next) => {
     if (!author) {
       const device = deviceKey(req);
       if (device) {
-        const { settings } = db.getUserSettings(device, sceneKey(req));
+        const { settings } = db.getUserSettings(device, 'default');
         author = String(settings.real_name || '').trim().slice(0, 32);
       }
     }
     const note = db.createNote({
       id: crypto.randomUUID(),
-      scene: sceneKey(req),
+      scene: incident.id,
       text: clean,
       category: cleanCategory(category),
       author,
     });
     logOp(req, 'info', 'note_created', '已记录随手记', { noteId: note.id, category: note.category, author: author || '(匿名)', text: clean.slice(0, 100) });
+    if (incident) {
+      db.touchIncidentActivity(incident.id, note.created_at);
+      appendEvent(req, incident.id, 'note', { note_id: note.id, text: note.text, category: note.category, author: note.author }, { occurredAt: note.created_at });
+    }
     res.status(201).json(note);
   } catch (e) {
     logOp(req, 'error', 'note_err', `记录随手记失败: ${e.message || e}`);
@@ -642,8 +1027,12 @@ app.post('/api/notes', (req, res, next) => {
 
 app.patch('/api/notes/:id', (req, res, next) => {
   try {
+    const currentIncident = requireIncident(req, res, { active: true });
+    if (!currentIncident) return;
     const note = db.getNote(req.params.id);
     if (!note) return res.status(404).json({ error: '日志不存在' });
+    if (note.scene !== currentIncident.id) return res.status(404).json({ error: '日志不属于当前警情' });
+    const incident = currentIncident;
     const { text, category } = req.body || {};
     const clean = text != null ? String(text).trim() : null;
     if (text != null && !clean) return res.status(400).json({ error: '日志内容不能为空' });
@@ -653,6 +1042,14 @@ app.patch('/api/notes/:id', (req, res, next) => {
       category: category != null ? cleanCategory(category) : null,
     });
     logOp(req, 'info', 'note_updated', '已编辑随手记', { noteId: note.id, category: updated.category });
+    if (incident) {
+      appendEvent(req, incident.id, 'note_updated', {
+        note_id: note.id,
+        before: { text: note.text, category: note.category, author: note.author },
+        after: { text: updated.text, category: updated.category, author: updated.author },
+      }, { revisionOf: note.id });
+      db.touchIncidentActivity(incident.id);
+    }
     res.json(updated);
   } catch (e) {
     logOp(req, 'error', 'note_err', `编辑随手记失败: ${e.message || e}`);
@@ -662,9 +1059,21 @@ app.patch('/api/notes/:id', (req, res, next) => {
 
 app.delete('/api/notes/:id', (req, res, next) => {
   try {
+    const currentIncident = requireIncident(req, res, { active: true });
+    if (!currentIncident) return;
+    const note = db.getNote(req.params.id);
+    if (!note) return res.status(404).json({ error: '日志不存在' });
+    if (note.scene !== currentIncident.id) return res.status(404).json({ error: '日志不属于当前警情' });
+    const incident = currentIncident;
     const n = db.deleteNote(req.params.id);
-    if (n === 0) return res.status(404).json({ error: '日志不存在' });
     logOp(req, 'info', 'note_deleted', '已删除随手记', { noteId: req.params.id });
+    if (incident) {
+      appendEvent(req, incident.id, 'note_voided', {
+        note_id: note.id,
+        before: { text: note.text, category: note.category, author: note.author },
+      }, { revisionOf: note.id });
+      db.touchIncidentActivity(incident.id);
+    }
     res.json({ ok: true });
   } catch (e) {
     logOp(req, 'error', 'note_err', `删除随手记失败: ${e.message || e}`);
@@ -677,7 +1086,7 @@ app.delete('/api/notes/:id', (req, res, next) => {
 app.get('/api/user-settings', (req, res) => {
   const user = deviceKey(req);
   if (!user) return res.status(400).json({ error: '缺少 X-Device-Id 请求头' });
-  const { settings, updatedAt } = db.getUserSettings(user, sceneKey(req));
+  const { settings, updatedAt } = db.getUserSettings(user, 'default');
   res.json({ settings, updated_at: updatedAt });
 });
 
@@ -703,7 +1112,7 @@ app.put('/api/user-settings', (req, res, next) => {
       }
     }
     if (Object.keys(clean).length === 0) return res.status(400).json({ error: '没有可同步的合法设置项' });
-    const { settings: saved, updatedAt } = db.saveUserSettings(user, sceneKey(req), clean);
+    const { settings: saved, updatedAt } = db.saveUserSettings(user, 'default', clean);
     logOp(req, 'info', 'user_settings_saved', '用户设置已同步', { keys: Object.keys(clean) });
     res.json({ settings: saved, updated_at: updatedAt });
   } catch (e) {
@@ -711,14 +1120,16 @@ app.put('/api/user-settings', (req, res, next) => {
   }
 });
 
-// 操作日志：App 批量上报（与场景码/令牌同规则鉴权）
+// 操作日志：App 批量上报，与现场请求使用同一套设备和警情标识。
 app.post('/api/logs', (req, res, next) => {
   try {
+    const incident = requireIncident(req, res);
+    if (!incident) return;
     const { logs } = req.body || {};
     if (!Array.isArray(logs)) return res.status(400).json({ error: '缺少 logs 数组' });
     if (logs.length === 0) return res.json({ ok: true, count: 0 });
     if (logs.length > 100) return res.status(400).json({ error: '单次最多上报 100 条日志' });
-    const scene = sceneKey(req);
+    const scene = incident.id;
     const device = deviceKey(req);
     const levels = ['info', 'warn', 'error'];
     let inserted = 0;
@@ -747,9 +1158,11 @@ app.post('/api/logs', (req, res, next) => {
 
 // 操作日志查询/清空（调试用：可按 op_id/device 过滤，新→旧）
 app.get('/api/logs', (req, res) => {
+  const incident = requireIncident(req, res);
+  if (!incident) return;
   res.json(
     db.listLogs({
-      scene: sceneKey(req),
+      scene: incident.id,
       limit: Number(req.query.limit) || 200,
       opId: String(req.query.op_id || ''),
       device: String(req.query.device || ''),
@@ -758,8 +1171,10 @@ app.get('/api/logs', (req, res) => {
 });
 
 app.delete('/api/logs', (req, res) => {
+  const incident = requireIncident(req, res);
+  if (!incident) return;
   const n = db.clearLogs({
-    scene: sceneKey(req),
+      scene: incident.id,
     opId: String(req.query.op_id || '') || null,
   });
   res.json({ ok: true, deleted: n });
@@ -779,6 +1194,12 @@ if (require.main === module) {
   const purgeDays = Number(process.env.PURGE_EXITED_DAYS || 7);
   const logPurgeDays = Number(process.env.LOG_PURGE_DAYS || 30);
   const doPurge = () => {
+    try {
+      const n = db.archiveStaleIncidents();
+      if (n > 0) logger.info(`已自动归档 ${n} 场超过 12 小时无业务活动的警情`);
+    } catch (e) {
+      logger.error('自动归档警情失败', e.message);
+    }
     try {
       const n = db.purgeOldExited(purgeDays);
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${purgeDays} 天的出场记录`);
@@ -802,11 +1223,6 @@ if (require.main === module) {
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的问答记录`);
     } catch (e) {
       logger.error('清理旧问答记录失败', e.message);
-    }
-    try {
-      db.purgeOldSceneStates();
-    } catch (e) {
-      logger.error('清理旧场景结束标记失败', e.message);
     }
   };
   doPurge();
