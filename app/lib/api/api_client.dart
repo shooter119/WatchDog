@@ -63,7 +63,8 @@ class ApiClient {
           headers: {..._opHeaders(opId), 'Content-Type': 'audio/wav'},
           body: audioBytes,
         )
-        .timeout(const Duration(seconds: 30));
+        // 服务端可能先等待 ASR（25s）再做名单纠错（15s），客户端必须留出网络余量。
+        .timeout(const Duration(seconds: 60));
     final body = jsonDecode(utf8.decode(res.bodyBytes));
     if (res.statusCode != 200) {
       throw ApiException(
@@ -80,7 +81,8 @@ class ApiClient {
           headers: _opHeaders(opId),
           body: jsonEncode({'text': text}),
         )
-        .timeout(const Duration(seconds: 30));
+        // DeepSeek 服务端超时为 30s，客户端额外保留网络与序列化余量。
+        .timeout(const Duration(seconds: 45));
     final body = jsonDecode(utf8.decode(res.bodyBytes));
     if (res.statusCode != 200) {
       throw ApiException(

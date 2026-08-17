@@ -34,10 +34,16 @@ if [ -d "$MODELS_DIR" ]; then
 fi
 
 echo "==> 安装依赖并重启"
-ssh "$HOST" "cd $REMOTE_DIR && npm install --omit=dev --silent && pm2 restart watchdog-api --update-env && pm2 save && nginx -t && systemctl reload nginx"
+ssh "$HOST" "cd $REMOTE_DIR && npm ci --omit=dev --silent && nginx -t && pm2 restart watchdog-api --update-env && pm2 save && systemctl reload nginx"
 
 echo "==> 健康检查"
-sleep 2
-ssh "$HOST" "curl -s http://127.0.0.1:3100/api/health"
-echo
-echo "部署完成 ✅"
+for attempt in $(seq 1 20); do
+  if ssh "$HOST" "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3100/api/health"; then
+    echo
+    echo "部署完成 ✅"
+    exit 0
+  fi
+  sleep 1
+done
+echo "健康检查失败：后端未在 20 秒内就绪" >&2
+exit 1
