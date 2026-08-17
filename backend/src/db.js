@@ -16,8 +16,28 @@ const allowedJournalModes = new Set(['DELETE', 'TRUNCATE', 'PERSIST', 'MEMORY', 
 if (!allowedJournalModes.has(journalMode)) {
   throw new Error(`不支持的 WATCHDOG_SQLITE_JOURNAL_MODE: ${journalMode}`);
 }
+const configuredBusyTimeout = Number(process.env.WATCHDOG_SQLITE_BUSY_TIMEOUT_MS || 5000);
+const busyTimeoutMs = Number.isFinite(configuredBusyTimeout) && configuredBusyTimeout >= 0
+  ? Math.min(Math.trunc(configuredBusyTimeout), 60000)
+  : 5000;
 db.exec(`PRAGMA journal_mode = ${journalMode};`);
-db.exec(`PRAGMA busy_timeout = ${Number(process.env.WATCHDOG_SQLITE_BUSY_TIMEOUT_MS || 5000)};`);
+db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs};`);
+db.exec('PRAGMA synchronous = NORMAL;');
+if (journalMode === 'WAL') db.exec('PRAGMA wal_autocheckpoint = 1000;');
+
+// BEGIN IMMEDIATE 将“检查 + 写入”变成一个原子操作，避免多台设备/多进程
+// 同时写共享 SQLite 文件时出现重复记录或半完成记录。
+function withImmediateTransaction(work) {
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    const result = work();
+    db.exec('COMMIT;');
+    return result;
+  } catch (error) {
+    try { db.exec('ROLLBACK;'); } catch {}
+    throw error;
+  }
+}
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS entries (
@@ -35,6 +55,7 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 CREATE INDEX IF NOT EXISTS idx_entries_entry_at ON entries(entry_at);
 CREATE INDEX IF NOT EXISTS idx_entries_scene ON entries(scene, entry_at);
+CREATE INDEX IF NOT EXISTS idx_entries_exited_at ON entries(exited_at);
 
 CREATE TABLE IF NOT EXISTS firefighters (
   id TEXT PRIMARY KEY,
@@ -61,6 +82,7 @@ CREATE TABLE IF NOT EXISTS logs (
 );
 CREATE INDEX IF NOT EXISTS idx_logs_scene ON logs(scene, created_at);
 CREATE INDEX IF NOT EXISTS idx_logs_op ON logs(op_id);
+CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at);
 
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id TEXT NOT NULL,
@@ -92,6 +114,7 @@ CREATE TABLE IF NOT EXISTS notes (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notes_scene ON notes(scene, created_at);
+CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(created_at);
 
 CREATE TABLE IF NOT EXISTS chat_messages (
   id TEXT PRIMARY KEY,
@@ -101,6 +124,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_scene ON chat_messages(scene, created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_created_at ON chat_messages(created_at);
 
 `);
 
@@ -181,6 +205,9 @@ function migrateLegacyIncidentRows() {
 
   const sceneMap = new Map();
   for (const legacy of legacyScenes) {
+    // 已完成迁移的场景会在日志/旧投影中继续出现；多进程同时启动时必须
+    // 将其视为已处理，否则第二个进程会再次创建同一分钟的警情编号。
+    if (db.prepare('SELECT 1 FROM incidents WHERE id = ?').get(legacy)) continue;
     const state = oldStates.find((item) => item.scene === legacy);
     const times = [];
     for (const table of ['entries', 'notes', 'logs', 'chat_messages']) {
@@ -206,7 +233,7 @@ function migrateLegacyIncidentRows() {
   if (oldStates.length) db.exec('DROP TABLE scene_state');
 }
 
-migrateLegacyIncidentRows();
+withImmediateTransaction(() => migrateLegacyIncidentRows());
 if (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'scene_state'").get()) {
   db.exec('DROP TABLE scene_state');
 }
@@ -350,7 +377,7 @@ function getEntry(id) {
   return db.prepare('SELECT * FROM entries WHERE id = ?').get(id);
 }
 
-function createEntry({ id, scene = 'default', name, pressureMpa, durationMin, entryAtMs, exitAtMs, source = 'voice', rawText = null }) {
+function insertEntry({ id, scene = 'default', name, pressureMpa, durationMin, entryAtMs, exitAtMs, source = 'voice', rawText = null }) {
   db.prepare(
     'INSERT INTO entries (id, scene, name, pressure_mpa, duration_min, entry_at, exit_at, source, raw_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(id, scene, name, pressureMpa, durationMin, entryAtMs, exitAtMs, source, rawText, Date.now());
@@ -358,6 +385,28 @@ function createEntry({ id, scene = 'default', name, pressureMpa, durationMin, en
     addPressureSample({ entryId: id, scene, name, pressureMpa, reportedAtMs: entryAtMs });
   }
   return getEntry(id);
+}
+
+function createEntry(options) {
+  return withImmediateTransaction(() => insertEntry(options));
+}
+
+/**
+ * 原子完成进场查重、主记录、压力采样、警情活动时间和事件写入。
+ * 返回 existing 时表示同名人员已在场，调用方应返回 409；不会产生半条记录。
+ */
+function createEntryWithEvent({ entry, event, force = false } = {}) {
+  return withImmediateTransaction(() => {
+    const existing = !force ? findActiveByName(entry.scene, entry.name) : null;
+    if (existing) return { entry: null, existing };
+    const created = insertEntry(entry);
+    touchIncidentActivity(event.incidentId, entry.entryAtMs);
+    const recordedEvent = appendIncidentEvent({
+      ...event,
+      payload: { ...(event.payload || {}), entry_id: created.id, pressure_mpa: created.pressure_mpa },
+    });
+    return { entry: created, event: recordedEvent, existing: null };
+  });
 }
 
 function markExited(id, exitedAtMs) {
@@ -578,16 +627,18 @@ function getUserSettings(userId, scene = 'default') {
  * 保存某用户在指定场景下的设置（按 key upsert），返回与 getUserSettings 同结构
  */
 function saveUserSettings(userId, scene = 'default', settings = {}) {
-  const upsert = db.prepare(`
-    INSERT INTO user_settings (user_id, scene, key, value, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(user_id, scene, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-  `);
-  const now = Date.now();
-  for (const [key, value] of Object.entries(settings)) {
-    upsert.run(userId, scene, String(key).slice(0, 64), JSON.stringify(value), now);
-  }
-  return getUserSettings(userId, scene);
+  return withImmediateTransaction(() => {
+    const upsert = db.prepare(`
+      INSERT INTO user_settings (user_id, scene, key, value, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, scene, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `);
+    const now = Date.now();
+    for (const [key, value] of Object.entries(settings)) {
+      upsert.run(userId, scene, String(key).slice(0, 64), JSON.stringify(value), now);
+    }
+    return getUserSettings(userId, scene);
+  });
 }
 
 const compatibilityIncidentAliases = new Map();
@@ -598,10 +649,12 @@ function getIncident(id) {
 
 function createIncident({ id = randomUUID(), createdAt = Date.now(), createdBy = null } = {}) {
   const created = Number(createdAt) || Date.now();
-  db.prepare(
-    'INSERT INTO incidents (id, number, status, created_at, last_activity_at, created_by) VALUES (?, ?, \'active\', ?, ?, ?)'
-  ).run(id, uniqueIncidentNumber(created), created, created, createdBy);
-  return getIncident(id);
+  return withImmediateTransaction(() => {
+    db.prepare(
+      'INSERT INTO incidents (id, number, status, created_at, last_activity_at, created_by) VALUES (?, ?, \'active\', ?, ?, ?)'
+    ).run(id, uniqueIncidentNumber(created), created, created, createdBy);
+    return getIncident(id);
+  });
 }
 
 function ensureIncidentId(value) {
@@ -708,14 +761,11 @@ function appendIncidentEvent({
   actorDeviceId = null, actorName = null, source = 'online', clientOpId = null,
   payload = null, revisionOf = null, voidedAt = null,
 } = {}) {
-  if (clientOpId) {
-    const duplicate = getIncidentEventByClientOp(clientOpId);
-    if (duplicate) return duplicate;
-  }
-  db.prepare(
-    'INSERT INTO incident_events (id, incident_id, type, occurred_at, recorded_at, actor_device_id, actor_name, source, client_op_id, payload, revision_of, voided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  const result = db.prepare(
+    'INSERT OR IGNORE INTO incident_events (id, incident_id, type, occurred_at, recorded_at, actor_device_id, actor_name, source, client_op_id, payload, revision_of, voided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(id, incidentId, type, Number(occurredAt) || Date.now(), Number(recordedAt) || Date.now(),
     actorDeviceId, actorName, source, clientOpId, payload == null ? null : JSON.stringify(payload), revisionOf, voidedAt);
+  if (clientOpId && result.changes === 0) return getIncidentEventByClientOp(clientOpId);
   return getIncidentEvent(id);
 }
 
@@ -756,25 +806,27 @@ function forceCount(value) {
 }
 
 function upsertIncidentForce({ id = randomUUID(), incidentId, stationId = null, stationName, vehicleCount = 0, personnelCount = 0, expectedVersion = null } = {}) {
-  const cleanName = String(stationName || '').trim().slice(0, 80);
-  if (!cleanName) throw new Error('消防站名称不能为空');
-  const vehicles = forceCount(vehicleCount);
-  const personnel = forceCount(personnelCount);
-  const current = db.prepare('SELECT * FROM incident_forces WHERE incident_id = ? AND station_name = ?').get(incidentId, cleanName);
-  if (current && expectedVersion != null && Number(expectedVersion) !== current.version) {
-    const error = new Error('该消防站的参战力量已被其他用户修改，请刷新后重试');
-    error.code = 'VERSION_CONFLICT';
-    throw error;
-  }
-  if (current) {
-    db.prepare('UPDATE incident_forces SET station_id = ?, vehicle_count = ?, personnel_count = ?, updated_at = ?, version = version + 1 WHERE id = ?')
-      .run(stationId, vehicles, personnel, Date.now(), current.id);
-    return getIncidentForce(current.id);
-  }
-  const now = Date.now();
-  db.prepare('INSERT INTO incident_forces (id, incident_id, station_id, station_name, vehicle_count, personnel_count, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
-    .run(id, incidentId, stationId, cleanName, vehicles, personnel, now, now);
-  return getIncidentForce(id);
+  return withImmediateTransaction(() => {
+    const cleanName = String(stationName || '').trim().slice(0, 80);
+    if (!cleanName) throw new Error('消防站名称不能为空');
+    const vehicles = forceCount(vehicleCount);
+    const personnel = forceCount(personnelCount);
+    const current = db.prepare('SELECT * FROM incident_forces WHERE incident_id = ? AND station_name = ?').get(incidentId, cleanName);
+    if (current && expectedVersion != null && Number(expectedVersion) !== current.version) {
+      const error = new Error('该消防站的参战力量已被其他用户修改，请刷新后重试');
+      error.code = 'VERSION_CONFLICT';
+      throw error;
+    }
+    if (current) {
+      db.prepare('UPDATE incident_forces SET station_id = ?, vehicle_count = ?, personnel_count = ?, updated_at = ?, version = version + 1 WHERE id = ?')
+        .run(stationId, vehicles, personnel, Date.now(), current.id);
+      return getIncidentForce(current.id);
+    }
+    const now = Date.now();
+    db.prepare('INSERT INTO incident_forces (id, incident_id, station_id, station_name, vehicle_count, personnel_count, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
+      .run(id, incidentId, stationId, cleanName, vehicles, personnel, now, now);
+    return getIncidentForce(id);
+  });
 }
 
 function deleteIncidentForce(id) {
@@ -848,9 +900,30 @@ function dedupeLegacyIncidentEvents() {
 backfillIncidentEvents();
 dedupeLegacyIncidentEvents();
 
+function pragmaValue(name) {
+  const row = db.prepare(`PRAGMA ${name}`).get();
+  return row ? Object.values(row)[0] : undefined;
+}
+
+function healthCheck() {
+  db.prepare('SELECT 1 AS ok').get();
+  return {
+    journalMode: String(pragmaValue('journal_mode') || journalMode).toUpperCase(),
+    busyTimeoutMs: Number(pragmaValue('busy_timeout') || busyTimeoutMs),
+  };
+}
+
+let closed = false;
+function close() {
+  if (closed) return;
+  closed = true;
+  db.close();
+}
+
 module.exports = {
   getIncident,
   createIncident,
+  createEntryWithEvent,
   listIncidents,
   findRecentActiveIncident,
   updateIncidentTitle,
@@ -903,4 +976,6 @@ module.exports = {
   purgeOldChatMessages,
   getUserSettings,
   saveUserSettings,
+  healthCheck,
+  close,
 };

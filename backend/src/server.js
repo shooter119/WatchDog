@@ -165,7 +165,13 @@ function hotwordList(scene) {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, time: Date.now(), asrConfigured: !!CFG.asr.appId, llmConfigured: !!CFG.llm.apiKey });
+  try {
+    const database = db.healthCheck();
+    res.json({ ok: true, time: Date.now(), asrConfigured: !!CFG.asr.appId, llmConfigured: !!CFG.llm.apiKey, database });
+  } catch (e) {
+    logger.error('数据库健康检查失败', e.message || e);
+    res.status(503).json({ ok: false, time: Date.now(), error: '数据库不可用' });
+  }
 });
 
 app.get('/api/config', (req, res) => {
@@ -827,9 +833,38 @@ app.post('/api/entries', (req, res, next) => {
     }
     const calcParam = { ...CFG.calc, consumptionLpm: consumption };
 
-    // 同名在场记录：防止同一人重复登记（改名合并走 PATCH，重复进场须 force）
-    const existing = db.findActiveByName(scene, cleanName);
-    if (existing && !force) {
+    const now = Date.now();
+    const durationMin = Math.round(durationMinutes({ ...calcParam, pressureMpa: p, cylinderVolL: vol || calcParam.cylinderVolL }));
+    const result = db.createEntryWithEvent({
+      force,
+      entry: {
+        id: crypto.randomUUID(),
+        scene,
+        name: cleanName,
+        pressureMpa: p,
+        durationMin,
+        entryAtMs: now,
+        exitAtMs: exitAtMs({ ...calcParam, pressureMpa: p, entryAtMs: now, cylinderVolL: vol || calcParam.cylinderVolL }),
+        source,
+        rawText: raw_text,
+      },
+      event: {
+        incidentId: incident.id,
+        type: 'entry',
+        occurredAt: now,
+        actorDeviceId: deviceKey(req),
+        actorName: actorName(req) || null,
+        source: 'online',
+        clientOpId: opKey(req),
+        payload: {
+          name: cleanName,
+          pressure_mpa: p,
+          source,
+        },
+      },
+    });
+    if (result.existing) {
+      const existing = result.existing;
       const at = new Date(existing.entry_at);
       const hh = String(at.getHours()).padStart(2, '0');
       const mm = String(at.getMinutes()).padStart(2, '0');
@@ -839,20 +874,7 @@ app.post('/api/entries', (req, res, next) => {
         entry: existing,
       });
     }
-
-    const now = Date.now();
-    const durationMin = Math.round(durationMinutes({ ...calcParam, pressureMpa: p, cylinderVolL: vol || calcParam.cylinderVolL }));
-    const entry = db.createEntry({
-      id: crypto.randomUUID(),
-      scene,
-      name: cleanName,
-      pressureMpa: p,
-      durationMin,
-      entryAtMs: now,
-      exitAtMs: exitAtMs({ ...calcParam, pressureMpa: p, entryAtMs: now, cylinderVolL: vol || calcParam.cylinderVolL }),
-      source,
-      rawText: raw_text,
-    });
+    const entry = result.entry;
     logOp(req, 'info', 'entry_created', '登记进场成功', {
       entryId: entry.id,
       name: cleanName,
@@ -863,15 +885,6 @@ app.post('/api/entries', (req, res, next) => {
       force,
       rawText: raw_text,
     });
-    if (incident) {
-      db.touchIncidentActivity(incident.id, now);
-      appendEvent(req, incident.id, 'entry', {
-        entry_id: entry.id,
-        name: entry.name,
-        pressure_mpa: entry.pressure_mpa,
-        source,
-      });
-    }
     res.status(201).json(entry);
   } catch (e) {
     logOp(req, 'error', 'entry_err', `登记进场失败: ${e.message || e}`);
@@ -1274,7 +1287,33 @@ if (require.main === module) {
   doPurge();
   setInterval(doPurge, 24 * 3600 * 1000);
 
-  app.listen(PORT, () => {
+  let shuttingDown = false;
+  let httpServer;
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info(`收到 ${signal}，等待请求排空后关闭`);
+    const forceTimer = setTimeout(() => {
+      try { httpServer?.closeAllConnections?.(); } catch {}
+      try { db.close(); } catch {}
+      process.exit(1);
+    }, Number(process.env.SHUTDOWN_TIMEOUT_MS || 10000));
+    forceTimer.unref();
+    if (!httpServer) {
+      clearTimeout(forceTimer);
+      db.close();
+      return;
+    }
+    httpServer.close(() => {
+      clearTimeout(forceTimer);
+      db.close();
+      process.exit(0);
+    });
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
+
+  httpServer = app.listen(PORT, () => {
     logger.info(`WatchDog 后端已启动: http://0.0.0.0:${PORT}`);
     logger.info(`ASR 配置: ${CFG.asr.appId ? '已配置' : '未配置 (VOLC_APP_KEY)'}`);
     logger.info(`LLM 配置: ${CFG.llm.apiKey ? '已配置' : '未配置 (DEEPSEEK_API_KEY)'}`);

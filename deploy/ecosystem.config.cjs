@@ -12,6 +12,10 @@ if (fs.existsSync(envFile)) {
   }
 }
 env.PORT = '3100';
+// SQLite 只支持单进程写入；显式固定运行参数，避免服务器 .env 缺项时退回
+// 到不适合共享/网络文件系统的隐式配置。
+env.WATCHDOG_SQLITE_JOURNAL_MODE ||= 'WAL';
+env.WATCHDOG_SQLITE_BUSY_TIMEOUT_MS ||= '5000';
 
 module.exports = {
   apps: [
@@ -22,6 +26,9 @@ module.exports = {
       env,
       max_restarts: 10,
       restart_delay: 2000,
+      kill_timeout: 10000,
+      listen_timeout: 15000,
+      max_memory_restart: '512M',
       out_file: '/var/log/watchdog/out.log',
       error_file: '/var/log/watchdog/err.log',
       time: true,

@@ -1528,6 +1528,9 @@ void main() {
         ),
       );
       await tester.pump();
+      // 使用“全部”避免测试在午夜附近运行时，100 分钟前的记录跨到前一天。
+      await tester.tap(find.text('全部'));
+      await tester.pump();
       expect(find.text('数据统计'), findsOneWidget);
       // 汇总：当前在场 1 人（李娜）、3 人次、累计 145 分钟
       expect(find.text('1 人'), findsOneWidget);
