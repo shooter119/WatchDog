@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:watchdog/api/api_client.dart';
 import 'package:watchdog/models/models.dart';
+import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/services/update_service.dart';
 import 'package:watchdog/state/app_controller.dart';
 
@@ -11,7 +12,8 @@ class _OfflineApi extends ApiClient {
   _OfflineApi() : super(baseUrl: 'http://offline', incidentId: 'test');
 
   @override
-  Future<List<Firefighter>> fetchFirefighters() async => throw Exception('网络不可达');
+  Future<List<Firefighter>> fetchFirefighters() async =>
+      throw Exception('网络不可达');
 
   @override
   Future<List<Hotword>> fetchHotwords() async => throw Exception('网络不可达');
@@ -23,7 +25,12 @@ class _RecordingApi extends ApiClient {
   String? lastAuthor;
 
   @override
-  Future<Note> createNote({required String text, String? category, String? opId, String? author}) async {
+  Future<Note> createNote({
+    required String text,
+    String? category,
+    String? opId,
+    String? author,
+  }) async {
     lastAuthor = author;
     return Note(
       id: 'n1',
@@ -40,6 +47,16 @@ void main() {
   // AppController 构造会实例化 AlarmService/TtsService（插件通道），
   // 需要 testWidgets 的测试 binding 环境（与 widget_test 一致）
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('旧 canary 服务地址自动迁移到生产网关', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'server_url':
+          'https://watchdog-api-canary-294307-10-1351750301.sh.run.tcloudbase.com',
+    });
+    expect(await Settings.serverUrl, Settings.defaultServerUrl);
+    final sp = await SharedPreferences.getInstance();
+    expect(sp.getString('server_url'), Settings.defaultServerUrl);
+  });
 
   group('AppController 名单热词离线缓存', () {
     testWidgets('首次安装即有内置名单和热词，不依赖警情或服务器', (tester) async {

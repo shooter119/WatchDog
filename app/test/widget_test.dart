@@ -1628,8 +1628,8 @@ void main() {
       expect(find.text('如何破拆卷帘门？'), findsOneWidget);
       expect(find.text('回答：如何破拆卷帘门？'), findsOneWidget);
       expect(find.text('水元素思考中…'), findsNothing);
-      expect(api.chatCalls, 1);
-      expect(api.chatStreamCalls, 0);
+      expect(api.chatCalls, 0);
+      expect(api.chatStreamCalls, 1);
       expect(tester.takeException(), isNull);
     });
 

@@ -679,7 +679,7 @@ class AppController extends ChangeNotifier {
   /// 智能体问答：读取本机历史（旧→新），不依赖警情或云端。
   Future<List<ChatMessage>> fetchChatHistory() => ChatHistory.load();
 
-  /// 智能体问答：提问并返回 AI 回复。普通请求由服务端负责联网检索。
+  /// 智能体问答：提问并返回完整 AI 回复。
   Future<ChatMessage> askAssistant(
     String message, {
     String? opId,
@@ -700,7 +700,7 @@ class AppController extends ChangeNotifier {
     return reply;
   }
 
-  /// 兼容旧客户端的流式提问；当前辅助页默认使用 [askAssistant]，以支持联网检索。
+  /// 流式提问：辅助页使用此路径，让首个 token 到达后立即显示。
   Future<String> askAssistantStream(
     String message, {
     required void Function(String delta) onChunk,

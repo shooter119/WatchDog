@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -56,6 +57,37 @@ class ApiClient {
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
+  /// CloudBase 网关故障时可能返回 HTML（例如 503），不能直接 jsonDecode，
+  /// 否则用户只能看到无意义的 FormatException: Unexpected character '<'。
+  dynamic _decodeJson(http.Response res, {required String fallback}) {
+    try {
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      throw ApiException(_responseError(res.statusCode, null, fallback));
+    }
+  }
+
+  String _responseError(int statusCode, dynamic body, String fallback) {
+    if (body is Map && body['error'] != null) {
+      final message = body['error'].toString().trim();
+      if (message.isNotEmpty) return message;
+    }
+    if (statusCode >= 500) {
+      return '服务器暂时不可用，请稍后重试（HTTP $statusCode）';
+    }
+    return '$fallback（HTTP $statusCode）';
+  }
+
+  String _responseErrorText(String raw, int statusCode, String fallback) {
+    dynamic body;
+    try {
+      body = jsonDecode(raw);
+    } catch (_) {
+      body = null;
+    }
+    return _responseError(statusCode, body, fallback);
+  }
+
   Future<String> transcribe(Uint8List audioBytes, {String? opId}) async {
     final res = await http
         .post(
@@ -64,11 +96,9 @@ class ApiClient {
           body: audioBytes,
         )
         .timeout(const Duration(seconds: 30));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '转写失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '转写失败(${res.statusCode})',
-      );
+      throw ApiException(_responseError(res.statusCode, body, '转写失败'));
     }
     return (body as Map)['text'] as String? ?? '';
   }
@@ -81,11 +111,9 @@ class ApiClient {
           body: jsonEncode({'text': text}),
         )
         .timeout(const Duration(seconds: 30));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '解析失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '解析失败(${res.statusCode})',
-      );
+      throw ApiException(_responseError(res.statusCode, body, '解析失败'));
     }
     return ParseResult.fromJson(body as Map<String, dynamic>);
   }
@@ -342,11 +370,9 @@ class ApiClient {
         )
         // 服务端联网检索最长约 90 秒，客户端留出少量网络传输余量。
         .timeout(const Duration(seconds: 100));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '提问失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '提问失败(${res.statusCode})',
-      );
+      throw ApiException(_responseError(res.statusCode, body, '提问失败'));
     }
     final m = body as Map;
     return ChatMessage(
@@ -359,8 +385,8 @@ class ApiClient {
     );
   }
 
-  /// 兼容旧客户端的流式提问（SSE）；当前辅助页不使用此接口，因为它不走联网检索。
-  /// 服务端回复完成才落库，本地无需额外保存。
+  /// 流式提问（SSE）：服务端产出首个 token 后立即回调，避免等待完整答案。
+  /// CloudBase 冷启动返回 502/503/504 时自动重试一次。
   Future<String> sendChatMessageStream(
     String message, {
     required void Function(String delta) onChunk,
@@ -369,26 +395,41 @@ class ApiClient {
   }) async {
     final client = http.Client();
     try {
-      final req = http.Request('POST', _uri('/api/chat'));
-      req.headers.addAll(_opHeaders(opId));
-      req.headers['Content-Type'] = 'application/json';
-      req.body = jsonEncode({
-        'message': message,
-        'stream': 1,
-        if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
-      });
-      // 首字节 15s 超时（流式下无需等待整条回复，60s 总超时问题随之消失）
-      final res = await client.send(req).timeout(const Duration(seconds: 15));
+      Future<http.StreamedResponse> open() {
+        final req = http.Request('POST', _uri('/api/chat'));
+        req.headers.addAll(_opHeaders(opId));
+        req.headers['Content-Type'] = 'application/json';
+        req.body = jsonEncode({
+          'message': message,
+          'stream': 1,
+          if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
+        });
+        // 首字节允许 CloudBase 冷启动完成；首字节之后按流实时消费。
+        return client.send(req).timeout(const Duration(seconds: 25));
+      }
+
+      var res = await open();
+      if (res.statusCode == 502 ||
+          res.statusCode == 503 ||
+          res.statusCode == 504) {
+        await res.stream.drain();
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+        res = await open();
+      }
       if (res.statusCode != 200) {
         final body = await res.stream.bytesToString();
-        final m = jsonDecode(body) as Map?;
-        throw ApiException(
-          m?['error']?.toString() ?? '提问失败(${res.statusCode})',
-        );
+        throw ApiException(_responseErrorText(body, res.statusCode, '提问失败'));
       }
       final full = StringBuffer();
       final parser = SseLineParser();
-      await for (final chunk in res.stream.transform(utf8.decoder)) {
+      final bodyStream = res.stream
+          .transform(utf8.decoder)
+          .timeout(
+            const Duration(seconds: 20),
+            onTimeout: (sink) =>
+                sink.addError(TimeoutException('辅助问答响应超时，请检查网络后重试')),
+          );
+      await for (final chunk in bodyStream) {
         for (final ev in parser.push(chunk)) {
           if (ev.done) return full.toString();
           if (ev.error != null) throw ApiException(ev.error!);

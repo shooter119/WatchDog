@@ -88,6 +88,7 @@ class ChatPageState extends State<ChatPage> {
         .toList(growable: false);
     final opId =
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
+    final placeholderId = 'stream-$opId';
     OpLogService.instance.record(
       opId,
       'chat_submit',
@@ -104,9 +105,9 @@ class ChatPageState extends State<ChatPage> {
           content: clean,
           createdAt: DateTime.now().millisecondsSinceEpoch,
         ),
-        // 普通联网问答占位：内容为空时渲染"思考中"，完整回复返回后替换
+        // 流式问答占位：首个 token 到达后立即替换为增量内容
         ChatMessage(
-          id: 'stream-$opId',
+          id: placeholderId,
           role: 'assistant',
           content: '',
           createdAt: DateTime.now().millisecondsSinceEpoch,
@@ -118,20 +119,36 @@ class ChatPageState extends State<ChatPage> {
     widget.onSendingChanged?.call(true);
     _scrollToBottom();
     try {
-      final reply = await widget.controller.askAssistant(
+      final reply = await widget.controller.askAssistantStream(
         clean,
         opId: opId,
         history: history,
+        onChunk: (delta) {
+          if (!mounted) return;
+          final index = _messages.indexWhere((m) => m.id == placeholderId);
+          if (index < 0) return;
+          final current = _messages[index];
+          setState(() {
+            _messages[index] = ChatMessage(
+              id: current.id,
+              role: current.role,
+              content: '${current.content}$delta',
+              createdAt: current.createdAt,
+            );
+          });
+          _scrollToBottom();
+        },
       );
       if (!mounted) return;
       setState(() {
-        if (_messages.isNotEmpty && _messages.last.role == 'assistant') {
-          final last = _messages.last;
-          _messages[_messages.length - 1] = ChatMessage(
-            id: last.id,
-            role: last.role,
-            content: reply.content,
-            createdAt: reply.createdAt,
+        final index = _messages.indexWhere((m) => m.id == placeholderId);
+        if (index >= 0) {
+          final current = _messages[index];
+          _messages[index] = ChatMessage(
+            id: current.id,
+            role: current.role,
+            content: reply,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
           );
         }
         _sending = false;
@@ -142,9 +159,9 @@ class ChatPageState extends State<ChatPage> {
       if (!mounted) return;
       setState(() {
         // 请求失败：丢弃空占位，避免假"思考中"卡住
-        if (_messages.isNotEmpty && _messages.last.content.isEmpty) {
-          _messages = _messages.take(_messages.length - 1).toList();
-        }
+        _messages = _messages
+            .where((message) => message.id != placeholderId)
+            .toList();
         _sending = false;
         _error = '辅助回复失败：$e';
       });
