@@ -16,7 +16,7 @@ CLOUDBASE_SECRET_KEY=<secret-key> \
 npm run db:migrate
 ```
 
-迁移脚本只执行 `backend/migrations/` 中的 DDL，不读取、不导入旧 ByteVirt SQLite 数据。默认消防员、热词和消防站由服务首次启动时幂等初始化。
+迁移脚本只执行 `backend/migrations/` 中的 DDL，不读取、不导入历史 SQLite 数据。默认消防员、热词和消防站由服务首次启动时幂等初始化。
 
 ## 2. 创建云托管服务
 
@@ -34,8 +34,8 @@ https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.co
 
 创建或更新服务时：
 
-- 源码目录：`backend/`
-- 构建方式：使用 `backend/Dockerfile`
+- 部署入口：仓库根目录的 `deploy/deploy.sh`
+- 构建方式：脚本生成临时部署包，使用 `backend/Dockerfile`，并把 `deploy/models/` 一并放入容器的 `/models/`
 - 服务端口：`3000`
 - 建议最小实例数：`1`；最大实例数按现场设备数量设置
 - 健康检查：`GET /api/health`
@@ -74,7 +74,7 @@ GET /api/config
 
 再验证新建警情、进场、出场、压力复核、随手记、操作日志、名单热词、辅助问答和语音转写。重启云托管实例后确认数据仍存在。
 
-验证完成后，将该 HTTPS 网关地址配置为 App 的默认服务器地址。当前 App 已内置上述地址；也可以通过 `WATCHDOG_API_BASE_URL` 覆盖。旧 ByteVirt 地址仍可通过 App 设置页手动切回，但不再作为 CloudBase 数据库的数据源。
+验证完成后，将该 HTTPS 网关地址配置为 App 的默认服务器地址。当前 App 已内置上述地址；也可以通过 `WATCHDOG_API_BASE_URL` 覆盖。端侧 ASR 模型通过同一网关的 `/models/` 路径下载，也可以用 `WATCHDOG_MODEL_BASE_URL` 单独覆盖。
 
 正式构建 APK 时注入 CloudBase 服务地址：
 

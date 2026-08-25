@@ -8,6 +8,7 @@ import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/alarm_service.dart';
 import '../services/chat_history.dart';
+import '../services/diagnostic_log_service.dart';
 import '../services/foreground_keep_alive.dart';
 import '../services/local_asr_service.dart';
 import '../services/local_parser.dart';
@@ -47,6 +48,7 @@ class AppController extends ChangeNotifier {
   );
 
   bool syncing = false;
+  bool _assistantBusy = false;
   String? syncError;
   Timer? _pollTimer;
   Timer? _tickTimer;
@@ -80,6 +82,10 @@ class AppController extends ChangeNotifier {
   List<Incident> activeIncidents = [];
   List<IncidentForce> forces = [];
   bool get needsIncidentSelection => currentIncident == null;
+
+  /// 辅助问答占用独立网络通道时，暂停后台同步，避免请求堆积和 DNS/socket
+  /// 争用。问答结束后下一轮 5 秒轮询会自动恢复。
+  bool get assistantBusy => _assistantBusy;
 
   /// 启动时自动检查到的新版本（非空 = 有新版本可更新，设置页据此显示提示）
   UpdateInfo? pendingUpdate;
@@ -121,6 +127,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _initInternal() async {
+    // 诊断日志独立于核心同步链路，初始化失败也不能阻塞 App 启动。
+    unawaited(DiagnosticLogService.instance.init());
     // 先建立 API 客户端并启动核心同步。TTS、通知和后台值守属于可选
     // 能力，不能阻断新建/加入警情等核心服务器操作。
     await refreshConfig();
@@ -199,10 +207,12 @@ class AppController extends ChangeNotifier {
       }
     } catch (_) {
       // 网络失败静默，下次启动或保存设置时再试
+      api?.cancelRequests();
     }
   }
 
   Future<void> refreshConfig() async {
+    final previousApi = api;
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
     final token = await Settings.apiToken;
@@ -213,12 +223,18 @@ class AppController extends ChangeNotifier {
       deviceId: await OpLogService.instance.deviceId,
       actorName: await Settings.realName,
     );
+    previousApi?.dispose();
     debugPrint(
       'WatchDog config ready: url=$serverUrl, '
       'incident=${incidentId.isEmpty ? 'none' : 'selected'}, '
       'token=${token.isNotEmpty ? 'configured' : 'empty'}, '
       'actor=${(await Settings.realName).isEmpty ? 'empty' : 'configured'}',
     );
+    // 有当前警情时顺手补传上次启动/异常遗留的诊断日志；没有警情时
+    // /api/logs 会拒绝请求，日志仍保存在本机，待加入警情后重试。
+    if (incidentId.isNotEmpty) {
+      unawaited(DiagnosticLogService.instance.flush(api: api));
+    }
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
     await ScreenOn.setKeepScreenOn(await Settings.keepScreenOn);
@@ -247,7 +263,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> sync() async {
-    if (syncing || api == null) return;
+    if (syncing || _assistantBusy || api == null) return;
     syncing = true;
     try {
       await OfflineQueue.instance.drain((id) => api!.forIncident(id));
@@ -282,6 +298,9 @@ class AppController extends ChangeNotifier {
       _firstSyncFailureAt = 0;
       await _rescheduleNotifications();
     } catch (e) {
+      // Future 超时不会自动释放底层 socket；同步出错后重置请求池，防止
+      // Oplus DNS/连接异常导致每轮 5 秒轮询继续堆积旧请求。
+      api?.cancelRequests();
       _firstSyncFailureAt = _firstSyncFailureAt == 0
           ? DateTime.now().millisecondsSinceEpoch
           : _firstSyncFailureAt;
@@ -725,17 +744,22 @@ class AppController extends ChangeNotifier {
   }) async {
     final a = api;
     if (a == null) throw StateError('AI 服务未连接');
-    final reply = await a.sendChatMessage(
-      message,
-      opId: opId,
-      history: history,
-    );
-    await ChatHistory.appendExchange(
-      question: message,
-      reply: reply.content,
-      createdAt: DateTime.now().millisecondsSinceEpoch,
-    );
-    return reply;
+    _assistantBusy = true;
+    try {
+      final reply = await a.sendChatMessage(
+        message,
+        opId: opId,
+        history: history,
+      );
+      await ChatHistory.appendExchange(
+        question: message,
+        reply: reply.content,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      return reply;
+    } finally {
+      _assistantBusy = false;
+    }
   }
 
   /// 流式提问：辅助页使用此路径，让首个 token 到达后立即显示。
@@ -747,21 +771,29 @@ class AppController extends ChangeNotifier {
   }) async {
     final a = api;
     if (a == null) throw StateError('AI 服务未连接');
-    final reply = await a.sendChatMessageStream(
-      message,
-      onChunk: onChunk,
-      opId: opId,
-      history: history,
-    );
-    unawaited(
-      ChatHistory.appendExchange(
-        question: message,
-        reply: reply,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ).catchError((_) {}),
-    );
-    return reply;
+    _assistantBusy = true;
+    try {
+      final reply = await a.sendChatMessageStream(
+        message,
+        onChunk: onChunk,
+        opId: opId,
+        history: history,
+      );
+      unawaited(
+        ChatHistory.appendExchange(
+          question: message,
+          reply: reply,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ).catchError((_) {}),
+      );
+      return reply;
+    } finally {
+      _assistantBusy = false;
+    }
   }
+
+  /// 释放辅助问答的底层 socket；Future 超时本身不等于取消网络请求。
+  void cancelAssistantRequest() => api?.cancelChatRequest();
 
   /// 清空本机辅助问答记录
   Future<void> clearChatHistory() async {
@@ -797,6 +829,7 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       await _cacheRoster();
     } catch (_) {
+      api?.cancelRequests();
       await _restoreCachedRoster();
     }
   }
@@ -960,6 +993,7 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _pollTimer?.cancel();
     _tickTimer?.cancel();
+    api?.dispose();
     tts.stop();
     super.dispose();
   }

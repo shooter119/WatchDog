@@ -7,10 +7,8 @@ const DATA_DIR = process.env.WATCHDOG_DATA_DIR || path.join(__dirname, '..', 'da
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(path.join(DATA_DIR, 'watchdog.db'));
-// CloudBase CFS is a network filesystem. Keep the existing WAL default for the
-// VPS, while allowing the CloudBase deployment to select a more conservative
-// journal mode through configuration. The deployment uses one replica so that
-// SQLite never has to coordinate writes across multiple application instances.
+// SQLite 仅用于本地开发和测试；CloudBase 生产环境使用 PostgREST 数据库驱动。
+// 通过环境变量保留 journal mode 配置，便于本地测试不同的锁策略。
 const journalMode = String(process.env.WATCHDOG_SQLITE_JOURNAL_MODE || 'WAL').toUpperCase();
 const allowedJournalModes = new Set(['DELETE', 'TRUNCATE', 'PERSIST', 'MEMORY', 'WAL', 'OFF']);
 if (!allowedJournalModes.has(journalMode)) {

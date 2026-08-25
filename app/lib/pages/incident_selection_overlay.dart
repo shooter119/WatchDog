@@ -74,8 +74,16 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final width = math.min(constraints.maxWidth - 32, 560.0);
-                final height = math.min(constraints.maxHeight - 32, 640.0);
+                // 首帧或键盘切换时约束可能暂时小于边距，不能把负值传给
+                // SizedBox，否则会触发红屏：BoxConstraints(-32, -32)。
+                final width = math.max(
+                  1.0,
+                  math.min(constraints.maxWidth - 32, 560.0),
+                );
+                final height = math.max(
+                  1.0,
+                  math.min(constraints.maxHeight - 32, 640.0),
+                );
                 return Center(
                   child: SizedBox(
                     width: width,

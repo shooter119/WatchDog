@@ -2,15 +2,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class Settings {
   /// 正式 APK 可通过 --dart-define=WATCHDOG_API_BASE_URL 覆盖 CloudBase HTTP 网关地址。
-  /// 旧 ByteVirt 地址仍可在设置页手动切回，便于回滚。
   static const defaultServerUrl = String.fromEnvironment(
     'WATCHDOG_API_BASE_URL',
     defaultValue:
         'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com',
   );
-  static const _legacyCloudBaseServiceUrl =
+  /// 端侧 ASR 模型与后端通过同一 CloudBase 网关分发，也可独立覆盖。
+  static const defaultModelBaseUrl = String.fromEnvironment(
+    'WATCHDOG_MODEL_BASE_URL',
+    defaultValue: '$defaultServerUrl/models',
+  );
+  static const _deprecatedCloudRunServiceUrl =
       'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com';
-  static const _legacyCanaryServiceUrl =
+  static const _deprecatedCanaryServiceUrl =
       'https://watchdog-api-canary-294307-10-1351750301.sh.run.tcloudbase.com';
   static const _kServer = 'server_url';
   static const _kIncident = 'current_incident_id';
@@ -111,10 +115,9 @@ class Settings {
   static Future<String> get serverUrl async {
     final sp = await SharedPreferences.getInstance();
     final saved = sp.getString(_kServer);
-    // 迁移之前版本自动写入的 CloudBase 云托管直连地址（包括 canary）；
-    // 用户手动填写的 ByteVirt 或其他地址不覆盖，仍可作为设置页中的回滚入口。
-    if (saved == _legacyCloudBaseServiceUrl ||
-        saved == _legacyCanaryServiceUrl) {
+    // 迁移之前版本自动写入的 CloudBase 云托管直连地址（包括 canary）。
+    if (saved == _deprecatedCloudRunServiceUrl ||
+        saved == _deprecatedCanaryServiceUrl) {
       await sp.setString(_kServer, defaultServerUrl);
       return defaultServerUrl;
     }

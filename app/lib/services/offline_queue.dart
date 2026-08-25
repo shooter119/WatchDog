@@ -32,7 +32,13 @@ class OfflineQueue {
     return _db!;
   }
 
-  Future<void> enqueue({required String incidentId, required String type, required int occurredAt, required String clientOpId, required Map<String, dynamic> payload}) async {
+  Future<void> enqueue({
+    required String incidentId,
+    required String type,
+    required int occurredAt,
+    required String clientOpId,
+    required Map<String, dynamic> payload,
+  }) async {
     final db = await _database;
     await db.insert('offline_operations', {
       'incident_id': incidentId,
@@ -44,14 +50,19 @@ class OfflineQueue {
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
-  Future<int> pendingCount() async => (await _database).rawQuery('SELECT COUNT(*) AS count FROM offline_operations').then((rows) => (rows.first['count'] as int?) ?? 0);
+  Future<int> pendingCount() async => (await _database)
+      .rawQuery('SELECT COUNT(*) AS count FROM offline_operations')
+      .then((rows) => (rows.first['count'] as int?) ?? 0);
 
-  Future<void> drain(ApiClient Function(String incidentId) clientForIncident) async {
+  Future<void> drain(
+    ApiClient Function(String incidentId) clientForIncident,
+  ) async {
     final db = await _database;
     final rows = await db.query('offline_operations', orderBy: 'id ASC');
     final grouped = <String, List<Map<String, dynamic>>>{};
     for (final row in rows) {
-      final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
+      final payload =
+          jsonDecode(row['payload'] as String) as Map<String, dynamic>;
       grouped.putIfAbsent(row['incident_id'] as String, () => []).add({
         'type': row['type'],
         'occurred_at': row['occurred_at'],
@@ -60,18 +71,29 @@ class OfflineQueue {
       });
     }
     for (final entry in grouped.entries) {
+      final client = clientForIncident(entry.key);
       try {
-        final response = await clientForIncident(entry.key).uploadOfflineOperations(entry.value);
+        final response = await client.uploadOfflineOperations(entry.value);
         final results = response['results'] as List? ?? const [];
-        final resultByOp = {for (final r in results) (r as Map)['client_op_id']?.toString(): r};
+        final resultByOp = {
+          for (final r in results) (r as Map)['client_op_id']?.toString(): r,
+        };
         for (final op in entry.value) {
           final result = resultByOp[op['client_op_id']];
-          if (result != null && (result['accepted'] == true || result['code'] == 'OFFLINE_WINDOW_EXPIRED')) {
-            await db.delete('offline_operations', where: 'client_op_id = ?', whereArgs: [op['client_op_id']]);
+          if (result != null &&
+              (result['accepted'] == true ||
+                  result['code'] == 'OFFLINE_WINDOW_EXPIRED')) {
+            await db.delete(
+              'offline_operations',
+              where: 'client_op_id = ?',
+              whereArgs: [op['client_op_id']],
+            );
           }
         }
       } catch (_) {
         // 网络仍不可用：保留队列，下一次同步继续按发生顺序补传。
+      } finally {
+        client.dispose();
       }
     }
   }

@@ -101,6 +101,31 @@ test('POST /api/chat 历史上下文带入请求', async () => {
   assert.ok(userMsgs.length >= 2, `历史上下文未完整带入（user 消息 ${userMsgs.length} 条）`);
 });
 
+test('POST /api/chat 警情简报主动进入现场研判模式', async () => {
+  let instructions = '';
+  globalThis.fetch = (url, opts) => {
+    if (!String(url).match(/\/responses$/)) return realFetch(url, opts);
+    instructions = JSON.parse(opts.body).instructions;
+    return Promise.resolve({
+      ok: true,
+      async json() {
+        return responsesReply('结论：先确认居民安全并隔离现场');
+      },
+    });
+  };
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({
+      message: '江山市消防支队接到警情：居民家中发现一条蛇，出动1车7人，请求到场处置。',
+    }),
+  });
+  assert.equal(res.status, 200);
+  assert.match(instructions, /警情简报处理规则/);
+  assert.match(instructions, /没有问号/);
+  assert.match(instructions, /现场警情简报/);
+});
+
 test('POST /api/chat 联网搜索失败明确报错且不回退普通问答', async () => {
   let fellBack = false;
   globalThis.fetch = (url, opts) => {

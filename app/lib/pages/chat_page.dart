@@ -20,6 +20,7 @@ class ChatPage extends StatefulWidget {
   final ValueChanged<bool>? onProcessingChanged;
   final ValueChanged<bool>? onSendingChanged; // 问答请求中（驱动底部发送按钮禁用态）
   final AudioService? audioService; // 测试注入
+  final Duration requestTimeout;
 
   const ChatPage({
     super.key,
@@ -29,6 +30,7 @@ class ChatPage extends StatefulWidget {
     this.onProcessingChanged,
     this.onSendingChanged,
     this.audioService,
+    this.requestTimeout = const Duration(seconds: 45),
   });
 
   @override
@@ -47,6 +49,7 @@ class ChatPageState extends State<ChatPage> {
   bool _processing = false;
   String? _error;
   String? _opId;
+  int _requestGeneration = 0;
 
   @override
   void initState() {
@@ -56,6 +59,7 @@ class ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    widget.controller.cancelAssistantRequest();
     _scroll.dispose();
     _audio.dispose();
     super.dispose();
@@ -88,6 +92,7 @@ class ChatPageState extends State<ChatPage> {
         .toList(growable: false);
     final opId =
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
+    final requestGeneration = ++_requestGeneration;
     final placeholderId = 'stream-$opId';
     OpLogService.instance.record(
       opId,
@@ -119,27 +124,35 @@ class ChatPageState extends State<ChatPage> {
     widget.onSendingChanged?.call(true);
     _scrollToBottom();
     try {
-      final reply = await widget.controller.askAssistantStream(
-        clean,
-        opId: opId,
-        history: history,
-        onChunk: (delta) {
-          if (!mounted) return;
-          final index = _messages.indexWhere((m) => m.id == placeholderId);
-          if (index < 0) return;
-          final current = _messages[index];
-          setState(() {
-            _messages[index] = ChatMessage(
-              id: current.id,
-              role: current.role,
-              content: '${current.content}$delta',
-              createdAt: current.createdAt,
-            );
-          });
-          _scrollToBottom();
-        },
-      );
-      if (!mounted) return;
+      final reply = await widget.controller
+          .askAssistantStream(
+            clean,
+            opId: opId,
+            history: history,
+            onChunk: (delta) {
+              if (!mounted || requestGeneration != _requestGeneration) return;
+              final index = _messages.indexWhere((m) => m.id == placeholderId);
+              if (index < 0) return;
+              final current = _messages[index];
+              setState(() {
+                _messages[index] = ChatMessage(
+                  id: current.id,
+                  role: current.role,
+                  content: '${current.content}$delta',
+                  createdAt: current.createdAt,
+                );
+              });
+              _scrollToBottom();
+            },
+          )
+          .timeout(
+            widget.requestTimeout,
+            onTimeout: () {
+              widget.controller.cancelAssistantRequest();
+              throw TimeoutException('辅助问答响应超时，请检查网络后重试');
+            },
+          );
+      if (!mounted || requestGeneration != _requestGeneration) return;
       setState(() {
         final index = _messages.indexWhere((m) => m.id == placeholderId);
         if (index >= 0) {
@@ -156,6 +169,9 @@ class ChatPageState extends State<ChatPage> {
       widget.onSendingChanged?.call(false);
       _scrollToBottom();
     } catch (e) {
+      widget.controller.cancelAssistantRequest();
+      // 使已被取消的底层流即使晚到，也不能重新填充“思考中”占位。
+      if (requestGeneration == _requestGeneration) _requestGeneration++;
       if (!mounted) return;
       setState(() {
         // 请求失败：丢弃空占位，避免假"思考中"卡住

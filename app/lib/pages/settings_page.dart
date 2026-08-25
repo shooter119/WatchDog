@@ -18,7 +18,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.0.0+45';
+const appVersion = '1.1.0+46';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -1092,7 +1092,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _field(
                     _server,
                     '服务器地址',
-                    '默认 https://bytevirt.meiyou.xyz:8443',
+                    '默认使用 CloudBase 生产网关',
                     icon: Icons.dns_outlined,
                     keyboard: TextInputType.url,
                     focusNode: _serverFocus,

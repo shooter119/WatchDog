@@ -21,8 +21,9 @@ class _NotesPageState extends State<NotesPage> {
   @override
   Widget build(BuildContext context) {
     final notes = widget.controller.notes;
-    final filtered =
-        _filter == '全部' ? notes : notes.where((n) => n.category == _filter).toList();
+    final filtered = _filter == '全部'
+        ? notes
+        : notes.where((n) => n.category == _filter).toList();
     return SafeArea(
       child: Column(
         children: [
@@ -38,13 +39,19 @@ class _NotesPageState extends State<NotesPage> {
                   label: const Text('写日志'),
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     side: const BorderSide(color: AppColors.actionPrimary),
                     foregroundColor: AppColors.actionPrimary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(AppRadius.pill),
                     ),
-                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -94,13 +101,21 @@ class _NotesPageState extends State<NotesPage> {
                 selected: _filter == c,
                 onSelected: (_) => setState(() => _filter = c),
                 showCheckmark: false,
-                selectedColor: NoteColor.of(c == '全部' ? null : c).withValues(alpha: 0.22),
+                selectedColor: NoteColor.of(
+                  c == '全部' ? null : c,
+                ).withValues(alpha: 0.22),
                 labelStyle: TextStyle(
                   fontSize: 13,
                   fontWeight: _filter == c ? FontWeight.w800 : FontWeight.w600,
-                  color: _filter == c ? NoteColor.of(c == '全部' ? null : c) : AppColors.textSecondary,
+                  color: _filter == c
+                      ? NoteColor.of(c == '全部' ? null : c)
+                      : AppColors.textSecondary,
                 ),
-                side: BorderSide(color: _filter == c ? NoteColor.of(c == '全部' ? null : c) : AppColors.border),
+                side: BorderSide(
+                  color: _filter == c
+                      ? NoteColor.of(c == '全部' ? null : c)
+                      : AppColors.border,
+                ),
                 backgroundColor: AppColors.surface,
               ),
             ),
@@ -114,17 +129,32 @@ class _NotesPageState extends State<NotesPage> {
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         const SizedBox(height: 120),
-        Icon(Icons.note_alt_outlined, size: 64, color: AppColors.textTertiary.withValues(alpha: 0.5)),
+        Icon(
+          Icons.note_alt_outlined,
+          size: 64,
+          color: AppColors.textTertiary.withValues(alpha: 0.5),
+        ),
         const SizedBox(height: 16),
         const Center(
-          child: Text('还没有日志记录', style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w700)),
+          child: Text(
+            '还没有日志记录',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
         const SizedBox(height: 8),
         const Center(
           child: Text(
             '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右上角按钮手动记录',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textTertiary, fontSize: 13, height: 1.5),
+            style: TextStyle(
+              color: AppColors.textTertiary,
+              fontSize: 13,
+              height: 1.5,
+            ),
           ),
         ),
       ],
@@ -155,13 +185,20 @@ class _NotesPageState extends State<NotesPage> {
             children: [
               Text(
                 note == null ? '手动记录' : '编辑日志',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
               ),
               if (note != null) ...[
                 const SizedBox(height: 6),
                 Text(
                   _fmtFullTime(note.createdAt),
-                  style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textTertiary,
+                  ),
                 ),
               ],
               const SizedBox(height: 16),
@@ -187,8 +224,12 @@ class _NotesPageState extends State<NotesPage> {
                       selectedColor: NoteColor.of(c).withValues(alpha: 0.22),
                       labelStyle: TextStyle(
                         fontSize: 13,
-                        fontWeight: category == c ? FontWeight.w800 : FontWeight.w600,
-                        color: category == c ? NoteColor.of(c) : AppColors.textSecondary,
+                        fontWeight: category == c
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: category == c
+                            ? NoteColor.of(c)
+                            : AppColors.textSecondary,
                       ),
                       showCheckmark: false,
                     ),
@@ -221,6 +262,11 @@ class _NotesPageState extends State<NotesPage> {
         ),
       ),
     );
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
+    } else {
+      controller.dispose();
+    }
     if (result == null || !mounted) return;
     if (result['delete'] == true) {
       await _delete(note!);
@@ -248,7 +294,10 @@ class _NotesPageState extends State<NotesPage> {
         title: const Text('删除日志'),
         content: Text('确认删除这条日志？\n${note.text}'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
             onPressed: () => Navigator.pop(ctx, true),
@@ -293,11 +342,11 @@ class NoteColor {
   static const Color gray = Color(0xFF6B7280);
 
   static Color of(String? category) => switch (category) {
-        NoteCategory.abnormal => red,
-        NoteCategory.deploy || NoteCategory.rescue || NoteCategory.withdraw => blue,
-        NoteCategory.water => orange,
-        _ => gray,
-      };
+    NoteCategory.abnormal => red,
+    NoteCategory.deploy || NoteCategory.rescue || NoteCategory.withdraw => blue,
+    NoteCategory.water => orange,
+    _ => gray,
+  };
 }
 
 /// 时间线卡片：左侧时间轴圆点 + 竖线，右侧卡片（分类色条 + 时间 + 内容）
@@ -349,7 +398,10 @@ class _TimelineNoteCard extends StatelessWidget {
                 ),
                 if (!isLast)
                   Expanded(
-                    child: Container(width: 2, color: color.withValues(alpha: 0.25)),
+                    child: Container(
+                      width: 2,
+                      color: color.withValues(alpha: 0.25),
+                    ),
                   ),
               ],
             ),
@@ -367,7 +419,10 @@ class _TimelineNoteCard extends StatelessWidget {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: color.withValues(alpha: 0.14),
                             borderRadius: BorderRadius.circular(AppRadius.pill),

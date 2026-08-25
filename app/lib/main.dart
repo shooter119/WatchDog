@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
 import 'services/foreground_keep_alive.dart';
 import 'services/local_asr_service.dart';
+import 'services/diagnostic_log_service.dart';
 import 'services/op_log_service.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
@@ -18,8 +20,40 @@ import 'theme/app_widgets.dart';
 import 'theme/nav_icons.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const WatchDogApp());
+  final diagnostics = DiagnosticLogService.instance;
+  // ensureInitialized 与 runApp 必须处于同一个 Zone，否则 Flutter 会产生
+  // Zone mismatch 告警，并可能让插件的 Zone 配置行为不一致。
+  runZonedGuarded<void>(
+    () {
+      WidgetsFlutterBinding.ensureInitialized();
+      unawaited(diagnostics.init());
+
+      // Flutter framework 异常通常就是开发者看到的红屏；保留 Flutter 默认输出，
+      // 同时异步写入诊断日志。日志失败不能阻断 Flutter 的默认错误处理。
+      final previousFlutterError = FlutterError.onError;
+      FlutterError.onError = (details) {
+        diagnostics.recordFlutterError(details);
+        if (previousFlutterError != null) {
+          previousFlutterError(details);
+        } else {
+          FlutterError.presentError(details);
+        }
+      };
+
+      // 捕获未被 Widget 层处理的异步异常；返回 false 让 Flutter 保留默认行为。
+      final previousPlatformError = PlatformDispatcher.instance.onError;
+      PlatformDispatcher.instance.onError = (error, stack) {
+        diagnostics.recordUncaught(error, stack, source: 'platform_error');
+        return previousPlatformError?.call(error, stack) ?? false;
+      };
+
+      runApp(const WatchDogApp());
+    },
+    (error, stack) {
+      // 兜住 runApp/Zone 内未处理的同步和异步异常。
+      diagnostics.recordUncaught(error, stack, source: 'zone_error');
+    },
+  );
 }
 
 class WatchDogApp extends StatefulWidget {
@@ -51,6 +85,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
     super.initState();
     controller =
         widget.controller ?? AppController(localAsr: LocalAsrService());
+    DiagnosticLogService.instance.setPage('home');
     // 等 FlutterActivity 完成插件注册后再初始化后台值守；过早在 main()
     // 调用会触发 flutter_foreground_task 的 MissingPluginException。
     // 前台服务属于可选能力，平台插件不可用或系统权限流程卡住时，不能
@@ -76,12 +111,22 @@ class _WatchDogAppState extends State<WatchDogApp> {
   void _selectTab(int i) {
     if (controller.needsIncidentSelection) return;
     HapticFeedback.selectionClick();
+    DiagnosticLogService.instance.setPage(_pageName(i));
     setState(() {
       if (i == 3 && _tab != 3) _preChatTab = _tab; // 记录进入辅助页前的来源页
       _tab = i;
       if (i != 3) _chatTextMode = false; // 离开辅助页重置为悬浮麦克风态
     });
   }
+
+  String _pageName(int tab) => switch (tab) {
+    0 => 'notes',
+    1 => 'board',
+    2 => 'home',
+    3 => 'chat',
+    4 => 'settings',
+    _ => 'unknown',
+  };
 
   void _goVoice() => _selectTab(2);
 

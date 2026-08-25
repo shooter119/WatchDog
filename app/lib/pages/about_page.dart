@@ -64,7 +64,7 @@ class AboutPage extends StatelessWidget {
           _SectionCard(
             body:
                 '生产后端已部署在 CloudBase 云托管，业务数据使用 CloudBase PostgreSQL，App 通过 HTTP 网关访问，AI 仍使用 DeepSeek 直连。'
-                '旧 ByteVirt 服务保留为回滚参考；详细说明见项目仓库中的 CloudBase PG 模式部署文档。',
+                '详细说明见项目仓库中的 CloudBase PG 模式部署文档。',
           ),
         ],
       ),
@@ -139,7 +139,7 @@ class _FeaturesCard extends StatelessWidget {
     (
       Icons.smart_toy_outlined,
       '辅助问答',
-      '火场智囊「水元素」，浓烟里拿不准主意就问它：语音转写仅用于本页与 AI 交流，不发布到火场日志；默认联网检索，陌生危险化学品等问题可查找资料；按结论/立即行动/注意事项简洁支招；对话历史只保存在本机',
+      '火场智囊「水元素」，浓烟里拿不准主意就问它：语音转写仅用于本页与 AI 交流，不发布到火场日志；默认联网检索，陌生危险化学品等问题可查找资料；按结论/立即行动/注意事项简洁支招；收到整段警情简报会主动研判风险、处置要点和待核实信息；对话历史只保存在本机',
     ),
     (
       Icons.receipt_long_outlined,

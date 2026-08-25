@@ -6,6 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY src ./src
+COPY models ./models
 
 ENV NODE_ENV=production
 ENV PORT=3000

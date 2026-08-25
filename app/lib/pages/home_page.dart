@@ -107,6 +107,36 @@ class HomePageState extends State<HomePage> {
     _peopleEditors.clear();
   }
 
+  /// 先让 TextField 从 widget tree 移除，再释放其 controller。
+  /// 直接在 setState 前 dispose 会让 TextField 的动画/手势子树在同一帧
+  /// 继续监听已销毁的 controller，触发红屏和级联的 build scope 断言。
+  void _disposeEditorsAfterFrame(Iterable<_PersonEdit> editors) {
+    final pending = editors.toList();
+    if (pending.isEmpty) return;
+    if (!mounted) {
+      for (final ed in pending) {
+        ed.dispose();
+      }
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final ed in pending) {
+        ed.dispose();
+      }
+    });
+  }
+
+  /// 弹窗关闭后再释放输入控制器，避免 TextField 尚未完成移除就收到 dispose。
+  void _disposeControllerAfterFrame(TextEditingController controller) {
+    if (!mounted) {
+      controller.dispose();
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.dispose();
+    });
+  }
+
   /// 开始录音（长按触发）
   Future<void> beginRecording() async {
     widget.onAutoRecordConsumed?.call();
@@ -620,6 +650,8 @@ class HomePageState extends State<HomePage> {
 
   /// 重新语音输入：清除本次转写/解析结果与错误状态
   void _retry() {
+    final disposedEditors = List<_PersonEdit>.from(_peopleEditors);
+    _peopleEditors.clear();
     setState(() {
       _transcript = null;
       _parsed = null;
@@ -629,7 +661,7 @@ class HomePageState extends State<HomePage> {
       _permDenied = false;
     });
     widget.onProcessingChanged?.call(false);
-    _clearEditors();
+    _disposeEditorsAfterFrame(disposedEditors);
   }
 
   /// 从空闲态回到待确认名单（出场/取消录音后仍有已录入人员时）
@@ -715,13 +747,14 @@ class HomePageState extends State<HomePage> {
     final donePressures = <String, double>{};
     final failed = <String>[];
     final kept = <_PersonEdit>[];
+    final disposedEditors = <_PersonEdit>[];
     for (final r in results) {
       final ok =
           r.result == _SubmitResult.created || r.result == _SubmitResult.merged;
       if (ok) {
         done.add(r.ed.name);
         donePressures[r.ed.name] = r.ed.pressure!;
-        r.ed.dispose();
+        disposedEditors.add(r.ed);
       } else {
         failed.add(r.ed.name);
         kept.add(r.ed);
@@ -731,10 +764,6 @@ class HomePageState extends State<HomePage> {
     for (var i = results.length; i < _peopleEditors.length; i++) {
       kept.add(_peopleEditors[i]);
     }
-    _peopleEditors
-      ..clear()
-      ..addAll(kept);
-
     if (done.isNotEmpty) {
       widget.controller.tts.speak('${done.join('、')}，已开始倒计时');
       if (mounted) {
@@ -746,9 +775,12 @@ class HomePageState extends State<HomePage> {
         );
       }
     }
-    final allDone = failed.isEmpty && _peopleEditors.isEmpty;
+    final allDone = failed.isEmpty && kept.isEmpty;
     if (mounted) {
       setState(() {
+        _peopleEditors
+          ..clear()
+          ..addAll(kept);
         if (allDone) {
           _transcript = null;
           _parsed = null;
@@ -757,6 +789,7 @@ class HomePageState extends State<HomePage> {
         _processing = false;
       });
     }
+    _disposeEditorsAfterFrame(disposedEditors);
     widget.onProcessingChanged?.call(false);
     if (!allDone && failed.isNotEmpty && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -853,12 +886,19 @@ class HomePageState extends State<HomePage> {
   /// 移除误识别/多余的人员（释放输入控制器）
   void _removeEditorAt(int index) {
     final ed = _peopleEditors.removeAt(index);
-    ed.dispose();
     if (_peopleEditors.isEmpty) {
-      _retry();
-      return;
+      setState(() {
+        _transcript = null;
+        _parsed = null;
+        _error = null;
+        _inlineError = null;
+        _processing = false;
+      });
+      widget.onProcessingChanged?.call(false);
+    } else if (mounted) {
+      setState(() {});
     }
-    if (mounted) setState(() {});
+    _disposeEditorsAfterFrame([ed]);
   }
 
   Future<_SubmitResult> _tryMerge(Entry existing, double p) async {
@@ -932,50 +972,91 @@ class HomePageState extends State<HomePage> {
         _peopleEditors.isNotEmpty ||
         (_transcript != null && _parsed != null);
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: Column(
-          children: [
-            Row(
+      child: LayoutBuilder(
+        builder: (context, viewport) {
+          final pageHeader = Row(
+            children: [
+              const Text('警情处置', style: AppTextStyles.h1),
+              const Spacer(),
+              ConnectionStatus(
+                connected: !widget.controller.connectionLost,
+                onRetry: widget.controller.startSync,
+              ),
+            ],
+          );
+          final taskBar = incident == null || compactEntryFlow
+              ? null
+              : _TaskBar(
+                  incident: incident,
+                  forces: widget.controller.forces,
+                  onRename: _renameIncident,
+                  onAddForce: () => _editForce(),
+                  onEditForce: (force) => _editForce(force),
+                  onRemoveForce: (force) => _removeForce(force),
+                  onArchive: _confirmArchive,
+                  onExit: _confirmExitIncident,
+                );
+
+          // 横屏可用高度通常不足以同时放下警情卡、结果区和底部导航。
+          // 改为整页滚动，并给内部 Expanded 组件明确高度，避免 Column 溢出。
+          if (viewport.maxHeight < 520) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  pageHeader,
+                  const SizedBox(height: 8),
+                  if (incident == null)
+                    SizedBox(
+                      height: max(320.0, viewport.maxHeight - 72),
+                      child: _IncidentPicker(
+                        activeIncidents: widget.controller.activeIncidents,
+                        onSelect: _selectIncident,
+                        onCreate: _createIncident,
+                      ),
+                    )
+                  else ...[
+                    if (taskBar != null) taskBar,
+                    if (taskBar != null) const SizedBox(height: 8),
+                    SizedBox(
+                      height: max(260.0, viewport.maxHeight - 96),
+                      child: _buildResultCard(context, cfg),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Column(
               children: [
-                const Text('警情处置', style: AppTextStyles.h1),
-                const Spacer(),
-                ConnectionStatus(
-                  connected: !widget.controller.connectionLost,
-                  onRetry: widget.controller.startSync,
+                pageHeader,
+                const SizedBox(height: 8),
+                if (incident == null)
+                  Expanded(
+                    flex: 4,
+                    child: _IncidentPicker(
+                      activeIncidents: widget.controller.activeIncidents,
+                      onSelect: _selectIncident,
+                      onCreate: _createIncident,
+                    ),
+                  )
+                else if (taskBar != null)
+                  taskBar,
+                const SizedBox(height: 8),
+                Expanded(
+                  child: incident == null
+                      ? const SizedBox.shrink()
+                      : _buildResultCard(context, cfg),
                 ),
+                const SizedBox(height: 24),
               ],
             ),
-            const SizedBox(height: 8),
-            if (incident == null)
-              Expanded(
-                flex: 4,
-                child: _IncidentPicker(
-                  activeIncidents: widget.controller.activeIncidents,
-                  onSelect: _selectIncident,
-                  onCreate: _createIncident,
-                ),
-              )
-            else if (!compactEntryFlow)
-              _TaskBar(
-                incident: incident,
-                forces: widget.controller.forces,
-                onRename: _renameIncident,
-                onAddForce: () => _editForce(),
-                onEditForce: (force) => _editForce(force),
-                onRemoveForce: (force) => _removeForce(force),
-                onArchive: _confirmArchive,
-                onExit: _confirmExitIncident,
-              ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: incident == null
-                  ? const SizedBox.shrink()
-                  : _buildResultCard(context, cfg),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -1076,7 +1157,7 @@ class HomePageState extends State<HomePage> {
         ],
       ),
     );
-    edit.dispose();
+    _disposeControllerAfterFrame(edit);
     if (title == null) return;
     try {
       await widget.controller.renameCurrent(title);
@@ -1175,102 +1256,95 @@ class HomePageState extends State<HomePage> {
     final names = <String>{...stations.map((s) => s.name)};
     if (force != null) names.add(force.stationName);
     if (!mounted) return;
+    var selected = force?.stationName ?? (names.isEmpty ? '' : names.first);
+    var custom = names.isEmpty || !names.contains(selected);
+    final customStation = TextEditingController(
+      text: custom ? force?.stationName ?? '' : '',
+    );
+    final vehicles = TextEditingController(text: '${force?.vehicleCount ?? 1}');
+    final people = TextEditingController(text: '${force?.personnelCount ?? 1}');
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
-      builder: (ctx) {
-        String selected =
-            force?.stationName ?? (names.isEmpty ? '' : names.first);
-        bool custom = names.isEmpty || !names.contains(selected);
-        final customStation = TextEditingController(
-          text: custom ? force?.stationName ?? '' : '',
-        );
-        final vehicles = TextEditingController(
-          text: '${force?.vehicleCount ?? 1}',
-        );
-        final people = TextEditingController(
-          text: '${force?.personnelCount ?? 1}',
-        );
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) => AlertDialog(
-            title: Text(force == null ? '添加参战力量' : '编辑参战力量'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!custom && names.isNotEmpty)
-                  DropdownButtonFormField<String>(
-                    initialValue: selected,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: '消防站名称'),
-                    items: names
-                        .map(
-                          (name) =>
-                              DropdownMenuItem(value: name, child: Text(name)),
-                        )
-                        .toList(),
-                    onChanged: (value) =>
-                        setDialogState(() => selected = value ?? selected),
-                  )
-                else
-                  TextField(
-                    controller: customStation,
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: '消防站名称',
-                      hintText: '如：龙翔路站',
-                    ),
-                  ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: names.isEmpty
-                        ? null
-                        : () => setDialogState(() => custom = !custom),
-                    icon: const Icon(
-                      Icons.edit_location_alt_outlined,
-                      size: 16,
-                    ),
-                    label: Text(custom ? '返回名录选择' : '现场新增消防站'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(force == null ? '添加参战力量' : '编辑参战力量'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!custom && names.isNotEmpty)
+                DropdownButtonFormField<String>(
+                  initialValue: selected,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: '消防站名称'),
+                  items: names
+                      .map(
+                        (name) =>
+                            DropdownMenuItem(value: name, child: Text(name)),
+                      )
+                      .toList(),
+                  onChanged: (value) =>
+                      setDialogState(() => selected = value ?? selected),
+                )
+              else
+                TextField(
+                  controller: customStation,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: '消防站名称',
+                    hintText: '如：龙翔路站',
                   ),
                 ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: vehicles,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: '车辆数'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: people,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: '人员数'),
-                      ),
-                    ),
-                  ],
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: names.isEmpty
+                      ? null
+                      : () => setDialogState(() => custom = !custom),
+                  icon: const Icon(Icons.edit_location_alt_outlined, size: 16),
+                  label: Text(custom ? '返回名录选择' : '现场新增消防站'),
                 ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('取消'),
               ),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, {
-                  'station': custom ? customStation.text.trim() : selected,
-                  'vehicles': vehicles.text,
-                  'people': people.text,
-                }),
-                child: const Text('保存'),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: vehicles,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: '车辆数'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: people,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: '人员数'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        );
-      },
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, {
+                'station': custom ? customStation.text.trim() : selected,
+                'vehicles': vehicles.text,
+                'people': people.text,
+              }),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
     );
+    _disposeControllerAfterFrame(customStation);
+    _disposeControllerAfterFrame(vehicles);
+    _disposeControllerAfterFrame(people);
     if (result == null) return;
     final stationName = result['station']?.toString().trim() ?? '';
     final vehicleCount =
@@ -2010,6 +2084,7 @@ class _PersonEdit {
 
   /// 语音识别出的原始姓名：不在名单内时姓名栏被清空，保留原值用于提示
   String? sourceName;
+  bool _disposed = false;
 
   _PersonEdit({required this.onChanged}) {
     nameCtrl.addListener(onChanged);
@@ -2024,6 +2099,8 @@ class _PersonEdit {
   double? get volume => double.tryParse(volumeCtrl.text.trim());
 
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     nameCtrl.removeListener(onChanged);
     pressureCtrl.removeListener(onChanged);
     volumeCtrl.removeListener(onChanged);

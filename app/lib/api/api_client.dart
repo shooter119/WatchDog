@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../models/models.dart';
 
@@ -12,6 +14,9 @@ class ApiClient {
   final String apiToken;
   final String deviceId;
   final String actorName;
+  IOClient _client = _newHttpClient();
+  IOClient? _activeChatClient;
+  bool _disposed = false;
 
   ApiClient({
     required this.baseUrl,
@@ -57,6 +62,40 @@ class ApiClient {
 
   Uri _uri(String path) => Uri.parse('$baseUrl$path');
 
+  /// 创建带底层连接/空闲超时的移动端 HTTP 客户端。
+  ///
+  /// `Future.timeout` 只能停止等待 Dart Future，不能保证底层 socket 被关闭。
+  /// 所有 API 请求都使用受控客户端；辅助页另建一个客户端，便于单独取消。
+  static IOClient _newHttpClient() {
+    final httpClient = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 12)
+      ..idleTimeout = const Duration(seconds: 25);
+    return IOClient(httpClient);
+  }
+
+  IOClient _newChatClient() => _newHttpClient();
+
+  /// 取消当前辅助问答的底层请求（页面超时、离开页面或用户重试时调用）。
+  void cancelChatRequest() {
+    _activeChatClient?.close();
+  }
+
+  /// 取消并重建通用请求池。Future 超时不会自动关闭底层 socket，后台同步
+  /// 在 DNS/连接层失败时必须调用此方法，避免下一轮继续复用挂起连接。
+  void cancelRequests() {
+    if (_disposed) return;
+    final old = _client;
+    old.close();
+    _client = _newHttpClient();
+  }
+
+  /// 释放 API 客户端及其底层 socket。
+  void dispose() {
+    _disposed = true;
+    cancelChatRequest();
+    _client.close();
+  }
+
   /// CloudBase 网关故障时可能返回 HTML（例如 503），不能直接 jsonDecode，
   /// 否则用户只能看到无意义的 FormatException: Unexpected character '<'。
   dynamic _decodeJson(http.Response res, {required String fallback}) {
@@ -88,8 +127,33 @@ class ApiClient {
     return _responseError(statusCode, body, fallback);
   }
 
+  /// 对完整警情简报补充客户端任务标记。
+  ///
+  /// 服务端新版本会用 incident_brief 模式处理；客户端也保留这层标记，
+  /// 兼容尚未完成滚动更新的网关，避免模型把真实警情当成普通闲聊。
+  String _chatMessageForModel(String message) {
+    if (!_looksLikeIncidentBrief(message)) return message;
+    const instruction =
+        '这是一条真实的现场警情简报，不是普通提问。请水元素直接进行现场辅助研判：先给警情性质和主要风险，再给立即处置要点、禁忌事项，并主动列出需核实的信息。不要反问用户想了解什么。\n\n原始警情：';
+    final maxOriginalLength = 2000 - instruction.length;
+    final original = message.length > maxOriginalLength
+        ? message.substring(0, maxOriginalLength)
+        : message;
+    return '$instruction$original';
+  }
+
+  bool _looksLikeIncidentBrief(String text) {
+    if (text.length < 20) return false;
+    final factSignals = [
+      RegExp(r'警情|报警|调度|派遣|出动|到场|现场|任务|通报'),
+      RegExp(r'发现|发生|位于|有人|居民|被困|受伤|车辆|人员|住宅|建筑|路段'),
+      RegExp(r'请求|需要|处置|救助|搜救|转移|警戒|封控'),
+    ];
+    return factSignals.where((pattern) => pattern.hasMatch(text)).length >= 2;
+  }
+
   Future<String> transcribe(Uint8List audioBytes, {String? opId}) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/transcribe'),
           headers: {..._opHeaders(opId), 'Content-Type': 'audio/wav'},
@@ -104,7 +168,7 @@ class ApiClient {
   }
 
   Future<ParseResult> parse(String text, {String? opId}) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/parse'),
           headers: _opHeaders(opId),
@@ -119,7 +183,7 @@ class ApiClient {
   }
 
   Future<List<Entry>> fetchEntries({bool activeOnly = false}) async {
-    final res = await http
+    final res = await _client
         .get(
           _uri('/api/entries${activeOnly ? '?active=1' : ''}'),
           headers: _headers,
@@ -140,7 +204,7 @@ class ApiClient {
     double? consumptionLpm,
     String? opId,
   }) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/entries'),
           headers: _opHeaders(opId),
@@ -178,7 +242,7 @@ class ApiClient {
     double? consumptionLpm,
     String? opId,
   }) async {
-    final res = await http
+    final res = await _client
         .patch(
           _uri('/api/entries/$id'),
           headers: _opHeaders(opId),
@@ -199,14 +263,16 @@ class ApiClient {
   }
 
   Future<void> markExited(String id, {String? opId}) async {
-    final res = await http
+    final res = await _client
         .post(_uri('/api/entries/$id/exit'), headers: _opHeaders(opId))
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) throw ApiException('登记出火场失败(${res.statusCode})');
   }
 
   Future<List<Firefighter>> fetchFirefighters() async {
-    final res = await http.get(_uri('/api/firefighters'), headers: _headers);
+    final res = await _client
+        .get(_uri('/api/firefighters'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('获取名单失败(${res.statusCode})');
     final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
     return list
@@ -215,7 +281,7 @@ class ApiClient {
   }
 
   Future<void> addFirefighter(String name) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/firefighters'),
           headers: _headers,
@@ -228,15 +294,16 @@ class ApiClient {
   }
 
   Future<void> removeFirefighter(String id) async {
-    final res = await http.delete(
-      _uri('/api/firefighters/$id'),
-      headers: _headers,
-    );
+    final res = await _client
+        .delete(_uri('/api/firefighters/$id'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('删除失败(${res.statusCode})');
   }
 
   Future<List<Hotword>> fetchHotwords() async {
-    final res = await http.get(_uri('/api/hotwords'), headers: _headers);
+    final res = await _client
+        .get(_uri('/api/hotwords'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('获取词库失败(${res.statusCode})');
     final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
     return list
@@ -245,7 +312,7 @@ class ApiClient {
   }
 
   Future<List<Note>> fetchNotes() async {
-    final res = await http
+    final res = await _client
         .get(_uri('/api/notes'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('获取日志失败(${res.statusCode})');
@@ -259,7 +326,7 @@ class ApiClient {
     String? opId,
     String? author,
   }) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/notes'),
           headers: _opHeaders(opId),
@@ -285,7 +352,7 @@ class ApiClient {
     String? text,
     String? category,
   }) async {
-    final res = await http
+    final res = await _client
         .patch(
           _uri('/api/notes/$id'),
           headers: _headers,
@@ -305,14 +372,14 @@ class ApiClient {
   }
 
   Future<void> deleteNote(String id) async {
-    final res = await http
+    final res = await _client
         .delete(_uri('/api/notes/$id'), headers: _headers)
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) throw ApiException('删除日志失败(${res.statusCode})');
   }
 
   Future<void> addHotword(String word) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/hotwords'),
           headers: _headers,
@@ -325,12 +392,14 @@ class ApiClient {
   }
 
   Future<void> removeHotword(String id) async {
-    final res = await http.delete(_uri('/api/hotwords/$id'), headers: _headers);
+    final res = await _client
+        .delete(_uri('/api/hotwords/$id'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('删除失败(${res.statusCode})');
   }
 
   Future<CalcConfig> fetchConfig() async {
-    final res = await http
+    final res = await _client
         .get(_uri('/api/config'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) throw ApiException('获取配置失败(${res.statusCode})');
@@ -341,7 +410,7 @@ class ApiClient {
 
   /// 拉取智能体问答历史（旧→新，供聊天室恢复上下文）
   Future<List<ChatMessage>> fetchChatMessages() async {
-    final res = await http
+    final res = await _client
         .get(_uri('/api/chat'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -359,12 +428,13 @@ class ApiClient {
     String? opId,
     List<ChatMessage> history = const [],
   }) async {
-    final res = await http
+    final modelMessage = _chatMessageForModel(message);
+    final res = await _client
         .post(
           _uri('/api/chat'),
           headers: _opHeaders(opId),
           body: jsonEncode({
-            'message': message,
+            'message': modelMessage,
             if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
           }),
         )
@@ -393,54 +463,69 @@ class ApiClient {
     String? opId,
     List<ChatMessage> history = const [],
   }) async {
-    final client = http.Client();
+    final client = _newChatClient();
+    _activeChatClient = client;
+    final modelMessage = _chatMessageForModel(message);
     try {
-      Future<http.StreamedResponse> open() {
-        final req = http.Request('POST', _uri('/api/chat'));
-        req.headers.addAll(_opHeaders(opId));
-        req.headers['Content-Type'] = 'application/json';
-        req.body = jsonEncode({
-          'message': message,
-          'stream': 1,
-          if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
-        });
-        // 首字节允许 CloudBase 冷启动完成；首字节之后按流实时消费。
-        return client.send(req).timeout(const Duration(seconds: 25));
-      }
+      Future<String> request() async {
+        Future<http.StreamedResponse> open() {
+          final req = http.Request('POST', _uri('/api/chat'));
+          req.headers.addAll(_opHeaders(opId));
+          req.headers['Content-Type'] = 'application/json';
+          req.body = jsonEncode({
+            'message': modelMessage,
+            'stream': 1,
+            if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
+          });
+          // 首字节允许 CloudBase 冷启动完成；首字节之后按流实时消费。
+          return client.send(req).timeout(const Duration(seconds: 25));
+        }
 
-      var res = await open();
-      if (res.statusCode == 502 ||
-          res.statusCode == 503 ||
-          res.statusCode == 504) {
-        await res.stream.drain();
-        await Future<void>.delayed(const Duration(milliseconds: 700));
-        res = await open();
-      }
-      if (res.statusCode != 200) {
-        final body = await res.stream.bytesToString();
-        throw ApiException(_responseErrorText(body, res.statusCode, '提问失败'));
-      }
-      final full = StringBuffer();
-      final parser = SseLineParser();
-      final bodyStream = res.stream
-          .transform(utf8.decoder)
-          .timeout(
-            const Duration(seconds: 20),
-            onTimeout: (sink) =>
-                sink.addError(TimeoutException('辅助问答响应超时，请检查网络后重试')),
-          );
-      await for (final chunk in bodyStream) {
-        for (final ev in parser.push(chunk)) {
-          if (ev.done) return full.toString();
-          if (ev.error != null) throw ApiException(ev.error!);
-          if (ev.content != null) {
-            full.write(ev.content);
-            onChunk(ev.content!);
+        var res = await open();
+        if (res.statusCode == 502 ||
+            res.statusCode == 503 ||
+            res.statusCode == 504) {
+          await res.stream.drain();
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+          res = await open();
+        }
+        if (res.statusCode != 200) {
+          final body = await res.stream.bytesToString();
+          throw ApiException(_responseErrorText(body, res.statusCode, '提问失败'));
+        }
+        final full = StringBuffer();
+        final parser = SseLineParser();
+        final bodyStream = res.stream
+            .transform(utf8.decoder)
+            .timeout(
+              const Duration(seconds: 20),
+              onTimeout: (sink) =>
+                  sink.addError(TimeoutException('辅助问答响应超时，请检查网络后重试')),
+            );
+        await for (final chunk in bodyStream) {
+          for (final ev in parser.push(chunk)) {
+            if (ev.done) return full.toString();
+            if (ev.error != null) throw ApiException(ev.error!);
+            if (ev.content != null) {
+              full.write(ev.content);
+              onChunk(ev.content!);
+            }
           }
         }
+        return full.toString();
       }
-      return full.toString();
+
+      // 网络层在 DNS/连接异常时可能迟迟不结束 Future；给整个请求设置最终
+      // 截止时间，并在超时分支关闭 Client，避免辅助页永久停留在思考态。
+      return await request().timeout(
+        const Duration(seconds: 45),
+        onTimeout: () {
+          client.close();
+          throw TimeoutException('辅助问答响应超时，请检查网络后重试');
+        },
+      );
     } finally {
+      if (identical(_activeChatClient, client)) _activeChatClient = null;
       client.close();
     }
   }
@@ -467,7 +552,7 @@ class ApiClient {
 
   /// 清空本场景问答记录
   Future<void> clearChatMessages() async {
-    final res = await http
+    final res = await _client
         .delete(_uri('/api/chat'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -477,7 +562,7 @@ class ApiClient {
 
   /// 批量上报操作日志（每条带 op_id/stage/level/msg/data）
   Future<void> sendLogs(List<Map<String, dynamic>> logs) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/logs'),
           headers: _headers,
@@ -490,7 +575,7 @@ class ApiClient {
   /// 拉取云端用户设置（按 X-Device-Id 识别用户，按场景隔离）
   /// 返回 { settings: {...}, updatedAt: 服务器最近修改时间（无记录为 0） }
   Future<Map<String, dynamic>> fetchUserSettings() async {
-    final res = await http
+    final res = await _client
         .get(_uri('/api/user-settings'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -507,7 +592,7 @@ class ApiClient {
 
   /// 推送本地用户设置到云端（全量覆盖白名单键）
   Future<void> pushUserSettings(Map<String, dynamic> settings) async {
-    final res = await http
+    final res = await _client
         .put(
           _uri('/api/user-settings'),
           headers: _headers,
@@ -521,7 +606,7 @@ class ApiClient {
     final path = status == null
         ? '/api/incidents'
         : '/api/incidents?status=${Uri.encodeQueryComponent(status)}';
-    final res = await http
+    final res = await _client
         .get(_uri(path), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -537,7 +622,7 @@ class ApiClient {
     required String realName,
     String? opId,
   }) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/incidents'),
           headers: _opHeaders(opId),
@@ -563,7 +648,7 @@ class ApiClient {
   }
 
   Future<Incident> fetchIncident(String id) async {
-    final res = await http
+    final res = await _client
         .get(_uri('/api/incidents/$id'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     final body = jsonDecode(utf8.decode(res.bodyBytes));
@@ -580,7 +665,7 @@ class ApiClient {
     String? title, {
     required int expectedVersion,
   }) async {
-    final res = await http
+    final res = await _client
         .patch(
           _uri('/api/incidents/$id'),
           headers: {..._headers, 'X-Expected-Version': '$expectedVersion'},
@@ -601,7 +686,7 @@ class ApiClient {
   }
 
   Future<Incident> archiveIncident(String id) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/incidents/$id/archive'),
           headers: _headers,
@@ -621,7 +706,7 @@ class ApiClient {
     String? forIncidentId,
   }) async {
     final id = forIncidentId ?? incidentId;
-    final res = await http
+    final res = await _client
         .get(_uri('/api/incidents/$id/forces'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -644,7 +729,7 @@ class ApiClient {
     final path = forceId == null
         ? '/api/incidents/$incidentId/forces'
         : '/api/incidents/$incidentId/forces/$forceId';
-    final method = forceId == null ? http.post : http.patch;
+    final method = forceId == null ? _client.post : _client.patch;
     final res = await method(
       _uri(path),
       headers: _headers,
@@ -667,7 +752,7 @@ class ApiClient {
   }
 
   Future<void> deleteIncidentForce(String forceId) async {
-    final res = await http
+    final res = await _client
         .delete(
           _uri('/api/incidents/$incidentId/forces/$forceId'),
           headers: _headers,
@@ -679,7 +764,7 @@ class ApiClient {
   }
 
   Future<List<Station>> fetchStations() async {
-    final res = await http
+    final res = await _client
         .get(_uri('/api/stations'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -692,7 +777,7 @@ class ApiClient {
   }
 
   Future<Station> createStation(String name) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/stations'),
           headers: _headers,
@@ -712,7 +797,7 @@ class ApiClient {
     String id, {
     int limit = 2000,
   }) async {
-    final res = await http
+    final res = await _client
         .get(
           _uri('/api/incidents/$id/timeline?limit=$limit'),
           headers: _headers,
@@ -733,7 +818,7 @@ class ApiClient {
   Future<Map<String, dynamic>> uploadOfflineOperations(
     List<Map<String, dynamic>> operations,
   ) async {
-    final res = await http
+    final res = await _client
         .post(
           _uri('/api/incidents/$incidentId/offline-operations'),
           headers: _headers,
@@ -750,7 +835,7 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> fetchProfile() async {
-    final res = await http
+    final res = await _client
         .get(_uri('/api/profile'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -762,7 +847,7 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> saveProfile(String realName) async {
-    final res = await http
+    final res = await _client
         .put(
           _uri('/api/profile'),
           headers: _headers,

@@ -58,10 +58,9 @@ deploy/                  部署脚本与配置
 - 涉及真实 key 的临时调试脚本不入库（如 `backend/asr-debug.js`）。
 - CI 签名：keystore/key.properties 已配为 GitHub Actions secrets（`WATCHDOG_KEYSTORE_B64` / `WATCHDOG_STORE_PASSWORD` / `WATCHDOG_KEY_ALIAS` / `WATCHDOG_KEY_PASSWORD`），workflow 构建后 keytool 指纹比对防静默 debug 签名。
 
-## 部署（bytevirt VPS）
+## 部署（CloudBase 云托管）
 
-- 线上地址：`https://bytevirt.meiyou.xyz:8443`（nginx 反代到本地 3100 端口，`/api/` 前缀）。
-- 一键部署：`deploy/deploy.sh`（rsync 同步 backend/src + 配置，pm2 重启，nginx 校验，健康检查）。
-- pm2 应用名 `watchdog-api`，环境变量读 `/opt/watchdog/.env`（服务器上手动维护，不入库）。
-- 后端本地端口 3100（生产），本地开发 3000；改端口/依赖需同步 `deploy/ecosystem.config.cjs` 与 nginx 配置。
-- 平台决策：iOS 暂缓，集中开发 Android；改动部署相关代码后建议跑一遍 deploy.sh 验证。
+- 线上地址：`https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com`（HTTP 网关根路径转发到 `watchdog-api-prod`）。
+- 一键部署：先完成 CloudBase CLI 登录并设置 `CLOUDBASE_ENV_ID`，再运行 `deploy/deploy.sh`；脚本会打包后端和端侧 ASR 模型，部署后执行健康检查。
+- 云托管服务名 `watchdog-api-prod`，容器端口 3000；生产密钥只配置在 CloudBase 运行时环境变量中，不入库。
+- 平台决策：iOS 暂缓，集中开发 Android；改动部署相关代码后建议运行 `deploy/deploy.sh --dry-run` 验证部署包。

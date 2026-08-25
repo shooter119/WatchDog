@@ -287,6 +287,24 @@ class _FakeApi extends ApiClient {
   }
 }
 
+class _HangingChatApi extends _FakeApi {
+  bool canceled = false;
+
+  @override
+  void cancelChatRequest() {
+    canceled = true;
+    super.cancelChatRequest();
+  }
+
+  @override
+  Future<String> sendChatMessageStream(
+    String message, {
+    required void Function(String delta) onChunk,
+    String? opId,
+    List<ChatMessage> history = const [],
+  }) => Completer<String>().future;
+}
+
 /// 模拟"进场意图但未识别到姓名"的解析结果（ASR 同音错字未纠正的兜底场景）
 class _EmptyEntryApi extends _FakeApi {
   @override
@@ -1087,7 +1105,13 @@ void main() {
     });
 
     testWidgets('逐行移除人员后回到单人确认；全部移除回到初始', (tester) async {
-      final api = _FakeApi();
+      final api = _FakeApi(
+        rounds: [
+          [
+            ParsePerson(name: '李娜', pressureMpa: 22),
+          ],
+        ],
+      );
       final c = _FakeController()..api = api;
       await tester.pumpWidget(
         MaterialApp(
@@ -1113,6 +1137,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(api.created, ['李娜']);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
+
+      // 清空最后一行：TextField 必须先从树上移除，再释放 controller，不能红屏。
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      await tester.tap(find.text('重新语音输入'));
+      await tester.pumpAndSettle();
+      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('再次录音保留已录入人员并去重追加，可统一确认', (tester) async {
@@ -1720,6 +1753,36 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('辅助问答超时会解除思考态并显示错误', (tester) async {
+      final api = _HangingChatApi();
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(
+              controller: c,
+              audioService: _FakeAudio(),
+              requestTimeout: const Duration(milliseconds: 50),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      unawaited(state.submitQuestion('现场有人员被困，怎么办？'));
+      await tester.pump();
+      expect(find.text('水元素思考中…'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.pump();
+      expect(find.text('水元素思考中…'), findsNothing);
+      expect(find.textContaining('辅助回复失败：'), findsOneWidget);
+      expect(api.canceled, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('辅助页语音转写直接作为问答文本，不发布到火场日志', (tester) async {
       final api = _FakeApi(transcribeText: '三楼发现明火，请问下一步怎么处置？');
       final c = _FakeController()..api = api;
@@ -1865,6 +1928,26 @@ void main() {
       await tester.tap(find.text('加入'));
       await tester.pumpAndSettle();
       expect(selected, isTrue);
+    });
+
+    testWidgets('警情选择浮层在零尺寸约束下不产生负约束', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: SizedBox(
+            width: 0,
+            height: 0,
+            child: IncidentSelectionOverlay(
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('悬浮窗长警情名称完整换行显示', (tester) async {
@@ -2090,6 +2173,23 @@ void main() {
         expect(button.right, lessThanOrEqualTo(assists.left));
         await tester.pumpWidget(const SizedBox());
       }
+    });
+
+    testWidgets('横屏首页警情卡可滚动，不产生底部溢出', (tester) async {
+      tester.view.physicalSize = const Size(800 * 3, 390 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: HomePage(
+            controller: _FakeController(),
+            audioService: _FakeAudio(),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('辅助页语音按钮完整位于底栏背景内', (tester) async {
@@ -2377,6 +2477,14 @@ void main() {
       await pumpTask(tester, c);
       expect(find.byKey(const Key('rename-incident')), findsOneWidget);
       expect(find.text('修改名称'), findsNothing);
+
+      // 弹窗关闭后 controller 延迟释放，避免 InputDecorator 仍在卸载时触发红屏。
+      await tester.tap(find.byKey(const Key('rename-incident')));
+      await tester.pump();
+      expect(find.text('修改警情名称'), findsOneWidget);
+      await tester.tap(find.text('稍后'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('活动警情提供参战力量添加入口', (tester) async {

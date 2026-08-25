@@ -77,7 +77,11 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
         ],
       ),
     );
-    input.dispose();
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => input.dispose());
+    } else {
+      input.dispose();
+    }
     if (value == null) return;
     try {
       final updated = await widget.controller.renameIncident(incident, value);

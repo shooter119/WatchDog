@@ -5,11 +5,13 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
 
+import 'settings.dart';
+
 /// 本地语音识别服务：sherpa-onnx 离线 zipformer-transducer 中文模型（multi-zh-hans int8，约 75MB）。
 /// 多方言（普通话/粤语/上海话等）大模型，识别精度显著高于 14M 小模型；
 /// 热词走 bbpe 字节编码（名单/术语写入 hotwords 文件，modified_beam_search 上下文加权），
 /// 字节级词表对任意姓名无 OOV，生僻字人名同样生效。
-/// 模型文件托管在项目服务器（https://bytevirt.meiyou.xyz:8443/models/），国内直连下载。
+/// 模型文件由 CloudBase 后端的 /models/ 路径分发，国内直连下载。
 /// 注：streaming 系列模型 + bbpe 热词在 sherpa-onnx 1.13.4 存在 CreateOnlineRecognizer 崩溃，暂用离线版。
 class LocalAsrService {
   static const modelName = 'multi-zh-hans-2023-9-2';
@@ -20,15 +22,14 @@ class LocalAsrService {
   static const _bpeVocabFile = 'bpe.vocab';
   static const _hotwordsFile = 'hotwords.txt';
 
-  static const _downloadBase =
-      'https://bytevirt.meiyou.xyz:8443/models/$modelName';
+  static const _downloadBase = '${Settings.defaultModelBaseUrl}/$modelName';
 
   /// 语音降噪模型（DPDFNet，9.8MB）：录音 → 降噪 → 识别，火场嘈杂环境提升人名/压力识别率。
   /// 与 ASR 模型同目录下载（denoiser/），缺失时自动跳过降噪（不影响识别主流程）。
   static const _denoiserName = 'denoiser';
   static const _denoiserFile = 'dpdfnet2.onnx';
   static const _denoiserDownloadBase =
-      'https://bytevirt.meiyou.xyz:8443/models/$_denoiserName';
+      '${Settings.defaultModelBaseUrl}/$_denoiserName';
 
   /// 旧模型目录（streaming 系列含崩溃 bug / 14M 小模型精度差 / Paraformer 不支持热词 / x-asr 词表稀疏），下载新模型后清理
   static const _legacyModelDirs = [
@@ -77,10 +78,12 @@ class LocalAsrService {
   /// 下载模型（encoder + decoder + joiner + tokens + bpe.vocab + 降噪模型），带进度回调
   Future<void> downloadModel({void Function(int received, int total)? onProgress}) async {
     final dir = await _modelDir();
+    final apiToken = await Settings.apiToken;
     for (final name in [_encoderFile, _decoderFile, _joinerFile, _tokensFile, _bpeVocabFile]) {
       await _downloadFile(
         url: '$_downloadBase/$name',
         path: '${dir.path}/$name',
+        apiToken: apiToken,
         onProgress: onProgress,
       );
     }
@@ -90,6 +93,7 @@ class LocalAsrService {
       await _downloadFile(
         url: '$_denoiserDownloadBase/$_denoiserFile',
         path: '${ddir.path}/$_denoiserFile',
+        apiToken: apiToken,
         onProgress: onProgress,
       );
     } catch (_) {
@@ -113,6 +117,7 @@ class LocalAsrService {
   Future<void> _downloadFile({
     required String url,
     required String path,
+    required String apiToken,
     required void Function(int received, int total)? onProgress,
   }) async {
     final part = '$path.part';
@@ -122,7 +127,9 @@ class LocalAsrService {
       try {
         final client = http.Client();
         try {
-          final res = await client.send(http.Request('GET', Uri.parse(u)));
+          final request = http.Request('GET', Uri.parse(u));
+          if (apiToken.isNotEmpty) request.headers['X-Api-Token'] = apiToken;
+          final res = await client.send(request);
           if (res.statusCode != 200) {
             lastError = HttpException('HTTP ${res.statusCode}');
             continue;
