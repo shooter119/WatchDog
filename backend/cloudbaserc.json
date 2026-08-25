@@ -1,6 +1,5 @@
 {
   "version": "2.0",
-  "envId": "watchdog-prod-d6gch930m378d9a16",
   "$schema": "https://framework-1258016615.tcloudbaseapp.com/schema/latest.json",
   "cloudrun": {
     "name": "watchdog-api"

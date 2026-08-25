@@ -72,16 +72,25 @@ class Settings {
   }
 
   /// 应用云端设置（按类型与合理范围校验），updatedAt 同步为本地修改时间戳
-  static Future<void> applyFromServer(Map<String, dynamic> map, {required int updatedAt}) async {
+  static Future<void> applyFromServer(
+    Map<String, dynamic> map, {
+    required int updatedAt,
+  }) async {
     final sp = await SharedPreferences.getInstance();
     num? numOf(String k) => map[k] is num ? map[k] as num : null;
     bool? boolOf(String k) => map[k] is bool ? map[k] as bool : null;
     final vol = numOf('cylinder_vol_l');
-    if (vol != null && vol > 0 && vol <= 20) await sp.setDouble(_kVolume, vol.toDouble());
+    if (vol != null && vol > 0 && vol <= 20) {
+      await sp.setDouble(_kVolume, vol.toDouble());
+    }
     final full = numOf('full_pressure_mpa');
-    if (full != null && full > 0 && full <= 40) await sp.setDouble(_kFullPressure, full.toDouble());
+    if (full != null && full > 0 && full <= 40) {
+      await sp.setDouble(_kFullPressure, full.toDouble());
+    }
     final cons = numOf('consumption_lpm');
-    if (cons != null && cons > 0 && cons <= 300) await sp.setDouble(_kConsumption, cons.toDouble());
+    if (cons != null && cons > 0 && cons <= 300) {
+      await sp.setDouble(_kConsumption, cons.toDouble());
+    }
     final warn = numOf('warn_min');
     if (warn != null && warn >= 0) await sp.setInt(_kWarn, warn.toInt());
     final alarm = numOf('alarm_min');

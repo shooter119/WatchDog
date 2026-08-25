@@ -63,8 +63,8 @@ class AboutPage extends StatelessWidget {
           SectionTitle(text: '后端部署'),
           _SectionCard(
             body:
-                '当前线上服务部署在 ByteVirt VPS，同时提供 CloudBase 云托管的并行部署配置。'
-                'CloudBase 方案使用 PostgreSQL 持久化数据，并可接入 CloudBase AI；迁移时先验证新环境，再切换 App，不会自动中断现有服务；详细说明见项目仓库中的 CloudBase 并行部署文档。',
+                '生产后端已部署在 CloudBase 云托管，业务数据使用 CloudBase PostgreSQL，App 通过 HTTP 网关访问，AI 仍使用 DeepSeek 直连。'
+                '旧 ByteVirt 服务保留为回滚参考；详细说明见项目仓库中的 CloudBase PG 模式部署文档。',
           ),
         ],
       ),
@@ -141,11 +141,23 @@ class _FeaturesCard extends StatelessWidget {
       '辅助问答',
       '火场智囊「水元素」，浓烟里拿不准主意就问它：语音转写仅用于本页与 AI 交流，不发布到火场日志；默认联网检索，陌生危险化学品等问题可查找资料；按结论/立即行动/注意事项简洁支招；对话历史只保存在本机',
     ),
-    (Icons.receipt_long_outlined, '火场日志', '说一句「搜救出一人」自动记进日志时间线，按实战环节分类，回头好复盘'),
+    (
+      Icons.receipt_long_outlined,
+      '火场日志',
+      '进场自动记录空气呼吸器压力，撤离自动记录为撤离救援现场；其他现场信息也可语音记入，按实战环节分类复盘',
+    ),
     (Icons.calculate_outlined, '自动计算', '气瓶容量、压力、消耗率交给我们算，剩余 10 分钟提醒、5 分钟报警'),
     (Icons.dashboard_rounded, '实时看板', '在场谁、进去多久、还剩多久，一目了然；到点自动播报、响警报、锁屏也推通知'),
-    (Icons.offline_bolt_outlined, '断网可用', '语音识别与语义解析支持本机运行，火场没信号也能录'),
-    (Icons.folder_copy_outlined, '警情档案', '多台设备加入同一场警情协同记录；名称、参战消防站和力量数量可共同维护'),
+    (
+      Icons.offline_bolt_outlined,
+      '断网可用',
+      '语音识别与语义解析支持本机运行；本地 ASR 主模型约 75MB，另有可选的 9.8MB 降噪模型',
+    ),
+    (
+      Icons.folder_copy_outlined,
+      '警情档案',
+      '启动时先选择或新建警情，未完成选择前底部导航与语音入口锁定；多台设备可协同维护名称、参战消防站和力量数量',
+    ),
     (
       Icons.history_outlined,
       '离线补传与复盘',

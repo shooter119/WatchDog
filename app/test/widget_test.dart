@@ -12,6 +12,7 @@ import 'package:watchdog/pages/board_page.dart';
 import 'package:watchdog/pages/chat_page.dart';
 import 'package:watchdog/pages/entry_detail_page.dart';
 import 'package:watchdog/pages/home_page.dart';
+import 'package:watchdog/pages/incident_selection_overlay.dart';
 import 'package:watchdog/pages/notes_page.dart';
 import 'package:watchdog/pages/op_log_page.dart';
 import 'package:watchdog/pages/same_name_dialog.dart';
@@ -566,6 +567,8 @@ void main() {
           ),
         ),
       );
+      expect(find.text('初始 20.0 MPa'), findsOneWidget);
+      expect(find.text('当前 20.0 MPa'), findsNothing);
       // 档位齐全：30 到 6，每档差 3
       for (final lv in [30, 27, 24, 21, 18, 15, 12, 9, 6]) {
         expect(find.text('$lv'), findsOneWidget, reason: '档位 $lv 应存在');
@@ -669,7 +672,7 @@ void main() {
       await tester.tap(find.text('确认出火场'));
       await tester.pumpAndSettle();
       expect(c.exited, ['e-李娜']);
-      expect(c.notes.single.text, '李娜出场');
+      expect(c.notes.single.text, '李娜撤离救援现场');
       expect(c.notes.single.category, NoteCategory.withdraw);
       // 登记完成后返回上一页
       expect(find.text('打开详情'), findsOneWidget);
@@ -1006,10 +1009,41 @@ void main() {
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜']);
-      expect(c.notes.single.text, '张伟进场、李娜进场');
+      expect(c.notes.single.text, '张伟进入救援现场，空气呼吸器压力20兆帕、李娜进入救援现场，空气呼吸器压力22兆帕');
       expect(c.notes.single.category, NoteCategory.deploy);
       expect(find.text('全部确认进入火场（2 人）'), findsNothing);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+
+    testWidgets('进场确认成功后通知主界面跳转看板', (tester) async {
+      var confirmed = false;
+      final api = _FakeApi();
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(
+              controller: c,
+              audioService: _FakeAudio(),
+              onEntryConfirmed: () => confirmed = true,
+            ),
+          ),
+        ),
+      );
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+
+      final confirm = find.text('全部确认进入火场（2 人）');
+      await tester.ensureVisible(confirm);
+      await tester.pump();
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+
+      expect(confirmed, isTrue);
+      expect(api.created, ['张伟', '李娜']);
     });
 
     testWidgets('缺压力时一次列出全部错误，补充后可一次性通过', (tester) async {
@@ -1216,7 +1250,7 @@ void main() {
       await tester.tap(find.text('确认全员离场'));
       await tester.pumpAndSettle();
       expect(c.exited, ['e-张伟', 'e-李娜']);
-      expect(c.notes.single.text, '张伟出场、李娜出场');
+      expect(c.notes.single.text, '张伟撤离救援现场、李娜撤离救援现场');
       expect(c.notes.single.category, NoteCategory.withdraw);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
     });
@@ -1779,11 +1813,90 @@ void main() {
 
   group('main.dart 导航', () {
     setUp(() async {
+      SharedPreferences.setMockInitialValues({});
       await ChatHistory.clear();
     });
 
+    testWidgets('未选择警情时全屏浮层拦截底部导航', (tester) async {
+      final c = _FakeController(currentIncident: null)
+        ..currentIncident = null
+        ..activeIncidents = const [
+          Incident(
+            id: 'gate-incident',
+            number: '2026-8-25-1',
+            status: 'active',
+            createdAt: 1,
+            lastActivityAt: 1,
+          ),
+        ];
+      await tester.pumpWidget(WatchDogApp(controller: c));
+      await tester.pump();
+
+      expect(
+        find.byKey(const Key('incident-selection-overlay')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('日志'), warnIfMissed: false);
+      await tester.pump();
+      expect(find.text('火场日志'), findsNothing);
+      expect(find.text('先选择一份警情'), findsOneWidget);
+    });
+
+    testWidgets('警情浮层加入按钮回调选择流程', (tester) async {
+      var selected = false;
+      const incident = Incident(
+        id: 'gate-incident',
+        number: '2026-8-25-1',
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            activeIncidents: const [incident],
+            loading: false,
+            onSelect: (_) async => selected = true,
+            onCreate: () async {},
+          ),
+        ),
+      );
+      await tester.tap(find.text('加入'));
+      await tester.pumpAndSettle();
+      expect(selected, isTrue);
+    });
+
+    testWidgets('悬浮窗长警情名称完整换行显示', (tester) async {
+      const title = '幸福小区住宅楼地下车库及周边商铺火灾现场处置警情';
+      const incident = Incident(
+        id: 'long-gate-incident',
+        number: '2026-8-25-1',
+        title: title,
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            activeIncidents: const [incident],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+          ),
+        ),
+      );
+
+      final name = tester.widget<Text>(find.text(title));
+      expect(name.maxLines, isNull);
+      expect(name.overflow, isNull);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('默认进入语音页，底部五个入口对称存在', (tester) async {
-      await tester.pumpWidget(const WatchDogApp());
+      await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
       expect(find.text('警情处置'), findsOneWidget);
       expect(find.text('日志'), findsOneWidget);
@@ -1803,7 +1916,7 @@ void main() {
     });
 
     testWidgets('点击日志/辅助/设置可切换页面', (tester) async {
-      await tester.pumpWidget(const WatchDogApp());
+      await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
       await tester.tap(find.text('日志'));
       await tester.pumpAndSettle();
@@ -1841,13 +1954,17 @@ void main() {
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       final settingsList = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(find.text('服务端'), 200, scrollable: settingsList);
+      await tester.scrollUntilVisible(
+        find.text('服务端'),
+        200,
+        scrollable: settingsList,
+      );
       expect(find.text('服务端'), findsOneWidget);
       expect(find.text('计算参数'), findsOneWidget);
     });
 
     testWidgets('辅助页系统返回键回到来源页', (tester) async {
-      await tester.pumpWidget(const WatchDogApp());
+      await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
       // 从日志页进入辅助页
       await tester.tap(find.text('日志'));
@@ -1878,7 +1995,7 @@ void main() {
         bottom: 300 * 3,
       ); // 模拟 300 逻辑像素键盘
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(const WatchDogApp());
+      await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
@@ -1895,7 +2012,7 @@ void main() {
     });
 
     testWidgets('辅助页输入框多行文本完整显示不裁剪', (tester) async {
-      await tester.pumpWidget(const WatchDogApp());
+      await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
@@ -1917,7 +2034,7 @@ void main() {
         tester.view.physicalSize = Size(width * 3, 800 * 3);
         tester.view.devicePixelRatio = 3.0;
         addTearDown(tester.view.reset);
-        await tester.pumpWidget(const WatchDogApp());
+        await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
         await tester.pump();
         // 无横向溢出/图标重叠（RenderFlex overflow 会抛异常）
         expect(tester.takeException(), isNull, reason: '$width 宽度溢出');
@@ -1979,7 +2096,7 @@ void main() {
       tester.view.physicalSize = const Size(390 * 3, 800 * 3);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(const WatchDogApp());
+      await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
@@ -2193,6 +2310,24 @@ void main() {
       await pumpTask(tester, c);
       expect(find.text('幸福小区住宅楼地下车库及周边商铺火灾现场处置警情'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    test('加入已有警情先完成本机选择，不等待后台同步', () async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _FakeController(currentIncident: null)..currentIncident = null;
+      const incident = Incident(
+        id: 'known-incident',
+        number: '2026-8-9-8-59',
+        title: '已存在警情',
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+
+      await c.selectIncident(incident.id, knownIncident: incident);
+
+      expect(c.currentIncident, same(incident));
+      expect(await Settings.currentIncidentId, incident.id);
     });
 
     testWidgets('参战力量显示站点、车辆和人员汇总', (tester) async {

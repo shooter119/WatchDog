@@ -10,7 +10,11 @@ class ReportPressureSheet extends StatefulWidget {
   final AppController controller;
   final Entry entry;
 
-  const ReportPressureSheet({super.key, required this.controller, required this.entry});
+  const ReportPressureSheet({
+    super.key,
+    required this.controller,
+    required this.entry,
+  });
 
   /// 压力档位：满压 30MPa 起每档 -3MPa（GA 124 余气报警 5-6MPa，低至 6MPa 为止）
   static const levels = [30, 27, 24, 21, 18, 15, 12, 9, 6];
@@ -37,7 +41,8 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
   /// 最终取值：手动输入优先，否则用选中的档位
   double? get _effective => _customValue ?? _selected;
 
-  String _fmt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+  String _fmt(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 
   void _onCustomChanged(String text) {
     final v = double.tryParse(text.trim());
@@ -75,16 +80,22 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                 const SizedBox(width: 10),
                 if (current != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceSubtle,
                       borderRadius: BorderRadius.circular(AppRadius.pill),
                     ),
-                    child: Text('当前 $current MPa', style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    )),
+                    child: Text(
+                      '初始 $current MPa',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 const Spacer(),
                 IconButton(
@@ -104,13 +115,16 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
               spacing: 10,
               runSpacing: 10,
               children: [
-                for (final lv in ReportPressureSheet.levels) _levelButton(lv, current),
+                for (final lv in ReportPressureSheet.levels)
+                  _levelButton(lv, current),
               ],
             ),
             const SizedBox(height: 14),
             TextField(
               controller: _customCtrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
               ],
@@ -122,7 +136,10 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                 suffixText: 'MPa',
                 filled: true,
                 fillColor: AppColors.surface,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: const BorderSide(color: AppColors.border),
@@ -133,11 +150,17 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: const BorderSide(color: AppColors.actionPrimary, width: 2),
+                  borderSide: const BorderSide(
+                    color: AppColors.actionPrimary,
+                    width: 2,
+                  ),
                 ),
                 labelStyle: const TextStyle(color: AppColors.textTertiary),
                 hintStyle: const TextStyle(color: AppColors.textTertiary),
-                suffixStyle: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w700),
+                suffixStyle: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -149,16 +172,30 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : Icon(Icons.speed, color: fg),
-                label: Text(_submitting ? '提交中…' : (effective == null ? '选择压力档位' : '确认更新 ${_fmt(effective)} MPa')),
+                label: Text(
+                  _submitting
+                      ? '提交中…'
+                      : (effective == null
+                            ? '选择压力档位'
+                            : '确认更新 ${_fmt(effective)} MPa'),
+                ),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.actionPrimary,
                   disabledBackgroundColor: AppColors.surfaceSubtle,
                   foregroundColor: Colors.white,
-                  disabledForegroundColor: AppColors.textTertiary.withValues(alpha: 0.6),
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  disabledForegroundColor: AppColors.textTertiary.withValues(
+                    alpha: 0.6,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ),
@@ -182,10 +219,10 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
           onTap: disabled
               ? null
               : () => setState(() {
-                    _selected = lv.toDouble();
-                    _customValue = null;
-                    _customCtrl.clear();
-                  }),
+                  _selected = lv.toDouble();
+                  _customValue = null;
+                  _customCtrl.clear();
+                }),
           child: Container(
             alignment: Alignment.center,
             decoration: BoxDecoration(
@@ -204,8 +241,8 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                 color: disabled
                     ? AppColors.textTertiary.withValues(alpha: 0.3)
                     : selected
-                        ? Colors.white
-                        : AppColors.textPrimary,
+                    ? Colors.white
+                    : AppColors.textPrimary,
               ),
             ),
           ),
@@ -219,14 +256,20 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
     if (lv == null || _submitting) return;
     setState(() => _submitting = true);
     try {
-      await widget.controller.updatePressure(id: widget.entry.id, pressureMpa: lv);
+      await widget.controller.updatePressure(
+        id: widget.entry.id,
+        pressureMpa: lv,
+      );
       if (!mounted) return;
       Navigator.pop(context, lv);
     } catch (err) {
       if (!mounted) return;
       setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('更新压力失败：$err'), behavior: SnackBarBehavior.floating),
+        SnackBar(
+          content: Text('更新压力失败：$err'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }

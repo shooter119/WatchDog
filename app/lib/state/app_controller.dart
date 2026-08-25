@@ -59,6 +59,7 @@ class AppController extends ChangeNotifier {
 
   /// 最近一次同步成功时间戳（0 = 从未成功过）
   int _lastSyncSuccessAt = 0;
+  int _firstSyncFailureAt = 0;
 
   /// 平滑断线判定：最近 [connectionLostThreshold] 毫秒内无一次同步成功才视为断线，
   /// 避免网络瞬时抖动导致连接状态频繁变红。从未成功过时乐观视为已连接。
@@ -67,8 +68,10 @@ class AppController extends ChangeNotifier {
   bool get connectionLost {
     final now = DateTime.now().millisecondsSinceEpoch;
     if (_lastSyncSuccessAt <= 0) {
-      // 从未同步成功 → 有 syncError 说明已尝试且失败，应显示中断
-      return syncError != null;
+      // 首次启动的冷启动、网关实例唤醒或瞬时网络抖动不应立刻显示红色。
+      // 连续失败超过阈值后再判定中断。
+      return _firstSyncFailureAt > 0 &&
+          now - _firstSyncFailureAt > connectionLostThreshold;
     }
     return now - _lastSyncSuccessAt > connectionLostThreshold;
   }
@@ -276,9 +279,13 @@ class AppController extends ChangeNotifier {
       }
       syncError = null;
       _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
+      _firstSyncFailureAt = 0;
       await _rescheduleNotifications();
     } catch (e) {
-      syncError = e.toString();
+      _firstSyncFailureAt = _firstSyncFailureAt == 0
+          ? DateTime.now().millisecondsSinceEpoch
+          : _firstSyncFailureAt;
+      syncError = e is TimeoutException ? '连接服务器超时，请检查网络后重试' : e.toString();
       debugPrint('WatchDog sync failed: $e');
     } finally {
       syncing = false;
@@ -487,9 +494,20 @@ class AppController extends ChangeNotifier {
     await sync();
   }
 
-  Future<void> selectIncident(String id) async {
+  Future<void> selectIncident(String id, {Incident? knownIncident}) async {
     await Settings.setCurrentIncidentId(id);
     await refreshConfig();
+    // 列表或新建冲突响应已经带回了完整警情档案。先完成本机选择，
+    // 详细人员/日志数据放到后台同步，避免网络抖动阻塞“加入警情”这个动作。
+    if (knownIncident != null) {
+      currentIncident = knownIncident;
+      entries = [];
+      notes = [];
+      forces = [];
+      notifyListeners();
+      unawaited(sync());
+      return;
+    }
     await sync();
   }
 
@@ -642,11 +660,12 @@ class AppController extends ChangeNotifier {
     return note;
   }
 
-  /// 进出场确认同步写入火场日志，只保留姓名和动作，不记录压力等业务字段。
+  /// 进出场确认同步写入火场日志，使用现场记录中的规范化作业表述。
   Future<Note> addActionLog({
     required Iterable<String> names,
     required String action,
     required String category,
+    Map<String, double>? pressuresMpa,
     String? opId,
   }) {
     final cleanNames = names
@@ -654,8 +673,27 @@ class AppController extends ChangeNotifier {
         .where((name) => name.isNotEmpty)
         .toList();
     if (cleanNames.isEmpty) throw StateError('缺少火场日志人员');
-    final text = cleanNames.map((name) => '$name$action').join('、');
+    final text = switch (action) {
+      '进场' =>
+        cleanNames
+            .map((name) {
+              final pressure = pressuresMpa?[name];
+              final pressureText = pressure == null
+                  ? ''
+                  : '，空气呼吸器压力${_formatPressureMpa(pressure)}兆帕';
+              return '$name进入救援现场$pressureText';
+            })
+            .join('、'),
+      '出场' => cleanNames.map((name) => '$name撤离救援现场').join('、'),
+      _ => cleanNames.map((name) => '$name$action').join('、'),
+    };
     return addNote(text, category: category, opId: opId);
+  }
+
+  static String _formatPressureMpa(double pressure) {
+    return pressure == pressure.roundToDouble()
+        ? pressure.toInt().toString()
+        : pressure.toString();
   }
 
   bool _isNetworkError(Object error) =>

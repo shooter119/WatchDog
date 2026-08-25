@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'pages/board_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/home_page.dart';
+import 'pages/incident_selection_overlay.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
 import 'services/foreground_keep_alive.dart';
@@ -22,14 +23,16 @@ void main() {
 }
 
 class WatchDogApp extends StatefulWidget {
-  const WatchDogApp({super.key});
+  final AppController? controller;
+
+  const WatchDogApp({super.key, this.controller});
 
   @override
   State<WatchDogApp> createState() => _WatchDogAppState();
 }
 
 class _WatchDogAppState extends State<WatchDogApp> {
-  final AppController controller = AppController(localAsr: LocalAsrService());
+  late final AppController controller;
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
   final TextEditingController _chatInput =
@@ -46,6 +49,8 @@ class _WatchDogAppState extends State<WatchDogApp> {
   @override
   void initState() {
     super.initState();
+    controller =
+        widget.controller ?? AppController(localAsr: LocalAsrService());
     // 等 FlutterActivity 完成插件注册后再初始化后台值守；过早在 main()
     // 调用会触发 flutter_foreground_task 的 MissingPluginException。
     // 前台服务属于可选能力，平台插件不可用或系统权限流程卡住时，不能
@@ -69,6 +74,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   }
 
   void _selectTab(int i) {
+    if (controller.needsIncidentSelection) return;
     HapticFeedback.selectionClick();
     setState(() {
       if (i == 3 && _tab != 3) _preChatTab = _tab; // 记录进入辅助页前的来源页
@@ -81,6 +87,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
 
   /// 录音中点击按钮 = 停止录音（松手时机丢失/权限弹窗场景的兜底出口）
   void _voiceTap() {
+    if (controller.needsIncidentSelection) return;
     if (_recording) {
       if (_tab == 3) {
         _chatKey.currentState?.finishRecording();
@@ -93,6 +100,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   }
 
   void _voiceLongPressStart(LongPressStartDetails _) {
+    if (controller.needsIncidentSelection) return;
     HapticFeedback.mediumImpact();
     if (_processing) return;
     // 问答页就地录音：转写文本直接发给辅助 AI
@@ -111,6 +119,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   }
 
   void _voiceLongPressEnd(LongPressEndDetails _) {
+    if (controller.needsIncidentSelection) return;
     if (_tab == 3) {
       _chatKey.currentState?.finishRecording();
     } else {
@@ -120,6 +129,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
 
   /// 语音识别为火场日志：自动记入 + 跳日志页
   Future<void> _routeNote(String text) async {
+    if (controller.needsIncidentSelection) return;
     try {
       await controller.addNote(text);
     } catch (e) {
@@ -145,12 +155,14 @@ class _WatchDogAppState extends State<WatchDogApp> {
 
   /// 语音识别为提问：跳问答页并自动发送
   void _routeAsk(String text) {
+    if (controller.needsIncidentSelection) return;
     _selectTab(3);
     _chatKey.currentState?.submitQuestion(text);
   }
 
   /// 辅助页底部操作条发送（文字/语音识别为提问）
   void _chatSubmit(String text) {
+    if (controller.needsIncidentSelection) return;
     final clean = text.trim();
     if (clean.isEmpty) return;
     _chatInput.clear();
@@ -178,6 +190,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
               onProcessingChanged: (v) => setState(() => _processing = v),
               onNoteIntent: _routeNote,
               onAskIntent: _routeAsk,
+              onEntryConfirmed: () => _selectTab(1),
             ),
             ChatPage(
               key: _chatKey,
@@ -190,36 +203,65 @@ class _WatchDogAppState extends State<WatchDogApp> {
             SettingsPage(controller: controller),
           ];
           // 辅助页系统返回键 = 回来源页（与顶部返回箭头一致）；其它页维持系统默认（退出）
-          return PopScope(
-            canPop: _tab != 3,
-            onPopInvokedWithResult: (didPop, _) {
-              if (!didPop && _tab == 3) _selectTab(_preChatTab);
-            },
-            child: Scaffold(
-              body: IndexedStack(index: _tab, children: pages),
-              bottomNavigationBar: _BottomNav(
-                index: _tab,
-                recording: _recording,
-                processing: _processing,
-                chatMode: _tab == 3,
-                chatTextMode: _chatTextMode,
-                chatController: _chatInput,
-                chatInputFocus: _chatInputFocus,
-                chatSending: _chatSending,
-                onChatSubmit: _chatSubmit,
-                onChatTextModeChange: (v) {
-                  setState(() => _chatTextMode = v);
-                  if (v) {
-                    _chatInputFocus.requestFocus();
-                  } else {
-                    _chatInputFocus.unfocus();
-                  }
-                },
-                onSelect: _selectTab,
-                onVoiceTap: _voiceTap,
-                onVoiceLongPressStart: _voiceLongPressStart,
-                onVoiceLongPressEnd: _voiceLongPressEnd,
+          final incidentLocked = controller.needsIncidentSelection;
+          final appScaffold = Scaffold(
+            body: IndexedStack(index: _tab, children: pages),
+            bottomNavigationBar: ExcludeSemantics(
+              excluding: incidentLocked,
+              child: IgnorePointer(
+                ignoring: incidentLocked,
+                child: _BottomNav(
+                  index: _tab,
+                  recording: _recording,
+                  processing: _processing,
+                  chatMode: _tab == 3,
+                  chatTextMode: _chatTextMode,
+                  chatController: _chatInput,
+                  chatInputFocus: _chatInputFocus,
+                  chatSending: _chatSending,
+                  onChatSubmit: _chatSubmit,
+                  onChatTextModeChange: (v) {
+                    if (incidentLocked) return;
+                    setState(() => _chatTextMode = v);
+                    if (v) {
+                      _chatInputFocus.requestFocus();
+                    } else {
+                      _chatInputFocus.unfocus();
+                    }
+                  },
+                  onSelect: _selectTab,
+                  onVoiceTap: _voiceTap,
+                  onVoiceLongPressStart: _voiceLongPressStart,
+                  onVoiceLongPressEnd: _voiceLongPressEnd,
+                ),
               ),
+            ),
+          );
+          return PopScope(
+            canPop: !incidentLocked && _tab != 3,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop && !incidentLocked && _tab == 3) {
+                _selectTab(_preChatTab);
+              }
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                appScaffold,
+                if (incidentLocked)
+                  IncidentSelectionOverlay(
+                    activeIncidents: controller.activeIncidents,
+                    loading: controller.syncing || controller.api == null,
+                    onSelect: (incident) =>
+                        _homeKey.currentState?.selectIncidentFromGate(
+                          incident,
+                        ) ??
+                        Future<void>.value(),
+                    onCreate: () =>
+                        _homeKey.currentState?.createIncidentFromGate() ??
+                        Future<void>.value(),
+                  ),
+              ],
             ),
           );
         },

@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { transcribe } = require('./asr');
-const { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithDeepSeekStream, chatWithWebSearch } = require('./parse');
+const { parseTextWithDeepSeek, chatWithDeepSeek, chatWithDeepSeekStream, chatWithWebSearch } = require('./parse');
 const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
@@ -23,11 +23,6 @@ if (db.ready) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_TOKEN = process.env.API_TOKEN || '';
-const CLOUD_BASE_AI_ENABLED = process.env.CLOUDBASE_AI_ENABLED === '1';
-const CLOUD_BASE_AI_API_KEY = process.env.CLOUDBASE_AI_API_KEY || process.env.CLOUDBASE_API_KEY || '';
-const CLOUD_BASE_AI_BASE_URL = process.env.CLOUDBASE_AI_BASE_URL ||
-  (process.env.CLOUDBASE_ENV_ID ? `https://${process.env.CLOUDBASE_ENV_ID}.api.tcloudbasegateway.com/v1/ai/cloudbase` : '');
-const USE_CLOUD_BASE_AI = CLOUD_BASE_AI_ENABLED && !!CLOUD_BASE_AI_API_KEY && !!CLOUD_BASE_AI_BASE_URL;
 
 const CFG = {
   asr: {
@@ -36,13 +31,12 @@ const CFG = {
     resourceId: process.env.VOLC_RESOURCE_ID || 'volc.bigasr.sauc.duration',
   },
   llm: {
-    provider: USE_CLOUD_BASE_AI ? 'cloudbase' : 'deepseek',
-    apiKey: USE_CLOUD_BASE_AI ? CLOUD_BASE_AI_API_KEY : (process.env.DEEPSEEK_API_KEY || ''),
-    baseUrl: USE_CLOUD_BASE_AI ? CLOUD_BASE_AI_BASE_URL : (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'),
-    model: USE_CLOUD_BASE_AI ? (process.env.CLOUDBASE_AI_MODEL || 'hy3') : (process.env.DEEPSEEK_MODEL || 'deepseek-chat'),
-    chatModel: USE_CLOUD_BASE_AI ? (process.env.CLOUDBASE_AI_CHAT_MODEL || process.env.CLOUDBASE_AI_MODEL || 'hy3') : (process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-v4-flash'),
-    // CloudBase 的统一 provider 对 DeepSeek 走 Chat Completions；当前项目的联网搜索分支使用 Responses API，暂不强行混用。
-    chatSearch: !USE_CLOUD_BASE_AI && (process.env.CHAT_SEARCH_ENABLED ?? '1') !== '0',
+    provider: 'deepseek',
+    apiKey: process.env.DEEPSEEK_API_KEY || '',
+    baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+    model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    chatModel: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-v4-flash',
+    chatSearch: (process.env.CHAT_SEARCH_ENABLED ?? '1') !== '0',
   },
   calc: {
     cylinderVolL: Number(process.env.CYLINDER_VOL_L || 6.8),
@@ -605,32 +599,11 @@ app.post('/api/transcribe', async (req, res, next) => {
         hotwords,
       });
       await logOp(req, 'info', 'asr_done', 'ASR 识别完成', { text, ms: Date.now() - t0 });
-      // ASR 文本修正：结合名单与热词纠正同音字/专有名词（如"理想"→"李翔"）。
-      // 仅当 LLM 已配置且 ASR 有结果时执行；修正失败回退原文，不阻塞语音录入。
-      let revised = false;
-      let finalText = text;
-      if (text && CFG.llm.apiKey) {
-        try {
-          const corrected = await reviseTextWithDeepSeek({
-            apiKey: CFG.llm.apiKey,
-            baseUrl: CFG.llm.baseUrl,
-            model: CFG.llm.model,
-            text,
-            firefighters: (await db.listFirefighters()).map((f) => f.name),
-            hotwords: (await db.listHotwords()).map((h) => h.word),
-          });
-          if (corrected && corrected !== text) {
-            finalText = corrected;
-            revised = true;
-          }
-          await logOp(req, 'info', 'revise_done', '文本修正完成', { before: text, after: finalText, revised });
-        } catch (e) {
-          logger.warn('文本修正失败，回退原始转写', e.message || e);
-          await logOp(req, 'warn', 'revise_failed', `文本修正失败，回退原始转写: ${e.message || e}`);
-        }
-      }
-      res.json({ text: finalText, revised, hotwordCount: hotwords.length });
-      await logOp(req, 'info', 'transcribe_resp', '转写响应', { text: finalText, revised, ms: Date.now() - t0 });
+      // 这里不再同步调用 DeepSeek 修正文本：该调用可能受上游限流影响，
+      // 曾出现 ASR 已在 1 秒内完成、但转写响应被额外拖到 70 秒以上的情况。
+      // 名单同音字纠正已由后续 /api/parse 携带名单与热词完成。
+      res.json({ text, revised: false, hotwordCount: hotwords.length });
+      await logOp(req, 'info', 'transcribe_resp', '转写响应', { text, revised: false, ms: Date.now() - t0 });
     } catch (e) {
       await logOp(req, 'error', 'transcribe_err', `转写失败: ${e.message || e}`);
       next(e);
@@ -643,7 +616,7 @@ app.post('/api/parse', async (req, res, next) => {
   try {
     const { text } = req.body || {};
     if (!text || !String(text).trim()) return res.status(400).json({ error: '缺少 text' });
-    if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY 或启用 CloudBase AI' });
+    if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY' });
     const firefighters = (await db.listFirefighters()).map((f) => f.name);
     const hotwords = (await db.listHotwords()).map((h) => h.word);
     const t0 = Date.now();
@@ -736,7 +709,7 @@ app.post('/api/chat', async (req, res, next) => {
     const clean = String(message || '').trim();
     if (!clean) return res.status(400).json({ error: '缺少 message' });
     if (clean.length > 2000) return res.status(400).json({ error: '问题过长（最多 2000 字）' });
-    if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY 或启用 CloudBase AI' });
+    if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY' });
     const clientKey = deviceKey(req) || req.ip || 'anonymous';
     if (chatRateLimited(clientKey)) return res.status(429).json({ error: '提问过于频繁，请稍后再试' });
     const history = chatHistoryFromRequest(req.body?.history);
@@ -1304,7 +1277,7 @@ if (require.main === module) {
   app.listen(PORT, () => {
     logger.info(`WatchDog 后端已启动: http://0.0.0.0:${PORT}`);
     logger.info(`ASR 配置: ${CFG.asr.appId ? '已配置' : '未配置 (VOLC_APP_KEY)'}`);
-    logger.info(`LLM 配置: ${CFG.llm.apiKey ? `已配置 (${CFG.llm.provider})` : '未配置 (DeepSeek/CloudBase AI)'}`);
+    logger.info(`LLM 配置: ${CFG.llm.apiKey ? `已配置 (${CFG.llm.provider})` : '未配置 (DeepSeek)'}`);
   });
   if (db.ready) {
     db.ready.then(async () => {

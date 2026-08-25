@@ -23,6 +23,7 @@ class HomePage extends StatefulWidget {
   final ValueChanged<bool>? onProcessingChanged; // 识别/确认中状态上报（禁用底部按钮）
   final ValueChanged<String>? onNoteIntent; // 识别为火场日志：记入并跳日志页
   final ValueChanged<String>? onAskIntent; // 识别为提问：跳问答页并发送
+  final VoidCallback? onEntryConfirmed; // 进场确认成功后跳转看板
   final AudioService? audioService; // 测试注入
 
   const HomePage({
@@ -34,6 +35,7 @@ class HomePage extends StatefulWidget {
     this.onProcessingChanged,
     this.onNoteIntent,
     this.onAskIntent,
+    this.onEntryConfirmed,
     this.audioService,
   });
 
@@ -710,6 +712,7 @@ class HomePageState extends State<HomePage> {
     if (!mounted) return;
 
     final done = <String>[];
+    final donePressures = <String, double>{};
     final failed = <String>[];
     final kept = <_PersonEdit>[];
     for (final r in results) {
@@ -717,6 +720,7 @@ class HomePageState extends State<HomePage> {
           r.result == _SubmitResult.created || r.result == _SubmitResult.merged;
       if (ok) {
         done.add(r.ed.name);
+        donePressures[r.ed.name] = r.ed.pressure!;
         r.ed.dispose();
       } else {
         failed.add(r.ed.name);
@@ -763,9 +767,13 @@ class HomePageState extends State<HomePage> {
       );
     }
     if (allDone) {
+      // 进场登记已经成功，先让主界面进入看板；日志同步属于后置记录，
+      // 不应因为网络耗时阻塞用户查看刚刚登记的人员。
+      widget.onEntryConfirmed?.call();
       await _writeActionLog(
         done,
         action: '进场',
+        pressuresMpa: donePressures,
         category: NoteCategory.deploy,
         opSuffix: 'entry-note',
       );
@@ -777,6 +785,7 @@ class HomePageState extends State<HomePage> {
   Future<void> _writeActionLog(
     Iterable<String> names, {
     required String action,
+    Map<String, double>? pressuresMpa,
     required String category,
     required String opSuffix,
   }) async {
@@ -786,6 +795,7 @@ class HomePageState extends State<HomePage> {
       await widget.controller.addActionLog(
         names: cleanNames,
         action: action,
+        pressuresMpa: pressuresMpa,
         category: category,
         opId: '${opId ?? 'action'}-$opSuffix',
       );
@@ -970,9 +980,12 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _selectIncident(String id) async {
+  Future<void> _selectIncident(Incident incident) async {
     try {
-      await widget.controller.selectIncident(id);
+      await widget.controller.selectIncident(
+        incident.id,
+        knownIncident: incident,
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -981,6 +994,10 @@ class HomePageState extends State<HomePage> {
       }
     }
   }
+
+  /// 启动警情选择浮层复用首页已有的加入流程，保持错误提示和后台同步行为一致。
+  Future<void> selectIncidentFromGate(Incident incident) =>
+      _selectIncident(incident);
 
   Future<void> _createIncident() async {
     try {
@@ -1007,7 +1024,10 @@ class HomePageState extends State<HomePage> {
       );
       if (join != true) return;
       try {
-        await widget.controller.selectIncident(e.existing.id);
+        await widget.controller.selectIncident(
+          e.existing.id,
+          knownIncident: e.existing,
+        );
       } catch (joinError) {
         if (mounted) {
           ScaffoldMessenger.of(
@@ -1023,6 +1043,9 @@ class HomePageState extends State<HomePage> {
       }
     }
   }
+
+  /// 启动警情选择浮层复用首页已有的新建流程。
+  Future<void> createIncidentFromGate() => _createIncident();
 
   Future<void> _renameIncident({
     Incident? incident,
@@ -2083,7 +2106,7 @@ class _PulseMic extends StatelessWidget {
 
 class _IncidentPicker extends StatelessWidget {
   final List<Incident> activeIncidents;
-  final ValueChanged<String> onSelect;
+  final ValueChanged<Incident> onSelect;
   final VoidCallback onCreate;
   const _IncidentPicker({
     required this.activeIncidents,
@@ -2172,7 +2195,7 @@ class _IncidentPicker extends StatelessWidget {
                       return Material(
                         color: AppColors.surface,
                         child: InkWell(
-                          onTap: () => onSelect(incident.id),
+                          onTap: () => onSelect(incident),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
                             child: Row(
@@ -2213,7 +2236,7 @@ class _IncidentPicker extends StatelessWidget {
                                   ),
                                 ),
                                 TextButton(
-                                  onPressed: () => onSelect(incident.id),
+                                  onPressed: () => onSelect(incident),
                                   style: TextButton.styleFrom(
                                     foregroundColor: AppColors.voice,
                                     padding: const EdgeInsets.symmetric(

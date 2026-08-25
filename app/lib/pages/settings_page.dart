@@ -69,8 +69,14 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     // 任一输入框失焦且全部输入框均无焦点（点空白处/收起键盘）→ 自动保存
     for (final n in [
-      _serverFocus, _tokenFocus, _volumeFocus,
-      _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus, _realNameFocus,
+      _serverFocus,
+      _tokenFocus,
+      _volumeFocus,
+      _fullFocus,
+      _consumptionFocus,
+      _warnFocus,
+      _alarmFocus,
+      _realNameFocus,
     ]) {
       n.addListener(() {
         if (_loaded && !n.hasFocus && _allInputsUnfocused()) _autoSave();
@@ -87,8 +93,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool _allInputsUnfocused() {
     return [
-      _serverFocus, _tokenFocus, _volumeFocus,
-      _fullFocus, _consumptionFocus, _warnFocus, _alarmFocus, _realNameFocus,
+      _serverFocus,
+      _tokenFocus,
+      _volumeFocus,
+      _fullFocus,
+      _consumptionFocus,
+      _warnFocus,
+      _alarmFocus,
+      _realNameFocus,
     ].every((n) => !n.hasFocus);
   }
 
@@ -152,16 +164,23 @@ class _SettingsPageState extends State<SettingsPage> {
     _showUpdateDialog(info);
   }
 
-  String get _displayVersion => _runtimeVersion.isEmpty ? appVersion : _runtimeVersion;
+  String get _displayVersion =>
+      _runtimeVersion.isEmpty ? appVersion : _runtimeVersion;
 
   void _showUpdateResult(String title, String message) {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
         content: Text(message, style: const TextStyle(fontSize: 14)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('好的')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('好的'),
+          ),
         ],
       ),
     );
@@ -174,7 +193,10 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('发现新版本 ${info.tagName}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        title: Text(
+          '发现新版本 ${info.tagName}',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
         content: SizedBox(
           width: double.maxFinite,
           child: Column(
@@ -182,7 +204,13 @@ class _SettingsPageState extends State<SettingsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (sizeText.isNotEmpty)
-                Text('安装包大小：$sizeText', style: const TextStyle(fontSize: 13, color: AppColors.textTertiary)),
+                Text(
+                  '安装包大小：$sizeText',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
               const SizedBox(height: 10),
               Flexible(
                 child: SingleChildScrollView(
@@ -196,7 +224,10 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('稍后')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('稍后'),
+          ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
@@ -215,25 +246,40 @@ class _SettingsPageState extends State<SettingsPage> {
     // OTA 全链路操作日志埋点（服务器可查，定位设备版本与安装失败原因）
     final opId = 'ota-${DateTime.now().millisecondsSinceEpoch}';
     void trace(String stage, String msg, {String level = 'info'}) {
-      OpLogService.instance.record(opId, stage, msg, level: level, data: {'version': info.tagName});
+      OpLogService.instance.record(
+        opId,
+        stage,
+        msg,
+        level: level,
+        data: {'version': info.tagName},
+      );
     }
 
     // 安装前置：Android 8+ 需"安装未知来源应用"授权，未授权先引导（否则下载完也弹不出安装界面）
     final canInstall = await UpdateService.canRequestPackageInstalls();
-    trace('ota_permission_check', canInstall ? '安装权限已授权' : '未授权安装未知来源应用',
-        level: canInstall ? 'info' : 'warn');
+    trace(
+      'ota_permission_check',
+      canInstall ? '安装权限已授权' : '未授权安装未知来源应用',
+      level: canInstall ? 'info' : 'warn',
+    );
     if (!mounted) return;
     if (!canInstall) {
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('需要开启安装权限', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          title: const Text(
+            '需要开启安装权限',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
           content: const Text(
             '系统要求先允许本应用"安装未知来源应用"，否则下载完成后无法弹出安装界面。\n\n是否前往系统设置开启？',
             style: TextStyle(fontSize: 14, height: 1.5),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('去设置'),
@@ -251,7 +297,10 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('正在下载更新', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+        title: const Text(
+          '正在下载更新',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
         content: ValueListenableBuilder<int>(
           valueListenable: progress,
           builder: (ctx, v, _) => Column(
@@ -259,9 +308,18 @@ class _SettingsPageState extends State<SettingsPage> {
             children: [
               LinearProgressIndicator(value: v / 100),
               const SizedBox(height: 10),
-              Text('$v%', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+              Text(
+                '$v%',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
               const SizedBox(height: 4),
-              const Text('下载中请保持应用在前台', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+              const Text(
+                '下载中请保持应用在前台',
+                style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
+              ),
             ],
           ),
         ),
@@ -294,10 +352,19 @@ class _SettingsPageState extends State<SettingsPage> {
         final go = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('安装未完成', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-            content: Text(fail!, style: const TextStyle(fontSize: 14, height: 1.5)),
+            title: const Text(
+              '安装未完成',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+            content: Text(
+              fail!,
+              style: const TextStyle(fontSize: 14, height: 1.5),
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('知道了')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('知道了'),
+              ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('去设置开启'),
@@ -329,13 +396,15 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-
   /// 关闭联网语音识别时：检查本地模型是否已安装，未安装则提示下载
   Future<void> _checkModelBeforeOffline() async {
     final alreadyInstalled = _modelInstalled;
     if (alreadyInstalled == true) return;
     // 尚未检查过：先查询
-    final installed = alreadyInstalled ?? await widget.controller.localAsr?.isModelInstalled() ?? false;
+    final installed =
+        alreadyInstalled ??
+        await widget.controller.localAsr?.isModelInstalled() ??
+        false;
     if (mounted) setState(() => _modelInstalled = installed);
     if (installed) return;
     if (!mounted) return;
@@ -343,10 +412,16 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('未下载本地语音模型'),
-        content: const Text('关闭联网识别后将使用本地模型，但本地模型尚未下载（约 75MB）。\n\n是否现在下载？'),
+        content: const Text('关闭联网识别后将使用本地模型，但本地 ASR 主模型尚未下载（约 75MB；另有可选的 9.8MB 降噪模型）。\n\n是否现在下载？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('稍后')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('下载')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('稍后'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('下载'),
+          ),
         ],
       ),
     );
@@ -354,6 +429,7 @@ class _SettingsPageState extends State<SettingsPage> {
       await _downloadModel();
     }
   }
+
   Future<void> _refreshModelStatus() async {
     final asr = widget.controller.localAsr;
     if (asr == null) return;
@@ -370,11 +446,13 @@ class _SettingsPageState extends State<SettingsPage> {
       _downloadProgress = null;
     });
     try {
-      await asr.downloadModel(onProgress: (received, total) {
-        if (mounted && total > 0) {
-          setState(() => _downloadProgress = received / total);
-        }
-      });
+      await asr.downloadModel(
+        onProgress: (received, total) {
+          if (mounted && total > 0) {
+            setState(() => _downloadProgress = received / total);
+          }
+        },
+      );
     } catch (e) {
       if (mounted) setState(() => _downloadError = '$e');
     } finally {
@@ -391,6 +469,8 @@ class _SettingsPageState extends State<SettingsPage> {
   /// 自动保存：文本框失焦（点空白/收起键盘/焦点转移）或开关切换时立即保存本地并触发云端同步（静默）。
   /// 保存期间显示"保存中"，完成后显示"已保存"，异常显示"保存失败"。
   Future<void> _autoSave() async {
+    // 开关变化立即作用于当前进程，不等待 SharedPreferences 和服务端同步完成。
+    widget.controller.tts.enabled = _tts;
     if (_saving) return; // 已有保存在进行中（失焦会触发 8 个监听器，只保存一次）
     _saving = true;
     if (mounted) setState(() => _saveState = _SaveState.saving);
@@ -399,7 +479,9 @@ class _SettingsPageState extends State<SettingsPage> {
       await Settings.setApiToken(_token.text.trim());
       await Settings.setCylinderVolL(double.tryParse(_volume.text) ?? 6.8);
       await Settings.setFullPressureMpa(double.tryParse(_full.text) ?? 30);
-      await Settings.setConsumptionLpm(double.tryParse(_consumption.text) ?? 80);
+      await Settings.setConsumptionLpm(
+        double.tryParse(_consumption.text) ?? 80,
+      );
       await Settings.setThresholds(
         int.tryParse(_warn.text) ?? 10,
         int.tryParse(_alarm.text) ?? 5,
@@ -468,9 +550,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: ListView(
-          // 与日志/统计页一致，为悬浮语音按钮保留末尾安全距离。
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
-          children: [
+        // 与日志/统计页一致，为悬浮语音按钮保留末尾安全距离。
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
+        children: [
           Row(
             children: [
               const Text('设置', style: AppTextStyles.h1),
@@ -499,7 +581,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const Text(
                   '实名后，你在火场日志发布的记录会以小字标注姓名；未填写则显示"匿名"。',
-                  style: TextStyle(fontSize: 12, color: AppColors.textTertiary, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textTertiary,
+                    height: 1.5,
+                  ),
                 ),
               ],
             ),
@@ -509,7 +595,9 @@ class _SettingsPageState extends State<SettingsPage> {
           AppCard(
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => RosterPage(controller: widget.controller)),
+              MaterialPageRoute(
+                builder: (_) => RosterPage(controller: widget.controller),
+              ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
@@ -521,16 +609,33 @@ class _SettingsPageState extends State<SettingsPage> {
                     shape: BoxShape.circle,
                     color: AppColors.surfaceSubtle,
                   ),
-                  child: const Icon(Icons.group_outlined, size: 20, color: AppColors.textPrimary),
+                  child: const Icon(
+                    Icons.group_outlined,
+                    size: 20,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('消防员与专业术语', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      Text(
+                        '消防员与专业术语',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
                       SizedBox(height: 2),
-                      Text('提前录入，语音识别更准', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                      Text(
+                        '提前录入，语音识别更准',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -541,21 +646,65 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 16),
           const SectionTitle(text: '警情档案'),
           AppCard(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ArchivedIncidentsPage(controller: widget.controller))),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ArchivedIncidentsPage(controller: widget.controller),
+              ),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(children: [
-              Container(width: 40, height: 40, decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceSubtle), child: const Icon(Icons.archive_outlined, size: 20, color: AppColors.textPrimary)),
-              const SizedBox(width: 12),
-              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('已归档警情', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)), SizedBox(height: 2), Text('查看火场复盘并修改归档警情名称', style: TextStyle(fontSize: 12, color: AppColors.textTertiary))])),
-              const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-            ]),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.surfaceSubtle,
+                  ),
+                  child: const Icon(
+                    Icons.archive_outlined,
+                    size: 20,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '已归档警情',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        '查看火场复盘并修改归档警情名称',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           const SectionTitle(text: '数据统计'),
           AppCard(
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => StatsPage(controller: widget.controller)),
+              MaterialPageRoute(
+                builder: (_) => StatsPage(controller: widget.controller),
+              ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
@@ -567,16 +716,33 @@ class _SettingsPageState extends State<SettingsPage> {
                     shape: BoxShape.circle,
                     color: AppColors.surfaceSubtle,
                   ),
-                  child: const Icon(Icons.bar_chart_outlined, size: 20, color: AppColors.textPrimary),
+                  child: const Icon(
+                    Icons.bar_chart_outlined,
+                    size: 20,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('出场耗时与压力统计', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      Text(
+                        '出场耗时与压力统计',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
                       SizedBox(height: 2),
-                      Text('查看火场作业数据', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                      Text(
+                        '查看火场作业数据',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -595,18 +761,56 @@ class _SettingsPageState extends State<SettingsPage> {
                   const _GroupLabel('气瓶参数'),
                   Row(
                     children: [
-                      Expanded(child: _field(_volume, '气瓶容量', '6.8 L', icon: Icons.local_fire_department_outlined, focusNode: _volumeFocus)),
+                      Expanded(
+                        child: _field(
+                          _volume,
+                          '气瓶容量',
+                          '6.8 L',
+                          icon: Icons.local_fire_department_outlined,
+                          focusNode: _volumeFocus,
+                        ),
+                      ),
                       const SizedBox(width: 10),
-                      Expanded(child: _field(_full, '满压', '30 MPa', icon: Icons.speed, focusNode: _fullFocus)),
+                      Expanded(
+                        child: _field(
+                          _full,
+                          '满压',
+                          '30 MPa',
+                          icon: Icons.speed,
+                          focusNode: _fullFocus,
+                        ),
+                      ),
                     ],
                   ),
-                  _field(_consumption, '消耗率', '80 L/min', icon: Icons.water_drop_outlined, focusNode: _consumptionFocus),
+                  _field(
+                    _consumption,
+                    '消耗率',
+                    '80 L/min',
+                    icon: Icons.water_drop_outlined,
+                    focusNode: _consumptionFocus,
+                  ),
                   const _GroupLabel('提醒阈值'),
                   Row(
                     children: [
-                      Expanded(child: _field(_warn, '提醒剩余', '10 min', icon: Icons.notifications_active_outlined, focusNode: _warnFocus)),
+                      Expanded(
+                        child: _field(
+                          _warn,
+                          '提醒剩余',
+                          '10 min',
+                          icon: Icons.notifications_active_outlined,
+                          focusNode: _warnFocus,
+                        ),
+                      ),
                       const SizedBox(width: 10),
-                      Expanded(child: _field(_alarm, '报警剩余', '5 min', icon: Icons.warning_amber_rounded, focusNode: _alarmFocus)),
+                      Expanded(
+                        child: _field(
+                          _alarm,
+                          '报警剩余',
+                          '5 min',
+                          icon: Icons.warning_amber_rounded,
+                          focusNode: _alarmFocus,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -621,7 +825,14 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Column(
                 children: [
                   SwitchListTile(
-                    title: const Text('联网语音识别', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    title: const Text(
+                      '联网语音识别',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                     subtitle: const Text('开：豆包云端识别，失败自动切本地；关：强制本地识别'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _asrCloud,
@@ -633,7 +844,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
-                    title: const Text('联网语义解析', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    title: const Text(
+                      '联网语义解析',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                     subtitle: const Text('开：DeepSeek 云端解析，失败自动切本地；关：强制本地规则解析'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _parseCloud,
@@ -658,7 +876,14 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Column(
                 children: [
                   SwitchListTile(
-                    title: const Text('语音播报', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    title: const Text(
+                      '语音播报',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                     subtitle: const Text('确认/提醒/报警时播报中文语音'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _tts,
@@ -669,7 +894,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
-                    title: const Text('报警音', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    title: const Text(
+                      '报警音',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                     subtitle: const Text('前台警报音 + 后台本地通知'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _sound,
@@ -680,7 +912,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
-                    title: const Text('屏幕常亮', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    title: const Text(
+                      '屏幕常亮',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                     subtitle: const Text('看板页保持屏幕常亮，适合火场值守'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _keepScreenOn,
@@ -691,7 +930,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const Divider(height: 1, indent: 16, endIndent: 16),
                   SwitchListTile(
-                    title: const Text('后台值守模式', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    title: const Text(
+                      '后台值守模式',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
                     subtitle: const Text('前台服务常驻：切后台/锁屏后轮询与报警不停，通知栏显示指挥状态'),
                     activeThumbColor: AppColors.actionPrimary,
                     value: _keepAlive,
@@ -702,19 +948,33 @@ class _SettingsPageState extends State<SettingsPage> {
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
                         '开启时请允许通知与电池白名单，否则保活可能被系统中断',
-                        style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textTertiary,
+                        ),
                       ),
                     ),
                   if (!widget.controller.alarm.exactAlarmAvailable) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     ListTile(
                       dense: true,
-                      leading: const Icon(Icons.notifications_off_outlined, color: AppColors.caution, size: 20),
+                      leading: const Icon(
+                        Icons.notifications_off_outlined,
+                        color: AppColors.caution,
+                        size: 20,
+                      ),
                       title: const Text(
                         '系统已关闭精确闹钟权限，后台提醒可能延迟',
-                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      subtitle: const Text('请在系统设置-应用-火场智控中允许闹钟与提醒', style: TextStyle(fontSize: 11)),
+                      subtitle: const Text(
+                        '请在系统设置-应用-火场智控中允许闹钟与提醒',
+                        style: TextStyle(fontSize: 11),
+                      ),
                     ),
                   ],
                   if (!_policyAccess) ...[
@@ -722,12 +982,23 @@ class _SettingsPageState extends State<SettingsPage> {
                     ListTile(
                       dense: true,
                       onTap: AlarmNative.openNotificationPolicySettings,
-                      leading: const Icon(Icons.do_not_disturb_on_outlined, color: AppColors.caution, size: 20),
+                      leading: const Icon(
+                        Icons.do_not_disturb_on_outlined,
+                        color: AppColors.caution,
+                        size: 20,
+                      ),
                       title: const Text(
                         '未允许勿扰访问，勿扰模式下报警提醒将被静音',
-                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      subtitle: const Text('点击前往系统设置开启勿扰访问', style: TextStyle(fontSize: 11)),
+                      subtitle: const Text(
+                        '点击前往系统设置开启勿扰访问',
+                        style: TextStyle(fontSize: 11),
+                      ),
                     ),
                   ],
                   if (!_fullScreenOk) ...[
@@ -735,12 +1006,23 @@ class _SettingsPageState extends State<SettingsPage> {
                     ListTile(
                       dense: true,
                       onTap: AlarmNative.openNotificationSettings,
-                      leading: const Icon(Icons.fullscreen_exit_outlined, color: AppColors.caution, size: 20),
+                      leading: const Icon(
+                        Icons.fullscreen_exit_outlined,
+                        color: AppColors.caution,
+                        size: 20,
+                      ),
                       title: const Text(
                         '未开启全屏通知，后台报警不会弹全屏提醒',
-                        style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      subtitle: const Text('点击前往通知设置开启全屏显示', style: TextStyle(fontSize: 11)),
+                      subtitle: const Text(
+                        '点击前往通知设置开启全屏显示',
+                        style: TextStyle(fontSize: 11),
+                      ),
                     ),
                   ],
                 ],
@@ -752,7 +1034,9 @@ class _SettingsPageState extends State<SettingsPage> {
           AppCard(
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => OpLogPage(controller: widget.controller)),
+              MaterialPageRoute(
+                builder: (_) => OpLogPage(controller: widget.controller),
+              ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
@@ -764,16 +1048,33 @@ class _SettingsPageState extends State<SettingsPage> {
                     shape: BoxShape.circle,
                     color: AppColors.surfaceSubtle,
                   ),
-                  child: const Icon(Icons.receipt_long_outlined, size: 20, color: AppColors.textPrimary),
+                  child: const Icon(
+                    Icons.receipt_long_outlined,
+                    size: 20,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('语音录入全流程记录', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      Text(
+                        '语音录入全流程记录',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
                       SizedBox(height: 2),
-                      Text('可同步到服务器排查问题', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                      Text(
+                        '可同步到服务器排查问题',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -788,7 +1089,14 @@ class _SettingsPageState extends State<SettingsPage> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _field(_server, '服务器地址', '默认 https://bytevirt.meiyou.xyz:8443', icon: Icons.dns_outlined, keyboard: TextInputType.url, focusNode: _serverFocus),
+                  _field(
+                    _server,
+                    '服务器地址',
+                    '默认 https://bytevirt.meiyou.xyz:8443',
+                    icon: Icons.dns_outlined,
+                    keyboard: TextInputType.url,
+                    focusNode: _serverFocus,
+                  ),
                   _field(
                     _token,
                     '访问令牌',
@@ -797,8 +1105,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     obscure: !_tokenVisible,
                     focusNode: _tokenFocus,
                     suffix: IconButton(
-                      icon: Icon(_tokenVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                      onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
+                      icon: Icon(
+                        _tokenVisible
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                      ),
+                      onPressed: () =>
+                          setState(() => _tokenVisible = !_tokenVisible),
                     ),
                   ),
                 ],
@@ -828,12 +1141,19 @@ class _SettingsPageState extends State<SettingsPage> {
                         child: _checkingUpdate
                             ? const Padding(
                                 padding: EdgeInsets.all(10),
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
-                            : const Icon(Icons.system_update_alt_rounded, size: 20, color: AppColors.textPrimary),
+                            : const Icon(
+                                Icons.system_update_alt_rounded,
+                                size: 20,
+                                color: AppColors.textPrimary,
+                              ),
                       ),
                       // 启动自动检查发现新版本：图标右上角红点提示
-                      if (!_checkingUpdate && widget.controller.pendingUpdate != null)
+                      if (!_checkingUpdate &&
+                          widget.controller.pendingUpdate != null)
                         Positioned(
                           right: -2,
                           top: -2,
@@ -843,7 +1163,10 @@ class _SettingsPageState extends State<SettingsPage> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: AppColors.alarm,
-                              border: Border.all(color: AppColors.surface, width: 1.5),
+                              border: Border.all(
+                                color: AppColors.surface,
+                                width: 1.5,
+                              ),
                             ),
                           ),
                         ),
@@ -855,27 +1178,40 @@ class _SettingsPageState extends State<SettingsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('检查更新', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      const Text(
+                        '检查更新',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Builder(builder: (_) {
-                        final pending = widget.controller.pendingUpdate;
-                        final String subtitle;
-                        final Color color;
-                        if (pending != null) {
-                          subtitle = '发现新版本 ${pending.tagName}，点击更新';
-                          color = AppColors.caution;
-                        } else if (widget.controller.updateCheckError != null) {
-                          subtitle = '检查更新失败，点击重试';
-                          color = AppColors.alarm;
-                        } else if (widget.controller.updateCheckDone) {
-                          subtitle = '已是最新版本';
-                          color = AppColors.textTertiary;
-                        } else {
-                          subtitle = '从 GitHub Releases 获取最新版本';
-                          color = AppColors.textTertiary;
-                        }
-                        return Text(subtitle, style: TextStyle(fontSize: 12, color: color));
-                      }),
+                      Builder(
+                        builder: (_) {
+                          final pending = widget.controller.pendingUpdate;
+                          final String subtitle;
+                          final Color color;
+                          if (pending != null) {
+                            subtitle = '发现新版本 ${pending.tagName}，点击更新';
+                            color = AppColors.caution;
+                          } else if (widget.controller.updateCheckError !=
+                              null) {
+                            subtitle = '检查更新失败，点击重试';
+                            color = AppColors.alarm;
+                          } else if (widget.controller.updateCheckDone) {
+                            subtitle = '已是最新版本';
+                            color = AppColors.textTertiary;
+                          } else {
+                            subtitle = '从 GitHub Releases 获取最新版本';
+                            color = AppColors.textTertiary;
+                          }
+                          return Text(
+                            subtitle,
+                            style: TextStyle(fontSize: 12, color: color),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -899,16 +1235,33 @@ class _SettingsPageState extends State<SettingsPage> {
                     shape: BoxShape.circle,
                     color: AppColors.surfaceSubtle,
                   ),
-                  child: const Icon(Icons.info_outline, size: 20, color: AppColors.textPrimary),
+                  child: const Icon(
+                    Icons.info_outline,
+                    size: 20,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('关于我们', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      Text(
+                        '关于我们',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
                       SizedBox(height: 2),
-                      Text('项目介绍与使用说明', style: TextStyle(fontSize: 12, color: AppColors.textTertiary)),
+                      Text(
+                        '项目介绍与使用说明',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -921,7 +1274,11 @@ class _SettingsPageState extends State<SettingsPage> {
             children: [
               Text(
                 '火场智控 v$_displayVersion',
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 12, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -966,7 +1323,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildModelTile() {
     final installed = _modelInstalled;
     if (_downloading) {
-      final pct = _downloadProgress == null ? null : (_downloadProgress! * 100).round();
+      final pct = _downloadProgress == null
+          ? null
+          : (_downloadProgress! * 100).round();
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
@@ -974,7 +1333,11 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             Text(
               pct == null ? '正在下载本地语音模型…' : '正在下载本地语音模型… $pct%',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 10),
             LinearProgressIndicator(
@@ -989,15 +1352,33 @@ class _SettingsPageState extends State<SettingsPage> {
     if (installed == null) {
       return const ListTile(
         dense: true,
-        leading: Icon(Icons.cloud_download_outlined, color: AppColors.textTertiary, size: 20),
-        title: Text('检查本地语音模型…', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+        leading: Icon(
+          Icons.cloud_download_outlined,
+          color: AppColors.textTertiary,
+          size: 20,
+        ),
+        title: Text(
+          '检查本地语音模型…',
+          style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+        ),
       );
     }
     if (installed) {
       return ListTile(
         dense: true,
-        leading: const Icon(Icons.check_circle_outline, color: AppColors.safe, size: 20),
-        title: const Text('本地语音模型已就绪（离线可用）', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        leading: const Icon(
+          Icons.check_circle_outline,
+          color: AppColors.safe,
+          size: 20,
+        ),
+        title: const Text(
+          '本地语音模型已就绪（离线可用）',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
         trailing: TextButton(
           onPressed: () async {
             await widget.controller.localAsr!.removeModel();
@@ -1014,12 +1395,20 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.offline_bolt_outlined, color: AppColors.caution, size: 20),
+              const Icon(
+                Icons.offline_bolt_outlined,
+                color: AppColors.caution,
+                size: 20,
+              ),
               const SizedBox(width: 10),
               const Expanded(
                 child: Text(
-                  '本地语音模型未下载（约 75MB）\n下载后断网也能语音录入',
-                  style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
+                  '本地 ASR 主模型未下载（约 75MB；另有可选的 9.8MB 降噪模型）\n下载后断网也能语音录入',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
                 ),
               ),
             ],
@@ -1028,7 +1417,11 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 8),
             Text(
               _downloadError!,
-              style: const TextStyle(fontSize: 12, color: AppColors.alarm, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.alarm,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
           const SizedBox(height: 10),
@@ -1060,33 +1453,54 @@ class _SaveStatusBadge extends StatelessWidget {
     return switch (state) {
       _SaveState.idle => const SizedBox.shrink(),
       _SaveState.saving => const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(strokeWidth: 2),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 5),
+          Text(
+            '保存中',
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.textTertiary,
+              fontWeight: FontWeight.w600,
             ),
-            SizedBox(width: 5),
-            Text('保存中', style: TextStyle(fontSize: 11, color: AppColors.textTertiary, fontWeight: FontWeight.w600)),
-          ],
-        ),
+          ),
+        ],
+      ),
       _SaveState.saved => const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle_outline, size: 14, color: AppColors.safe),
-            SizedBox(width: 5),
-            Text('已保存', style: TextStyle(fontSize: 11, color: AppColors.safe, fontWeight: FontWeight.w600)),
-          ],
-        ),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle_outline, size: 14, color: AppColors.safe),
+          SizedBox(width: 5),
+          Text(
+            '已保存',
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.safe,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
       _SaveState.failed => const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, size: 14, color: AppColors.alarm),
-            SizedBox(width: 5),
-            Text('保存失败', style: TextStyle(fontSize: 11, color: AppColors.alarm, fontWeight: FontWeight.w600)),
-          ],
-        ),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.error_outline, size: 14, color: AppColors.alarm),
+          SizedBox(width: 5),
+          Text(
+            '保存失败',
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.alarm,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     };
   }
 }
@@ -1119,10 +1533,7 @@ class _CollapsibleSection extends StatefulWidget {
   final String title;
   final Widget child;
 
-  const _CollapsibleSection({
-    required this.title,
-    required this.child,
-  });
+  const _CollapsibleSection({required this.title, required this.child});
 
   @override
   State<_CollapsibleSection> createState() => _CollapsibleSectionState();
@@ -1150,7 +1561,9 @@ class _CollapsibleSectionState extends State<_CollapsibleSection> {
         ),
         AnimatedCrossFade(
           duration: const Duration(milliseconds: 200),
-          crossFadeState: _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          crossFadeState: _expanded
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
           firstChild: widget.child,
           secondChild: const SizedBox(width: double.infinity),
         ),
