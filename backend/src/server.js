@@ -763,6 +763,7 @@ app.post('/api/chat', async (req, res, next) => {
         Connection: 'keep-alive',
       });
       let reply = '';
+      let streamError = null;
       try {
         for await (const delta of chatWithDeepSeekStream({
           apiKey: CFG.llm.apiKey,
@@ -774,8 +775,14 @@ app.post('/api/chat', async (req, res, next) => {
           res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
         }
       } catch (e) {
+        streamError = e;
         await logOp(req, 'error', 'chat_stream_err', `流式问答失败: ${e.message || e}`);
         res.write(`data: ${JSON.stringify({ error: String(e.message || e) })}\n\n`);
+      }
+      if (!streamError && !reply.trim()) {
+        const error = 'DeepSeek 返回空内容，请重试';
+        await logOp(req, 'error', 'chat_stream_err', error);
+        res.write(`data: ${JSON.stringify({ error })}\n\n`);
       }
       res.write('data: [DONE]\n\n');
       res.end();

@@ -305,6 +305,19 @@ class _HangingChatApi extends _FakeApi {
   }) => Completer<String>().future;
 }
 
+class _EmptyChatApi extends _FakeApi {
+  @override
+  Future<String> sendChatMessageStream(
+    String message, {
+    required void Function(String delta) onChunk,
+    String? opId,
+    List<ChatMessage> history = const [],
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    return '';
+  }
+}
+
 /// 模拟"进场意图但未识别到姓名"的解析结果（ASR 同音错字未纠正的兜底场景）
 class _EmptyEntryApi extends _FakeApi {
   @override
@@ -1107,9 +1120,7 @@ void main() {
     testWidgets('逐行移除人员后回到单人确认；全部移除回到初始', (tester) async {
       final api = _FakeApi(
         rounds: [
-          [
-            ParsePerson(name: '李娜', pressureMpa: 22),
-          ],
+          [ParsePerson(name: '李娜', pressureMpa: 22)],
         ],
       );
       final c = _FakeController()..api = api;
@@ -1780,6 +1791,31 @@ void main() {
       expect(find.text('水元素思考中…'), findsNothing);
       expect(find.textContaining('辅助回复失败：'), findsOneWidget);
       expect(api.canceled, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助问答空回复不会永久停留在思考态', (tester) async {
+      final api = _EmptyChatApi();
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      unawaited(state.submitQuestion('现场发现不明液体，如何处置？'));
+      await tester.pump();
+      expect(find.text('水元素思考中…'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(find.text('水元素思考中…'), findsNothing);
+      expect(find.textContaining('辅助回复失败：'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

@@ -779,6 +779,9 @@ class AppController extends ChangeNotifier {
         opId: opId,
         history: history,
       );
+      if (reply.trim().isEmpty) {
+        throw StateError('辅助回复为空，请重试');
+      }
       unawaited(
         ChatHistory.appendExchange(
           question: message,

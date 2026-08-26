@@ -70,7 +70,15 @@ class ChatPageState extends State<ChatPage> {
       final history = await widget.controller.fetchChatHistory();
       if (!mounted) return;
       setState(() {
-        _messages = history;
+        // 旧版本曾把空的流式回复写入本机历史；空 assistant 消息不能再被
+        // 当成“思考中”气泡恢复出来。
+        _messages = history
+            .where(
+              (message) =>
+                  message.role != 'assistant' ||
+                  message.content.trim().isNotEmpty,
+            )
+            .toList(growable: false);
         _loading = false;
         _error = null;
       });
@@ -450,7 +458,9 @@ class ChatPageState extends State<ChatPage> {
               final m = _messages[i];
               // 请求占位（内容为空）：显示"水元素思考中…"气泡，完整回复到达后自动切换
               if (m.role == 'assistant' && m.content.isEmpty) {
-                return const _ThinkingBubble();
+                return _sending
+                    ? const _ThinkingBubble()
+                    : const SizedBox.shrink();
               }
               return _MessageBubble(
                 message: m,

@@ -517,13 +517,17 @@ class ApiClient {
 
       // 网络层在 DNS/连接异常时可能迟迟不结束 Future；给整个请求设置最终
       // 截止时间，并在超时分支关闭 Client，避免辅助页永久停留在思考态。
-      return await request().timeout(
+      final reply = await request().timeout(
         const Duration(seconds: 45),
         onTimeout: () {
           client.close();
           throw TimeoutException('辅助问答响应超时，请检查网络后重试');
         },
       );
+      if (reply.trim().isEmpty) {
+        throw ApiException('辅助回复为空，请重试');
+      }
+      return reply;
     } finally {
       if (identical(_activeChatClient, client)) _activeChatClient = null;
       client.close();
