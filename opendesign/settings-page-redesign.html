@@ -1,0 +1,1107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f4f7">
+  <title>火场智控 · 设置页重构方案</title>
+  <style>
+    :root {
+      --bg: #f2f4f7;
+      --surface: #ffffff;
+      --surface-soft: #e8ecf1;
+      --surface-warm: #f8f9fb;
+      --ink: #111111;
+      --muted: #4b5563;
+      --quiet: #6b7280;
+      --line: #d7dde5;
+      --line-strong: #c5ccd6;
+      --orange: #ff9500;
+      --green: #20a83a;
+      --green-soft: #e5f6e8;
+      --amber: #ffb000;
+      --amber-soft: #fff3d6;
+      --red: #f5222d;
+      --red-soft: #ffe7e9;
+      --shadow-card: 0 2px 8px rgba(17, 17, 17, .08);
+      --shadow-float: 0 14px 32px rgba(17, 17, 17, .16);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+      --stack-gap: 9px;
+      --ease: cubic-bezier(.22, .8, .24, 1);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { background: #dfe4ea; }
+
+    body {
+      margin: 0;
+      min-width: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(17,17,17,.018) 1px, transparent 1px) 0 0 / 28px 28px,
+        linear-gradient(rgba(17,17,17,.018) 1px, transparent 1px) 0 0 / 28px 28px,
+        #dfe4ea;
+      font-family: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+      outline: 3px solid rgba(255, 149, 0, .48);
+      outline-offset: 3px;
+    }
+
+    svg { display: block; }
+
+    .icon {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex: 0 0 auto;
+    }
+
+    .icon.fill { fill: currentColor; stroke: none; }
+
+    .prototype-wrap {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 32px;
+    }
+
+    .phone {
+      position: relative;
+      width: min(100%, 430px);
+      height: min(900px, calc(100vh - 64px));
+      min-height: 680px;
+      overflow: hidden;
+      border: 10px solid #1d232b;
+      border-radius: 38px;
+      background: var(--bg);
+      box-shadow: 0 28px 70px rgba(17, 17, 17, .25), 0 0 0 1px rgba(255,255,255,.42);
+    }
+
+    .phone::before {
+      content: "";
+      position: absolute;
+      z-index: 20;
+      top: -1px;
+      left: 50%;
+      width: 120px;
+      height: 22px;
+      transform: translateX(-50%);
+      border-radius: 0 0 15px 15px;
+      background: #1d232b;
+    }
+
+    .screen {
+      height: 100%;
+      overflow-y: auto;
+      scrollbar-width: none;
+      padding-bottom: calc(100px + env(safe-area-inset-bottom));
+    }
+    .screen::-webkit-scrollbar { display: none; }
+
+    .topbar {
+      position: sticky;
+      z-index: 12;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 34px 18px 12px;
+      background: rgba(242, 244, 247, .93);
+      backdrop-filter: blur(12px);
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.15;
+      letter-spacing: -.04em;
+      font-weight: 800;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .save-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      opacity: 0;
+      transform: translateY(3px);
+      transition: opacity .25s var(--ease), transform .25s var(--ease);
+    }
+    .save-state.show { opacity: 1; transform: translateY(0); }
+    .save-state.saving { color: var(--quiet); }
+    .save-state.error { color: var(--red); }
+
+    .connection {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border: 1px solid rgba(32,168,58,.22);
+      border-radius: 999px;
+      color: #147b2a;
+      background: var(--green-soft);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .connection-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 3px rgba(32,168,58,.14);
+    }
+
+    .content { padding: 0 14px; }
+
+    .eyebrow {
+      margin: 12px 4px 8px;
+      color: var(--quiet);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      color: #fff;
+      background: var(--ink);
+      box-shadow: var(--shadow-card);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -50px;
+      bottom: -70px;
+      width: 190px;
+      height: 190px;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 50%;
+      box-shadow: 0 0 0 22px rgba(255,255,255,.04), 0 0 0 44px rgba(255,255,255,.035), 0 0 0 66px rgba(255,255,255,.025);
+    }
+    .hero-top, .hero-bottom { position: relative; z-index: 1; }
+    .hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .brand-lockup > div:last-child { min-width: 0; }
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      overflow: hidden;
+      border-radius: 11px;
+      background: #fff;
+    }
+    .brand-mark img { width: 100%; height: 100%; }
+    .hero-kicker { margin: 0 0 3px; color: #a9b1bd; font-size: 10px; font-weight: 800; letter-spacing: .13em; }
+    .hero-title { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.03em; }
+    .hero-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 9px;
+      border-radius: 999px;
+      color: #c5f4cc;
+      background: rgba(32,168,58,.22);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .hero-status .icon { width: 14px; height: 14px; }
+    .hero-bottom {
+      display: grid;
+      gap: 16px;
+      margin-top: 26px;
+    }
+    .hero-meta-label { margin: 0 0 7px; color: #9ba5b2; font-size: 11px; }
+    .hero-meta-value { margin: 0; font-size: 16px; line-height: 1.25; font-weight: 800; }
+    .hero-meta-sub { margin: 7px 0 0; color: #a9b1bd; font-size: 11px; line-height: 1.4; }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 22px 4px 9px;
+    }
+    .section-head h2 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1;
+      letter-spacing: .06em;
+      font-weight: 800;
+    }
+    .section-head h2::before {
+      content: "";
+      width: 3px;
+      height: 14px;
+      border-radius: 3px;
+      background: var(--ink);
+    }
+    .section-note { color: var(--quiet); font-size: 11px; font-weight: 600; }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      box-shadow: var(--shadow-card);
+    }
+
+    .identity-card { padding: 16px; }
+    .identity-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .avatar {
+      display: grid;
+      place-items: center;
+      width: 45px;
+      height: 45px;
+      flex: 0 0 auto;
+      border-radius: 13px;
+      color: var(--ink);
+      background: var(--surface-soft);
+      font-size: 18px;
+      font-weight: 800;
+    }
+    .avatar .icon { width: 23px; height: 23px; }
+    .identity-copy { min-width: 0; flex: 1; }
+    .identity-name { margin: 0; font-size: 16px; font-weight: 800; }
+    .identity-unit { display: flex; align-items: flex-start; gap: 6px; min-width: 0; margin: 5px 0 0; color: var(--ink); font-size: 12px; font-weight: 700; line-height: 1.4; }
+    .identity-unit-label { flex: 0 0 auto; padding: 2px 6px; border-radius: 999px; color: var(--accent-deep); background: var(--accent-soft); font-size: 10px; line-height: 1.35; }
+    .identity-unit-name { min-width: 0; overflow-wrap: anywhere; }
+    .identity-edit {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 10px;
+      color: var(--muted);
+      background: var(--surface-soft);
+      cursor: pointer;
+    }
+    .identity-edit:hover { color: var(--ink); background: #dce2e9; }
+    .identity-input {
+      display: none;
+      width: 100%;
+      margin-top: 11px;
+      padding: 11px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      color: var(--ink);
+      background: #fff;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .identity-input.open { display: block; }
+    .helper {
+      margin: 13px 0 0;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      color: var(--quiet);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .shortcut-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+    .shortcut {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      box-shadow: var(--shadow-card);
+      text-align: left;
+      cursor: pointer;
+      transition: transform .2s var(--ease), border-color .2s, background .2s;
+    }
+    .shortcut:hover { transform: translateY(-2px); border-color: var(--line-strong); background: #fbfcfd; }
+    .shortcut:active { transform: translateY(0); }
+    .shortcut-icon {
+      display: grid;
+      place-items: center;
+      width: 35px;
+      height: 35px;
+      flex: 0 0 auto;
+      border-radius: 10px;
+      color: var(--ink);
+      background: var(--surface-soft);
+    }
+    .shortcut-icon .icon { width: 18px; height: 18px; }
+    .shortcut-copy { min-width: 0; flex: 1; }
+    .shortcut-title { display: block; overflow: hidden; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+    .shortcut-sub { display: block; margin-top: 3px; overflow: hidden; color: var(--quiet); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .shortcut > .icon { width: 15px; height: 15px; color: var(--quiet); }
+
+    .accordion {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      box-shadow: var(--shadow-card);
+    }
+    .accordion + .accordion { margin-top: var(--stack-gap); }
+    .accordion-trigger {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      min-height: 64px;
+      padding: 11px 14px;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+    .accordion-trigger:hover { background: var(--surface-warm); }
+    .accordion-icon {
+      display: grid;
+      place-items: center;
+      width: 35px;
+      height: 35px;
+      margin-right: 11px;
+      border-radius: 10px;
+      color: var(--ink);
+      background: var(--surface-soft);
+    }
+    .accordion-heading { min-width: 0; flex: 1; }
+    .accordion-title { display: block; font-size: 14px; font-weight: 800; }
+    .accordion-summary { display: block; margin-top: 3px; overflow: hidden; color: var(--quiet); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .chevron { color: var(--quiet); transition: transform .25s var(--ease); }
+    .accordion.open .chevron { transform: rotate(180deg); }
+    .accordion-body {
+      display: none;
+      padding: 0 14px 14px;
+      animation: reveal .28s var(--ease);
+    }
+    .accordion.open .accordion-body { display: block; }
+    @keyframes reveal { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+    .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { display: block; margin: 0 0 6px 2px; color: var(--muted); font-size: 10px; font-weight: 800; }
+    .field-control { position: relative; }
+    .field input {
+      width: 100%;
+      min-height: 43px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--ink);
+      background: var(--surface-warm);
+      font-size: 13px;
+      font-weight: 700;
+      outline: none;
+    }
+    .field input:focus { border-color: var(--ink); background: #fff; box-shadow: 0 0 0 3px rgba(17,17,17,.06); }
+    .field-hint { margin: 5px 2px 0; color: var(--quiet); font-size: 10px; line-height: 1.35; }
+    .field-unit { position: absolute; right: 12px; top: 12px; color: var(--quiet); font-size: 11px; font-weight: 800; pointer-events: none; }
+    .field.has-unit input { padding-right: 48px; }
+    .group-label { margin: 3px 0 9px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+    .group-label:not(:first-child) { margin-top: 16px; }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-height: 61px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .toggle-row:last-child { border-bottom: 0; padding-bottom: 1px; }
+    .toggle-icon {
+      display: grid;
+      place-items: center;
+      width: 31px;
+      height: 31px;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      color: var(--muted);
+      background: var(--surface-soft);
+    }
+    .toggle-copy { min-width: 0; flex: 1; }
+    .toggle-title { display: block; font-size: 13px; font-weight: 800; }
+    .toggle-desc { display: block; margin-top: 3px; color: var(--quiet); font-size: 10px; line-height: 1.4; }
+    .switch {
+      position: relative;
+      width: 42px;
+      height: 25px;
+      flex: 0 0 auto;
+      border: 0;
+      border-radius: 999px;
+      background: #c7cdd5;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 19px;
+      height: 19px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(17,17,17,.25);
+      transition: transform .2s var(--ease);
+    }
+    .switch.on { background: var(--ink); }
+    .switch.on::after { transform: translateX(17px); }
+    .switch.orange.on { background: var(--orange); }
+    .switch.green.on { background: var(--green); }
+
+    .status-strip {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 10px;
+      color: #755300;
+      background: var(--amber-soft);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+    .status-strip .icon { width: 17px; height: 17px; flex: 0 0 auto; }
+    .status-strip strong { display: block; margin-bottom: 1px; font-size: 11px; }
+    .status-strip button { margin-top: 4px; padding: 0; border: 0; color: #755300; background: transparent; font-size: 10px; font-weight: 800; text-decoration: underline; cursor: pointer; }
+    .status-strip.danger { color: #9f1a22; background: var(--red-soft); }
+    .status-strip.danger button { color: #9f1a22; }
+
+    .permission-list { margin-top: 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-warm); }
+    .permission-row { display: flex; align-items: center; gap: 9px; min-height: 47px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .permission-row:last-child { border-bottom: 0; }
+    .permission-icon { display: grid; place-items: center; width: 27px; height: 27px; flex: 0 0 auto; border-radius: 8px; color: var(--muted); background: var(--surface-soft); }
+    .permission-icon .icon { width: 15px; height: 15px; }
+    .permission-copy { min-width: 0; flex: 1; }
+    .permission-title { display: block; font-size: 11px; font-weight: 800; }
+    .permission-desc { display: block; min-width: 0; margin-top: 2px; overflow: hidden; color: var(--quiet); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .permission-status { flex: 0 0 auto; padding: 5px 7px; border-radius: 999px; color: #147b2a; background: var(--green-soft); font-size: 9px; font-weight: 800; white-space: nowrap; }
+    .permission-status.pending { color: #755300; background: var(--amber-soft); }
+    .permission-action { flex: 0 0 auto; padding: 5px 7px; border: 0; border-radius: 7px; color: #755300; background: transparent; font-size: 9px; font-weight: 800; cursor: pointer; }
+    .permission-action:hover { background: var(--amber-soft); }
+
+    .model-card {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--surface-warm);
+    }
+    .model-top { display: flex; align-items: center; gap: 9px; }
+    .model-mark { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 8px; color: var(--green); background: var(--green-soft); }
+    .model-copy { min-width: 0; flex: 1; }
+    .model-title { display: block; font-size: 12px; font-weight: 800; }
+    .model-desc { display: block; margin-top: 2px; color: var(--quiet); font-size: 10px; }
+    .model-action { padding: 6px 8px; border: 0; border-radius: 7px; color: var(--ink); background: var(--surface-soft); font-size: 10px; font-weight: 800; cursor: pointer; }
+    .model-action:hover { background: #dce2e9; }
+    .progress { display: none; height: 6px; margin-top: 11px; overflow: hidden; border-radius: 99px; background: #d9dee5; }
+    .progress.show { display: block; }
+    .progress-bar { width: 0; height: 100%; border-radius: inherit; background: var(--orange); transition: width .2s; }
+    .model-note { display: none; margin-top: 6px; color: var(--quiet); font-size: 10px; }
+    .model-note.show { display: block; }
+
+    .server-grid { display: grid; gap: 10px; }
+    .password-wrap { position: relative; }
+    .password-wrap input { padding-right: 42px; }
+    .reveal-btn { position: absolute; right: 5px; top: 5px; display: grid; place-items: center; width: 33px; height: 33px; border: 0; border-radius: 8px; color: var(--quiet); background: transparent; cursor: pointer; }
+    .reveal-btn:hover { background: var(--surface-soft); color: var(--ink); }
+    .sync-row { display: flex; align-items: center; gap: 9px; margin-top: 11px; padding: 10px; border-radius: 10px; color: var(--muted); background: var(--surface-soft); font-size: 10px; line-height: 1.4; }
+    .sync-row .icon { width: 16px; height: 16px; }
+    .sync-row strong { color: var(--ink); }
+
+    .about-card { display: flex; align-items: center; gap: 11px; padding: 13px 14px; cursor: pointer; transition: background .2s; }
+    .about-card:hover { background: var(--surface-warm); }
+    .about-logo { width: 38px; height: 38px; overflow: hidden; border-radius: 11px; }
+    .about-logo img { width: 100%; height: 100%; }
+    .about-copy { min-width: 0; flex: 1; }
+    .about-title { margin: 0; font-size: 13px; font-weight: 800; }
+    .about-sub { margin: 3px 0 0; color: var(--quiet); font-size: 10px; }
+    .about-card > .icon { color: var(--quiet); }
+
+    /* 布局约束：同一分区的兄弟板块统一交给 stack + gap 管理，禁止混用单项上下 margin。 */
+    .maintenance-stack { display: flex; flex-direction: column; gap: var(--stack-gap); }
+    .maintenance-stack > * { margin-top: 0; margin-bottom: 0; }
+    .maintenance-row { display: flex; align-items: center; gap: 11px; min-height: 67px; padding: 12px 14px; cursor: pointer; transition: background .2s; }
+    .maintenance-row:hover { background: var(--surface-warm); }
+    .maintenance-icon { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 10px; color: var(--ink); background: var(--surface-soft); }
+    .maintenance-copy { min-width: 0; flex: 1; }
+    .maintenance-title { display: block; font-size: 13px; font-weight: 800; }
+    .maintenance-sub { display: block; margin-top: 3px; color: var(--quiet); font-size: 10px; }
+    .maintenance-badge { flex: 0 0 auto; padding: 5px 7px; border-radius: 999px; color: #755300; background: var(--amber-soft); font-size: 9px; font-weight: 800; }
+    .maintenance-row > .icon { width: 15px; height: 15px; color: var(--quiet); }
+
+    .version-line { padding: 18px 0 4px; color: var(--quiet); font-size: 10px; text-align: center; }
+    .version-line strong { color: var(--muted); font-weight: 800; }
+
+    .bottom-nav {
+      position: absolute;
+      z-index: 15;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      padding: 9px 8px max(10px, env(safe-area-inset-bottom));
+      border-top: 1px solid rgba(215,221,229,.92);
+      background: rgba(255,255,255,.94);
+      backdrop-filter: blur(15px);
+    }
+    .nav-item { display: grid; justify-items: center; gap: 4px; padding: 2px 0; border: 0; color: var(--quiet); background: transparent; font-size: 9px; font-weight: 700; cursor: pointer; }
+    .nav-item.active { color: var(--ink); }
+    .nav-item.voice { color: #fff; }
+    .nav-icon { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; }
+    .nav-item.active .nav-icon { color: var(--ink); background: var(--surface-soft); }
+    .nav-item.voice .nav-icon { width: 43px; height: 43px; margin-top: -17px; border: 4px solid var(--bg); color: #fff; background: var(--orange); box-shadow: var(--shadow-float); }
+    .nav-item.voice span:last-child { color: var(--orange); }
+    .nav-icon .icon { width: 17px; height: 17px; }
+
+    .toast {
+      position: absolute;
+      z-index: 30;
+      right: 14px;
+      bottom: 78px;
+      left: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 13px;
+      border: 1px solid rgba(17,17,17,.1);
+      border-radius: 11px;
+      color: #fff;
+      background: #232a32;
+      box-shadow: var(--shadow-float);
+      font-size: 11px;
+      font-weight: 700;
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: opacity .25s var(--ease), transform .25s var(--ease);
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast .icon { width: 17px; height: 17px; color: var(--orange); }
+
+    .modal-backdrop { position: absolute; z-index: 25; inset: 0; display: none; align-items: flex-end; background: rgba(17,17,17,.32); }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      width: 100%;
+      padding: 18px 16px 22px;
+      border-radius: 22px 22px 0 0;
+      background: var(--surface);
+      box-shadow: 0 -14px 36px rgba(17,17,17,.18);
+      animation: sheet-in .25s var(--ease);
+    }
+    @keyframes sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-handle { width: 34px; height: 4px; margin: -4px auto 15px; border-radius: 99px; background: var(--line-strong); }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .modal h3 { margin: 0; font-size: 18px; font-weight: 800; }
+    .modal-close { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%; color: var(--muted); background: var(--surface-soft); cursor: pointer; }
+    .modal p { margin: 11px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 17px; }
+    .modal-actions button { min-height: 43px; border: 0; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; }
+    .btn-secondary { color: var(--ink); background: var(--surface-soft); }
+    .btn-primary { color: #fff; background: var(--ink); }
+
+    .reveal { opacity: 0; transform: translateY(10px); animation: rise .5s var(--ease) forwards; }
+    .delay-1 { animation-delay: .04s; }
+    .delay-2 { animation-delay: .08s; }
+    .delay-3 { animation-delay: .12s; }
+    .delay-4 { animation-delay: .16s; }
+    .delay-5 { animation-delay: .2s; }
+    @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+
+    @media (max-width: 560px) {
+      body { background: var(--bg); }
+      .prototype-wrap { padding: 0; }
+      .phone { width: 100%; height: 100vh; height: 100dvh; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
+      .phone::before { display: none; }
+      .topbar { padding: max(18px, env(safe-area-inset-top)) 14px 12px; }
+      .content { padding-right: 12px; padding-left: 12px; }
+      .hero { padding: 16px; }
+      .hero-top { gap: 10px; }
+      .brand-lockup { gap: 8px; }
+      .brand-mark { width: 36px; height: 36px; border-radius: 10px; }
+      .hero-title { font-size: 18px; }
+      .hero-status { padding: 6px 8px; font-size: 10px; }
+      .hero-bottom { margin-top: 22px; }
+    }
+
+    @media (max-width: 360px) {
+      .topbar { padding-right: 12px; padding-left: 12px; }
+      .content { padding-right: 10px; padding-left: 10px; }
+      .hero { padding: 14px; }
+      .hero-top { align-items: center; flex-wrap: wrap; gap: 8px; row-gap: 9px; }
+      .hero-status { margin-left: auto; }
+      .hero-kicker { font-size: 9px; letter-spacing: .1em; }
+      .hero-title { font-size: 17px; }
+      .hero-status { padding: 6px 7px; }
+      .hero-meta-value { font-size: 15px; }
+      .hero-meta-sub { font-size: 10px; }
+      .shortcut-grid { gap: 7px; }
+      .shortcut { min-height: 68px; gap: 8px; padding: 10px; }
+      .shortcut-icon { width: 32px; height: 32px; }
+      .shortcut-title { font-size: 12px; }
+      .accordion-trigger { min-height: 60px; padding: 10px 11px; }
+      .accordion-icon { width: 32px; height: 32px; margin-right: 9px; }
+      .accordion-title { font-size: 13px; }
+      .accordion-body { padding-right: 11px; padding-bottom: 12px; padding-left: 11px; }
+      .toggle-row { gap: 8px; }
+      .toggle-desc { font-size: 9px; }
+      .permission-row { gap: 7px; padding: 8px; }
+      .permission-desc { font-size: 8.5px; }
+      .permission-status,
+      .permission-action { padding: 4px 6px; font-size: 8.5px; }
+      .maintenance-row { gap: 8px; padding: 11px; }
+      .maintenance-badge { padding: 4px 6px; font-size: 8.5px; }
+      .about-card { gap: 8px; padding: 11px; }
+      .about-logo { width: 34px; height: 34px; }
+      .bottom-nav { padding-right: 4px; padding-left: 4px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <defs>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+      <symbol id="i-archive" viewBox="0 0 24 24"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1zM10 12h4"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 19V5M4 19h17"/><path d="m7 15 3-3 3 2 5-6"/></symbol>
+      <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M4 2v20l3-2 3 2 3-2 3 2 4-2V2l-4 2-3-2-3 2-3-2Z"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+      <symbol id="i-calculator" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9Z"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V3h8v3M19 6l-1 15H6L5 6M10 11v6M14 11v6"/></symbol>
+      <symbol id="i-dns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l2 2M14 9l2 2"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="m3 3 18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 4.2A9.7 9.7 0 0 1 12 4c6.5 0 10 8 10 8a18.8 18.8 0 0 1-3.1 4.2M6.6 6.6C3.6 8.3 2 12 2 12s3.5 8 10 8a9.5 9.5 0 0 0 3.4-.6"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="m10.3 3.7-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.3l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+      <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8.1 8.1 0 0 0-14.7-4L3 10M3 4v6h6M4 13a8.1 8.1 0 0 0 14.7 4L21 14M21 20v-6h-6"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+      <symbol id="i-log" viewBox="0 0 24 24"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m19.4 15 .1.1a2 2 0 0 1-2.8 2.8l-.1-.1a2 2 0 0 0-3.4 1.4v.2a2 2 0 0 1-4 0v-.2a2 2 0 0 0-3.4-1.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A2 2 0 0 0 1.7 12h-.2a2 2 0 0 1 0-4h.2a2 2 0 0 0 1.4-3.4L3 4.5a2 2 0 0 1 2.8-2.8l.1.1A2 2 0 0 0 9.3.4V.2a2 2 0 0 1 4 0v.2a2 2 0 0 0 3.4 1.4l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A2 2 0 0 0 20.9 8h.2a2 2 0 0 1 0 4h-.2a2 2 0 0 0-1.5 3Z" transform="translate(0 3) scale(.75)"/></symbol>
+    </defs>
+  </svg>
+
+  <main class="prototype-wrap">
+    <section class="phone" aria-label="火场智控设置页设计稿">
+      <div class="screen" id="screen">
+        <header class="topbar">
+          <div class="topbar-left">
+            <h1>设置</h1>
+            <span class="save-state" id="saveState"><svg class="icon"><use href="#i-check"/></svg><span>已保存</span></span>
+          </div>
+          <button class="connection" type="button" data-action="retry" aria-label="连接正常，点击重试">
+            <span class="connection-dot"></span>已连接
+          </button>
+        </header>
+
+        <div class="content">
+          <p class="eyebrow reveal">现场处置 / 本机状态</p>
+          <section class="hero reveal delay-1">
+            <div class="hero-top">
+              <div class="brand-lockup">
+                <div class="brand-mark"><img src="../app/assets/branding/fire-control-mark.svg" alt="火场智控标志"></div>
+                <div>
+                  <p class="hero-kicker">FIREWATCH CONTROL</p>
+                  <h2 class="hero-title">现场处置</h2>
+                </div>
+              </div>
+              <span class="hero-status"><svg class="icon"><use href="#i-check"/></svg>处置中</span>
+            </div>
+            <div class="hero-bottom">
+              <div>
+                <p class="hero-meta-label">当前警情</p>
+                <p class="hero-meta-value">阳光水岸 · 3 号楼</p>
+                <p class="hero-meta-sub">已加入警情 · 现场协同正常</p>
+              </div>
+            </div>
+          </section>
+
+          <div class="section-head reveal delay-2">
+            <h2>我的身份</h2>
+          </div>
+          <section class="card identity-card reveal delay-2">
+            <div class="identity-row">
+              <div class="avatar" aria-hidden="true"><svg class="icon"><use href="#i-user"/></svg></div>
+              <div class="identity-copy">
+                <p class="identity-name" id="identityName">林队</p>
+                <p class="identity-unit"><span class="identity-unit-label">单位</span><span class="identity-unit-name" id="identityUnit">龙游县消防救援大队</span></p>
+              </div>
+              <button class="identity-edit" type="button" data-action="edit-name" aria-label="编辑实名设置"><svg class="icon"><use href="#i-edit"/></svg></button>
+            </div>
+            <input class="identity-input" id="nameInput" type="text" value="林队" aria-label="真实姓名">
+            <p class="helper">用于日志署名，留空为“匿名”。</p>
+          </section>
+
+          <div class="section-head reveal delay-3">
+            <h2>现场资料</h2>
+          </div>
+          <div class="shortcut-grid reveal delay-3">
+            <button class="shortcut" type="button" data-modal="roster">
+              <span class="shortcut-icon"><svg class="icon"><use href="#i-users"/></svg></span>
+              <span class="shortcut-copy"><span class="shortcut-title">语音热词</span><span class="shortcut-sub">24 名 · 18 个热词</span></span>
+              <svg class="icon"><use href="#i-arrow"/></svg>
+            </button>
+            <button class="shortcut" type="button" data-modal="archive">
+              <span class="shortcut-icon"><svg class="icon"><use href="#i-archive"/></svg></span>
+              <span class="shortcut-copy"><span class="shortcut-title">归档警情</span><span class="shortcut-sub">查看复盘时间线</span></span>
+              <svg class="icon"><use href="#i-arrow"/></svg>
+            </button>
+            <button class="shortcut" type="button" data-modal="stats">
+              <span class="shortcut-icon"><svg class="icon"><use href="#i-chart"/></svg></span>
+              <span class="shortcut-copy"><span class="shortcut-title">数据统计</span><span class="shortcut-sub">本场 12 次 · 3 人</span></span>
+              <svg class="icon"><use href="#i-arrow"/></svg>
+            </button>
+            <button class="shortcut" type="button" data-modal="logs">
+              <span class="shortcut-icon"><svg class="icon"><use href="#i-receipt"/></svg></span>
+              <span class="shortcut-copy"><span class="shortcut-title">操作日志</span><span class="shortcut-sub">本机日志 · 可同步</span></span>
+              <svg class="icon"><use href="#i-arrow"/></svg>
+            </button>
+          </div>
+
+          <div class="section-head reveal delay-4">
+            <h2>运行策略</h2>
+          </div>
+
+          <section class="accordion reveal delay-4" data-accordion="calc">
+            <button class="accordion-trigger" type="button" aria-expanded="false">
+              <span class="accordion-icon"><svg class="icon"><use href="#i-calculator"/></svg></span>
+              <span class="accordion-heading"><span class="accordion-title">计算参数</span><span class="accordion-summary">6.8 L · 30 MPa · 提醒 10 min / 报警 5 min</span></span>
+              <svg class="icon chevron"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="accordion-body">
+              <p class="group-label">气瓶参数</p>
+              <div class="field-grid">
+                <div class="field has-unit"><label for="volume">气瓶容量</label><div class="field-control"><input id="volume" value="6.8" inputmode="decimal"><span class="field-unit">L</span></div><p class="field-hint">单瓶标称容积</p></div>
+                <div class="field has-unit"><label for="pressure">满压</label><div class="field-control"><input id="pressure" value="30" inputmode="decimal"><span class="field-unit">MPa</span></div><p class="field-hint">满瓶压力</p></div>
+                <div class="field full has-unit"><label for="consumption">消耗率</label><div class="field-control"><input id="consumption" value="80" inputmode="decimal"><span class="field-unit">L/min</span></div><p class="field-hint">用于估算剩余可用时间</p></div>
+              </div>
+              <p class="group-label">提醒阈值</p>
+              <div class="field-grid">
+                <div class="field has-unit"><label for="warn">提醒剩余</label><div class="field-control"><input id="warn" value="10" inputmode="numeric"><span class="field-unit">min</span></div></div>
+                <div class="field has-unit"><label for="alarm">报警剩余</label><div class="field-control"><input id="alarm" value="5" inputmode="numeric"><span class="field-unit">min</span></div></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="accordion reveal delay-4" data-accordion="voice">
+            <button class="accordion-trigger" type="button" aria-expanded="false">
+              <span class="accordion-icon"><svg class="icon"><use href="#i-mic"/></svg></span>
+              <span class="accordion-heading"><span class="accordion-title">语音识别</span><span class="accordion-summary" id="voiceSummary">云端优先 · 失败自动切换本地</span></span>
+              <svg class="icon chevron"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="accordion-body">
+              <div class="toggle-row">
+                <span class="toggle-icon"><svg class="icon"><use href="#i-cloud"/></svg></span>
+                <span class="toggle-copy"><span class="toggle-title">联网语音识别</span><span class="toggle-desc">豆包云端识别，失败自动切本地；关闭后强制本地识别</span></span>
+                <button class="switch orange on" type="button" role="switch" aria-checked="true" data-toggle="asr" aria-label="联网语音识别"></button>
+              </div>
+              <div class="toggle-row">
+                <span class="toggle-icon"><svg class="icon"><use href="#i-shield"/></svg></span>
+                <span class="toggle-copy"><span class="toggle-title">联网语义解析</span><span class="toggle-desc">DeepSeek 云端解析，失败自动切本地规则解析</span></span>
+                <button class="switch orange on" type="button" role="switch" aria-checked="true" data-toggle="parse" aria-label="联网语义解析"></button>
+              </div>
+              <div class="model-card" id="modelCard">
+                <div class="model-top">
+                  <span class="model-mark"><svg class="icon"><use href="#i-check"/></svg></span>
+                  <span class="model-copy"><span class="model-title" id="modelTitle">本地语音模型已就绪</span><span class="model-desc" id="modelDesc">离线可用 · 主模型约 75 MB</span></span>
+                  <button class="model-action" type="button" id="modelAction" data-action="model">删除</button>
+                </div>
+                <div class="progress" id="progress"><div class="progress-bar" id="progressBar"></div></div>
+                <p class="model-note" id="modelNote">下载完成后，断网也能语音录入。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="accordion reveal delay-5" data-accordion="alert">
+            <button class="accordion-trigger" type="button" aria-expanded="false">
+              <span class="accordion-icon"><svg class="icon"><use href="#i-bell"/></svg></span>
+              <span class="accordion-heading"><span class="accordion-title">提醒方式</span><span class="accordion-summary" id="alertSummary">语音播报 · 报警音 · 屏幕常亮 · 后台值守</span></span>
+              <svg class="icon chevron"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="accordion-body">
+              <div class="toggle-row"><span class="toggle-icon"><svg class="icon"><use href="#i-mic"/></svg></span><span class="toggle-copy"><span class="toggle-title">语音播报</span><span class="toggle-desc">确认、提醒、报警时播报中文语音</span></span><button class="switch on" type="button" role="switch" aria-checked="true" data-toggle="tts" aria-label="语音播报"></button></div>
+              <div class="toggle-row"><span class="toggle-icon"><svg class="icon"><use href="#i-bell"/></svg></span><span class="toggle-copy"><span class="toggle-title">报警音</span><span class="toggle-desc">前台警报音 + 后台本地通知</span></span><button class="switch on" type="button" role="switch" aria-checked="true" data-toggle="sound" aria-label="报警音"></button></div>
+              <div class="toggle-row"><span class="toggle-icon"><svg class="icon"><use href="#i-sun"/></svg></span><span class="toggle-copy"><span class="toggle-title">屏幕常亮</span><span class="toggle-desc">看板页保持屏幕常亮，适合火场值守</span></span><button class="switch on" type="button" role="switch" aria-checked="true" data-toggle="screen" aria-label="屏幕常亮"></button></div>
+              <div class="toggle-row"><span class="toggle-icon"><svg class="icon"><use href="#i-shield"/></svg></span><span class="toggle-copy"><span class="toggle-title">后台值守模式</span><span class="toggle-desc">切后台或锁屏后，轮询与报警不停</span></span><button class="switch green on" type="button" role="switch" aria-checked="true" data-toggle="keepalive" aria-label="后台值守模式"></button></div>
+              <div class="status-strip"><svg class="icon"><use href="#i-alert"/></svg><div><strong>系统权限提醒</strong>请允许通知与电池白名单，否则后台保活可能被系统中断。<br><button type="button" data-action="permissions">前往系统设置检查</button></div></div>
+              <div class="permission-list" aria-label="系统权限状态">
+                <div class="permission-row"><span class="permission-icon"><svg class="icon"><use href="#i-bell"/></svg></span><span class="permission-copy"><span class="permission-title">精确闹钟</span><span class="permission-desc">后台提醒按时触发</span></span><span class="permission-status">已开启</span></div>
+                <div class="permission-row"><span class="permission-icon"><svg class="icon"><use href="#i-shield"/></svg></span><span class="permission-copy"><span class="permission-title">勿扰访问</span><span class="permission-desc">勿扰模式下保持报警提醒</span></span><button class="permission-action" type="button" data-action="permissions">去检查</button></div>
+                <div class="permission-row"><span class="permission-icon"><svg class="icon"><use href="#i-alert"/></svg></span><span class="permission-copy"><span class="permission-title">全屏通知</span><span class="permission-desc">后台报警弹出全屏提醒</span></span><button class="permission-action" type="button" data-action="permissions">去检查</button></div>
+              </div>
+            </div>
+          </section>
+
+          <div class="section-head reveal delay-5">
+            <h2>连接与维护</h2>
+          </div>
+          <div class="maintenance-stack reveal delay-5">
+            <section class="accordion" data-accordion="server">
+              <button class="accordion-trigger" type="button" aria-expanded="false">
+                <span class="accordion-icon"><svg class="icon"><use href="#i-dns"/></svg></span>
+                <span class="accordion-heading"><span class="accordion-title">服务连接</span><span class="accordion-summary">CloudBase 生产网关 · 设置可同步</span></span>
+                <svg class="icon chevron"><use href="#i-chevron"/></svg>
+              </button>
+              <div class="accordion-body">
+                <div class="server-grid">
+                  <div class="field"><label for="server">服务器地址</label><div class="field-control"><input id="server" value="https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com" inputmode="url"></div><p class="field-hint">默认使用 CloudBase 生产网关</p></div>
+                  <div class="field"><label for="token">访问令牌</label><div class="password-wrap"><input id="token" type="password" value="watchdog-prod-••••••••" autocomplete="off"><button class="reveal-btn" type="button" data-action="reveal" aria-label="显示或隐藏令牌"><svg class="icon"><use href="#i-eye"/></svg></button></div><p class="field-hint">与服务器 API_TOKEN 一致</p></div>
+                </div>
+                <div class="sync-row"><svg class="icon"><use href="#i-sync"/></svg><span><strong>个人设置同步已开启</strong><br>本机修改优先保存，联网后自动同步到当前设备。</span></div>
+              </div>
+            </section>
+
+            <section class="card maintenance-row" data-action="update" role="button" tabindex="0">
+              <span class="maintenance-icon"><svg class="icon"><use href="#i-download"/></svg></span>
+              <span class="maintenance-copy"><span class="maintenance-title">版本更新</span><span class="maintenance-sub">从 GitHub Releases 获取最新版本</span></span>
+              <span class="maintenance-badge">已是最新</span>
+              <svg class="icon"><use href="#i-arrow"/></svg>
+            </section>
+
+            <section class="card about-card" data-modal="about" role="button" tabindex="0">
+              <span class="about-logo"><img src="../app/assets/branding/fire-control-mark.svg" alt=""></span>
+              <span class="about-copy"><span class="about-title">关于项目</span><span class="about-sub">项目介绍、使用说明与开源信息</span></span>
+              <svg class="icon"><use href="#i-arrow"/></svg>
+            </section>
+          </div>
+          <p class="version-line">火场智控 <strong>v1.1.1+47</strong> · 一线消防员开发 · 开源项目</p>
+        </div>
+      </div>
+
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-item" type="button" data-action="nav"><span class="nav-icon"><svg class="icon"><use href="#i-log"/></svg></span><span>日志</span></button>
+        <button class="nav-item" type="button" data-action="nav"><span class="nav-icon"><svg class="icon"><use href="#i-chart"/></svg></span><span>看板</span></button>
+        <button class="nav-item voice" type="button" data-action="voice"><span class="nav-icon"><svg class="icon"><use href="#i-mic"/></svg></span><span>语音</span></button>
+        <button class="nav-item" type="button" data-action="nav"><span class="nav-icon"><svg class="icon"><use href="#i-cloud"/></svg></span><span>辅助</span></button>
+        <button class="nav-item active" type="button" data-action="nav"><span class="nav-icon"><svg class="icon"><use href="#i-settings"/></svg></span><span>设置</span></button>
+      </nav>
+
+      <div class="toast" id="toast" role="status"><svg class="icon"><use href="#i-check"/></svg><span id="toastText">设置已保存</span></div>
+
+      <div class="modal-backdrop" id="modalBackdrop" role="presentation">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div class="modal-handle"></div>
+          <div class="modal-head"><h3 id="modalTitle">入口</h3><button class="modal-close" type="button" data-action="close-modal" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div>
+          <p id="modalText">这里会打开对应的功能页。</p>
+          <div class="modal-actions"><button class="btn-secondary" type="button" data-action="close-modal">稍后查看</button><button class="btn-primary" type="button" data-action="modal-confirm">打开功能</button></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const $ = (selector, root = document) => root.querySelector(selector);
+      const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+      const toast = $('#toast');
+      const toastText = $('#toastText');
+      const saveState = $('#saveState');
+      let toastTimer;
+      let saveTimer;
+
+      function showToast(message, icon = '#i-check') {
+        toastText.textContent = message;
+        $('use', toast).setAttribute('href', icon);
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 2300);
+      }
+
+      function markSaved() {
+        clearTimeout(saveTimer);
+        saveState.classList.add('show', 'saving');
+        saveState.querySelector('span').textContent = '保存中';
+        saveTimer = setTimeout(() => {
+          saveState.classList.remove('saving');
+          saveState.querySelector('span').textContent = '已保存';
+          showToast('设置已保存');
+        }, 520);
+      }
+
+      function openModal(type) {
+        const copy = {
+          roster: ['语音热词', '这里保留现有名单与热词管理入口：可增删消防员、维护专业术语，断网时也作为本地识别词源。'],
+          archive: ['归档警情', '这里保留按时间查看历史警情、参战力量快照和完整火场时间线，并支持修改归档警情名称。'],
+          stats: ['数据统计', '这里保留按人员查看进出场次数、作业时长和压力变化的统计入口，方便训练复盘。'],
+          logs: ['操作日志', '这里保留本地操作日志查看与同步入口，用于排查转写、解析、提交和 OTA 更新问题。'],
+          about: ['关于项目', '这里保留 README 中的项目背景、使用方式、功能说明、适用现场与开源信息。']
+        }[type];
+        if (!copy) return;
+        $('#modalTitle').textContent = copy[0];
+        $('#modalText').textContent = copy[1];
+        $('#modalBackdrop').classList.add('show');
+        $('#modalBackdrop').dataset.type = type;
+      }
+
+      function closeModal() { $('#modalBackdrop').classList.remove('show'); }
+
+      function toggleAccordion(trigger) {
+        const accordion = trigger.closest('.accordion');
+        const open = accordion.classList.toggle('open');
+        trigger.setAttribute('aria-expanded', String(open));
+      }
+
+      function updateToggle(button) {
+        const on = button.classList.toggle('on');
+        button.setAttribute('aria-checked', String(on));
+        const target = button.dataset.toggle;
+        if (target === 'asr') $('#voiceSummary').textContent = on ? '云端优先 · 失败自动切换本地' : '强制本地识别 · 需准备离线模型';
+        if (['tts', 'sound', 'screen', 'keepalive'].includes(target)) {
+          const active = $$('[data-toggle="tts"], [data-toggle="sound"], [data-toggle="screen"], [data-toggle="keepalive"]').filter(item => item.classList.contains('on')).length;
+          $('#alertSummary').textContent = `${active} 项提醒策略开启 · ${on && target === 'keepalive' ? '后台持续值守' : '按当前开关运行'}`;
+        }
+        markSaved();
+      }
+
+      function editName() {
+        const input = $('#nameInput');
+        const open = input.classList.toggle('open');
+        if (open) { input.focus(); input.select(); }
+        else { saveName(); }
+      }
+
+      function saveName() {
+        const input = $('#nameInput');
+        const value = input.value.trim();
+        const name = value || '匿名';
+        $('#identityName').textContent = name;
+        if (input.classList.contains('open')) input.classList.remove('open');
+        markSaved();
+      }
+
+      function handleModel() {
+        const action = $('#modelAction');
+        const title = $('#modelTitle');
+        const desc = $('#modelDesc');
+        const mark = $('.model-mark');
+        if (action.dataset.state === 'downloading') return;
+        if (action.dataset.state === 'installed' || !action.dataset.state) {
+          action.dataset.state = 'removed';
+          action.textContent = '下载';
+          title.textContent = '本地 ASR 主模型未下载';
+          desc.textContent = '约 75 MB · 下载后断网也能语音录入';
+          mark.style.color = 'var(--amber)';
+          mark.style.background = 'var(--amber-soft)';
+          $('use', mark).setAttribute('href', '#i-download');
+          $('#modelNote').classList.add('show');
+          showToast('已移除本地模型', '#i-trash');
+          return;
+        }
+        action.dataset.state = 'downloading';
+        action.textContent = '下载中';
+        title.textContent = '正在下载本地语音模型…';
+        desc.textContent = '保持应用前台，约 75 MB';
+        $('#progress').classList.add('show');
+        $('#modelNote').classList.remove('show');
+        let progress = 0;
+        const timer = setInterval(() => {
+          progress += 10;
+          $('#progressBar').style.width = `${progress}%`;
+          if (progress >= 100) {
+            clearInterval(timer);
+            action.dataset.state = 'installed';
+            action.textContent = '删除';
+            title.textContent = '本地语音模型已就绪';
+            desc.textContent = '离线可用 · 主模型约 75 MB';
+            mark.style.color = 'var(--green)';
+            mark.style.background = 'var(--green-soft)';
+            $('use', mark).setAttribute('href', '#i-check');
+            $('#progress').classList.remove('show');
+            showToast('本地模型已下载完成');
+            markSaved();
+          }
+        }, 140);
+      }
+
+      $$('[data-accordion] .accordion-trigger').forEach(trigger => trigger.addEventListener('click', () => toggleAccordion(trigger)));
+      $$('[data-toggle]').forEach(button => button.addEventListener('click', () => updateToggle(button)));
+      $$('[data-modal]').forEach(button => {
+        button.addEventListener('click', () => openModal(button.dataset.modal));
+        button.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openModal(button.dataset.modal); } });
+      });
+      $$('[data-action="close-modal"]').forEach(button => button.addEventListener('click', closeModal));
+      $('#modalBackdrop').addEventListener('click', event => { if (event.target === event.currentTarget) closeModal(); });
+      $('[data-action="edit-name"]').addEventListener('click', editName);
+      $('#nameInput').addEventListener('keydown', event => { if (event.key === 'Enter') saveName(); });
+      $('#nameInput').addEventListener('blur', saveName);
+      $('#modelAction').addEventListener('click', handleModel);
+      $('[data-action="reveal"]').addEventListener('click', event => {
+        const input = $('#token');
+        const visible = input.type === 'text';
+        input.type = visible ? 'password' : 'text';
+        $('use', event.currentTarget).setAttribute('href', visible ? '#i-eye' : '#i-eye-off');
+      });
+      $('[data-action="retry"]').addEventListener('click', () => showToast('已重新检查连接'));
+      $('[data-action="permissions"]').addEventListener('click', () => showToast('已打开系统权限引导', '#i-arrow'));
+      $('[data-action="update"]').addEventListener('click', () => showToast('已是最新版本 v1.1.1+47'));
+      $('[data-action="update"]').addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showToast('已是最新版本 v1.1.1+47'); } });
+      $('[data-action="voice"]').addEventListener('click', () => showToast('长按中央按钮开始语音录入', '#i-mic'));
+      $$('[data-action="nav"]').forEach(button => button.addEventListener('click', () => showToast('原有底部导航保持不变')));
+      $('[data-action="modal-confirm"]').addEventListener('click', () => { showToast(`已打开${$('#modalTitle').textContent}`); closeModal(); });
+      $$('input').forEach(input => input.addEventListener('change', markSaved));
+    })();
+  </script>
+</body>
+</html>

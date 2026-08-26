@@ -367,7 +367,14 @@ Future<void> _scrollToVisible(
   int maxDrags = 25,
 }) async {
   for (var i = 0; i < maxDrags; i++) {
-    if (target.evaluate().isNotEmpty) break;
+    if (target.evaluate().length == 1) {
+      final targetRect = tester.getRect(target);
+      final viewportRect = tester.getRect(scrollable);
+      if (targetRect.top >= viewportRect.top &&
+          targetRect.bottom <= viewportRect.bottom) {
+        break;
+      }
+    }
     await tester.drag(scrollable, const Offset(0, -300));
     await tester.pumpAndSettle();
   }
@@ -780,8 +787,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final list = find.byType(Scrollable).first;
-      await _scrollToVisible(tester, list, find.text('检查更新'));
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('版本更新'));
       expect(find.textContaining('发现新版本 v9.9.9+99'), findsOneWidget);
     });
 
@@ -796,8 +803,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final list = find.byType(Scrollable).first;
-      await _scrollToVisible(tester, list, find.text('检查更新'));
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('版本更新'));
       expect(find.text('检查更新失败，点击重试'), findsOneWidget);
     });
 
@@ -810,12 +817,13 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final list = find.byType(Scrollable).first;
-      expect(find.text('实名认证'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('名单与热词'));
-      expect(find.text('名单与热词'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('警情档案'));
-      expect(find.text('警情档案'), findsOneWidget);
+      final list = find.byType(ListView).first;
+      expect(find.text('我的身份'), findsOneWidget);
+      expect(find.text('当前单位'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('语音热词'));
+      expect(find.text('语音热词'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('归档警情'));
+      expect(find.text('归档警情'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('数据统计'));
       expect(find.text('数据统计'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('计算参数'));
@@ -826,10 +834,12 @@ void main() {
       expect(find.text('提醒方式'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('操作日志'));
       expect(find.text('操作日志'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('服务端'));
-      expect(find.text('服务端'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('关于我们'));
-      expect(find.text('关于我们'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('服务连接'));
+      expect(find.text('服务连接'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('版本更新'));
+      expect(find.text('版本更新'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('关于项目'));
+      expect(find.text('关于项目'), findsOneWidget);
       // 版本号只在设置页最底部展示
       await _scrollToVisible(tester, list, find.textContaining('v$appVersion'));
       expect(find.textContaining('v$appVersion'), findsOneWidget);
@@ -846,6 +856,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('计算参数'));
       await tester.tap(find.text('计算参数'));
       await tester.pumpAndSettle();
       await tester.enterText(find.widgetWithText(TextField, '消耗率'), '55');
@@ -866,11 +878,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       // 屏幕常亮开关：切换后立即落库（开关按文字定位，避免新增开关改变顺序）
-      final list = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(find.text('提醒方式'), 200, scrollable: list);
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('提醒方式'));
       await tester.tap(find.text('提醒方式'));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('屏幕常亮'), 200, scrollable: list);
+      await _scrollToVisible(tester, list, find.text('屏幕常亮'));
       await tester.pump();
       await tester.tap(
         find.descendant(
@@ -895,19 +907,15 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final list = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(
-        find.text('语音录入全流程记录'),
-        400,
-        scrollable: list,
-      );
-      await tester.tap(find.text('语音录入全流程记录'));
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('操作日志'));
+      await tester.tap(find.text('操作日志'));
       await tester.pumpAndSettle();
       expect(find.byType(OpLogPage), findsOneWidget);
       expect(find.text('同步到服务器'), findsOneWidget);
     });
 
-    testWidgets('关于我们入口展示 README 信息且不显示版本号', (tester) async {
+    testWidgets('关于项目入口展示 README 信息且不显示版本号', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = _FakeController();
       await tester.pumpWidget(
@@ -917,9 +925,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final list = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(find.text('关于我们'), 200, scrollable: list);
-      await tester.tap(find.text('关于我们'));
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('关于项目'));
+      await tester.tap(find.text('关于项目'));
       await tester.pumpAndSettle();
       expect(find.byType(AboutPage), findsOneWidget);
       expect(find.text('为什么会有这个 App'), findsOneWidget);
@@ -2072,13 +2080,9 @@ void main() {
       expect(find.text('火场日志'), findsOneWidget);
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
-      final settingsList = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(
-        find.text('服务端'),
-        200,
-        scrollable: settingsList,
-      );
-      expect(find.text('服务端'), findsOneWidget);
+      final settingsList = find.byType(ListView).first;
+      await _scrollToVisible(tester, settingsList, find.text('服务连接'));
+      expect(find.text('服务连接'), findsOneWidget);
       expect(find.text('计算参数'), findsOneWidget);
     });
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../models/models.dart';
 import '../services/alarm_service.dart';
 import '../services/foreground_keep_alive.dart';
 import '../services/op_log_service.dart';
@@ -11,6 +12,7 @@ import '../services/settings.dart';
 import '../services/update_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+import '../theme/fire_control_logo.dart';
 import 'about_page.dart';
 import 'archived_incidents_page.dart';
 import 'op_log_page.dart';
@@ -18,7 +20,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.1.1+47';
+const appVersion = '1.2.0+48';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -63,6 +65,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _loaded = false;
   bool _saving = false; // 防止失焦时 8 个输入框监听器并发触发多次保存
   _SaveState _saveState = _SaveState.idle; // 自动保存状态提示
+  bool _editingName = false;
 
   @override
   void initState() {
@@ -412,7 +415,9 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('未下载本地语音模型'),
-        content: const Text('关闭联网识别后将使用本地模型，但本地 ASR 主模型尚未下载（约 75MB；另有可选的 9.8MB 降噪模型）。\n\n是否现在下载？'),
+        content: const Text(
+          '关闭联网识别后将使用本地模型，但本地 ASR 主模型尚未下载（约 75MB；另有可选的 9.8MB 降噪模型）。\n\n是否现在下载？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -548,9 +553,17 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final entries = widget.controller.entries;
+    final activeEntries = entries.where((entry) => entry.isActive).length;
+    final uniqueNames = entries
+        .map((entry) => entry.name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .length;
+    final connected = !widget.controller.connectionLost;
+
     return SafeArea(
       child: ListView(
-        // 与日志/统计页一致，为悬浮语音按钮保留末尾安全距离。
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
         children: [
           Row(
@@ -565,708 +578,109 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          const SectionTitle(text: '实名认证'),
-          AppCard(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _field(
-                  _realName,
-                  '真实姓名',
-                  '填写后日志显示你的姓名，留空为匿名',
-                  icon: Icons.badge_outlined,
-                  focusNode: _realNameFocus,
-                ),
-                const Text(
-                  '实名后，你在火场日志发布的记录会以小字标注姓名；未填写则显示"匿名"。',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textTertiary,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ),
+          const SizedBox(height: 12),
+          const _SettingsEyebrow('现场处置 / 本机状态'),
+          const SizedBox(height: 8),
+          _SettingsHero(
+            incident: widget.controller.currentIncident,
+            connected: connected,
+            syncError: widget.controller.syncError,
           ),
-          const SizedBox(height: 16),
-          const SectionTitle(text: '名单与热词'),
-          AppCard(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => RosterPage(controller: widget.controller),
+          const SizedBox(height: 22),
+          const SectionTitle(text: '我的身份'),
+          _buildIdentityCard(),
+          const SizedBox(height: 22),
+          const SectionTitle(text: '现场资料'),
+          _buildFieldGrid(
+            _SettingsShortcut(
+              icon: Icons.group_outlined,
+              title: '语音热词',
+              subtitle:
+                  '${widget.controller.firefighters.length} 名 · ${widget.controller.hotwords.length} 个热词',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RosterPage(controller: widget.controller),
+                ),
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceSubtle,
-                  ),
-                  child: const Icon(
-                    Icons.group_outlined,
-                    size: 20,
-                    color: AppColors.textPrimary,
-                  ),
+            _SettingsShortcut(
+              icon: Icons.archive_outlined,
+              title: '归档警情',
+              subtitle: '查看复盘时间线',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ArchivedIncidentsPage(controller: widget.controller),
                 ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '消防员与专业术语',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        '提前录入，语音识别更准',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          const SectionTitle(text: '警情档案'),
-          AppCard(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ArchivedIncidentsPage(controller: widget.controller),
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceSubtle,
-                  ),
-                  child: const Icon(
-                    Icons.archive_outlined,
-                    size: 20,
-                    color: AppColors.textPrimary,
-                  ),
+            _SettingsShortcut(
+              icon: Icons.bar_chart_outlined,
+              title: '数据统计',
+              subtitle: entries.isEmpty
+                  ? '暂无记录'
+                  : '本场 $activeEntries 次 · $uniqueNames 人',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StatsPage(controller: widget.controller),
                 ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '已归档警情',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        '查看火场复盘并修改归档警情名称',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          const SectionTitle(text: '数据统计'),
-          AppCard(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => StatsPage(controller: widget.controller),
               ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceSubtle,
-                  ),
-                  child: const Icon(
-                    Icons.bar_chart_outlined,
-                    size: 20,
-                    color: AppColors.textPrimary,
-                  ),
+            _SettingsShortcut(
+              icon: Icons.receipt_long_outlined,
+              title: '操作日志',
+              subtitle: '本机日志 · 可同步',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => OpLogPage(controller: widget.controller),
                 ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '出场耗时与压力统计',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        '查看火场作业数据',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          _CollapsibleSection(
+          const SizedBox(height: 22),
+          const SectionTitle(text: '运行策略'),
+          _SettingsAccordion(
+            icon: Icons.calculate_outlined,
             title: '计算参数',
-            child: AppCard(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _GroupLabel('气瓶参数'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _field(
-                          _volume,
-                          '气瓶容量',
-                          '6.8 L',
-                          icon: Icons.local_fire_department_outlined,
-                          focusNode: _volumeFocus,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _field(
-                          _full,
-                          '满压',
-                          '30 MPa',
-                          icon: Icons.speed,
-                          focusNode: _fullFocus,
-                        ),
-                      ),
-                    ],
-                  ),
-                  _field(
-                    _consumption,
-                    '消耗率',
-                    '80 L/min',
-                    icon: Icons.water_drop_outlined,
-                    focusNode: _consumptionFocus,
-                  ),
-                  const _GroupLabel('提醒阈值'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _field(
-                          _warn,
-                          '提醒剩余',
-                          '10 min',
-                          icon: Icons.notifications_active_outlined,
-                          focusNode: _warnFocus,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _field(
-                          _alarm,
-                          '报警剩余',
-                          '5 min',
-                          icon: Icons.warning_amber_rounded,
-                          focusNode: _alarmFocus,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            summary: _calculationSummary,
+            child: _buildCalculationBody(),
           ),
-          const SizedBox(height: 16),
-          _CollapsibleSection(
+          const SizedBox(height: 9),
+          _SettingsAccordion(
+            icon: Icons.mic_none_outlined,
             title: '语音识别',
-            child: AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    title: const Text(
-                      '联网语音识别',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    subtitle: const Text('开：豆包云端识别，失败自动切本地；关：强制本地识别'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _asrCloud,
-                    onChanged: (v) {
-                      if (!v) _checkModelBeforeOffline();
-                      setState(() => _asrCloud = v);
-                      _autoSave();
-                    },
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  SwitchListTile(
-                    title: const Text(
-                      '联网语义解析',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    subtitle: const Text('开：DeepSeek 云端解析，失败自动切本地；关：强制本地规则解析'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _parseCloud,
-                    onChanged: (v) {
-                      setState(() => _parseCloud = v);
-                      _autoSave();
-                    },
-                  ),
-                  if (widget.controller.localAsr != null) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    _buildModelTile(),
-                  ],
-                ],
-              ),
-            ),
+            summary: _asrCloud ? '云端优先 · 失败自动切换本地' : '强制本地识别 · 使用离线模型',
+            child: _buildVoiceBody(),
           ),
-          const SizedBox(height: 16),
-          _CollapsibleSection(
+          const SizedBox(height: 9),
+          _SettingsAccordion(
+            icon: Icons.notifications_none_outlined,
             title: '提醒方式',
-            child: AppCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    title: const Text(
-                      '语音播报',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    subtitle: const Text('确认/提醒/报警时播报中文语音'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _tts,
-                    onChanged: (v) {
-                      setState(() => _tts = v);
-                      _autoSave();
-                    },
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  SwitchListTile(
-                    title: const Text(
-                      '报警音',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    subtitle: const Text('前台警报音 + 后台本地通知'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _sound,
-                    onChanged: (v) {
-                      setState(() => _sound = v);
-                      _autoSave();
-                    },
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  SwitchListTile(
-                    title: const Text(
-                      '屏幕常亮',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    subtitle: const Text('看板页保持屏幕常亮，适合火场值守'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _keepScreenOn,
-                    onChanged: (v) {
-                      setState(() => _keepScreenOn = v);
-                      _autoSave();
-                    },
-                  ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  SwitchListTile(
-                    title: const Text(
-                      '后台值守模式',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    subtitle: const Text('前台服务常驻：切后台/锁屏后轮询与报警不停，通知栏显示指挥状态'),
-                    activeThumbColor: AppColors.actionPrimary,
-                    value: _keepAlive,
-                    onChanged: _toggleKeepAlive,
-                  ),
-                  if (!_keepAlive)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                      child: Text(
-                        '开启时请允许通知与电池白名单，否则保活可能被系统中断',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ),
-                  if (!widget.controller.alarm.exactAlarmAvailable) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(
-                        Icons.notifications_off_outlined,
-                        color: AppColors.caution,
-                        size: 20,
-                      ),
-                      title: const Text(
-                        '系统已关闭精确闹钟权限，后台提醒可能延迟',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        '请在系统设置-应用-火场智控中允许闹钟与提醒',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                    ),
-                  ],
-                  if (!_policyAccess) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    ListTile(
-                      dense: true,
-                      onTap: AlarmNative.openNotificationPolicySettings,
-                      leading: const Icon(
-                        Icons.do_not_disturb_on_outlined,
-                        color: AppColors.caution,
-                        size: 20,
-                      ),
-                      title: const Text(
-                        '未允许勿扰访问，勿扰模式下报警提醒将被静音',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        '点击前往系统设置开启勿扰访问',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                    ),
-                  ],
-                  if (!_fullScreenOk) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
-                    ListTile(
-                      dense: true,
-                      onTap: AlarmNative.openNotificationSettings,
-                      leading: const Icon(
-                        Icons.fullscreen_exit_outlined,
-                        color: AppColors.caution,
-                        size: 20,
-                      ),
-                      title: const Text(
-                        '未开启全屏通知，后台报警不会弹全屏提醒',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        '点击前往通知设置开启全屏显示',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            summary: _alertSummary,
+            child: _buildAlertBody(),
           ),
-          const SizedBox(height: 16),
-          const SectionTitle(text: '操作日志'),
-          AppCard(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => OpLogPage(controller: widget.controller),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceSubtle,
-                  ),
-                  child: const Icon(
-                    Icons.receipt_long_outlined,
-                    size: 20,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '语音录入全流程记录',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        '可同步到服务器排查问题',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
-            ),
+          const SizedBox(height: 22),
+          const SectionTitle(text: '连接与维护'),
+          _SettingsAccordion(
+            icon: Icons.dns_outlined,
+            title: '服务连接',
+            summary: 'CloudBase 生产网关 · 设置可同步',
+            child: _buildServerBody(),
           ),
-          const SizedBox(height: 16),
-          _CollapsibleSection(
-            title: '服务端',
-            child: AppCard(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _field(
-                    _server,
-                    '服务器地址',
-                    '默认使用 CloudBase 生产网关',
-                    icon: Icons.dns_outlined,
-                    keyboard: TextInputType.url,
-                    focusNode: _serverFocus,
-                  ),
-                  _field(
-                    _token,
-                    '访问令牌',
-                    '与服务器 API_TOKEN 一致',
-                    icon: Icons.key_outlined,
-                    obscure: !_tokenVisible,
-                    focusNode: _tokenFocus,
-                    suffix: IconButton(
-                      icon: Icon(
-                        _tokenVisible
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                      ),
-                      onPressed: () =>
-                          setState(() => _tokenVisible = !_tokenVisible),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const SectionTitle(text: '关于'),
-          AppCard(
-            onTap: _checkingUpdate ? null : _checkUpdate,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.surfaceSubtle,
-                        ),
-                        child: _checkingUpdate
-                            ? const Padding(
-                                padding: EdgeInsets.all(10),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.system_update_alt_rounded,
-                                size: 20,
-                                color: AppColors.textPrimary,
-                              ),
-                      ),
-                      // 启动自动检查发现新版本：图标右上角红点提示
-                      if (!_checkingUpdate &&
-                          widget.controller.pendingUpdate != null)
-                        Positioned(
-                          right: -2,
-                          top: -2,
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.alarm,
-                              border: Border.all(
-                                color: AppColors.surface,
-                                width: 1.5,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '检查更新',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Builder(
-                        builder: (_) {
-                          final pending = widget.controller.pendingUpdate;
-                          final String subtitle;
-                          final Color color;
-                          if (pending != null) {
-                            subtitle = '发现新版本 ${pending.tagName}，点击更新';
-                            color = AppColors.caution;
-                          } else if (widget.controller.updateCheckError !=
-                              null) {
-                            subtitle = '检查更新失败，点击重试';
-                            color = AppColors.alarm;
-                          } else if (widget.controller.updateCheckDone) {
-                            subtitle = '已是最新版本';
-                            color = AppColors.textTertiary;
-                          } else {
-                            subtitle = '从 GitHub Releases 获取最新版本';
-                            color = AppColors.textTertiary;
-                          }
-                          return Text(
-                            subtitle,
-                            style: TextStyle(fontSize: 12, color: color),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
+          const SizedBox(height: 9),
+          _buildUpdateCard(),
+          const SizedBox(height: 9),
+          _SettingsLinkCard(
+            icon: Icons.info_outline,
+            title: '关于项目',
+            subtitle: '项目介绍、使用说明与开源信息',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AboutPage()),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.surfaceSubtle,
-                  ),
-                  child: const Icon(
-                    Icons.info_outline,
-                    size: 20,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '关于我们',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        '项目介绍与使用说明',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
             ),
           ),
           const SizedBox(height: 28),
@@ -1274,7 +688,7 @@ class _SettingsPageState extends State<SettingsPage> {
             children: [
               Text(
                 '火场智控 v$_displayVersion',
-                style: TextStyle(
+                style: const TextStyle(
                   color: AppColors.textTertiary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -1287,6 +701,533 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  String get _unitName => '当前单位';
+
+  String get _calculationSummary {
+    if (_volume.text.isEmpty || _full.text.isEmpty) return '正在读取参数…';
+    return '${_volume.text} L · ${_full.text} MPa · 提醒 ${_warn.text} min / 报警 ${_alarm.text} min';
+  }
+
+  String get _alertSummary {
+    final active = [
+      _tts,
+      _sound,
+      _keepScreenOn,
+      _keepAlive,
+    ].where((v) => v).length;
+    return '$active 项提醒策略开启';
+  }
+
+  Widget _buildIdentityCard() {
+    final name = _realName.text.trim().isEmpty ? '匿名' : _realName.text.trim();
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 45,
+                height: 45,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.person_outline,
+                  size: 24,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.caution.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                          ),
+                          child: const Text(
+                            '单位',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            _unitName,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              height: 1.4,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: _editingName ? '完成编辑' : '编辑姓名',
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  backgroundColor: AppColors.surfaceSubtle,
+                  minimumSize: const Size(40, 40),
+                  fixedSize: const Size(40, 40),
+                  padding: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () {
+                  if (_editingName) {
+                    FocusScope.of(context).unfocus();
+                    setState(() => _editingName = false);
+                    _autoSave();
+                    return;
+                  }
+                  setState(() => _editingName = true);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    _realNameFocus.requestFocus();
+                    _realName.selection = TextSelection.collapsed(
+                      offset: _realName.text.length,
+                    );
+                  });
+                },
+                icon: Icon(
+                  _editingName ? Icons.check_rounded : Icons.edit_outlined,
+                  size: 21,
+                ),
+              ),
+            ],
+          ),
+          if (_editingName) ...[
+            const SizedBox(height: 11),
+            TextField(
+              controller: _realName,
+              focusNode: _realNameFocus,
+              autofocus: true,
+              maxLength: 20,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: '真实姓名',
+                hintText: '留空为匿名',
+                counterText: '',
+              ),
+            ),
+          ],
+          const SizedBox(height: 13),
+          const Divider(height: 1),
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: Text(
+              '用于日志署名，留空为“匿名”。',
+              style: TextStyle(
+                color: AppColors.textTertiary,
+                fontSize: 12,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFieldGrid(
+    Widget first,
+    Widget second,
+    Widget third,
+    Widget fourth,
+  ) {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 9,
+      mainAxisSpacing: 9,
+      childAspectRatio: 2.05,
+      children: [first, second, third, fourth],
+    );
+  }
+
+  Widget _buildCalculationBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _GroupLabel('气瓶参数'),
+        Row(
+          children: [
+            Expanded(
+              child: _field(
+                _volume,
+                '气瓶容量',
+                '6.8 L',
+                keyboard: const TextInputType.numberWithOptions(decimal: true),
+                focusNode: _volumeFocus,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _field(
+                _full,
+                '满压',
+                '30 MPa',
+                keyboard: const TextInputType.numberWithOptions(decimal: true),
+                focusNode: _fullFocus,
+              ),
+            ),
+          ],
+        ),
+        _field(
+          _consumption,
+          '消耗率',
+          '80 L/min',
+          keyboard: const TextInputType.numberWithOptions(decimal: true),
+          focusNode: _consumptionFocus,
+        ),
+        const _GroupLabel('提醒阈值'),
+        Row(
+          children: [
+            Expanded(
+              child: _field(
+                _warn,
+                '提醒剩余',
+                '10 min',
+                keyboard: TextInputType.number,
+                focusNode: _warnFocus,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _field(
+                _alarm,
+                '报警剩余',
+                '5 min',
+                keyboard: TextInputType.number,
+                focusNode: _alarmFocus,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVoiceBody() {
+    return Column(
+      children: [
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          secondary: const Icon(
+            Icons.cloud_outlined,
+            color: AppColors.textSecondary,
+          ),
+          title: const Text(
+            '联网语音识别',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: const Text('云端识别失败后自动切换本地', style: TextStyle(fontSize: 11)),
+          activeThumbColor: AppColors.voice,
+          value: _asrCloud,
+          onChanged: (v) {
+            if (!v) _checkModelBeforeOffline();
+            setState(() => _asrCloud = v);
+            _autoSave();
+          },
+        ),
+        const Divider(height: 1, indent: 14, endIndent: 14),
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          secondary: const Icon(
+            Icons.shield_outlined,
+            color: AppColors.textSecondary,
+          ),
+          title: const Text(
+            '联网语义解析',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: const Text(
+            '云端解析失败后自动切换本地规则',
+            style: TextStyle(fontSize: 11),
+          ),
+          activeThumbColor: AppColors.voice,
+          value: _parseCloud,
+          onChanged: (v) {
+            setState(() => _parseCloud = v);
+            _autoSave();
+          },
+        ),
+        if (widget.controller.localAsr != null) ...[
+          const Divider(height: 1, indent: 14, endIndent: 14),
+          _buildModelTile(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAlertBody() {
+    return Column(
+      children: [
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          secondary: const Icon(
+            Icons.volume_up_outlined,
+            color: AppColors.textSecondary,
+          ),
+          title: const Text(
+            '语音播报',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: const Text(
+            '确认、提醒、报警时播报中文语音',
+            style: TextStyle(fontSize: 11),
+          ),
+          activeThumbColor: AppColors.actionPrimary,
+          value: _tts,
+          onChanged: (v) {
+            setState(() => _tts = v);
+            _autoSave();
+          },
+        ),
+        const Divider(height: 1, indent: 14, endIndent: 14),
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          secondary: const Icon(
+            Icons.notifications_none_outlined,
+            color: AppColors.textSecondary,
+          ),
+          title: const Text(
+            '报警音',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: const Text(
+            '前台警报音 + 后台本地通知',
+            style: TextStyle(fontSize: 11),
+          ),
+          activeThumbColor: AppColors.actionPrimary,
+          value: _sound,
+          onChanged: (v) {
+            setState(() => _sound = v);
+            _autoSave();
+          },
+        ),
+        const Divider(height: 1, indent: 14, endIndent: 14),
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          secondary: const Icon(
+            Icons.light_mode_outlined,
+            color: AppColors.textSecondary,
+          ),
+          title: const Text(
+            '屏幕常亮',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: const Text(
+            '看板页保持屏幕常亮，适合火场值守',
+            style: TextStyle(fontSize: 11),
+          ),
+          activeThumbColor: AppColors.actionPrimary,
+          value: _keepScreenOn,
+          onChanged: (v) {
+            setState(() => _keepScreenOn = v);
+            _autoSave();
+          },
+        ),
+        const Divider(height: 1, indent: 14, endIndent: 14),
+        SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          secondary: const Icon(
+            Icons.shield_moon_outlined,
+            color: AppColors.textSecondary,
+          ),
+          title: const Text(
+            '后台值守模式',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: const Text(
+            '切后台或锁屏后，轮询与报警不停',
+            style: TextStyle(fontSize: 11),
+          ),
+          activeThumbColor: AppColors.safe,
+          value: _keepAlive,
+          onChanged: _toggleKeepAlive,
+        ),
+        if (!_keepAlive)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              '开启时请允许通知与电池白名单，否则保活可能被系统中断',
+              style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+            ),
+          ),
+        if (!widget.controller.alarm.exactAlarmAvailable)
+          _permissionTile(
+            icon: Icons.notifications_off_outlined,
+            title: '精确闹钟权限未开启',
+            subtitle: '后台提醒可能延迟，点击去系统设置检查',
+            onTap: ForegroundKeepAlive.openAlarmsAndRemindersSettings,
+          ),
+        if (!_policyAccess)
+          _permissionTile(
+            icon: Icons.do_not_disturb_on_outlined,
+            title: '勿扰访问未开启',
+            subtitle: '勿扰模式下报警提醒可能被静音',
+            onTap: AlarmNative.openNotificationPolicySettings,
+          ),
+        if (!_fullScreenOk)
+          _permissionTile(
+            icon: Icons.fullscreen_exit_outlined,
+            title: '全屏通知未开启',
+            subtitle: '后台报警不会弹出全屏提醒',
+            onTap: AlarmNative.openNotificationSettings,
+          ),
+      ],
+    );
+  }
+
+  Widget _permissionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Column(
+      children: [
+        const Divider(height: 1, indent: 14, endIndent: 14),
+        ListTile(
+          dense: true,
+          onTap: onTap,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          leading: Icon(icon, color: AppColors.caution, size: 20),
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildServerBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _field(
+          _server,
+          '服务器地址',
+          '默认使用 CloudBase 生产网关',
+          keyboard: TextInputType.url,
+          focusNode: _serverFocus,
+        ),
+        _field(
+          _token,
+          '访问令牌',
+          '与服务器 API_TOKEN 一致',
+          obscure: !_tokenVisible,
+          focusNode: _tokenFocus,
+          suffix: IconButton(
+            tooltip: _tokenVisible ? '隐藏令牌' : '显示令牌',
+            icon: Icon(
+              _tokenVisible
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+            ),
+            onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
+          ),
+        ),
+        const _SyncNotice(),
+      ],
+    );
+  }
+
+  Widget _buildUpdateCard() {
+    final pending = widget.controller.pendingUpdate;
+    final String subtitle;
+    final Color subtitleColor;
+    if (pending != null) {
+      subtitle = '发现新版本 ${pending.tagName}，点击更新';
+      subtitleColor = AppColors.caution;
+    } else if (widget.controller.updateCheckError != null) {
+      subtitle = '检查更新失败，点击重试';
+      subtitleColor = AppColors.alarm;
+    } else if (widget.controller.updateCheckDone) {
+      subtitle = '已是最新版本';
+      subtitleColor = AppColors.textTertiary;
+    } else {
+      subtitle = '从 GitHub Releases 获取最新版本';
+      subtitleColor = AppColors.textTertiary;
+    }
+    return AppCard(
+      onTap: _checkingUpdate ? null : _checkUpdate,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      child: Row(
+        children: [
+          _SettingsIconBox(
+            icon: _checkingUpdate
+                ? Icons.downloading_outlined
+                : Icons.system_update_alt_rounded,
+            badge: pending != null && !_checkingUpdate,
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '版本更新',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: subtitleColor),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: AppColors.textTertiary),
         ],
       ),
     );
@@ -1528,46 +1469,500 @@ class _GroupLabel extends StatelessWidget {
   }
 }
 
-/// 可折叠分区：点击标题展开/收起，标题文字后带方向箭头符号
-class _CollapsibleSection extends StatefulWidget {
-  final String title;
-  final Widget child;
+class _SettingsEyebrow extends StatelessWidget {
+  final String text;
 
-  const _CollapsibleSection({required this.title, required this.child});
+  const _SettingsEyebrow(this.text);
 
   @override
-  State<_CollapsibleSection> createState() => _CollapsibleSectionState();
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: AppColors.textTertiary,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.4,
+        ),
+      ),
+    );
+  }
 }
 
-class _CollapsibleSectionState extends State<_CollapsibleSection> {
+class _SettingsHero extends StatelessWidget {
+  final Incident? incident;
+  final bool connected;
+  final String? syncError;
+
+  const _SettingsHero({
+    required this.incident,
+    required this.connected,
+    required this.syncError,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final active = incident?.isActive == true;
+    final title = active ? incident!.displayName : '暂无处置警情';
+    final status = active ? '处置中' : '待命';
+    final subtitle = !connected
+        ? '本地数据 · ${syncError ?? '等待网络恢复'}'
+        : active
+        ? '已加入警情 · 现场协同正常'
+        : '请选择或新建警情后开始处置';
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: const BoxDecoration(color: AppColors.actionPrimary),
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            Positioned(
+              right: -74,
+              bottom: -96,
+              child: IgnorePointer(
+                child: Container(
+                  width: 245,
+                  height: 245,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white24),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x0AFFFFFF),
+                        blurRadius: 0,
+                        spreadRadius: 21,
+                      ),
+                      BoxShadow(
+                        color: Color(0x08FFFFFF),
+                        blurRadius: 0,
+                        spreadRadius: 43,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const FireControlLogo(
+                      size: 38,
+                      background: Colors.white,
+                      foreground: AppColors.actionPrimary,
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'FIREWATCH CONTROL',
+                            style: TextStyle(
+                              color: Color(0xFFA9B1BD),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.3,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            '现场处置',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: active
+                            ? AppColors.safe.withValues(alpha: 0.22)
+                            : Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            active
+                                ? Icons.check_rounded
+                                : Icons.pause_circle_outline,
+                            size: 14,
+                            color: active
+                                ? const Color(0xFFC5F4CC)
+                                : const Color(0xFFBFC7D2),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            status,
+                            style: TextStyle(
+                              color: active
+                                  ? const Color(0xFFC5F4CC)
+                                  : const Color(0xFFBFC7D2),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 26),
+                const Text(
+                  '当前警情',
+                  style: TextStyle(color: Color(0xFF9BA5B2), fontSize: 11),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    height: 1.25,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFA9B1BD),
+                    fontSize: 11,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsIconBox extends StatelessWidget {
+  final IconData icon;
+  final bool badge;
+
+  const _SettingsIconBox({required this.icon, this.badge = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 35,
+      height: 35,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 35,
+            height: 35,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceSubtle,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, size: 18, color: AppColors.textPrimary),
+          ),
+          if (badge)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(
+                  color: AppColors.alarm,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.surface, width: 1.5),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsShortcut extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _SettingsShortcut({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(11),
+      child: Row(
+        children: [
+          _SettingsIconBox(icon: icon),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 5),
+          const Icon(
+            Icons.arrow_forward_outlined,
+            size: 15,
+            color: AppColors.textTertiary,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsLinkCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _SettingsLinkCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      child: Row(
+        children: [
+          _SettingsIconBox(icon: icon),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.arrow_forward_outlined,
+            size: 16,
+            color: AppColors.textTertiary,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SyncNotice extends StatelessWidget {
+  const _SyncNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 1),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.safe.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.sync_outlined, size: 17, color: AppColors.online),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: '个人设置同步已开启\n',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  TextSpan(text: '本机修改优先保存，联网后自动同步。'),
+                ],
+              ),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 10,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 可折叠分区：卡片标题与内容保持同一层级，避免运行策略内部间距失衡。
+class _SettingsAccordion extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final String summary;
+  final Widget child;
+
+  const _SettingsAccordion({
+    required this.icon,
+    required this.title,
+    required this.summary,
+    required this.child,
+  });
+
+  @override
+  State<_SettingsAccordion> createState() => _SettingsAccordionState();
+}
+
+class _SettingsAccordionState extends State<_SettingsAccordion> {
   bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: SectionTitle(
-            text: widget.title,
-            inline: Icon(
-              _expanded ? Icons.expand_less : Icons.expand_more,
-              size: 18,
-              color: AppColors.textTertiary,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        boxShadow: AppShadow.card,
+      ),
+      child: Material(
+        color: AppColors.surface,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        child: Column(
+          children: [
+            InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 11,
+                ),
+                child: Row(
+                  children: [
+                    _SettingsIconBox(icon: widget.icon),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.title,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            widget.summary,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: AppColors.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.textTertiary,
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 220),
+              firstCurve: Curves.easeOut,
+              secondCurve: Curves.easeIn,
+              sizeCurve: Curves.easeOut,
+              crossFadeState: _expanded
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              firstChild: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                child: widget.child,
+              ),
+              secondChild: const SizedBox(width: double.infinity),
+            ),
+          ],
         ),
-        AnimatedCrossFade(
-          duration: const Duration(milliseconds: 200),
-          crossFadeState: _expanded
-              ? CrossFadeState.showFirst
-              : CrossFadeState.showSecond,
-          firstChild: widget.child,
-          secondChild: const SizedBox(width: double.infinity),
-        ),
-      ],
+      ),
     );
   }
 }
