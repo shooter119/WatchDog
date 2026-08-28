@@ -8,6 +8,11 @@ class Entry {
   final int? exitedAt;
   final String source;
   final String? rawText;
+
+  /// 创建该条记录时使用的气瓶容量与消耗率；旧服务端记录为空时回退全局配置。
+  final double? cylinderVolL;
+  final double? consumptionLpm;
+
   /// 实测耗气率 L/min（由两次压力报数差分得出，无采样时为 null）
   final double? consumptionActualLpm;
 
@@ -21,8 +26,32 @@ class Entry {
     this.exitedAt,
     required this.source,
     this.rawText,
+    this.cylinderVolL,
+    this.consumptionLpm,
     this.consumptionActualLpm,
   });
+
+  Entry copyWith({
+    int? exitedAt,
+    double? pressureMpa,
+    int? durationMin,
+    int? exitAt,
+    double? cylinderVolL,
+    double? consumptionLpm,
+  }) => Entry(
+    id: id,
+    name: name,
+    pressureMpa: pressureMpa ?? this.pressureMpa,
+    durationMin: durationMin ?? this.durationMin,
+    entryAt: entryAt,
+    exitAt: exitAt ?? this.exitAt,
+    exitedAt: exitedAt ?? this.exitedAt,
+    source: source,
+    rawText: rawText,
+    cylinderVolL: cylinderVolL ?? this.cylinderVolL,
+    consumptionLpm: consumptionLpm ?? this.consumptionLpm,
+    consumptionActualLpm: consumptionActualLpm,
+  );
 
   bool get isActive => exitedAt == null;
 
@@ -43,17 +72,19 @@ class Entry {
   }
 
   factory Entry.fromJson(Map<String, dynamic> json) => Entry(
-        id: json['id'] as String,
-        name: json['name'] as String,
-        pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),
-        durationMin: (json['duration_min'] as num?)?.toInt() ?? 0,
-        entryAt: (json['entry_at'] as num).toInt(),
-        exitAt: (json['exit_at'] as num).toInt(),
-        exitedAt: (json['exited_at'] as num?)?.toInt(),
-        source: (json['source'] as String?) ?? 'voice',
-        rawText: json['raw_text'] as String?,
-        consumptionActualLpm: (json['consumption_actual_lpm'] as num?)?.toDouble(),
-      );
+    id: json['id'] as String,
+    name: json['name'] as String,
+    pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),
+    durationMin: (json['duration_min'] as num?)?.toInt() ?? 0,
+    entryAt: (json['entry_at'] as num).toInt(),
+    exitAt: (json['exit_at'] as num).toInt(),
+    exitedAt: (json['exited_at'] as num?)?.toInt(),
+    source: (json['source'] as String?) ?? 'voice',
+    rawText: json['raw_text'] as String?,
+    cylinderVolL: (json['cylinder_vol_l'] as num?)?.toDouble(),
+    consumptionLpm: (json['consumption_lpm'] as num?)?.toDouble(),
+    consumptionActualLpm: (json['consumption_actual_lpm'] as num?)?.toDouble(),
+  );
 }
 
 class Incident {
@@ -91,26 +122,28 @@ class Incident {
     this.personnelCount = 0,
   });
 
-  String get displayName => (title ?? '').trim().isEmpty ? number : title!.trim();
+  String get displayName =>
+      (title ?? '').trim().isEmpty ? number : title!.trim();
   bool get isActive => status == 'active';
 
   factory Incident.fromJson(Map<String, dynamic> json) => Incident(
-        id: json['id']?.toString() ?? '',
-        number: json['number']?.toString() ?? '',
-        title: json['title']?.toString(),
-        suggestedTitle: json['suggested_title']?.toString(),
-        status: json['status']?.toString() ?? 'active',
-        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-        lastActivityAt: (json['last_activity_at'] as num?)?.toInt() ?? 0,
-        archivedAt: (json['archived_at'] as num?)?.toInt(),
-        archivedBy: json['archived_by']?.toString(),
-        autoArchived: json['auto_archived'] == true || json['auto_archived'] == 1,
-        unresolvedActiveCount: (json['unresolved_active_count'] as num?)?.toInt() ?? 0,
-        version: (json['version'] as num?)?.toInt() ?? 1,
-        forceStationCount: (json['force_station_count'] as num?)?.toInt() ?? 0,
-        vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
-        personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id']?.toString() ?? '',
+    number: json['number']?.toString() ?? '',
+    title: json['title']?.toString(),
+    suggestedTitle: json['suggested_title']?.toString(),
+    status: json['status']?.toString() ?? 'active',
+    createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+    lastActivityAt: (json['last_activity_at'] as num?)?.toInt() ?? 0,
+    archivedAt: (json['archived_at'] as num?)?.toInt(),
+    archivedBy: json['archived_by']?.toString(),
+    autoArchived: json['auto_archived'] == true || json['auto_archived'] == 1,
+    unresolvedActiveCount:
+        (json['unresolved_active_count'] as num?)?.toInt() ?? 0,
+    version: (json['version'] as num?)?.toInt() ?? 1,
+    forceStationCount: (json['force_station_count'] as num?)?.toInt() ?? 0,
+    vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
+    personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class IncidentForce {
@@ -137,23 +170,26 @@ class IncidentForce {
   });
 
   factory IncidentForce.fromJson(Map<String, dynamic> json) => IncidentForce(
-        id: json['id']?.toString() ?? '',
-        incidentId: json['incident_id']?.toString() ?? '',
-        stationId: json['station_id']?.toString(),
-        stationName: json['station_name']?.toString() ?? '',
-        vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
-        personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,
-        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-        updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
-        version: (json['version'] as num?)?.toInt() ?? 1,
-      );
+    id: json['id']?.toString() ?? '',
+    incidentId: json['incident_id']?.toString() ?? '',
+    stationId: json['station_id']?.toString(),
+    stationName: json['station_name']?.toString() ?? '',
+    vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
+    personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,
+    createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+    updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
+    version: (json['version'] as num?)?.toInt() ?? 1,
+  );
 }
 
 class Station {
   final String id;
   final String name;
   const Station({required this.id, required this.name});
-  factory Station.fromJson(Map<String, dynamic> json) => Station(id: json['id']?.toString() ?? '', name: json['name']?.toString() ?? '');
+  factory Station.fromJson(Map<String, dynamic> json) => Station(
+    id: json['id']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+  );
 }
 
 class IncidentEvent {
@@ -184,18 +220,20 @@ class IncidentEvent {
   });
 
   factory IncidentEvent.fromJson(Map<String, dynamic> json) => IncidentEvent(
-        id: json['id']?.toString() ?? '',
-        incidentId: json['incident_id']?.toString() ?? '',
-        type: json['type']?.toString() ?? '',
-        occurredAt: (json['occurred_at'] as num?)?.toInt() ?? 0,
-        recordedAt: (json['recorded_at'] as num?)?.toInt() ?? 0,
-        actorName: json['actor_name']?.toString(),
-        source: json['source']?.toString() ?? 'online',
-        clientOpId: json['client_op_id']?.toString(),
-        payload: json['payload'] is Map ? Map<String, dynamic>.from(json['payload'] as Map) : const {},
-        revisionOf: json['revision_of']?.toString(),
-        text: json['text']?.toString() ?? '',
-      );
+    id: json['id']?.toString() ?? '',
+    incidentId: json['incident_id']?.toString() ?? '',
+    type: json['type']?.toString() ?? '',
+    occurredAt: (json['occurred_at'] as num?)?.toInt() ?? 0,
+    recordedAt: (json['recorded_at'] as num?)?.toInt() ?? 0,
+    actorName: json['actor_name']?.toString(),
+    source: json['source']?.toString() ?? 'online',
+    clientOpId: json['client_op_id']?.toString(),
+    payload: json['payload'] is Map
+        ? Map<String, dynamic>.from(json['payload'] as Map)
+        : const {},
+    revisionOf: json['revision_of']?.toString(),
+    text: json['text']?.toString() ?? '',
+  );
 }
 
 /// 火场随手记分类（与后端白名单一致）
@@ -209,56 +247,146 @@ class NoteCategory {
   static const String abnormal = '异常';
   static const String other = '其他';
 
-  static const List<String> all = [deploy, rescue, water, withdraw, abnormal, other];
+  static const List<String> all = [
+    deploy,
+    rescue,
+    water,
+    withdraw,
+    abnormal,
+    other,
+  ];
 
   /// 颜色映射由主题层负责（app_theme.dart），此处仅定义分类
   /// 关键词按"异常>撤离>出水>搜救>部署"优先级匹配，先命中先归类
   static String fromText(String text) {
     final t = text.trim();
     // 异常（险情与危险事件，优先）
-    if (t.contains('爆炸') || t.contains('爆燃') || t.contains('闪燃') || t.contains('轰燃') ||
-        t.contains('回燃') || t.contains('复燃') || t.contains('阴燃') || t.contains('倒塌') ||
-        t.contains('坍塌') || t.contains('泄漏') || t.contains('中毒') || t.contains('窒息') ||
-        t.contains('触电') || t.contains('受伤') || t.contains('伤亡') || t.contains('坠落') ||
-        t.contains('失控') || t.contains('蔓延') || t.contains('飞火') || t.contains('流淌火') ||
-        t.contains('险情') || t.contains('异常') || t.contains('爆裂') || t.contains('带电') ||
+    if (t.contains('爆炸') ||
+        t.contains('爆燃') ||
+        t.contains('闪燃') ||
+        t.contains('轰燃') ||
+        t.contains('回燃') ||
+        t.contains('复燃') ||
+        t.contains('阴燃') ||
+        t.contains('倒塌') ||
+        t.contains('坍塌') ||
+        t.contains('泄漏') ||
+        t.contains('中毒') ||
+        t.contains('窒息') ||
+        t.contains('触电') ||
+        t.contains('受伤') ||
+        t.contains('伤亡') ||
+        t.contains('坠落') ||
+        t.contains('失控') ||
+        t.contains('蔓延') ||
+        t.contains('飞火') ||
+        t.contains('流淌火') ||
+        t.contains('险情') ||
+        t.contains('异常') ||
+        t.contains('爆裂') ||
+        t.contains('带电') ||
         t.contains('坍塌危险')) {
       return abnormal;
     }
     // 撤离（战斗结束与收尾）
-    if (t.contains('撤离') || t.contains('撤出') || t.contains('撤退') || t.contains('收队') ||
-        t.contains('归队') || t.contains('收工') || t.contains('回撤') || t.contains('收操') ||
-        t.contains('撤收') || t.contains('清理') || t.contains('残火') || t.contains('监护') ||
-        t.contains('留守') || t.contains('移交') || t.contains('交接') || t.contains('结束') ||
-        t.contains('收尾') || t.contains('战评') || t.contains('总结')) {
+    if (t.contains('撤离') ||
+        t.contains('撤出') ||
+        t.contains('撤退') ||
+        t.contains('收队') ||
+        t.contains('归队') ||
+        t.contains('收工') ||
+        t.contains('回撤') ||
+        t.contains('收操') ||
+        t.contains('撤收') ||
+        t.contains('清理') ||
+        t.contains('残火') ||
+        t.contains('监护') ||
+        t.contains('留守') ||
+        t.contains('移交') ||
+        t.contains('交接') ||
+        t.contains('结束') ||
+        t.contains('收尾') ||
+        t.contains('战评') ||
+        t.contains('总结')) {
       return withdraw;
     }
     // 出水（射水灭火与控制火势）
-    if (t.contains('出水') || t.contains('供水') || t.contains('送水') || t.contains('中继') ||
-        t.contains('水带') || t.contains('水枪') || t.contains('水炮') || t.contains('泡沫') ||
-        t.contains('干粉') || t.contains('灭火') || t.contains('扑灭') || t.contains('扑救') ||
-        t.contains('冷却') || t.contains('降温') || t.contains('堵截') || t.contains('夹攻') ||
-        t.contains('强攻') || t.contains('总攻') || t.contains('合围') || t.contains('突破') ||
-        t.contains('掩护') || t.contains('控制火势') || t.contains('压制') || t.contains('水幕') ||
+    if (t.contains('出水') ||
+        t.contains('供水') ||
+        t.contains('送水') ||
+        t.contains('中继') ||
+        t.contains('水带') ||
+        t.contains('水枪') ||
+        t.contains('水炮') ||
+        t.contains('泡沫') ||
+        t.contains('干粉') ||
+        t.contains('灭火') ||
+        t.contains('扑灭') ||
+        t.contains('扑救') ||
+        t.contains('冷却') ||
+        t.contains('降温') ||
+        t.contains('堵截') ||
+        t.contains('夹攻') ||
+        t.contains('强攻') ||
+        t.contains('总攻') ||
+        t.contains('合围') ||
+        t.contains('突破') ||
+        t.contains('掩护') ||
+        t.contains('控制火势') ||
+        t.contains('压制') ||
+        t.contains('水幕') ||
         t.contains('火势控制')) {
       return water;
     }
     // 搜救（救人、侦察、破拆排烟等救援作业）
-    if (t.contains('搜救') || t.contains('搜寻') || t.contains('搜索') || t.contains('侦查') ||
-        t.contains('侦察') || t.contains('侦检') || t.contains('探测') || t.contains('被困') ||
-        t.contains('遇险') || t.contains('失联') || t.contains('救人') || t.contains('疏散') ||
-        t.contains('转移') || t.contains('救出') || t.contains('抬出') || t.contains('登高') ||
-        t.contains('破拆') || t.contains('排烟') || t.contains('通风') || t.contains('内攻') ||
-        t.contains('开辟通道') || t.contains('查找火源')) {
+    if (t.contains('搜救') ||
+        t.contains('搜寻') ||
+        t.contains('搜索') ||
+        t.contains('侦查') ||
+        t.contains('侦察') ||
+        t.contains('侦检') ||
+        t.contains('探测') ||
+        t.contains('被困') ||
+        t.contains('遇险') ||
+        t.contains('失联') ||
+        t.contains('救人') ||
+        t.contains('疏散') ||
+        t.contains('转移') ||
+        t.contains('救出') ||
+        t.contains('抬出') ||
+        t.contains('登高') ||
+        t.contains('破拆') ||
+        t.contains('排烟') ||
+        t.contains('通风') ||
+        t.contains('内攻') ||
+        t.contains('开辟通道') ||
+        t.contains('查找火源')) {
       return rescue;
     }
     // 部署（接警出动、力量调度与战斗展开）
-    if (        t.contains('出动') || t.contains('接警') || t.contains('调派') || t.contains('调度') ||
-        t.contains('增援') || t.contains('到场') || t.contains('到达') || t.contains('进入') ||
-        t.contains('集结') || t.contains('部署') || t.contains('展开') || t.contains('阵地') ||
-        t.contains('警戒') || t.contains('封锁') || t.contains('隔离') || t.contains('指挥部') ||
-        t.contains('集结点') || t.contains('战备') || t.contains('待命') || t.contains('保障') ||
-        t.contains('协同') || t.contains('力量') || t.contains('指挥')) {
+    if (t.contains('出动') ||
+        t.contains('接警') ||
+        t.contains('调派') ||
+        t.contains('调度') ||
+        t.contains('增援') ||
+        t.contains('到场') ||
+        t.contains('到达') ||
+        t.contains('进入') ||
+        t.contains('集结') ||
+        t.contains('部署') ||
+        t.contains('展开') ||
+        t.contains('阵地') ||
+        t.contains('警戒') ||
+        t.contains('封锁') ||
+        t.contains('隔离') ||
+        t.contains('指挥部') ||
+        t.contains('集结点') ||
+        t.contains('战备') ||
+        t.contains('待命') ||
+        t.contains('保障') ||
+        t.contains('协同') ||
+        t.contains('力量') ||
+        t.contains('指挥')) {
       return deploy;
     }
     return other;
@@ -286,13 +414,13 @@ class Note {
   });
 
   factory Note.fromJson(Map<String, dynamic> json) => Note(
-        id: json['id'] as String,
-        text: (json['text'] as String?) ?? '',
-        category: (json['category'] as String?) ?? NoteCategory.other,
-        author: (json['author'] as String?) ?? '',
-        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-        updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id'] as String,
+    text: (json['text'] as String?) ?? '',
+    category: (json['category'] as String?) ?? NoteCategory.other,
+    author: (json['author'] as String?) ?? '',
+    createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+    updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class Firefighter {
@@ -318,14 +446,14 @@ class ParsePerson {
   const ParsePerson({required this.name, this.pressureMpa});
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        if (pressureMpa != null) 'pressure_mpa': pressureMpa,
-      };
+    'name': name,
+    if (pressureMpa != null) 'pressure_mpa': pressureMpa,
+  };
 
   factory ParsePerson.fromJson(Map<String, dynamic> json) => ParsePerson(
-        name: (json['name'] as String?) ?? '',
-        pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),
-      );
+    name: (json['name'] as String?) ?? '',
+    pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),
+  );
 }
 
 /// 语音输入意图（App 依据它路由到对应界面）
@@ -355,8 +483,8 @@ class ParseResult {
     this.note = '',
     String? intent,
   }) : intent = intent != null && VoiceIntent.all.contains(intent)
-            ? intent
-            : _inferIntent(action, people);
+           ? intent
+           : _inferIntent(action, people);
 
   /// 兼容旧服务端（无 intent 字段）：按 action/people 推导，避免破坏进出场流程
   static String _inferIntent(String action, List<ParsePerson> people) {
@@ -366,11 +494,11 @@ class ParseResult {
   }
 
   Map<String, dynamic> toJson() => {
-        'intent': intent,
-        'action': action,
-        'people': people.map((p) => p.toJson()).toList(),
-        'note': note,
-      };
+    'intent': intent,
+    'action': action,
+    'people': people.map((p) => p.toJson()).toList(),
+    'note': note,
+  };
 
   ParseResult.single({
     required this.action,
@@ -378,16 +506,16 @@ class ParseResult {
     double? pressureMpa,
     this.note = '',
     String? intent,
-  })  : intent = intent != null && VoiceIntent.all.contains(intent)
-            ? intent
-            : _inferIntent(action, [
-                if (name != null && name.trim().isNotEmpty)
-                  ParsePerson(name: name, pressureMpa: pressureMpa),
-              ]),
-        people = [
-          if (name != null && name.trim().isNotEmpty)
-            ParsePerson(name: name, pressureMpa: pressureMpa),
-        ];
+  }) : intent = intent != null && VoiceIntent.all.contains(intent)
+           ? intent
+           : _inferIntent(action, [
+               if (name != null && name.trim().isNotEmpty)
+                 ParsePerson(name: name, pressureMpa: pressureMpa),
+             ]),
+       people = [
+         if (name != null && name.trim().isNotEmpty)
+           ParsePerson(name: name, pressureMpa: pressureMpa),
+       ];
 
   factory ParseResult.fromJson(Map<String, dynamic> json) {
     final rawPeople = json['people'] as List?;
@@ -401,7 +529,12 @@ class ParseResult {
       // 兼容旧格式（单人的 name/pressure_mpa 字段）
       final name = (json['name'] as String?)?.trim() ?? '';
       if (name.isNotEmpty) {
-        people.add(ParsePerson(name: name, pressureMpa: (json['pressure_mpa'] as num?)?.toDouble()));
+        people.add(
+          ParsePerson(
+            name: name,
+            pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),
+          ),
+        );
       }
     }
     return ParseResult(
@@ -414,7 +547,8 @@ class ParseResult {
 }
 
 /// 智能体问答消息（user 提问 / assistant 回复）
-class ChatMessage {  final String id;
+class ChatMessage {
+  final String id;
   final String role; // user / assistant
   final String content;
   final int createdAt;
@@ -429,18 +563,18 @@ class ChatMessage {  final String id;
   bool get isUser => role == 'user';
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'role': role,
-        'content': content,
-        'created_at': createdAt,
-      };
+    'id': id,
+    'role': role,
+    'content': content,
+    'created_at': createdAt,
+  };
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        id: json['id'] as String,
-        role: (json['role'] as String?) ?? 'user',
-        content: (json['content'] as String?) ?? '',
-        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id'] as String,
+    role: (json['role'] as String?) ?? 'user',
+    content: (json['content'] as String?) ?? '',
+    createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class CalcConfig {
@@ -459,15 +593,22 @@ class CalcConfig {
   });
 
   factory CalcConfig.fromJson(Map<String, dynamic> json) => CalcConfig(
-        cylinderVolL: ((json['calc']?['cylinderVolL']) ?? 6.8).toDouble(),
-        fullPressureMpa: ((json['calc']?['fullPressureMpa']) ?? 30).toDouble(),
-        consumptionLpm: ((json['calc']?['consumptionLpm']) ?? 80).toDouble(),
-        warnMin: ((json['calc']?['warnMin']) ?? 10).toInt(),
-        alarmMin: ((json['calc']?['alarmMin']) ?? 5).toInt(),
-      );
+    cylinderVolL: ((json['calc']?['cylinderVolL']) ?? 6.8).toDouble(),
+    fullPressureMpa: ((json['calc']?['fullPressureMpa']) ?? 30).toDouble(),
+    consumptionLpm: ((json['calc']?['consumptionLpm']) ?? 80).toDouble(),
+    warnMin: ((json['calc']?['warnMin']) ?? 10).toInt(),
+    alarmMin: ((json['calc']?['alarmMin']) ?? 5).toInt(),
+  );
 
   /// 可用时间（分钟） = 容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
   /// [cylinderVolL] 可指定单人气瓶容量（默认全局配置）
-  double durationMinFor(double pressureMpa, {double? cylinderVolL}) =>
-      (cylinderVolL ?? this.cylinderVolL) * pressureMpa * 10 / consumptionLpm;
+  double durationMinFor(
+    double pressureMpa, {
+    double? cylinderVolL,
+    double? consumptionLpm,
+  }) =>
+      (cylinderVolL ?? this.cylinderVolL) *
+      pressureMpa *
+      10 /
+      (consumptionLpm ?? this.consumptionLpm);
 }

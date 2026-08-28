@@ -9,11 +9,16 @@ class EntryDetailPage extends StatefulWidget {
   final AppController controller;
   final String entryId;
 
-  const EntryDetailPage({super.key, required this.controller, required this.entryId});
+  const EntryDetailPage({
+    super.key,
+    required this.controller,
+    required this.entryId,
+  });
 
   @override
   State<EntryDetailPage> createState() => _EntryDetailPageState();
 }
+
 class _EntryDetailPageState extends State<EntryDetailPage> {
   Entry? _find() {
     for (final e in widget.controller.entries) {
@@ -29,7 +34,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         title: Text('确认「${e.name}」已出火场？'),
         content: const Text('登记后将停止倒计时并取消提醒'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('确认出火场'),
@@ -38,19 +46,29 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       ),
     );
     if (confirmed != true) return;
-    await widget.controller.markExited(e.id);
+    try {
+      await widget.controller.markExited(e.id);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('出场登记失败：$error')));
+      }
+      return;
+    }
     try {
       await widget.controller.addActionLog(
         names: [e.name],
         action: '出场',
         category: NoteCategory.withdraw,
-        opId: 'manual-exit-note-${e.id}-${DateTime.now().millisecondsSinceEpoch}',
+        opId:
+            'manual-exit-note-${e.id}-${DateTime.now().millisecondsSinceEpoch}',
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已登记出场，但火场日志写入失败：$error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('已登记出场，但火场日志写入失败：$error')));
       }
     }
     widget.controller.tts.speak('${e.name} 已登记出火场');
@@ -89,7 +107,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                               const SizedBox(height: 16),
                               const SectionTitle(text: '气瓶与记录'),
                               _infoGrid(e),
-                              if (e.rawText != null && e.rawText!.isNotEmpty) ...[
+                              if (e.rawText != null &&
+                                  e.rawText!.isNotEmpty) ...[
                                 const SizedBox(height: 16),
                                 _transcriptCard(e.rawText!),
                               ],
@@ -115,7 +134,14 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
             onPressed: () => Navigator.pop(context),
           ),
-          const Text('人员详情', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          const Text(
+            '人员详情',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
           const Spacer(),
           Icon(
             exited ? Icons.logout : Icons.person_outline,
@@ -140,7 +166,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       decoration: BoxDecoration(
         color: s.color,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.4),
+          width: 1,
+        ),
         boxShadow: AppShadow.card,
       ),
       child: Row(
@@ -155,7 +184,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             ),
             child: Text(
               e.name.isNotEmpty ? e.name.characters.first : '?',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: s.fg),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: s.fg,
+              ),
             ),
           ),
           const SizedBox(width: 16),
@@ -166,7 +199,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 Text(
                   e.name,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: s.fg),
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: s.fg,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 StatusBadge(status: status, onColorCard: true),
@@ -190,144 +227,224 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     final countdownColor = danger ? s.color : AppColors.textPrimary;
 
     final totalMs = e.durationMin * 60000;
-    final progress = totalMs > 0 ? (e.remainingMs / totalMs).clamp(0.0, 1.0) : 0.0;
+    final progress = totalMs > 0
+        ? (e.remainingMs / totalMs).clamp(0.0, 1.0)
+        : 0.0;
 
     return AppCard(
       radius: AppRadius.lg,
-      child: Column(
-        children: [
-          SizedBox(
-            width: 190,
-            height: 190,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 190,
-                  height: 190,
-                  child: CircularProgressIndicator(
-                    value: progress,
-                    strokeWidth: 10,
-                    strokeCap: StrokeCap.round,
-                    backgroundColor: AppColors.surfaceSubtle,
-                    color: s.color,
-                  ),
-                ),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CountdownText(
-                      ms: e.remainingMs,
-                      color: countdownColor,
-                      size: 42,
-                      timeoutText: '已超时',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final textScale = MediaQuery.textScalerOf(context).scale(1);
+          final accessibleLayout = constraints.maxWidth < 300 || textScale > 1.25;
+          final details = Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 16,
+            runSpacing: 6,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.timer_outlined, size: 14, color: s.color),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${e.durationMin} 分钟上限',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
                     ),
-                    const SizedBox(height: 4),
-                    const Text('剩余时间', style: TextStyle(color: AppColors.textTertiary, fontSize: 12)),
-                    const SizedBox(height: 2),
+                  ),
+                ],
+              ),
+              if (e.pressureMpa != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.speed, size: 14, color: s.color),
+                    const SizedBox(width: 5),
                     Text(
-                      '预计 ${_fmt(e.exitAt)} 到期',
-                      style: TextStyle(
-                        color: danger ? s.color : AppColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                      '${e.pressureMpa} MPa',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.timer_outlined, size: 14, color: s.color),
-              const SizedBox(width: 5),
-              Text('${e.durationMin} 分钟上限', style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-              const SizedBox(width: 16),
-              if (e.pressureMpa != null) ...[
-                Icon(Icons.speed, size: 14, color: s.color),
-                const SizedBox(width: 5),
-                Text('${e.pressureMpa} MPa', style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-              ],
             ],
-          ),
-        ],
+          );
+          final countdownContent = Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: CountdownText(
+                  ms: e.remainingMs,
+                  color: countdownColor,
+                  size: 42,
+                  timeoutText: '已超时',
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                '剩余时间',
+                style: TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '预计 ${_fmt(e.exitAt)} 到期',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: danger ? s.color : AppColors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          );
+          if (accessibleLayout) {
+            return Column(
+              children: [
+                countdownContent,
+                const SizedBox(height: 12),
+                LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 8,
+                  borderRadius: BorderRadius.circular(8),
+                  backgroundColor: AppColors.surfaceSubtle,
+                  color: s.color,
+                ),
+                const SizedBox(height: 14),
+                details,
+              ],
+            );
+          }
+          return Column(
+            children: [
+              SizedBox(
+                width: 190,
+                height: 190,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 190,
+                      height: 190,
+                      child: CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 10,
+                        strokeCap: StrokeCap.round,
+                        backgroundColor: AppColors.surfaceSubtle,
+                        color: s.color,
+                      ),
+                    ),
+                    countdownContent,
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              details,
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _infoGrid(Entry e) {
     final cfg = widget.controller.calcConfig;
-    return AppCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              _infoTile(Icons.login, '进场时间', _fmt(e.entryAt)),
-              _infoTile(Icons.logout, '预计出场', _fmt(e.exitAt)),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _infoTile(Icons.speed, '气瓶压力', e.pressureMpa != null ? '${e.pressureMpa} MPa' : '--'),
-              _infoTile(Icons.local_fire_department_outlined, '气瓶容量', '${cfg.cylinderVolL} L'),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _infoTile(Icons.water_drop_outlined, '消耗率', '${cfg.consumptionLpm} L/min'),
-              _infoTile(
-                Icons.local_fire_department_outlined,
-                '实测消耗率',
-                e.consumptionActualLpm != null ? '${e.consumptionActualLpm!.toStringAsFixed(1)} L/min' : '--',
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _infoTile(Icons.timer_outlined, '分钟上限', '${e.durationMin} 分钟'),
-              _infoTile(
-                Icons.mic_none,
-                '来源',
-                e.source == 'voice' ? '语音录入' : '手动',
-              ),
-            ],
-          ),
-        ],
+    final volume = e.cylinderVolL ?? cfg.cylinderVolL;
+    final consumption = e.consumptionLpm ?? cfg.consumptionLpm;
+    final tiles = [
+      _infoTile(Icons.login, '进场时间', _fmt(e.entryAt)),
+      _infoTile(Icons.logout, '预计出场', _fmt(e.exitAt)),
+      _infoTile(
+        Icons.speed,
+        '气瓶压力',
+        e.pressureMpa != null ? '${e.pressureMpa} MPa' : '--',
       ),
+      _infoTile(
+        Icons.local_fire_department_outlined,
+        '气瓶容量',
+        '$volume L',
+      ),
+      _infoTile(Icons.water_drop_outlined, '消耗率', '$consumption L/min'),
+      _infoTile(
+        Icons.local_fire_department_outlined,
+        '实测消耗率',
+        e.consumptionActualLpm != null
+            ? '${e.consumptionActualLpm!.toStringAsFixed(1)} L/min'
+            : '--',
+      ),
+      _infoTile(Icons.timer_outlined, '分钟上限', '${e.durationMin} 分钟'),
+      _infoTile(Icons.mic_none, '来源', e.source == 'voice' ? '语音录入' : '手动'),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final singleColumn = constraints.maxWidth < 300 || textScale > 1.25;
+        final rows = <Widget>[];
+        for (var i = 0; i < tiles.length; i += 2) {
+          if (singleColumn) {
+            rows.add(tiles[i]);
+            if (i < tiles.length - 1) rows.add(const SizedBox(height: 12));
+            rows.add(tiles[i + 1]);
+          } else {
+            rows.add(
+              Row(
+                children: [
+                  Expanded(child: tiles[i]),
+                  Expanded(child: tiles[i + 1]),
+                ],
+              ),
+            );
+          }
+          if (i < tiles.length - 2) rows.add(const SizedBox(height: 14));
+        }
+        return AppCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(children: rows),
+        );
+      },
     );
   }
 
   Widget _infoTile(IconData icon, String label, String value) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: AppColors.textTertiary),
-              const SizedBox(width: 5),
-              Text(label, style: const TextStyle(color: AppColors.textTertiary, fontSize: 12)),
-            ],
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-              fontFeatures: [FontFeature.tabularFigures()],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 14, color: AppColors.textTertiary),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 12,
+                ),
+              ),
             ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        Text(
+          value,
+          softWrap: true,
+          style: const TextStyle(
+            fontSize: 15.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+            fontFeatures: [FontFeature.tabularFigures()],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -341,11 +458,25 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             children: [
               Icon(Icons.graphic_eq, size: 15, color: AppColors.voice),
               const SizedBox(width: 6),
-              const Text('原始语音转写', style: TextStyle(color: AppColors.textTertiary, fontSize: 12, letterSpacing: 0.5)),
+              const Text(
+                '原始语音转写',
+                style: TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 12,
+                  letterSpacing: 0.5,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(raw, style: const TextStyle(fontSize: 15, height: 1.4, color: AppColors.textPrimary)),
+          Text(
+            raw,
+            style: const TextStyle(
+              fontSize: 15,
+              height: 1.4,
+              color: AppColors.textPrimary,
+            ),
+          ),
         ],
       ),
     );
@@ -364,12 +495,20 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               color: AppColors.surface,
               border: Border.all(color: AppColors.border),
             ),
-            child: const Icon(Icons.logout, size: 42, color: AppColors.textTertiary),
+            child: const Icon(
+              Icons.logout,
+              size: 42,
+              color: AppColors.textTertiary,
+            ),
           ),
           const SizedBox(height: 20),
           Text(
             name == null ? '该记录已不存在' : '「$name」已出火场',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(height: 20),
           FilledButton(

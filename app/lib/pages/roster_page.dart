@@ -15,7 +15,8 @@ class RosterPage extends StatefulWidget {
   State<RosterPage> createState() => _RosterPageState();
 }
 
-class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateMixin {
+class _RosterPageState extends State<RosterPage>
+    with SingleTickerProviderStateMixin {
   late final TabController _tab = TabController(length: 2, vsync: this);
   final TextEditingController _input = TextEditingController();
 
@@ -45,7 +46,9 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
       await widget.controller.loadRoster();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -69,9 +72,9 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
     final toAdd = seen.toList();
     if (toAdd.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('未发现可导入的姓名（已有 $dup 个重复）')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('未发现可导入的姓名（已有 $dup 个重复）')));
       }
       return;
     }
@@ -84,7 +87,11 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
       builder: (_) => const AlertDialog(
         content: Row(
           children: [
-            SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
             SizedBox(width: 16),
             Expanded(child: Text('正在导入姓名…')),
           ],
@@ -92,19 +99,28 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
       ),
     );
     var added = 0;
+    var failed = 0;
     for (final name in toAdd) {
       try {
-        await api.addFirefighter(name);
-        added++;
-      } catch (e) {
-        dup++;
+        if (await api.addFirefighter(name)) {
+          added++;
+        } else {
+          dup++;
+        }
+      } catch (_) {
+        failed++;
       }
     }
     await widget.controller.loadRoster();
     if (mounted) {
       Navigator.of(context, rootNavigator: true).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入完成：新增 $added 人，跳过重复 $dup 个')),
+        SnackBar(
+          content: Text(
+            '导入完成：新增 $added 人，跳过重复 $dup 个'
+            '${failed > 0 ? '，失败 $failed 个（可重试）' : ''}',
+          ),
+        ),
       );
     }
   }
@@ -114,9 +130,14 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('删除「$label」？'),
-        content: Text(isFirefighter ? '删除后无法恢复，语音识别时将不再匹配该姓名' : '删除后无法恢复，该术语将不再作为识别热词'),
+        content: Text(
+          isFirefighter ? '删除后无法恢复，语音识别时将不再匹配该姓名' : '删除后无法恢复，该术语将不再作为识别热词',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
             onPressed: () => Navigator.pop(ctx, true),
@@ -135,7 +156,9 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
       await widget.controller.loadRoster();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -170,7 +193,9 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
                         onSubmitted: (_) => _add(),
                         decoration: InputDecoration(
                           hintText: _tab.index == 0 ? '输入消防员姓名…' : '输入专业术语…',
-                          prefixIcon: Icon(_tab.index == 0 ? Icons.person_add_alt : Icons.tag),
+                          prefixIcon: Icon(
+                            _tab.index == 0 ? Icons.person_add_alt : Icons.tag,
+                          ),
                         ),
                         textInputAction: TextInputAction.done,
                       ),
@@ -191,8 +216,18 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
             TabBar(
               controller: _tab,
               tabs: [
-                Tab(child: _TabLabel(text: '消防员', count: widget.controller.firefighters.length)),
-                Tab(child: _TabLabel(text: '专业术语', count: widget.controller.hotwords.length)),
+                Tab(
+                  child: _TabLabel(
+                    text: '消防员',
+                    count: widget.controller.firefighters.length,
+                  ),
+                ),
+                Tab(
+                  child: _TabLabel(
+                    text: '专业术语',
+                    count: widget.controller.hotwords.length,
+                  ),
+                ),
               ],
             ),
             Expanded(
@@ -236,7 +271,11 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
             const SizedBox(height: 18),
             Text(
               isFirefighter ? '暂无消防员，先添加几人吧' : '暂无专业术语',
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 15, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 4),
             if (!isFirefighter)
@@ -284,12 +323,20 @@ class _RosterPageState extends State<RosterPage> with SingleTickerProviderStateM
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline, color: AppColors.alarm, size: 21),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.alarm,
+                  size: 21,
+                ),
                 onPressed: () => _remove(id, isFirefighter, label),
                 tooltip: '删除',
               ),
@@ -322,7 +369,11 @@ class _TabLabel extends StatelessWidget {
           ),
           child: Text(
             '$count',
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary),
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary,
+            ),
           ),
         ),
       ],
@@ -352,7 +403,9 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
     final text = data?.text;
     if (text == null || text.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('剪贴板为空')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('剪贴板为空')));
       }
       return;
     }
@@ -384,7 +437,11 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
         children: [
           const Text(
             '每行一个姓名，支持粘贴 Excel 姓名列；\n整表复制时自动取每行第一个单元格。\n重复姓名自动跳过。',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5, height: 1.5),
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
           ),
           const SizedBox(height: 12),
           ConstrainedBox(
@@ -394,9 +451,7 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
               maxLines: null,
               minLines: 4,
               keyboardType: TextInputType.multiline,
-              decoration: const InputDecoration(
-                alignLabelWithHint: true,
-              ),
+              decoration: const InputDecoration(alignLabelWithHint: true),
             ),
           ),
           const SizedBox(height: 4),
@@ -411,8 +466,14 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(context, _input.text), child: const Text('导入')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _input.text),
+          child: const Text('导入'),
+        ),
       ],
     );
   }
@@ -420,10 +481,35 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
 
 /// 常见的职务/衔级词，避免整表复制时被误识别为姓名
 const _titleWords = <String>{
-  '站长', '副站长', '站长助理', '指导员', '班长', '副班长', '分队长', '副分队长',
-  '车管', '文书', '出纳', '会计', '实习', '干部', '领导', '助理',
-  '驾驶员', '战斗员', '通信员', '给养员', '消防员', '宣传员', '调度员',
-  '管理员', '协查员', '受理员', '考评员', '信息员', '装备技师',
+  '站长',
+  '副站长',
+  '站长助理',
+  '指导员',
+  '班长',
+  '副班长',
+  '分队长',
+  '副分队长',
+  '车管',
+  '文书',
+  '出纳',
+  '会计',
+  '实习',
+  '干部',
+  '领导',
+  '助理',
+  '驾驶员',
+  '战斗员',
+  '通信员',
+  '给养员',
+  '消防员',
+  '宣传员',
+  '调度员',
+  '管理员',
+  '协查员',
+  '受理员',
+  '考评员',
+  '信息员',
+  '装备技师',
 };
 
 /// 从一段粘贴文本中解析姓名（逐行处理，保留重复项，由调用方去重）

@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS public.entries (
   source TEXT NOT NULL DEFAULT 'voice',
   raw_text TEXT,
   created_at BIGINT NOT NULL,
+  cylinder_vol_l DOUBLE PRECISION,
+  consumption_lpm DOUBLE PRECISION,
   consumption_actual_lpm DOUBLE PRECISION
 );
 

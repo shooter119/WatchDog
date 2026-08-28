@@ -12,26 +12,169 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # changelog 需要完整历史
 
       - name: Setup Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Flutter 3.38.5
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: '3.38.5'
           cache: true
 
+      # tag 发布必须先通过与合并相同的质量门禁，不能绕过失败的回归测试。
+      - name: Setup Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Backend quality gate and runtime count gate
+        working-directory: backend
+        env:
+          # 通过 npm test 运行时摘要校验；新增测试后只允许提高此基线。
+          MIN_BACKEND_TESTS: '117'
+        shell: bash
+        run: |
+          npm ci
+          qa_report="$(mktemp)"
+          set -o pipefail
+          set +e
+          npm test 2>&1 | tee "$qa_report"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          npm_status="${pipeline_status[0]}"
+          tee_status="${pipeline_status[1]}"
+          if [ "$npm_status" -ne 0 ]; then
+            exit "$npm_status"
+          fi
+          if [ "$tee_status" -ne 0 ]; then
+            exit "$tee_status"
+          fi
+
+          actual_tests="$(awk '$1 == "ℹ" && $2 == "tests" { count = $3 } END { print count }' "$qa_report")"
+          actual_skipped="$(awk '$1 == "ℹ" && $2 == "skipped" { count = $3 } END { print count }' "$qa_report")"
+          actual_todo="$(awk '$1 == "ℹ" && $2 == "todo" { count = $3 } END { print count }' "$qa_report")"
+          case "$actual_tests" in
+            ''|*[!0-9]*)
+              echo '::error::无法从 npm test 运行时摘要读取后端测试数量'
+              exit 1
+              ;;
+          esac
+          case "$actual_skipped" in
+            ''|*[!0-9]*)
+              echo '::error::无法从 npm test 运行时摘要读取 skipped 数量'
+              exit 1
+              ;;
+          esac
+          case "$actual_todo" in
+            ''|*[!0-9]*)
+              echo '::error::无法从 npm test 运行时摘要读取 skipped/todo 数量'
+              exit 1
+              ;;
+          esac
+          if [ "$actual_skipped" -ne 0 ] || [ "$actual_todo" -ne 0 ]; then
+            echo "::error::后端测试存在 skipped=$actual_skipped 或 todo=$actual_todo"
+            exit 1
+          fi
+          if [ "$actual_tests" -lt "$MIN_BACKEND_TESTS" ]; then
+            echo "::error::后端运行时测试数量 $actual_tests 少于基线 $MIN_BACKEND_TESTS"
+            exit 1
+          fi
+          echo "后端运行时测试数量：$actual_tests（基线：$MIN_BACKEND_TESTS）"
+      - name: Flutter quality gate and runtime count gate
+        working-directory: app
+        env:
+          # Flutter JSON reporter 的可见 testDone 事件是运行时计数；新增测试后只允许提高此基线。
+          MIN_APP_TESTS: '196'
+        shell: bash
+        run: |
+          flutter pub get
+          flutter analyze
+          qa_report="$(mktemp)"
+          set -o pipefail
+          set +e
+          flutter test --reporter json 2>&1 | tee "$qa_report"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          flutter_status="${pipeline_status[0]}"
+          tee_status="${pipeline_status[1]}"
+          if [ "$flutter_status" -ne 0 ]; then
+            exit "$flutter_status"
+          fi
+          if [ "$tee_status" -ne 0 ]; then
+            exit "$tee_status"
+          fi
+
+          actual_tests="$(python3 - "$qa_report" <<'PY'
+          import json
+          import sys
+
+          count = 0
+          skipped = 0
+          done_event = False
+          with open(sys.argv[1], encoding='utf-8') as stream:
+              for line in stream:
+                  try:
+                      event = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
+                  if event.get('type') == 'testDone' and not event.get('hidden', False):
+                      count += 1
+                      if event.get('skipped', False):
+                          skipped += 1
+                  if event.get('type') == 'done':
+                      done_event = True
+                      if not event.get('success', False):
+                          print('Flutter JSON reporter reported an unsuccessful run', file=sys.stderr)
+                          sys.exit(1)
+
+          if not done_event:
+              print('Flutter JSON reporter did not emit a done event', file=sys.stderr)
+              sys.exit(1)
+          if skipped:
+              print(f'Flutter JSON reporter reported {skipped} skipped test(s)', file=sys.stderr)
+              sys.exit(1)
+          print(count)
+          PY
+          )" || {
+            echo '::error::无法解析 Flutter JSON reporter 的运行时测试数量'
+            exit 1
+          }
+          case "$actual_tests" in
+            ''|*[!0-9]*)
+              echo '::error::Flutter JSON reporter 未提供有效的运行时测试数量'
+              exit 1
+              ;;
+          esac
+          if [ "$actual_tests" -lt "$MIN_APP_TESTS" ]; then
+            echo "::error::App 运行时测试数量 $actual_tests 少于基线 $MIN_APP_TESTS"
+            exit 1
+          fi
+          echo "App 运行时测试数量：$actual_tests（基线：$MIN_APP_TESTS）"
+
+      - name: Verify release version metadata
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PUB_VERSION=$(sed -n "s/^version: *//p" app/pubspec.yaml | head -1)
+          APP_VERSION=$(sed -n "s/^const appVersion = '\([^']*\)';/\1/p" app/lib/pages/settings_page.dart | head -1)
+          test -n "$TAG_VERSION"
+          test "$TAG_VERSION" = "$PUB_VERSION"
+          test "$PUB_VERSION" = "$APP_VERSION"
+          echo "发布版本一致：$TAG_VERSION"
+
       # 签名注入：keystore 以 base64 secret 存储，key.properties 由 3 个 secret 拼装
-      # （key.properties/keystore 不入库，缺失时 build.gradle.kts 会静默退化为 debug 签名）
+      # （key.properties/keystore 不入库；缺失时前置检查直接失败）
       - name: Setup signing
         env:
           KEYSTORE_B64: ${{ secrets.WATCHDOG_KEYSTORE_B64 }}
@@ -39,6 +182,10 @@ jobs:
           KEY_ALIAS: ${{ secrets.WATCHDOG_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.WATCHDOG_KEY_PASSWORD }}
         run: |
+          test -n "$KEYSTORE_B64"
+          test -n "$STORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
           echo "$KEYSTORE_B64" | base64 -d > app/android/app/watchdog-release.keystore
           cat > app/android/key.properties <<EOF
           storePassword=$STORE_PASSWORD
@@ -52,8 +199,21 @@ jobs:
         working-directory: app
         run: |
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release --target-platform android-arm64 --split-per-abi
           ls -lh build/app/outputs/flutter-apk/
+
+      # 文件名标记为 arm64 前先确认包内没有误带其他 ABI，避免发布体积和兼容性
+      # 与分发说明不一致。
+      - name: Verify APK ABI
+        working-directory: app
+        run: |
+          APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          test -f "$APK"
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
+          if unzip -l "$APK" | grep -Eq 'lib/(armeabi-v7a|x86|x86_64)/'; then
+            echo "::error::APK 包含非 arm64 ABI"
+            exit 1
+          fi
 
       # 防呆：比对 APK 签名与 keystore 指纹，不一致（静默 debug 签名）则终止发布
       # AGP9 默认 minSdk>=24 关闭 v1(JAR) 签名，keytool -printcert -jarfile 读不到证书，
@@ -64,7 +224,7 @@ jobs:
           STORE_PASSWORD: ${{ secrets.WATCHDOG_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.WATCHDOG_KEY_ALIAS }}
         run: |
-          APK="build/app/outputs/flutter-apk/app-release.apk"
+          APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort -V | tail -1)
           APK_SHA=$("$APKSIGNER" verify --print-certs "$APK" | grep -i "SHA-256 digest" | head -1 | sed 's/.*: //' | tr 'a-f' 'A-F' | tr -d ':')
           KEY_SHA=$(keytool -list -v -keystore android/app/watchdog-release.keystore -alias "$KEY_ALIAS" -storepass "$STORE_PASSWORD" 2>/dev/null | grep "SHA256:" | head -1 | sed 's/.*SHA256: //' | tr -d ':')
@@ -81,7 +241,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"          # v0.8.5+22
           VERSION="${TAG#v}"                       # 0.8.5+22
-          APK="build/app/outputs/flutter-apk/app-release.apk"
+          APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
           cp "$APK" "build/app/outputs/flutter-apk/watchdog-${VERSION}-arm64-v8a.apk"
           SHA256=$(sha256sum "$APK" | awk '{print $1}')
           PREV=$(git -C .. describe --tags --abbrev=0 "${TAG}~1" 2>/dev/null || true)
@@ -103,7 +263,7 @@ jobs:
           cat release-body.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ steps.release.outputs.version }}

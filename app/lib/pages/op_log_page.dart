@@ -43,8 +43,14 @@ class _OpLogPageState extends State<OpLogPage> {
         title: const Text('清空本地操作日志？'),
         content: const Text('仅清除本机日志，服务器上已同步的记录不受影响。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('清空')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清空'),
+          ),
         ],
       ),
     );
@@ -73,11 +79,28 @@ class _OpLogPageState extends State<OpLogPage> {
                       padding: EdgeInsets.only(top: 120),
                       child: Column(
                         children: [
-                          Icon(Icons.receipt_long_outlined, size: 44, color: AppColors.textTertiary),
+                          Icon(
+                            Icons.receipt_long_outlined,
+                            size: 44,
+                            color: AppColors.textTertiary,
+                          ),
                           SizedBox(height: 14),
-                          Text('暂无操作日志', style: TextStyle(color: AppColors.textSecondary, fontSize: 15, fontWeight: FontWeight.w600)),
+                          Text(
+                            '暂无操作日志',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           SizedBox(height: 6),
-                          Text('长按语音按钮进行一次语音录入后，这里会显示完整步骤', style: TextStyle(color: AppColors.textTertiary, fontSize: 12.5)),
+                          Text(
+                            '长按语音按钮进行一次语音录入后，这里会显示完整步骤',
+                            style: TextStyle(
+                              color: AppColors.textTertiary,
+                              fontSize: 12.5,
+                            ),
+                          ),
                         ],
                       ),
                     )
@@ -100,7 +123,10 @@ class _OpLogPageState extends State<OpLogPage> {
           SwitchListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('同步到服务器', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700)),
+            title: const Text(
+              '同步到服务器',
+              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+            ),
             subtitle: Text(
               svc.syncEnabled
                   ? (lastSync == null ? '尚未同步' : '上次同步 ${_fmtTime(lastSync)}')
@@ -117,8 +143,13 @@ class _OpLogPageState extends State<OpLogPage> {
                 child: Padding(
                   padding: const EdgeInsets.only(left: 4),
                   child: Text(
-                    svc.pendingCount > 0 ? '待上传 ${svc.pendingCount} 条' : '已全部上传',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
+                    svc.pendingCount > 0
+                        ? '待上传 ${svc.pendingCount} 条'
+                        : '已全部上传',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textTertiary,
+                    ),
                   ),
                 ),
               ),
@@ -130,7 +161,11 @@ class _OpLogPageState extends State<OpLogPage> {
               IconButton(
                 onPressed: _clear,
                 tooltip: '清空本地日志',
-                icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.textTertiary),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: AppColors.textTertiary,
+                ),
               ),
             ],
           ),
@@ -139,12 +174,19 @@ class _OpLogPageState extends State<OpLogPage> {
               padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
               child: Row(
                 children: [
-                  const Icon(Icons.error_outline, size: 14, color: AppColors.caution),
+                  const Icon(
+                    Icons.error_outline,
+                    size: 14,
+                    color: AppColors.caution,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       '上次同步失败：$err',
-                      style: const TextStyle(fontSize: 11.5, color: AppColors.caution),
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.caution,
+                      ),
                     ),
                   ),
                 ],
@@ -161,7 +203,10 @@ class _OpLogPageState extends State<OpLogPage> {
     for (final e in logs.reversed) {
       map.putIfAbsent(e.opId, () => []).add(e);
     }
-    return [for (final g in map.entries.toList().reversed) _OpGroup(opId: g.key, entries: g.value)];
+    return [
+      for (final g in map.entries.toList().reversed)
+        _OpGroup(opId: g.key, entries: g.value),
+    ];
   }
 }
 
@@ -210,60 +255,94 @@ class _OpGroupCardState extends State<_OpGroupCard> {
   Widget build(BuildContext context) {
     final g = widget.group;
     final hasProblem = g.problemCount > 0;
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: hasProblem ? AppColors.caution.withValues(alpha: 0.5) : AppColors.border),
+        border: Border.all(
+          color: hasProblem
+              ? AppColors.caution.withValues(alpha: 0.5)
+              : AppColors.border,
+        ),
         boxShadow: AppShadow.card,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(AppRadius.md),
+          Semantics(
+            container: true,
+            button: true,
+            excludeSemantics: true,
+            expanded: _expanded,
+            label: '${g.summary}，${_expanded ? '已展开' : '已收起'}',
+            hint: _expanded ? '点击收起操作详情' : '点击展开操作详情',
             onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    hasProblem ? Icons.error_outline : Icons.check_circle_outline,
-                    size: 18,
-                    color: hasProblem ? AppColors.caution : AppColors.safe,
+            child: InkWell(
+              excludeFromSemantics: true,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          g.summary,
-                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                  child: Row(
+                    children: [
+                      Icon(
+                        hasProblem
+                            ? Icons.error_outline
+                            : Icons.check_circle_outline,
+                        size: 18,
+                        color: hasProblem ? AppColors.caution : AppColors.safe,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              g.summary,
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${_fmtDateTime(g.first.ts)} · ${g.entries.length} 步'
+                              '${hasProblem ? ' · ${g.problemCount} 处异常' : ''}',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 3),
-                        Text(
-                          '${_fmtDateTime(g.first.ts)} · ${g.entries.length} 步'
-                          '${hasProblem ? ' · ${g.problemCount} 处异常' : ''}',
-                          style: const TextStyle(fontSize: 11.5, color: AppColors.textTertiary),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        _expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 20,
+                        color: AppColors.textTertiary,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
-                    color: AppColors.textTertiary,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
           AnimatedCrossFade(
-            duration: const Duration(milliseconds: 180),
-            crossFadeState: _expanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            duration: disableAnimations
+                ? Duration.zero
+                : const Duration(milliseconds: 180),
+            crossFadeState: _expanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
             firstChild: Column(
               children: [
                 const Divider(height: 1, indent: 14, endIndent: 14),
@@ -313,13 +392,23 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                       ),
                     ),
                     const Spacer(),
-                    Text(_fmtTime(e.ts), style: const TextStyle(fontSize: 11, color: AppColors.textTertiary)),
+                    Text(
+                      _fmtTime(e.ts),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Text(
                   e.msg,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.4),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                    height: 1.4,
+                  ),
                 ),
                 if (e.data != null && e.data!.isNotEmpty) ...[
                   const SizedBox(height: 6),

@@ -94,6 +94,22 @@ test('支持中文实名的 Base64 请求头，不因 HTTP 头编码失败', asy
   assert.equal(timeline.events[0].actor_name, '李翔');
 });
 
+test('新建警情拒绝复用其他类型事件的 client_op_id', async () => {
+  const first = await createIncident('op-reuse-source');
+  const sourceHeaders = headers({ 'X-Incident-Id': first.id, 'X-Op-Id': 'op-reused-for-create' });
+  const note = await fetch(`${base}/api/notes`, {
+    method: 'POST', headers: sourceHeaders, body: JSON.stringify({ text: '先占用操作 ID' }),
+  });
+  assert.equal(note.status, 201);
+  const response = await fetch(`${base}/api/incidents`, {
+    method: 'POST',
+    headers: headers({ 'X-Op-Id': 'op-reused-for-create' }),
+    body: JSON.stringify({ actor_name: '测试员' }),
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).code, 'CLIENT_OP_ID_CONFLICT');
+});
+
 test('改名使用版本控制，未实名管理操作被拒绝', async () => {
   const incident = await createIncident();
   const noName = await fetch(`${base}/api/incidents/${incident.id}`, {
@@ -215,6 +231,19 @@ test('归档保留未确认离场人数，归档后现场数据只读且名称�
   }));
   assert.equal(renamed.title, '归档后正式名称');
   assert.ok(entry.id);
+});
+
+test('手动归档重复请求不会重复写归档事件', async () => {
+  const incident = await createIncident('archive-event-once');
+  const incidentHeaders = headers({ 'X-Incident-Id': incident.id });
+  const responses = await Promise.all(Array.from({ length: 6 }, (_, index) => fetch(`${base}/api/incidents/${incident.id}/archive`, {
+    method: 'POST',
+    headers: { ...incidentHeaders, 'X-Op-Id': `archive-event-once-${index}` },
+    body: '{}',
+  })));
+  assert.ok(responses.every((response) => response.status === 200));
+  const timeline = await json(await fetch(`${base}/api/incidents/${incident.id}/timeline`, { headers: incidentHeaders }));
+  assert.equal(timeline.events.filter((event) => event.type === 'incident_archived').length, 1);
 });
 
 test('12 小时自动归档和离线补传幂等', async () => {

@@ -12,6 +12,7 @@ const uniqueColumns = {
   incident_events: ['id', 'client_op_id'], stations: ['id', 'name', 'normalized_name'],
   incident_forces: ['id'], notes: ['id'], pressure_samples: ['id'], chat_messages: ['id'],
   user_settings: ['user_id', 'scene', 'key'], device_profiles: ['device_id'], logs: ['id'],
+  units: ['id', 'name', 'verification_code'],
 };
 
 function tableRows(table) {
@@ -127,4 +128,13 @@ test('PostgreSQL 仓储保留警情、事件幂等和进退场行为', async () 
   const exited = await db.markExited(entry.id, 3000);
   assert.equal(exited.exited_at, 3000);
   assert.equal((await db.listEntries({ activeOnly: true, scene: incident.id })).length, 0);
+});
+
+test('PostgreSQL 警情列表将单位过滤和上限下推到仓储', async () => {
+  await db.createIncident({ id: 'unit-a-incident-1', unitId: 'unit-a', createdAt: 3000 });
+  await db.createIncident({ id: 'unit-a-incident-2', unitId: 'unit-a', createdAt: 4000 });
+  await db.createIncident({ id: 'unit-b-incident-1', unitId: 'unit-b', createdAt: 5000 });
+  const rows = await db.listIncidents('active', { unitId: 'unit-a', limit: 1 });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].unit_id, 'unit-a');
 });

@@ -33,8 +33,8 @@ test('POST /api/logs 批量上报并按警情/设备/时间入库', async () => 
     body: JSON.stringify({
       logs: [
         { op_id: 'op-1', level: 'info', stage: 'record_start', msg: '开始录音' },
-        { op_id: 'op-1', level: 'info', stage: 'transcribe_ok', msg: '转写成功', data: { text: '张伟，20兆帕' } },
-        { op_id: 'op-1', level: 'error', stage: 'parse_err', msg: '解析失败', data: { code: 500 } },
+        { op_id: 'op-1', level: 'info', stage: 'transcribe_ok', msg: '转写成功', data: { text: '张伟，20兆帕', nested: { apiToken: 'secret-token' } } },
+        { op_id: 'op-1', level: 'error', stage: 'parse_err', msg: '解析失败 Authorization: Bearer secret-value', data: { code: 500 } },
       ],
     }),
   });
@@ -49,6 +49,9 @@ test('POST /api/logs 批量上报并按警情/设备/时间入库', async () => 
   assert.equal(logs[0].device, 'dev-abc');
   assert.equal(logs[0].op_id, 'op-1');
   assert.deepEqual(logs[0].data, { code: 500 });
+  assert.equal(logs[1].data.text.text_length, 7);
+  assert.equal(logs[1].data.nested.apiToken.apiToken_length, 12);
+  assert.doesNotMatch(logs[0].msg, /secret-value/);
   assert.equal(logs[2].msg, '开始录音');
   assert.ok(typeof logs[2].created_at === 'number');
 });
@@ -102,7 +105,13 @@ test('POST /api/logs 参数校验：非数组/超量/空 stage 拒绝或忽略',
 });
 
 test('DELETE /api/logs 清空当前警情日志', async () => {
-  const del = await (await fetch(`${base}/api/logs`, { method: 'DELETE', headers: H })).json();
+  const forbidden = await fetch(`${base}/api/logs`, { method: 'DELETE', headers: H });
+  assert.equal(forbidden.status, 403);
+  assert.equal((await forbidden.json()).code, 'MANAGEMENT_REQUIRED');
+  const del = await (await fetch(`${base}/api/logs`, {
+    method: 'DELETE',
+    headers: { ...H, 'X-Management-Token': 'test-management-token' },
+  })).json();
   assert.ok(del.deleted >= 4);
   const logs = await (await fetch(`${base}/api/logs`, { headers: H })).json();
   assert.equal(logs.length, 0);

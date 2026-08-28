@@ -1,0 +1,156 @@
+# WatchDog 质量门禁：合并和发布前必须同时通过后端与 Flutter 校验。
+name: Quality Checks
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # 通过 npm test 运行时摘要校验；新增测试后只允许提高此基线。
+      MIN_BACKEND_TESTS: '117'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Backend tests and runtime count gate
+        working-directory: backend
+        shell: bash
+        run: |
+          npm ci
+          qa_report="$(mktemp)"
+          set -o pipefail
+          set +e
+          npm test 2>&1 | tee "$qa_report"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          npm_status="${pipeline_status[0]}"
+          tee_status="${pipeline_status[1]}"
+          if [ "$npm_status" -ne 0 ]; then
+            exit "$npm_status"
+          fi
+          if [ "$tee_status" -ne 0 ]; then
+            exit "$tee_status"
+          fi
+
+          actual_tests="$(awk '$1 == "ℹ" && $2 == "tests" { count = $3 } END { print count }' "$qa_report")"
+          actual_skipped="$(awk '$1 == "ℹ" && $2 == "skipped" { count = $3 } END { print count }' "$qa_report")"
+          actual_todo="$(awk '$1 == "ℹ" && $2 == "todo" { count = $3 } END { print count }' "$qa_report")"
+          case "$actual_tests" in
+            ''|*[!0-9]*)
+              echo '::error::无法从 npm test 运行时摘要读取后端测试数量'
+              exit 1
+              ;;
+          esac
+          case "$actual_skipped" in
+            ''|*[!0-9]*)
+              echo '::error::无法从 npm test 运行时摘要读取 skipped 数量'
+              exit 1
+              ;;
+          esac
+          case "$actual_todo" in
+            ''|*[!0-9]*)
+              echo '::error::无法从 npm test 运行时摘要读取 skipped/todo 数量'
+              exit 1
+              ;;
+          esac
+          if [ "$actual_skipped" -ne 0 ] || [ "$actual_todo" -ne 0 ]; then
+            echo "::error::后端测试存在 skipped=$actual_skipped 或 todo=$actual_todo"
+            exit 1
+          fi
+          if [ "$actual_tests" -lt "$MIN_BACKEND_TESTS" ]; then
+            echo "::error::后端运行时测试数量 $actual_tests 少于基线 $MIN_BACKEND_TESTS"
+            exit 1
+          fi
+          echo "后端运行时测试数量：$actual_tests（基线：$MIN_BACKEND_TESTS）"
+
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Flutter JSON reporter 的可见 testDone 事件是运行时计数；新增测试后只允许提高此基线。
+      MIN_APP_TESTS: '196'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup Flutter 3.38.5
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: '3.38.5'
+          cache: true
+      - name: Flutter checks and runtime count gate
+        working-directory: app
+        shell: bash
+        run: |
+          flutter pub get
+          flutter analyze
+          qa_report="$(mktemp)"
+          set -o pipefail
+          set +e
+          flutter test --reporter json 2>&1 | tee "$qa_report"
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          flutter_status="${pipeline_status[0]}"
+          tee_status="${pipeline_status[1]}"
+          if [ "$flutter_status" -ne 0 ]; then
+            exit "$flutter_status"
+          fi
+          if [ "$tee_status" -ne 0 ]; then
+            exit "$tee_status"
+          fi
+
+          actual_tests="$(python3 - "$qa_report" <<'PY'
+          import json
+          import sys
+
+          count = 0
+          skipped = 0
+          done_event = False
+          with open(sys.argv[1], encoding='utf-8') as stream:
+              for line in stream:
+                  try:
+                      event = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
+                  if event.get('type') == 'testDone' and not event.get('hidden', False):
+                      count += 1
+                      if event.get('skipped', False):
+                          skipped += 1
+                  if event.get('type') == 'done':
+                      done_event = True
+                      if not event.get('success', False):
+                          print('Flutter JSON reporter reported an unsuccessful run', file=sys.stderr)
+                          sys.exit(1)
+
+          if not done_event:
+              print('Flutter JSON reporter did not emit a done event', file=sys.stderr)
+              sys.exit(1)
+          if skipped:
+              print(f'Flutter JSON reporter reported {skipped} skipped test(s)', file=sys.stderr)
+              sys.exit(1)
+          print(count)
+          PY
+          )" || {
+            echo '::error::无法解析 Flutter JSON reporter 的运行时测试数量'
+            exit 1
+          }
+          case "$actual_tests" in
+            ''|*[!0-9]*)
+              echo '::error::Flutter JSON reporter 未提供有效的运行时测试数量'
+              exit 1
+              ;;
+          esac
+          if [ "$actual_tests" -lt "$MIN_APP_TESTS" ]; then
+            echo "::error::App 运行时测试数量 $actual_tests 少于基线 $MIN_APP_TESTS"
+            exit 1
+          fi
+          echo "App 运行时测试数量：$actual_tests（基线：$MIN_APP_TESTS）"

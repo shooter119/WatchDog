@@ -77,6 +77,40 @@ test('parseTextWithDeepSeek 修正后文本仍可正常解析', async () => {
   assert.deepEqual(parsed.people, [{ name: '李翔', pressure_mpa: 20 }]);
 });
 
+test('parseTextWithDeepSeek 重试找回多人后 guardrail 使用最终解析结果', async () => {
+  let calls = 0;
+  globalThis.fetch = () => {
+    calls += 1;
+    return Promise.resolve(ok(
+      calls === 1
+        ? { intent: 'entry', action: 'exit', people: [], note: '首次漏解析人员' }
+        : {
+            intent: 'entry',
+            action: 'enter',
+            people: [
+              { name: '张伟', pressure_mpa: 20 },
+              { name: '李娜', pressure_mpa: 22 },
+            ],
+            note: '',
+          },
+    ));
+  };
+
+  const parsed = await parseTextWithDeepSeek({
+    apiKey: 'k',
+    text: '张伟20兆帕，李娜22兆帕',
+    firefighters: ['张伟', '李娜'],
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(parsed.intent, 'entry');
+  assert.equal(parsed.action, 'enter');
+  assert.deepEqual(parsed.people, [
+    { name: '张伟', pressure_mpa: 20 },
+    { name: '李娜', pressure_mpa: 22 },
+  ]);
+});
+
 // guardrail：LLM 误判"搜救出宠物狗"为 exit 时强制降级
 test('guardrailAction 搜救出宠物狗误判 exit 时降级 unknown', () => {
   assert.equal(

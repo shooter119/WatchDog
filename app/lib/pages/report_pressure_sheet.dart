@@ -65,143 +65,188 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
         ? AppColors.actionPrimary
         : AppColors.textTertiary.withValues(alpha: 0.6);
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    final availableHeight =
+        (MediaQuery.sizeOf(context).height - keyboardInset - 20)
+            .clamp(160.0, double.infinity)
+            .toDouble();
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
 
     return AnimatedPadding(
-      duration: const Duration(milliseconds: 120),
+      duration: disableAnimations
+          ? Duration.zero
+          : const Duration(milliseconds: 120),
       padding: EdgeInsets.fromLTRB(20, 10, 20, 16 + keyboardInset),
       child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: availableHeight),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('${e.name} 更新压力', style: AppTextStyles.h1),
-                const SizedBox(width: 10),
-                if (current != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
+                _buildHeader(context, e.name, current),
+                const SizedBox(height: 4),
+                const Text(
+                  '选择当前气瓶压力读数，系统将自动估算实测消耗率并修正剩余时间',
+                  style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final lv in ReportPressureSheet.levels)
+                      _levelButton(lv, current),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _customCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                  ],
+                  onChanged: _onCustomChanged,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: '其他压力',
+                    hintText: '手动输入压力值',
+                    suffixText: 'MPa',
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
                     ),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceSubtle,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      borderSide: const BorderSide(color: AppColors.border),
                     ),
-                    child: Text(
-                      '初始 $current MPa',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      borderSide: const BorderSide(
+                        color: AppColors.actionPrimary,
+                        width: 2,
+                      ),
+                    ),
+                    labelStyle: const TextStyle(color: AppColors.textTertiary),
+                    hintStyle: const TextStyle(color: AppColors.textTertiary),
+                    suffixStyle: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  height: 52,
+                  child: FilledButton.icon(
+                    onPressed: effective == null || _submitting
+                        ? null
+                        : _submit,
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Icon(Icons.speed, color: fg),
+                    label: Text(
+                      _submitting
+                          ? '提交中…'
+                          : (effective == null
+                                ? '选择压力档位'
+                                : '确认更新 ${_fmt(effective)} MPa'),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.actionPrimary,
+                      disabledBackgroundColor: AppColors.surfaceSubtle,
+                      foregroundColor: Colors.white,
+                      disabledForegroundColor: AppColors.textTertiary
+                          .withValues(alpha: 0.6),
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
-                  color: AppColors.textSecondary,
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            const Text(
-              '选择当前气瓶压力读数，系统将自动估算实测消耗率并修正剩余时间',
-              style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                for (final lv in ReportPressureSheet.levels)
-                  _levelButton(lv, current),
-              ],
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _customCtrl,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-              ],
-              onChanged: _onCustomChanged,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              decoration: InputDecoration(
-                labelText: '其他压力',
-                hintText: '手动输入压力值',
-                suffixText: 'MPa',
-                filled: true,
-                fillColor: AppColors.surface,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: const BorderSide(color: AppColors.border),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: const BorderSide(color: AppColors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  borderSide: const BorderSide(
-                    color: AppColors.actionPrimary,
-                    width: 2,
-                  ),
-                ),
-                labelStyle: const TextStyle(color: AppColors.textTertiary),
-                hintStyle: const TextStyle(color: AppColors.textTertiary),
-                suffixStyle: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 52,
-              child: FilledButton.icon(
-                onPressed: effective == null || _submitting ? null : _submit,
-                icon: _submitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Icon(Icons.speed, color: fg),
-                label: Text(
-                  _submitting
-                      ? '提交中…'
-                      : (effective == null
-                            ? '选择压力档位'
-                            : '确认更新 ${_fmt(effective)} MPa'),
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.actionPrimary,
-                  disabledBackgroundColor: AppColors.surfaceSubtle,
-                  foregroundColor: Colors.white,
-                  disabledForegroundColor: AppColors.textTertiary.withValues(
-                    alpha: 0.6,
-                  ),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, String name, double? current) {
+    final compact =
+        MediaQuery.sizeOf(context).width < 420 ||
+        MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
+    final title = Text('$name 更新压力', softWrap: true, style: AppTextStyles.h1);
+    final close = IconButton(
+      onPressed: () => Navigator.pop(context),
+      icon: const Icon(Icons.close_rounded),
+      color: AppColors.textSecondary,
+      tooltip: '关闭压力更新',
+    );
+    final badge = current == null
+        ? null
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceSubtle,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+            child: Text(
+              '初始 $current MPa',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          );
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: title),
+              close,
+            ],
+          ),
+          if (badge != null) ...[
+            const SizedBox(height: 4),
+            Align(alignment: Alignment.centerLeft, child: badge),
+          ],
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: title),
+        if (badge != null) ...[const SizedBox(width: 10), badge],
+        close,
+      ],
     );
   }
 

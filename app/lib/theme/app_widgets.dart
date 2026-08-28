@@ -35,6 +35,22 @@ class AppColors {
 
   // 连接
   static const online = Color(0xFF20A83A); // color.connection.online
+
+  // 页面语义色：页面只引用这些 token，不自行散落颜色字面量
+  static const noteInfo = Color(0xFF2F6FED);
+  static const noteWater = caution;
+  static const noteNeutral = textTertiary;
+  static const rankGold = Color(0xFFF5B301);
+  static const rankSilver = Color(0xFF9AA5B1);
+  static const rankBronze = Color(0xFFB77B4A);
+  static const heroMuted = Color(0xFFA9B1BD);
+  static const heroActive = Color(0xFFC5F4CC);
+  static const heroInactive = Color(0xFFBFC7D2);
+  static const heroLabel = Color(0xFF9BA5B2);
+  static const heroOnDark = Color(0xFFFFFFFF);
+  static const heroOnDarkBorder = Color(0x3DFFFFFF);
+  static const heroOnDarkRing = Color(0x0AFFFFFF);
+  static const heroOnDarkRingFaint = Color(0x08FFFFFF);
 }
 
 /// 8px 基础间距系统（space.1~space.10）
@@ -269,27 +285,39 @@ class SectionTitle extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10, top: 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 3,
-            height: 14,
-            decoration: BoxDecoration(
-              color: AppColors.actionPrimary,
-              borderRadius: BorderRadius.circular(2),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Container(
+              width: 3,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AppColors.actionPrimary,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
           const SizedBox(width: 8),
-          Text(
-            text,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: Text(
+                    text,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+                if (inline != null) ...[const SizedBox(width: 4), inline!],
+              ],
             ),
           ),
-          if (inline != null) ...[const SizedBox(width: 4), inline!],
-          const Spacer(),
           if (trailing != null) trailing!,
         ],
       ),
@@ -361,7 +389,19 @@ class _PulseRingState extends State<PulseRing>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1300),
-  )..repeat();
+  );
+  bool _disableAnimations = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableAnimations = MediaQuery.of(context).disableAnimations;
+    if (_disableAnimations) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat();
+    }
+  }
 
   @override
   void dispose() {
@@ -371,6 +411,19 @@ class _PulseRingState extends State<PulseRing>
 
   @override
   Widget build(BuildContext context) {
+    if (_disableAnimations) {
+      return Container(
+        width: widget.ringSize * 0.925,
+        height: widget.ringSize * 0.925,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: widget.color.withValues(alpha: 0.3),
+            width: 2,
+          ),
+        ),
+      );
+    }
     return AnimatedBuilder(
       animation: _c,
       builder: (context, child) {
@@ -413,7 +466,19 @@ class _PulseGlowState extends State<PulseGlow>
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
-  )..repeat(reverse: true);
+  );
+  bool _disableAnimations = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableAnimations = MediaQuery.of(context).disableAnimations;
+    if (_disableAnimations) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
+  }
 
   @override
   void dispose() {
@@ -423,6 +488,18 @@ class _PulseGlowState extends State<PulseGlow>
 
   @override
   Widget build(BuildContext context) {
+    if (_disableAnimations) {
+      return Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(widget.radius),
+          border: Border.all(
+            color: widget.color.withValues(alpha: 0.7),
+            width: 2,
+          ),
+        ),
+        child: widget.child,
+      );
+    }
     return AnimatedBuilder(
       animation: _c,
       builder: (context, child) => Container(
@@ -447,65 +524,72 @@ class _PulseGlowState extends State<PulseGlow>
   }
 }
 
-/// 连接状态：仅绿/红两态，避免频繁变化造成焦虑。
-/// 绿色「已连接」（正常，含同步中，不再显示橙色）；红色「已中断」（持续断线，点击可重试）。
-/// 红/绿切换由 AppController.connectionLost 平滑判定（30 秒无成功才转红）。
+/// 连接状态：将连接质量与本轮同步状态分开表达，避免“尚未成功”被误解为实时在线。
+/// 红/绿切换仍由 AppController.connectionLost 平滑判定（30 秒无成功才转红）。
 class ConnectionStatus extends StatelessWidget {
   final bool connected;
+  final bool syncing;
+  final String? syncError;
   final VoidCallback? onRetry;
 
   const ConnectionStatus({
     super.key,
     required this.connected,
+    this.syncing = false,
+    this.syncError,
     this.onRetry,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Widget inner;
-    if (connected) {
-      inner = const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_done_outlined, size: 16, color: AppColors.online),
-          SizedBox(width: 6),
-          Text(
-            '已连接',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+    final isFailed = syncError != null && !syncing;
+    final canRetry = !syncing && onRetry != null && (!connected || isFailed);
+    final (label, icon, color) = syncing
+        ? ('同步中', Icons.cloud_sync_outlined, AppColors.textSecondary)
+        : isFailed
+        ? ('同步失败', Icons.cloud_off_outlined, AppColors.caution)
+        : !connected
+        ? ('已中断', Icons.cloud_off_outlined, AppColors.alarm)
+        : ('已连接', Icons.cloud_done_outlined, AppColors.online);
+    final inner = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
           ),
-        ],
-      );
-    } else {
-      inner = const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.cloud_off_outlined, size: 16, color: AppColors.alarm),
-          SizedBox(width: 6),
-          Text(
-            '已中断',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      );
-    }
-    return GestureDetector(
-      onTap: connected ? null : onRetry,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(color: AppColors.border),
         ),
-        child: inner,
+      ],
+    );
+    return Semantics(
+      container: true,
+      button: canRetry,
+      enabled: canRetry,
+      label: syncError == null ? label : '$label：$syncError',
+      hint: canRetry ? '点击重试同步' : null,
+      child: Tooltip(
+        message: canRetry ? '重试同步' : label,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: canRetry ? onRetry : null,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Center(child: inner),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -543,6 +627,7 @@ class VoiceButton extends StatefulWidget {
 class _VoiceButtonState extends State<VoiceButton>
     with SingleTickerProviderStateMixin {
   bool _pressed = false;
+  bool _disableAnimations = false;
 
   // 录音态内部短波形动画（只影响绘制，不改变布局）；initState 中创建，
   // 避免懒加载在 dispose 阶段新建 Ticker 导致树停用后查询祖先崩溃
@@ -555,14 +640,28 @@ class _VoiceButtonState extends State<VoiceButton>
       vsync: this,
       duration: const Duration(milliseconds: 720),
     );
-    if (widget.recording) _wave.repeat();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableAnimations = MediaQuery.of(context).disableAnimations;
+    _syncWave();
+  }
+
+  void _syncWave() {
+    if (!mounted) return;
+    if (widget.recording && !_disableAnimations) {
+      if (!_wave.isAnimating) _wave.repeat();
+    } else {
+      _wave.stop();
+    }
   }
 
   @override
   void didUpdateWidget(VoiceButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.recording && !oldWidget.recording) _wave.repeat();
-    if (!widget.recording && oldWidget.recording) _wave.stop();
+    if (widget.recording != oldWidget.recording) _syncWave();
   }
 
   @override
@@ -589,7 +688,7 @@ class _VoiceButtonState extends State<VoiceButton>
     final hitSize = math.max(size + 8, 44.0);
     final glowColor = widget.processing
         ? AppColors.textTertiary.withValues(alpha: 0.2)
-        : AppColors.voice.withValues(alpha: widget.recording ? 0.5 : 0.35);
+        : AppColors.voice.withValues(alpha: widget.recording ? 0 : 0.35);
     final hint = widget.processing
         ? '识别处理中，请稍候'
         : widget.recording
@@ -621,11 +720,15 @@ class _VoiceButtonState extends State<VoiceButton>
               height: size,
               child: AnimatedScale(
                 scale: _pressed && !_disabled ? 0.94 : 1,
-                duration: const Duration(milliseconds: 110),
+                duration: _disableAnimations
+                    ? Duration.zero
+                    : const Duration(milliseconds: 110),
                 curve: Curves.easeOut,
                 child: AnimatedContainer(
                   key: const Key('voice-button-surface'),
-                  duration: const Duration(milliseconds: 140),
+                  duration: _disableAnimations
+                      ? Duration.zero
+                      : const Duration(milliseconds: 140),
                   curve: Curves.easeOut,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,

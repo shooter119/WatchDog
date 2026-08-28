@@ -8,11 +8,11 @@ import 'report_pressure_sheet.dart';
 
 /// 危险等级：超时(0) → 报警(1) → 注意(2) → 安全(3)
 int _severity(String status) => switch (status) {
-      'timeout' => 0,
-      'alarm' => 1,
-      'warn' => 2,
-      _ => 3,
-    };
+  'timeout' => 0,
+  'alarm' => 1,
+  'warn' => 2,
+  _ => 3,
+};
 
 /// 剩余时间格式（MM:SS / 已超时）
 String _fmtRemaining(int ms) {
@@ -37,7 +37,8 @@ class _BoardPageState extends State<BoardPage> {
   @override
   Widget build(BuildContext context) {
     final cfg = widget.controller.calcConfig;
-    String statusOf(Entry e) => e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+    String statusOf(Entry e) =>
+        e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
     // 显式危险等级排序：超时 → 报警 → 注意 → 安全，同等级按剩余时间升序
     final active = widget.controller.entries.where((e) => e.isActive).toList()
       ..sort((a, b) {
@@ -46,6 +47,9 @@ class _BoardPageState extends State<BoardPage> {
         return sa != sb ? sa.compareTo(sb) : a.exitAt.compareTo(b.exitAt);
       });
     final danger = active.where((e) => statusOf(e) != 'normal').toList();
+    final compactHeader =
+        MediaQuery.sizeOf(context).width < 400 ||
+        MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
 
     return SafeArea(
       child: Column(
@@ -53,25 +57,49 @@ class _BoardPageState extends State<BoardPage> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
-              children: [
-                const Text('管控看板', style: AppTextStyles.h1),
-                const Spacer(),
-                ConnectionStatus(
-                  connected: !widget.controller.connectionLost,
-                  onRetry: () => widget.controller.startSync(),
-                ),
-              ],
-            ),
+            child: compactHeader
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('管控看板', style: AppTextStyles.h1),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ConnectionStatus(
+                          connected: !widget.controller.connectionLost,
+                          syncing: widget.controller.syncing,
+                          syncError: widget.controller.syncError,
+                          onRetry: widget.controller.refreshNow,
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      const Text('管控看板', style: AppTextStyles.h1),
+                      const Spacer(),
+                      ConnectionStatus(
+                        connected: !widget.controller.connectionLost,
+                        syncing: widget.controller.syncing,
+                        syncError: widget.controller.syncError,
+                        onRetry: widget.controller.refreshNow,
+                      ),
+                    ],
+                  ),
           ),
 
           // 断线时显示具体错误原因
-          if (widget.controller.connectionLost && widget.controller.syncError != null)
+          if (widget.controller.connectionLost &&
+              widget.controller.syncError != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Text(
                 widget.controller.syncError!,
-                style: const TextStyle(fontSize: 11.5, color: AppColors.alarm, height: 1.3),
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.alarm,
+                  height: 1.3,
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -82,7 +110,8 @@ class _BoardPageState extends State<BoardPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _OverviewBanner(entries: active, config: cfg),
-                if (danger.isNotEmpty) _DangerAlertBar(entries: danger, config: cfg),
+                if (danger.isNotEmpty)
+                  _DangerAlertBar(entries: danger, config: cfg),
               ],
             ),
           ),
@@ -130,7 +159,8 @@ class _BoardPageState extends State<BoardPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => EntryDetailPage(controller: widget.controller, entryId: e.id),
+        builder: (_) =>
+            EntryDetailPage(controller: widget.controller, entryId: e.id),
       ),
     );
   }
@@ -143,7 +173,8 @@ class _BoardPageState extends State<BoardPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
-      builder: (_) => ReportPressureSheet(controller: widget.controller, entry: e),
+      builder: (_) =>
+          ReportPressureSheet(controller: widget.controller, entry: e),
     );
   }
 }
@@ -158,13 +189,20 @@ class _OverviewBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dangerCount = entries
-        .where((e) => e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin) != 'normal')
+        .where(
+          (e) =>
+              e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin) !=
+              'normal',
+        )
         .length;
     // 最早到期 = 剩余时间最短者（与排序无关）
     final earliest = entries.isEmpty
         ? null
         : entries.reduce((a, b) => a.exitAt <= b.exitAt ? a : b);
-    final earliestStatus = earliest?.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin);
+    final earliestStatus = earliest?.statusAt(
+      warnMin: config.warnMin,
+      alarmMin: config.alarmMin,
+    );
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -214,7 +252,12 @@ class _OverviewBanner extends StatelessWidget {
     );
   }
 
-  Widget _metric({required String value, required String label, required IconData icon, required Color color}) {
+  Widget _metric({
+    required String value,
+    required String label,
+    required IconData icon,
+    required Color color,
+  }) {
     return Column(
       children: [
         Icon(icon, size: 18, color: AppColors.textTertiary),
@@ -231,7 +274,14 @@ class _OverviewBanner extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11, letterSpacing: 0.5)),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 11,
+            letterSpacing: 0.5,
+          ),
+        ),
       ],
     );
   }
@@ -249,9 +299,13 @@ class _DangerAlertBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statuses = entries
-        .map((e) => e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin))
+        .map(
+          (e) => e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin),
+        )
         .toList();
-    final worst = statuses.reduce((a, b) => _severity(a) <= _severity(b) ? a : b);
+    final worst = statuses.reduce(
+      (a, b) => _severity(a) <= _severity(b) ? a : b,
+    );
     final color = switch (worst) {
       'timeout' => AppColors.timeout,
       'alarm' => AppColors.alarm,
@@ -268,7 +322,11 @@ class _DangerAlertBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: Colors.white,
+            size: 20,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -349,9 +407,19 @@ class _EmptyBoard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const Text('暂无人员在场', style: TextStyle(color: AppColors.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
+          const Text(
+            '暂无人员在场',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 6),
-          const Text('按住底部语音按钮登记进场', style: TextStyle(color: AppColors.textTertiary, fontSize: 13)),
+          const Text(
+            '按住底部语音按钮登记进场',
+            style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+          ),
           ...?voiceGuide,
         ],
       ),
@@ -368,22 +436,62 @@ class _EntryCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onReport;
 
-  const _EntryCard({required this.entry, required this.config, required this.onTap, required this.onReport});
+  const _EntryCard({
+    required this.entry,
+    required this.config,
+    required this.onTap,
+    required this.onReport,
+  });
 
   @override
   Widget build(BuildContext context) {
     final e = entry;
-    final status = e.statusAt(warnMin: config.warnMin, alarmMin: config.alarmMin);
+    final status = e.statusAt(
+      warnMin: config.warnMin,
+      alarmMin: config.alarmMin,
+    );
     final s = EntryStatus.of(status);
     final fg = s.fg;
     final subFg = fg.withValues(alpha: 0.75);
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final stackedHeader =
+        MediaQuery.sizeOf(context).width < 360 || textScale > 1.25;
+    final statusAndAction = Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        StatusBadge(
+          status: status,
+          onColorCard: true,
+          fontSize: 13,
+          height: 48,
+        ),
+        _UpdatePressureButton(fg: fg, onPressed: onReport),
+      ],
+    );
+    final name = Text(
+      e.name,
+      maxLines: stackedHeader ? 2 : 1,
+      softWrap: stackedHeader,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontSize: 20,
+        height: 1.25,
+        fontWeight: FontWeight.w800,
+        color: fg,
+      ),
+    );
 
     final card = Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: s.color,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.4),
+          width: 1,
+        ),
         boxShadow: AppShadow.card,
       ),
       child: GestureDetector(
@@ -394,21 +502,18 @@ class _EntryCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      e.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 20, height: 1.25, fontWeight: FontWeight.w800, color: fg),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  StatusBadge(status: status, onColorCard: true, fontSize: 13, height: 44),
-                  const SizedBox(width: 8),
-                  _UpdatePressureButton(fg: fg, onPressed: onReport),
-                ],
-              ),
+              if (stackedHeader) ...[
+                name,
+                const SizedBox(height: 6),
+                Align(alignment: Alignment.centerLeft, child: statusAndAction),
+              ] else
+                Row(
+                  children: [
+                    Expanded(child: name),
+                    const SizedBox(width: 8),
+                    statusAndAction,
+                  ],
+                ),
               const SizedBox(height: 6),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -421,18 +526,34 @@ class _EntryCard extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          CountdownText(ms: e.remainingMs, color: fg, size: 44, timeoutText: '已超时'),
+                          CountdownText(
+                            ms: e.remainingMs,
+                            color: fg,
+                            size: 44,
+                            timeoutText: '已超时',
+                          ),
                           const SizedBox(width: 6),
                           Padding(
                             padding: const EdgeInsets.only(bottom: 6),
-                            child: Text('剩余时间', style: TextStyle(color: subFg, fontSize: 12, fontWeight: FontWeight.w600)),
+                            child: Text(
+                              '剩余时间',
+                              style: TextStyle(
+                                color: subFg,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Container(width: 1, height: 30, color: subFg.withValues(alpha: 0.4)),
+                  Container(
+                    width: 1,
+                    height: 30,
+                    color: subFg.withValues(alpha: 0.4),
+                  ),
                   const SizedBox(width: 10),
                   // 持续时长：进入现场内部时长，次指标靠右
                   Expanded(
@@ -444,7 +565,14 @@ class _EntryCard extends StatelessWidget {
                         children: [
                           Padding(
                             padding: const EdgeInsets.only(bottom: 6),
-                            child: Text('持续时长', style: TextStyle(color: subFg, fontSize: 12, fontWeight: FontWeight.w600)),
+                            child: Text(
+                              '持续时长',
+                              style: TextStyle(
+                                color: subFg,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -453,7 +581,9 @@ class _EntryCard extends StatelessWidget {
                               fontSize: 26,
                               height: 1.0,
                               fontWeight: FontWeight.w800,
-                              fontFeatures: const [FontFeature.tabularFigures()],
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
                               color: fg,
                             ),
                           ),
@@ -470,10 +600,7 @@ class _EntryCard extends StatelessWidget {
     );
 
     final wrapped = s.danger ? PulseGlow(color: s.color, child: card) : card;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: wrapped,
-    );
+    return Padding(padding: const EdgeInsets.only(bottom: 10), child: wrapped);
   }
 
   /// 进入现场后的持续时长（MM:SS / H:MM:SS）
@@ -489,7 +616,7 @@ class _EntryCard extends StatelessWidget {
   }
 }
 
-/// 卡片顶行的快速更新压力按钮：44px 触控区（戴手套可点），紧凑胶囊，独立响应点击
+/// 卡片顶行的快速更新压力按钮：至少 48px 触控区，紧凑胶囊，独立响应点击
 class _UpdatePressureButton extends StatelessWidget {
   final Color fg;
   final VoidCallback onPressed;
@@ -505,7 +632,7 @@ class _UpdatePressureButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.pill),
         onTap: onPressed,
         child: Container(
-          height: 44,
+          height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -514,7 +641,11 @@ class _UpdatePressureButton extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 '更新压力',
-                style: TextStyle(color: fg, fontSize: 13, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  color: fg,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ],
           ),

@@ -21,7 +21,14 @@ before(async () => {
 
 after(() => new Promise((r) => server.close(r)));
 
-const H = { 'Content-Type': 'application/json', 'X-Incident-Id': 'testscene', 'X-Device-Id': 'api-device', 'X-Actor-Name': 'tester' };
+const H = {
+  'Content-Type': 'application/json',
+  'X-Incident-Id': 'testscene',
+  'X-Device-Id': 'api-device',
+  'X-Actor-Name': 'tester',
+  'X-Unit-Id': 'longyou-county-fire-rescue',
+  'X-Unit-Code': '0570',
+};
 const j = (r) => r.json();
 
 for (const id of ['testscene', 'sceneA', 'sceneB', 'legacy-active-1', '苹果', 'BHYSQB', 'default']) {
@@ -33,6 +40,8 @@ test('GET /api/health 免认证返回 ok', async () => {
   assert.equal(res.status, 200);
   const body = await j(res);
   assert.equal(body.ok, true);
+  assert.equal(typeof body.ready, 'boolean');
+  assert.equal(typeof body.databaseReady, 'boolean');
   assert.equal(typeof body.asrConfigured, 'boolean');
 });
 
@@ -41,6 +50,57 @@ test('GET /api/config 返回计算参数', async () => {
   const body = await j(res);
   assert.equal(body.calc.cylinderVolL, 6.8);
   assert.ok(body.calc.warnMin > 0);
+  assert.equal(body.unit, null);
+});
+
+test('POST /api/auth/verify 校验单位验证码并登记实名', async () => {
+  let res = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'auth-device' },
+    body: JSON.stringify({ unit_name: '龙游县消防救援大队', unit_code: '0000', real_name: '李娜' }),
+  });
+  assert.equal(res.status, 403);
+  assert.equal((await res.json()).code, 'UNIT_INVALID');
+
+  res = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'auth-device' },
+    body: JSON.stringify({ unit_name: '龙游县消防救援大队。', unit_code: '0570', real_name: '李娜' }),
+  });
+  assert.equal(res.status, 403);
+  assert.equal((await res.json()).code, 'UNIT_INVALID');
+
+  res = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'auth-device' },
+    body: JSON.stringify({ unit_name: ' 龙游县消防救援大队 ', unit_code: '0570', real_name: ' 李娜 ' }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.authenticated, true);
+  assert.deepEqual(body.unit, { id: 'longyou-county-fire-rescue', name: '龙游县消防救援大队' });
+  assert.equal(body.user.real_name, '李娜');
+  assert.equal(db.getDeviceProfile('auth-device').real_name, '李娜');
+});
+
+test('POST /api/auth/verify 拒绝超长单位验证码', async () => {
+  const res = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'auth-length-device' },
+    body: JSON.stringify({ unit_name: '龙游县消防救援大队', unit_code: 'x'.repeat(65), real_name: '李娜' }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).code, 'UNIT_CODE_INVALID');
+});
+
+test('带幂等语义的请求拒绝超长操作 ID，不静默截断', async () => {
+  const res = await fetch(`${base}/api/incidents`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': 'x'.repeat(65) },
+    body: JSON.stringify({ actor_name: '测试员' }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).code, 'OP_ID_TOO_LONG');
 });
 
 test('POST /api/entries 压力必填且限 0-40MPa', async () => {
@@ -176,6 +236,17 @@ test('PATCH /api/entries/:id 改名与压力复核（重新倒计时）', async 
   await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: H });
 });
 
+test('PATCH /api/entries/:id 拒绝超长姓名', async () => {
+  const created = await (await fetch(`${base}/api/entries`, {
+    method: 'POST', headers: H, body: JSON.stringify({ name: '边界人员', pressure_mpa: 20 }),
+  })).json();
+  const res = await fetch(`${base}/api/entries/${created.id}`, {
+    method: 'PATCH', headers: H, body: JSON.stringify({ name: 'x'.repeat(65) }),
+  });
+  assert.equal(res.status, 400);
+  await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: H });
+});
+
 test('压力报数复核：差分实测耗气率并据此重算倒计时', async () => {
   const { DatabaseSync } = require('node:sqlite');
   const raw = new DatabaseSync(path.join(tmpDir, 'watchdog.db'));
@@ -295,6 +366,23 @@ test('POST /api/incidents/archive 归档并幂等返回同一档案', async () =
   })).json();
   assert.equal(second.id, first.id);
   assert.equal(second.archived_at, first.archived_at);
+});
+
+test('并发手动归档只追加一条归档事件', async () => {
+  const created = await (await fetch(`${base}/api/incidents`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': 'api-create-concurrent-archive' },
+    body: JSON.stringify({ actor_name: '测试员' }),
+  })).json();
+  const incidentHeaders = { ...H, 'X-Incident-Id': created.id };
+  const responses = await Promise.all(Array.from({ length: 8 }, (_, index) => fetch(`${base}/api/incidents/${created.id}/archive`, {
+    method: 'POST',
+    headers: { ...incidentHeaders, 'X-Op-Id': `api-concurrent-archive-${index}` },
+    body: '{}',
+  })));
+  assert.ok(responses.every((response) => response.status === 200));
+  const timeline = await (await fetch(`${base}/api/incidents/${created.id}/timeline`, { headers: incidentHeaders })).json();
+  assert.equal(timeline.events.filter((event) => event.type === 'incident_archived').length, 1);
 });
 
 test('GET /api/incidents 支持按归档状态筛选并按归档时间倒序', async () => {

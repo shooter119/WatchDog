@@ -197,6 +197,7 @@ async function parseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighter
     userPrompt,
   });
   let people = normalizePeople(parsed);
+  let finalParsed = { ...parsed, people };
 
   // LLM 漏解析兜底：文本明显含多人但只识别出 <=1 人时，重试一次并指出遗漏
   if (looksMultiPerson(text) && people.length < 2) {
@@ -211,19 +212,20 @@ async function parseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighter
     const retriedPeople = normalizePeople(retried);
     if (retriedPeople.length > people.length) {
       people = retriedPeople;
+      finalParsed = { ...retried, people };
     }
   }
 
-  const intent = guardrailIntent(text, parsed, firefighters);
+  const intent = guardrailIntent(text, finalParsed, firefighters);
   // 意图与动作一致性：非进出场意图时动作一律 unknown，App 以 intent 为准路由
-  let action = guardrailAction(text, parsed);
+  let action = guardrailAction(text, finalParsed);
   if (intent !== 'entry' && intent !== 'exit') action = 'unknown';
 
   return {
     intent,
     action,
     people,
-    note: parsed.note || '',
+    note: finalParsed.note || '',
   };
 }
 

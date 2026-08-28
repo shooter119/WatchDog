@@ -165,6 +165,11 @@ class _WatchDogAppState extends State<WatchDogApp> {
 
   void _voiceLongPressEnd(LongPressEndDetails _) {
     if (controller.needsIncidentSelection) return;
+    if (_pendingVoice) {
+      // 切页后的首帧录音尚未启动时松手，取消自动录音请求。
+      setState(() => _pendingVoice = false);
+      return;
+    }
     if (_tab == 3) {
       _chatKey.currentState?.finishRecording();
     } else {
@@ -175,8 +180,10 @@ class _WatchDogAppState extends State<WatchDogApp> {
   /// 语音识别为火场日志：自动记入 + 跳日志页
   Future<void> _routeNote(String text) async {
     if (controller.needsIncidentSelection) return;
+    var saved = false;
     try {
       await controller.addNote(text);
+      saved = true;
     } catch (e) {
       // 写日志失败要可见：提示用户 + 埋点，避免"识别成功但日志没新增"无从排查
       OpLogService.instance.record(
@@ -195,7 +202,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
         );
       }
     }
-    _selectTab(0);
+    if (saved && mounted) _selectTab(0);
   }
 
   /// 语音识别为提问：跳问答页并自动发送
@@ -248,13 +255,15 @@ class _WatchDogAppState extends State<WatchDogApp> {
             SettingsPage(controller: controller),
           ];
           // 辅助页系统返回键 = 回来源页（与顶部返回箭头一致）；其它页维持系统默认（退出）
-          final incidentLocked = controller.needsIncidentSelection;
+          final startupGateLocked =
+              controller.needsAuthentication ||
+              controller.needsIncidentSelection;
           final appScaffold = Scaffold(
             body: IndexedStack(index: _tab, children: pages),
             bottomNavigationBar: ExcludeSemantics(
-              excluding: incidentLocked,
+              excluding: startupGateLocked,
               child: IgnorePointer(
-                ignoring: incidentLocked,
+                ignoring: startupGateLocked,
                 child: _BottomNav(
                   index: _tab,
                   recording: _recording,
@@ -266,7 +275,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
                   chatSending: _chatSending,
                   onChatSubmit: _chatSubmit,
                   onChatTextModeChange: (v) {
-                    if (incidentLocked) return;
+                    if (startupGateLocked) return;
                     setState(() => _chatTextMode = v);
                     if (v) {
                       _chatInputFocus.requestFocus();
@@ -283,9 +292,9 @@ class _WatchDogAppState extends State<WatchDogApp> {
             ),
           );
           return PopScope(
-            canPop: !incidentLocked && _tab != 3,
+            canPop: !startupGateLocked && _tab != 3,
             onPopInvokedWithResult: (didPop, _) {
-              if (!didPop && !incidentLocked && _tab == 3) {
+              if (!didPop && !startupGateLocked && _tab == 3) {
                 _selectTab(_preChatTab);
               }
             },
@@ -293,10 +302,20 @@ class _WatchDogAppState extends State<WatchDogApp> {
               fit: StackFit.expand,
               children: [
                 appScaffold,
-                if (incidentLocked)
+                if (startupGateLocked)
                   IncidentSelectionOverlay(
+                    authenticationRequired: controller.needsAuthentication,
                     activeIncidents: controller.activeIncidents,
-                    loading: controller.syncing || controller.api == null,
+                    loading:
+                        !controller.needsAuthentication &&
+                        (controller.syncing || controller.api == null),
+                    onAuthenticate: (unitName, name, code, token) =>
+                        controller.authenticate(
+                          unitName: unitName,
+                          realName: name,
+                          unitCode: code,
+                          apiToken: token,
+                        ),
                     onSelect: (incident) =>
                         _homeKey.currentState?.selectIncidentFromGate(
                           incident,
@@ -624,7 +643,7 @@ class _ChatActionBar extends StatelessWidget {
           FilledButton(
             onPressed: sending ? null : onSend,
             style: FilledButton.styleFrom(
-              minimumSize: const Size(48, 44),
+              minimumSize: const Size(56, 56),
               padding: const EdgeInsets.symmetric(horizontal: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadius.md),
@@ -658,6 +677,7 @@ class _TextInputToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final icon = textMode ? Icons.mic_rounded : Icons.keyboard_alt_outlined;
     final label = textMode ? '语音' : '文字';
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
     const color = AppColors.textTertiary;
     return Semantics(
       label: textMode ? '切换为语音输入' : '切换为文字输入',
@@ -668,7 +688,9 @@ class _TextInputToggle extends StatelessWidget {
         onTap: onTap,
         child: Center(
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
+            duration: disableAnimations
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
             curve: Curves.easeOut,
             margin: const EdgeInsets.symmetric(vertical: 2),
             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
@@ -716,6 +738,7 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? AppColors.textPrimary : AppColors.textTertiary;
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
     return Semantics(
       label: label,
       selected: selected,
@@ -727,7 +750,9 @@ class _NavItem extends StatelessWidget {
         onTap: onTap,
         child: Center(
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
+            duration: disableAnimations
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
             curve: Curves.easeOut,
             margin: const EdgeInsets.symmetric(vertical: 2),
             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),

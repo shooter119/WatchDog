@@ -36,6 +36,13 @@ test('场景隔离：不同场景互不可见', () => {
   assert.equal(db.listEntries({ scene: 'B' })[0].name, '乙');
 });
 
+test('分页参数对负数和小数设置安全下限与上限', () => {
+  db.createEntry({ id: 'limit-entry-1', scene: 'limit', name: '甲', pressureMpa: 20, entryAtMs: 1, exitAtMs: 2, durationMin: 1 });
+  db.createEntry({ id: 'limit-entry-2', scene: 'limit', name: '乙', pressureMpa: 20, entryAtMs: 2, exitAtMs: 3, durationMin: 1 });
+  assert.equal(db.listEntries({ scene: 'limit', limit: -1 }).length, 2);
+  assert.equal(db.listEntries({ scene: 'limit', limit: 1.9 }).length, 1);
+});
+
 test('markExited 后 activeOnly 不再返回', () => {
   db.createEntry({ id: 'm1', scene: 's', name: '丙', pressureMpa: 20, entryAtMs: 1, exitAtMs: 2, durationMin: 1 });
   assert.equal(db.listEntries({ activeOnly: true, scene: 's' }).length, 1);
@@ -138,6 +145,23 @@ test('警情归档记录方式和未确认离场人数', () => {
   assert.equal(archived.archived_by, 'device-a');
   assert.equal(archived.unresolved_active_count, 1);
   assert.equal(archived.auto_archived, 0);
+
+  const repeated = db.archiveIncident(incident.id, { archivedBy: 'device-b', now: now + 2000, returnMeta: true });
+  assert.equal(repeated.changed, false);
+  assert.equal(repeated.incident.status, 'archived');
+  assert.equal(repeated.incident.version, archived.version);
+  assert.equal(repeated.incident.archived_at, archived.archived_at);
+  assert.equal(repeated.incident.archived_by, archived.archived_by);
+});
+
+test('按单位清理陈旧警情时不会改变其他单位的状态', () => {
+  const now = Date.now();
+  const own = db.createIncident({ id: 'incident-stale-own', unitId: 'unit-own', createdAt: now - 13 * 3600 * 1000 });
+  const other = db.createIncident({ id: 'incident-stale-other', unitId: 'unit-other', createdAt: now - 13 * 3600 * 1000 });
+  assert.equal(db.archiveStaleIncidents({ now, unitId: 'unit-own' }), 1);
+  assert.equal(db.getIncident(own.id).status, 'archived');
+  assert.equal(db.getIncident(other.id).status, 'active');
+  assert.equal(db.archiveStaleIncidents({ now, unitId: 'unit-own' }), 0);
 });
 
 test('警情事件按 client_op_id 幂等并按晚到早读取', () => {

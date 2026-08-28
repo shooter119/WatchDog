@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,7 +20,6 @@ import 'package:watchdog/pages/same_name_dialog.dart';
 import 'package:watchdog/pages/settings_page.dart';
 import 'package:watchdog/pages/stats_page.dart';
 import 'package:watchdog/services/audio_service.dart';
-import 'package:watchdog/services/chat_history.dart';
 import 'package:watchdog/services/op_log_service.dart';
 import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/services/update_service.dart';
@@ -56,6 +56,10 @@ class _FakeController extends AppController {
   }
   final exited = <String>[];
   final reported = <double>[];
+
+  // 测试直接从业务页开始；首次安装认证流程由独立的启动浮层用例覆盖。
+  @override
+  bool get needsAuthentication => false;
 
   @override
   void startSync() {} // 测试环境不启动轮询定时器（否则每秒刷新导致 pumpAndSettle 无法收敛）
@@ -133,6 +137,11 @@ class _FakeController extends AppController {
     source: e.source,
     rawText: e.rawText,
   );
+}
+
+class _EmptyTranscriptionController extends _FakeController {
+  @override
+  Future<String> transcribeAudio(Uint8List bytes, {String? opId}) async => '   ';
 }
 
 Entry _entry({
@@ -343,6 +352,19 @@ class _FakeAudio extends AudioService {
   Future<void> dispose() async {}
 }
 
+class _DelayedPermissionAudio extends _FakeAudio {
+  final permission = Completer<bool>();
+  int starts = 0;
+
+  @override
+  Future<bool> hasPermission() => permission.future;
+
+  @override
+  Future<void> start() async {
+    starts++;
+  }
+}
+
 Future<void> _pumpBoard(WidgetTester tester, List<Entry> entries) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -535,6 +557,31 @@ void main() {
       expect(find.textContaining('人需要关注'), findsNothing);
     });
 
+    testWidgets('看板在窄屏大字体下保持姓名和操作可用', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      final entry = _entry(name: '消防救援一号班长', remainingMin: 20);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(
+              body: BoardPage(
+                controller: _FakeController(entries: [entry]),
+                onGoVoice: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('消防救援一号班长'), findsOneWidget);
+      expect(find.text('更新压力'), findsOneWidget);
+    });
+
     testWidgets('危险等级排序：报警在前、注意在后、同等级按剩余时间升序', (tester) async {
       await _pumpBoard(tester, [
         _entry(name: '安全甲', remainingMin: 40),
@@ -590,7 +637,7 @@ void main() {
           )
           .height;
       expect(badgeH, btnH);
-      expect(btnH, 44.0);
+      expect(btnH, 48.0);
     });
 
     testWidgets('ReportPressureSheet 档位 3MPa 步进、禁用高于当前压力、点选提交', (tester) async {
@@ -654,6 +701,43 @@ void main() {
       await tester.pumpAndSettle();
       expect(c.reported, [9.0]);
     });
+
+    testWidgets('压力弹窗窄屏大字号标题可换行，键盘下提交按钮可滚动到', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      final c = _FakeController(
+        entries: [_entry(name: '消防救援一号班长', remainingMin: 20, pressureMpa: 20)],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(
+              body: ReportPressureSheet(controller: c, entry: c.entries.first),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final title = find.text('消防救援一号班长 更新压力');
+      expect(title, findsOneWidget);
+      expect(tester.getSize(title).height, greaterThan(48));
+      expect(find.byTooltip('关闭压力更新'), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+
+      tester.view.viewInsets = FakeViewPadding(bottom: 360 * 3);
+      await tester.pump();
+      await tester.showKeyboard(find.byType(TextField));
+      await tester.pump();
+      final submit = find.text('选择压力档位');
+      await tester.ensureVisible(submit);
+      final submitRect = tester.getRect(submit);
+      expect(submitRect.bottom, lessThanOrEqualTo(360.5));
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('EntryDetailPage 详情页', () {
@@ -674,6 +758,34 @@ void main() {
       expect(find.textContaining('确认「张伟」已出火场'), findsOneWidget);
       expect(find.text('原始语音转写'), findsOneWidget);
       expect(find.text('张三，20兆帕'), findsOneWidget);
+    });
+
+    testWidgets('详情页在 320dp 大字体下信息自动改单列且无溢出', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      final c = _FakeController(
+        entries: [
+          _entry(
+            name: '张伟',
+            remainingMin: 30,
+            pressureMpa: 20,
+            consumptionActualLpm: 40.8,
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: EntryDetailPage(controller: c, entryId: 'e-张伟'),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('实测消耗率'), findsOneWidget);
     });
 
     testWidgets('确认出火场需二次确认，确认后登记并返回', (tester) async {
@@ -819,7 +931,7 @@ void main() {
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
       expect(find.text('我的身份'), findsOneWidget);
-      expect(find.text('当前单位'), findsOneWidget);
+      expect(find.text('未选择单位'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('语音热词'));
       expect(find.text('语音热词'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('归档警情'));
@@ -844,6 +956,34 @@ void main() {
       await _scrollToVisible(tester, list, find.textContaining('v$appVersion'));
       expect(find.textContaining('v$appVersion'), findsOneWidget);
       expect(find.text('保存设置'), findsNothing);
+    });
+
+    testWidgets('现场资料卡在 320dp 大字号下纵向展开并保留数量信息', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      final c = _FakeController(
+        firefighters: List.generate(
+          12,
+          (i) => Firefighter(id: '$i', name: '消防员$i'),
+        ),
+      )..hotwords = List.generate(12, (i) => Hotword(id: '$i', word: '热词$i'));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(body: SettingsPage(controller: c)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('语音热词'));
+      final subtitle = find.text('12 名 · 12 个热词');
+      expect(subtitle, findsOneWidget);
+      expect(tester.getSize(subtitle).height, greaterThan(40));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('修改文本框后失焦即自动保存', (tester) async {
@@ -962,6 +1102,7 @@ void main() {
       );
       svc.record('op-test-2', 'record_start', '开始录音');
       svc.record('op-test-2', 'transcribe_err', '转写失败: 服务器错误', level: 'error');
+      expect(svc.logs.any((entry) => entry.data?['text_length'] == 7), isTrue);
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(),
@@ -985,7 +1126,8 @@ void main() {
       // 展开 op-test-1 查看数据
       await tester.tap(find.text('进场登记完成'));
       await tester.pumpAndSettle();
-      expect(find.text('text: 张伟，20兆帕').hitTestable(), findsOneWidget);
+      // 数据可能位于当前视口之外；服务层断言确保展示数据已经脱敏，页面断言确保原文不出现。
+      expect(find.textContaining('张伟，20兆帕'), findsNothing);
 
       // 关闭同步开关
       await tester.tap(find.byType(Switch).last);
@@ -996,6 +1138,28 @@ void main() {
   });
 
   group('HomePage 多人一次性确认', () {
+    testWidgets('权限响应慢时重复长按只允许一个录音启动请求', (tester) async {
+      final audio = _DelayedPermissionAudio();
+      final controller = _FakeController()..api = _FakeApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: controller, audioService: audio),
+          ),
+        ),
+      );
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      final first = state.beginRecording();
+      await tester.pump();
+      await state.beginRecording();
+      audio.permission.complete(true);
+      await first;
+      expect(audio.starts, 1);
+      await state.finishRecording();
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('进场意图未识别到姓名：提示重新报读，不进空确认页', (tester) async {
       final api = _EmptyEntryApi();
       final c = _FakeController()..api = api;
@@ -1052,6 +1216,40 @@ void main() {
       expect(c.notes.single.category, NoteCategory.deploy);
       expect(find.text('全部确认进入火场（2 人）'), findsNothing);
       expect(find.text('按住下方按钮说话'), findsOneWidget);
+    });
+
+    testWidgets('多人确认窄屏大字号下说明与姓名压力字段均可读', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      final c = _FakeController()..api = _FakeApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(
+              body: HomePage(controller: c, audioService: _FakeAudio()),
+            ),
+          ),
+        ),
+      );
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+
+      final instruction = find.text('确认名单（2 人）：请下滑核对后一次性确认');
+      expect(instruction, findsOneWidget);
+      expect(tester.getSize(instruction).height, greaterThan(24));
+      final fields = find.byType(TextField);
+      expect(fields, findsNWidgets(6));
+      final nameRect = tester.getRect(fields.at(0));
+      final pressureRect = tester.getRect(fields.at(1));
+      expect(nameRect.width, greaterThan(200));
+      expect(pressureRect.width, greaterThan(200));
+      expect(pressureRect.top, greaterThan(nameRect.bottom));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('进场确认成功后通知主界面跳转看板', (tester) async {
@@ -1234,6 +1432,28 @@ void main() {
       await tester.tap(find.text('返回确认'));
       await tester.pump();
       expect(find.text('确认名单（2 人）：请下滑核对后一次性确认'), findsOneWidget);
+    });
+
+    testWidgets('具体出场指令不会生成待进场确认行', (tester) async {
+      final api = _FakeApi(exitOnCall: 1);
+      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)])
+        ..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+
+      expect(c.exited, ['e-张伟']);
+      expect(find.textContaining('确认名单'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
     });
 
     testWidgets('非名单内姓名姓名栏留空并提示手动补全', (tester) async {
@@ -1449,6 +1669,54 @@ void main() {
       expect(find.text('匿名'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+    testWidgets('窄屏大字体下标题和连接操作不溢出', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(body: NotesPage(controller: _FakeController())),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('火场日志'), findsOneWidget);
+      expect(find.text('写日志'), findsOneWidget);
+    });
+
+    testWidgets('日志编辑弹窗窄屏大字号键盘下保存按钮可滚动到', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.viewInsets = FakeViewPadding(bottom: 360 * 3);
+      addTearDown(tester.view.reset);
+      final c = _FakeController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(body: NotesPage(controller: c)),
+          ),
+        ),
+      );
+      await tester.pump();
+      final writeButton = find.widgetWithText(OutlinedButton, '写日志');
+      expect(tester.getSize(writeButton).height, greaterThanOrEqualTo(48));
+      await tester.tap(find.text('写日志'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SingleChildScrollView), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '键盘下可滚动保存');
+      final save = find.text('保存到日志');
+      await tester.ensureVisible(save);
+      final saveRect = tester.getRect(save);
+      expect(saveRect.bottom, lessThanOrEqualTo(360.5));
+      expect(tester.takeException(), isNull);
+    });
     testWidgets('时间线渲染分类标签与内容，分类筛选生效', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
       final c = _FakeController(
@@ -1615,6 +1883,9 @@ void main() {
       );
       await tester.pump();
       expect(find.text('数据统计'), findsOneWidget);
+      // 记录以当前时刻为基准构造；选择“全部”避免午夜后第一条记录落到前一天。
+      await tester.tap(find.text('全部'));
+      await tester.pump();
       // 汇总：当前在场 1 人（李娜）、3 人次、累计 145 分钟
       expect(find.text('1 人'), findsOneWidget);
       expect(find.text('3 人次'), findsOneWidget);
@@ -1641,6 +1912,62 @@ void main() {
       );
       await tester.pump();
       expect(find.text('所选范围内暂无进出记录'), findsOneWidget);
+    });
+    testWidgets('窄屏大字体下排行标题和排序操作不溢出', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(body: StatsPage(controller: _FakeController())),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.text('数据统计'), findsOneWidget);
+    });
+
+    testWidgets('统计真实长数据在窄屏大字号下改为纵向且关键数据不截断', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final c = _FakeController(
+        entries: [
+          Entry(
+            id: 'long-stats',
+            name: '消防救援一号班长',
+            pressureMpa: 20,
+            durationMin: 34,
+            entryAt: now - 13 * 60 * 60000 - 60000,
+            exitAt: now - 60000,
+            exitedAt: now - 60000,
+            source: 'voice',
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: Scaffold(body: StatsPage(controller: c)),
+          ),
+        ),
+      );
+      await tester.pump();
+      final allRange = find.widgetWithText(ChoiceChip, '全部');
+      await tester.ensureVisible(allRange);
+      await tester.tap(allRange);
+      await tester.pump();
+      expect(find.text('13 小时'), findsOneWidget);
+      expect(find.text('消防救援一号班长'), findsOneWidget);
+      expect(find.textContaining('1 次 · 13 小时'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('窄屏（411dp）筛选行不溢出', (tester) async {
@@ -1670,6 +1997,13 @@ void main() {
   });
 
   group('ChatPage 辅助问答', () {
+    setUp(() {
+      // 问答页使用平台 SharedPreferences；为避免前一用例的后台写入
+      // 污染下一用例，统一安装内存实现。页面测试通过注入的 API 历史供数，
+      // 不依赖后台持久化完成。
+      SharedPreferences.setMockInitialValues({});
+    });
+
     testWidgets('有历史消息时发送问题：气泡列表不越界并显示回复', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
       final api = _FakeApi(
@@ -1735,6 +2069,11 @@ void main() {
       expect(
         tester.getSize(find.byType(AssistantAvatar)),
         const Size(112, 112),
+      );
+      final sampleKey = const Key('chat-sample-question-气瓶压力下降太快怎么办？');
+      expect(
+        tester.getSize(find.byKey(sampleKey)).height,
+        greaterThanOrEqualTo(48),
       );
       await tester.tap(find.text('气瓶压力下降太快怎么办？'));
       await tester.pump();
@@ -1853,6 +2192,66 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('辅助页空转写也会写入操作结束日志', (tester) async {
+      final svc = OpLogService.instance;
+      await svc.init();
+      await svc.setSyncEnabled(false);
+      await svc.clearLocal();
+      final c = _EmptyTranscriptionController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+
+      final empty = svc.logs.firstWhere(
+        (entry) => entry.stage == 'transcribe_empty',
+      );
+      final end = svc.logs.firstWhere(
+        (entry) => entry.opId == empty.opId && entry.stage == 'op_end',
+      );
+      expect(end.data?['outcome'], 'no_speech');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页销毁时会结束未完成的语音操作日志', (tester) async {
+      final svc = OpLogService.instance;
+      await svc.init();
+      await svc.setSyncEnabled(false);
+      await svc.clearLocal();
+      final c = _FakeController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      await state.beginRecording();
+      await tester.pump();
+      await tester.pumpWidget(
+        MaterialApp(theme: buildAppTheme(), home: const SizedBox.shrink()),
+      );
+      await tester.pump();
+
+      final end = svc.logs.firstWhere((entry) => entry.stage == 'op_end');
+      expect(end.data?['outcome'], 'page_disposed');
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('AI 回复 markdown 渲染与追问可点击', (tester) async {
       final now = DateTime.now().millisecondsSinceEpoch;
       final api = _FakeApi(
@@ -1919,9 +2318,8 @@ void main() {
   });
 
   group('main.dart 导航', () {
-    setUp(() async {
+    setUp(() {
       SharedPreferences.setMockInitialValues({});
-      await ChatHistory.clear();
     });
 
     testWidgets('未选择警情时全屏浮层拦截底部导航', (tester) async {
@@ -1972,6 +2370,122 @@ void main() {
       await tester.tap(find.text('加入'));
       await tester.pumpAndSettle();
       expect(selected, isTrue);
+    });
+
+    testWidgets('警情浮层父级点击排除重复语义但保留加入按钮', (tester) async {
+      const incident = Incident(
+        id: 'semantic-incident',
+        number: '2026-8-25-2',
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            activeIncidents: const [incident],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final row = find.byWidgetPredicate(
+        (widget) => widget is InkWell && widget.excludeFromSemantics,
+      );
+      expect(row, findsOneWidget);
+      expect(tester.widget<InkWell>(row).excludeFromSemantics, isTrue);
+      expect(find.text('加入'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('启动认证浮层提交姓名和单位验证码', (tester) async {
+      String? submittedUnitName;
+      String? submittedName;
+      String? submittedCode;
+      String? submittedToken;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (unitName, name, code, token) async {
+              submittedUnitName = unitName;
+              submittedName = name;
+              submittedCode = code;
+              submittedToken = token;
+            },
+          ),
+        ),
+      );
+      await tester.enterText(
+        find.byKey(const Key('auth-unit-name')),
+        '龙游县消防救援大队',
+      );
+      await tester.enterText(find.byKey(const Key('auth-real-name')), '李娜');
+      await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
+      await tester.enterText(
+        find.byKey(const Key('auth-api-token')),
+        'test-token',
+      );
+      await tester.tap(find.byKey(const Key('auth-submit')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(submittedUnitName, '龙游县消防救援大队');
+      expect(submittedName, '李娜');
+      expect(submittedCode, '0570');
+      expect(submittedToken, 'test-token');
+      expect(find.text('认证并继续'), findsOneWidget);
+    });
+
+    testWidgets('认证信息不正确时弹窗提示', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (_, __, ___, ____) async {
+              throw ApiException('单位名称或验证码错误');
+            },
+          ),
+        ),
+      );
+      await tester.enterText(
+        find.byKey(const Key('auth-unit-name')),
+        '龙游县消防救援大队。',
+      );
+      await tester.enterText(find.byKey(const Key('auth-real-name')), '李娜');
+      await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
+      await tester.enterText(
+        find.byKey(const Key('auth-api-token')),
+        'test-token',
+      );
+      await tester.tap(find.byKey(const Key('auth-submit')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('认证失败'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('单位名称或验证码错误'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('知道了'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
     });
 
     testWidgets('警情选择浮层在零尺寸约束下不产生负约束', (tester) async {
@@ -2342,6 +2856,58 @@ void main() {
       expect(find.byIcon(Icons.cloud_sync_outlined), findsNothing);
     });
 
+    testWidgets('ConnectionStatus 区分同步中/失败并提供可访问重试命中区', (tester) async {
+      var retried = 0;
+      Future<void> pump({required bool syncing, String? error}) =>
+          tester.pumpWidget(
+            MaterialApp(
+              theme: buildAppTheme(),
+              home: Scaffold(
+                body: Center(
+                  child: ConnectionStatus(
+                    connected: true,
+                    syncing: syncing,
+                    syncError: error,
+                    onRetry: () => retried++,
+                  ),
+                ),
+              ),
+            ),
+          );
+
+      await pump(syncing: true);
+      expect(find.text('同步中'), findsOneWidget);
+      expect(find.byIcon(Icons.cloud_sync_outlined), findsOneWidget);
+      await pump(syncing: false, error: '网关超时');
+      expect(find.text('同步失败'), findsOneWidget);
+      final size = tester.getSize(find.byType(ConnectionStatus));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+      final semantics = tester.getSemantics(find.byType(ConnectionStatus));
+      expect(semantics.label, contains('网关超时'));
+      expect(
+        semantics.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+        isTrue,
+      );
+      await tester.tap(find.byType(ConnectionStatus));
+      expect(retried, 1);
+    });
+
+    testWidgets('VoiceButton 尊重系统减少动效偏好', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: const VoiceButton(recording: true),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.takeException(), isNull);
+      expect(tester.binding.transientCallbackCount, 0);
+    });
+
     test('isConnectionLost：从未成功乐观绿，30 秒阈值判定', () {
       const now = 1_000_000;
       // 从未成功过 → 已连接（乐观）
@@ -2494,6 +3060,12 @@ void main() {
       await pumpTask(tester, c);
       expect(find.text('龙翔路站 5车25人'), findsOneWidget);
       expect(find.byType(InputChip), findsNothing);
+      final forceRow = find.ancestor(
+        of: find.byTooltip('编辑参战力量'),
+        matching: find.byType(InkWell),
+      );
+      expect(forceRow, findsOneWidget);
+      expect(tester.widget<InkWell>(forceRow).excludeFromSemantics, isTrue);
     });
 
     testWidgets('新建警情后可看到补充名称提示', (tester) async {

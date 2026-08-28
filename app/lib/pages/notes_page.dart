@@ -24,43 +24,40 @@ class _NotesPageState extends State<NotesPage> {
     final filtered = _filter == '全部'
         ? notes
         : notes.where((n) => n.category == _filter).toList();
+    final compactHeader =
+        MediaQuery.sizeOf(context).width < 400 ||
+        MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
     return SafeArea(
       child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Row(
-              children: [
-                const Text('火场日志', style: AppTextStyles.h1),
-                const Spacer(),
-                OutlinedButton.icon(
-                  onPressed: () => _openEditor(null),
-                  icon: const Icon(Icons.edit_note, size: 16),
-                  label: const Text('写日志'),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    side: const BorderSide(color: AppColors.actionPrimary),
-                    foregroundColor: AppColors.actionPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
+            child: compactHeader
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('火场日志', style: AppTextStyles.h1),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 10,
+                        runSpacing: 8,
+                        children: [
+                          _buildWriteButton(),
+                          _buildConnectionStatus(),
+                        ],
+                      ),
+                    ],
+                  )
+                : Row(
+                    children: [
+                      const Text('火场日志', style: AppTextStyles.h1),
+                      const Spacer(),
+                      _buildWriteButton(),
+                      const SizedBox(width: 10),
+                      _buildConnectionStatus(),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 10),
-                ConnectionStatus(
-                  connected: !widget.controller.connectionLost,
-                  onRetry: widget.controller.startSync,
-                ),
-              ],
-            ),
           ),
           _buildFilterChips(),
           Expanded(
@@ -82,6 +79,34 @@ class _NotesPageState extends State<NotesPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildWriteButton() {
+    return OutlinedButton.icon(
+      onPressed: () => _openEditor(null),
+      icon: const Icon(Icons.edit_note, size: 16),
+      label: const Text('写日志'),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        visualDensity: VisualDensity.standard,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        side: const BorderSide(color: AppColors.actionPrimary),
+        foregroundColor: AppColors.actionPrimary,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _buildConnectionStatus() {
+    return ConnectionStatus(
+      connected: !widget.controller.connectionLost,
+      syncing: widget.controller.syncing,
+      syncError: widget.controller.syncError,
+      onRetry: widget.controller.refreshNow,
     );
   }
 
@@ -172,92 +197,116 @@ class _NotesPageState extends State<NotesPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
+        builder: (ctx, setSheet) => AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
           padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                note == null ? '手动记录' : '编辑日志',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
+          child: SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight:
+                    (MediaQuery.sizeOf(ctx).height -
+                            MediaQuery.of(ctx).viewInsets.bottom -
+                            20)
+                        .clamp(160.0, double.infinity)
+                        .toDouble(),
               ),
-              if (note != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  _fmtFullTime(note.createdAt),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                maxLines: 4,
-                maxLength: 2000,
-                decoration: const InputDecoration(
-                  hintText: '记录此刻发生了什么…',
-                  alignLabelWithHint: true,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final c in NoteCategory.all)
-                    ChoiceChip(
-                      label: Text(c),
-                      selected: category == c,
-                      onSelected: (_) => setSheet(() => category = c),
-                      selectedColor: NoteColor.of(c).withValues(alpha: 0.22),
-                      labelStyle: TextStyle(
-                        fontSize: 13,
-                        fontWeight: category == c
-                            ? FontWeight.w800
-                            : FontWeight.w600,
-                        color: category == c
-                            ? NoteColor.of(c)
-                            : AppColors.textSecondary,
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      note == null ? '手动记录' : '编辑日志',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
                       ),
-                      showCheckmark: false,
                     ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                height: 52,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    final text = controller.text.trim();
-                    if (text.isEmpty) return;
-                    Navigator.pop(ctx, {'text': text, 'category': category});
-                  },
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: Text(note == null ? '保存到日志' : '保存修改'),
+                    if (note != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _fmtFullTime(note.createdAt),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: controller,
+                      maxLines: 4,
+                      maxLength: 2000,
+                      decoration: const InputDecoration(
+                        hintText: '记录此刻发生了什么…',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final c in NoteCategory.all)
+                          ChoiceChip(
+                            label: Text(c),
+                            selected: category == c,
+                            onSelected: (_) => setSheet(() => category = c),
+                            selectedColor: NoteColor.of(
+                              c,
+                            ).withValues(alpha: 0.22),
+                            labelStyle: TextStyle(
+                              fontSize: 13,
+                              fontWeight: category == c
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              color: category == c
+                                  ? NoteColor.of(c)
+                                  : AppColors.textSecondary,
+                            ),
+                            showCheckmark: false,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      height: 52,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          final text = controller.text.trim();
+                          if (text.isEmpty) return;
+                          Navigator.pop(ctx, {
+                            'text': text,
+                            'category': category,
+                          });
+                        },
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: Text(note == null ? '保存到日志' : '保存修改'),
+                      ),
+                    ),
+                    if (note != null) ...[
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: () => Navigator.pop(ctx, {'delete': true}),
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('删除这条日志'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.alarm,
+                          minimumSize: const Size(0, 48),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              if (note != null) ...[
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: () => Navigator.pop(ctx, {'delete': true}),
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('删除这条日志'),
-                  style: TextButton.styleFrom(foregroundColor: AppColors.alarm),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),
@@ -337,9 +386,9 @@ class _NotesPageState extends State<NotesPage> {
 class NoteColor {
   NoteColor._();
   static const Color red = AppColors.alarm;
-  static const Color blue = Color(0xFF2F6FED);
-  static const Color orange = Color(0xFFF97316);
-  static const Color gray = Color(0xFF6B7280);
+  static const Color blue = AppColors.noteInfo;
+  static const Color orange = AppColors.noteWater;
+  static const Color gray = AppColors.noteNeutral;
 
   static Color of(String? category) => switch (category) {
     NoteCategory.abnormal => red,
@@ -393,7 +442,7 @@ class _TimelineNoteCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: color,
-                    border: Border.all(color: Colors.white, width: 2),
+                    border: Border.all(color: AppColors.heroOnDark, width: 2),
                   ),
                 ),
                 if (!isLast)

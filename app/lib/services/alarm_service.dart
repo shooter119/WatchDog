@@ -84,56 +84,61 @@ class AlarmService {
 
   Future<void> init() async {
     if (_inited) return;
-    _inited = true;
-    tzdata.initializeTimeZones();
-    // 应用使用 drawable 中的正式图标。Release 开启 shrinkResources 后，
-    // 未被 Android 清单直接引用的 mipmap 图标可能被移除，导致通知插件
-    // 初始化抛出 invalid_icon，进而阻断 AppController 的服务器初始化。
-    const androidInit = AndroidInitializationSettings(
-      '@drawable/fire_control_logo',
-    );
-    const iosInit = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-    await _notifications.initialize(
-      const InitializationSettings(android: androidInit, iOS: iosInit),
-    );
-    // 报警音走 ALARM 音频流（不受媒体音量/静音影响，配合音量强制提升），锁屏时持唤醒锁
-    await _player.setAudioContext(
-      AudioContext(
-        android: const AudioContextAndroid(
-          usageType: AndroidUsageType.alarm,
-          audioFocus: AndroidAudioFocus.gain,
-          stayAwake: true,
+    try {
+      tzdata.initializeTimeZones();
+      // 应用使用 drawable 中的正式图标。Release 开启 shrinkResources 后，
+      // 未被 Android 清单直接引用的 mipmap 图标可能被移除，导致通知插件
+      // 初始化抛出 invalid_icon，进而阻断 AppController 的服务器初始化。
+      const androidInit = AndroidInitializationSettings(
+        '@drawable/fire_control_logo',
+      );
+      const iosInit = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      await _notifications.initialize(
+        const InitializationSettings(android: androidInit, iOS: iosInit),
+      );
+      // 报警音走 ALARM 音频流（不受媒体音量/静音影响，配合音量强制提升），锁屏时持唤醒锁
+      await _player.setAudioContext(
+        AudioContext(
+          android: const AudioContextAndroid(
+            usageType: AndroidUsageType.alarm,
+            audioFocus: AndroidAudioFocus.gain,
+            stayAwake: true,
+          ),
         ),
-      ),
-    );
-    // Android 13+：运行时申请通知权限
-    await _notifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
-    // Android 12+：检测精确闹钟授权（USE_EXACT_ALARM 默认授予；SCHEDULE_EXACT_ALARM 需手动）
-    exactAlarmAvailable =
-        await _notifications
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >()
-            ?.canScheduleExactNotifications() ??
-        true;
-    // Android 14+：全屏通知（API 34 起默认关闭，需用户手动开启；request 返回 true=已开启）
-    fullScreenIntentEnabled =
-        await _notifications
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >()
-            ?.requestFullScreenIntentPermission() ??
-        true;
-    await _player.setPlayerMode(PlayerMode.lowLatency);
-    await _player.setSource(AssetSource('sounds/alarm.wav'));
+      );
+      // Android 13+：运行时申请通知权限
+      await _notifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+      // Android 12+：检测精确闹钟授权（USE_EXACT_ALARM 默认授予；SCHEDULE_EXACT_ALARM 需手动）
+      exactAlarmAvailable =
+          await _notifications
+              .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin
+              >()
+              ?.canScheduleExactNotifications() ??
+          true;
+      // Android 14+：全屏通知（API 34 起默认关闭，需用户手动开启；request 返回 true=已开启）
+      fullScreenIntentEnabled =
+          await _notifications
+              .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin
+              >()
+              ?.requestFullScreenIntentPermission() ??
+          true;
+      await _player.setPlayerMode(PlayerMode.lowLatency);
+      await _player.setSource(AssetSource('sounds/alarm.wav'));
+      _inited = true;
+    } catch (_) {
+      _inited = false;
+      rethrow;
+    }
   }
 
   AndroidScheduleMode get _scheduleMode => exactAlarmAvailable
@@ -237,12 +242,17 @@ class AlarmService {
     if (!soundEnabled) return;
     if (_looping) return;
     _looping = true;
-    // 火场高分贝环境：把 ALARM 流音量拉到最大（报警音走 ALARM 流）
-    await AlarmNative.maximizeAlarmVolume();
-    await _player.setPlayerMode(PlayerMode.lowLatency);
-    await _player.setSource(AssetSource('sounds/alarm.wav'));
-    await _player.setReleaseMode(ReleaseMode.loop);
-    await _player.resume();
+    try {
+      // 火场高分贝环境：把 ALARM 流音量拉到最大（报警音走 ALARM 流）
+      await AlarmNative.maximizeAlarmVolume();
+      await _player.setPlayerMode(PlayerMode.lowLatency);
+      await _player.setSource(AssetSource('sounds/alarm.wav'));
+      await _player.setReleaseMode(ReleaseMode.loop);
+      await _player.resume();
+    } catch (_) {
+      _looping = false;
+      rethrow;
+    }
   }
 
   Future<void> stopAlarm() async {

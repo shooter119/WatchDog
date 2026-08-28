@@ -50,6 +50,14 @@ class ChatPageState extends State<ChatPage> {
   String? _error;
   String? _opId;
   int _requestGeneration = 0;
+  // 历史读取是异步的；页面可能先收到用户输入或清空操作。
+  // 代际号让晚到的读取结果只能合并仍然有效的页面状态，不能回写旧快照。
+  int _historyGeneration = 0;
+  bool _historyCleared = false;
+  bool _clearing = false;
+  bool _recordingRequested = false;
+  int _recordingGeneration = 0;
+  bool _recordingStarting = false;
 
   @override
   void initState() {
@@ -59,6 +67,10 @@ class ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    _recordingRequested = false;
+    _recordingGeneration++;
+    _recordingStarting = false;
+    _endOp('page_disposed');
     widget.controller.cancelAssistantRequest();
     _scroll.dispose();
     _audio.dispose();
@@ -66,21 +78,36 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _loadHistory() async {
+    final loadGeneration = _historyGeneration;
     try {
       final history = await widget.controller.fetchChatHistory();
       if (!mounted) return;
+      final cleanedHistory = history
+          .where(
+            (message) =>
+                message.role != 'assistant' ||
+                message.content.trim().isNotEmpty,
+          )
+          .toList(growable: false);
       setState(() {
-        // 旧版本曾把空的流式回复写入本机历史；空 assistant 消息不能再被
-        // 当成“思考中”气泡恢复出来。
-        _messages = history
-            .where(
-              (message) =>
-                  message.role != 'assistant' ||
-                  message.content.trim().isNotEmpty,
-            )
-            .toList(growable: false);
+        if (_historyCleared) {
+          // 清空已经成功：这次读取拿到的是清空前的旧快照，必须丢弃。
+        } else if (loadGeneration == _historyGeneration) {
+          // 没有发生页面侧写操作，可以直接采用本机历史。
+          _messages = cleanedHistory;
+        } else {
+          // 发送先于历史返回：保留当前用户消息/流式占位，并把旧历史
+          // 放在它们之前，避免异步读取覆盖页面刚产生的状态。
+          final currentIds = _messages.map((message) => message.id).toSet();
+          _messages = [
+            ...cleanedHistory.where(
+              (message) => !currentIds.contains(message.id),
+            ),
+            ..._messages,
+          ];
+        }
         _loading = false;
-        _error = null;
+        if (!_historyCleared) _error = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -94,10 +121,11 @@ class ChatPageState extends State<ChatPage> {
   /// 发送提问（文字输入或语音识别为提问时调用）
   Future<void> submitQuestion(String text) async {
     final clean = text.trim();
-    if (clean.isEmpty || _sending) return;
+    if (clean.isEmpty || _sending || _clearing) return;
     final history = _messages
         .where((message) => message.content.trim().isNotEmpty)
         .toList(growable: false);
+    _historyGeneration++;
     final opId =
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     final requestGeneration = ++_requestGeneration;
@@ -210,11 +238,40 @@ class ChatPageState extends State<ChatPage> {
 
   /// 就地语音提问（底部语音按钮在问答页长按时调用）
   Future<void> beginRecording() async {
-    if (_recording || _processing || _sending) return;
+    if (_recording ||
+        _processing ||
+        _sending ||
+        _recordingRequested ||
+        _recordingStarting) {
+      return;
+    }
+    final generation = ++_recordingGeneration;
+    _recordingRequested = true;
+    _recordingStarting = true;
     _opId =
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     OpLogService.instance.record(_opId!, 'record_start', '开始录音', sync: false);
-    final ok = await _audio.hasPermission();
+    late final bool ok;
+    try {
+      ok = await _audio.hasPermission();
+    } catch (e) {
+      _recordingRequested = false;
+      _recordingStarting = false;
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('麦克风权限检查失败：$e')));
+      }
+      _endOp('permission_error');
+      return;
+    }
+    if (!_recordingRequested ||
+        generation != _recordingGeneration ||
+        !mounted) {
+      _recordingStarting = false;
+      _endOp('cancelled');
+      return;
+    }
     if (!ok) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -236,10 +293,19 @@ class ChatPageState extends State<ChatPage> {
     }
     try {
       await _audio.start();
-      if (!mounted) return;
+      if (!_recordingRequested ||
+          generation != _recordingGeneration ||
+          !mounted) {
+        if (_audio.isRecording) await _audio.stop();
+        _recordingStarting = false;
+        _endOp('cancelled');
+        return;
+      }
       setState(() => _recording = true);
+      _recordingStarting = false;
       widget.onRecordingChanged?.call(true);
     } catch (e) {
+      _recordingStarting = false;
       OpLogService.instance.record(
         _opId!,
         'record_start_err',
@@ -261,7 +327,13 @@ class ChatPageState extends State<ChatPage> {
 
   /// 结束录音 → 转写 → 直接作为本页提问发送
   Future<void> finishRecording() async {
-    if (!_recording) return;
+    if (!_recording) {
+      _recordingRequested = false;
+      _recordingGeneration++;
+      return;
+    }
+    _recordingRequested = false;
+    _recordingGeneration++;
     setState(() {
       _recording = false;
       _processing = true;
@@ -297,6 +369,7 @@ class ChatPageState extends State<ChatPage> {
             ),
           );
         }
+        _endOp('transcribe_error');
         return;
       }
       if (text.trim().isEmpty) {
@@ -315,9 +388,13 @@ class ChatPageState extends State<ChatPage> {
           level: 'warn',
           sync: false,
         );
+        _endOp('no_speech');
         return;
       }
-      if (!mounted) return;
+      if (!mounted) {
+        _endOp('page_disposed');
+        return;
+      }
       _endOp('chat');
       unawaited(submitQuestion(text));
     } catch (e) {
@@ -350,6 +427,7 @@ class ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _confirmClear() async {
+    if (_sending || _clearing) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -367,13 +445,21 @@ class ChatPageState extends State<ChatPage> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !mounted || _sending || _clearing) return;
+    _historyGeneration++;
+    setState(() => _clearing = true);
     try {
       await widget.controller.clearChatHistory();
       if (!mounted) return;
-      setState(() => _messages = []);
+      setState(() {
+        _historyCleared = true;
+        _messages = [];
+        _clearing = false;
+        _error = null;
+      });
     } catch (e) {
       if (!mounted) return;
+      setState(() => _clearing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('清空失败：$e'),
@@ -420,7 +506,9 @@ class ChatPageState extends State<ChatPage> {
           ),
           const Spacer(),
           IconButton(
-            onPressed: _messages.isEmpty ? null : _confirmClear,
+            onPressed: _messages.isEmpty || _sending || _clearing
+                ? null
+                : _confirmClear,
             icon: const Icon(Icons.delete_sweep_outlined, size: 20),
             tooltip: '清空问答记录',
             color: AppColors.textTertiary,
@@ -769,15 +857,22 @@ class _SampleQuestion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      onTap: () {
-        final page = context.findAncestorStateOfType<ChatPageState>();
-        page?.submitQuestion(text);
-      },
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 13.5, color: AppColors.textSecondary),
+    return ConstrainedBox(
+      key: ValueKey('chat-sample-question-$text'),
+      constraints: const BoxConstraints(minHeight: 48),
+      child: AppCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        onTap: () {
+          final page = context.findAncestorStateOfType<ChatPageState>();
+          page?.submitQuestion(text);
+        },
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13.5,
+            color: AppColors.textSecondary,
+          ),
+        ),
       ),
     );
   }

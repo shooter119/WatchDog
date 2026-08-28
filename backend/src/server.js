@@ -2,28 +2,32 @@ const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const { transcribe } = require('./asr');
-const { parseTextWithDeepSeek, chatWithDeepSeek, chatWithDeepSeekStream, chatWithWebSearch } = require('./parse');
+const { parseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch } = require('./parse');
 const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
+const { createDatabaseReadiness } = require('./database-readiness');
 
 // CloudBase PostgreSQL 是网络依赖，不能阻塞端口监听等待初始化完成；否则
 // CloudRun 的探活会在数据库初始化期间收到 connection refused，版本直接失败。
-let databaseReady = !db.ready;
-let databaseReadyError = null;
-if (db.ready) {
-  db.ready.then(() => {
-    databaseReady = true;
-    logger.info('数据库初始化完成');
-  }).catch((error) => {
-    databaseReadyError = error;
-    logger.error('数据库初始化失败', error.stack || error);
-  });
-}
+const databaseReadiness = createDatabaseReadiness(db.ready, {
+  waitMs: process.env.WATCHDOG_DB_READY_WAIT_MS || 8000,
+  onReady: () => logger.info('数据库初始化完成'),
+  onError: (error) => logger.error('数据库初始化失败', error.stack || error),
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_TOKEN = process.env.API_TOKEN || '';
+const UNIT_AUTH_REQUIRED = String(
+  process.env.WATCHDOG_UNIT_AUTH_REQUIRED ?? (process.env.NODE_ENV === 'test' ? '0' : '1'),
+) !== '0';
+if (process.env.NODE_ENV === 'production' && !API_TOKEN) {
+  throw new Error('生产环境必须配置 API_TOKEN（拒绝未认证启动）');
+}
+if (process.env.NODE_ENV === 'production' && !UNIT_AUTH_REQUIRED) {
+  throw new Error('生产环境必须启用 WATCHDOG_UNIT_AUTH_REQUIRED');
+}
 
 const CFG = {
   asr: {
@@ -48,12 +52,38 @@ const CFG = {
   },
 };
 
-app.use(express.json({ limit: '5mb' }));
+if (process.env.NODE_ENV === 'production') {
+  let deepSeekUrl;
+  try {
+    deepSeekUrl = new URL(CFG.llm.baseUrl);
+  } catch (_) {
+    throw new Error('生产环境 DEEPSEEK_BASE_URL 无效');
+  }
+  if (deepSeekUrl.protocol !== 'https:') {
+    throw new Error('生产环境 DEEPSEEK_BASE_URL 必须使用 HTTPS');
+  }
+  if (deepSeekUrl.username || deepSeekUrl.password || deepSeekUrl.search || deepSeekUrl.hash) {
+    throw new Error('生产环境 DEEPSEEK_BASE_URL 不得包含用户信息、查询参数或片段');
+  }
+}
+
+// 业务正文都有更小的字段级上限；保留一定余量给 JSON 包装，避免异常请求
+// 先在 Express 层分配数 MB 内存，再由路由拒绝。
+app.use(express.json({ limit: '512kb' }));
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Incident-Id, X-Api-Token, X-Device-Id, X-Actor-Name, X-Actor-Name-B64, X-Op-Id, X-Expected-Version');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Incident-Id, X-Api-Token, X-Device-Id, X-Unit-Id, X-Unit-Code, X-Actor-Name, X-Actor-Name-B64, X-Op-Id, X-Expected-Version, X-Management-Token');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// 幂等操作号参与事件唯一性判断，不能把超长值静默截断为另一个合法操作号。
+app.use((req, res, next) => {
+  const rawOpId = req.headers['x-op-id'];
+  if (rawOpId != null && String(rawOpId).trim().length > 64) {
+    return res.status(400).json({ error: '操作 ID 过长（最多 64 字符）', code: 'OP_ID_TOO_LONG' });
+  }
   next();
 });
 
@@ -73,22 +103,48 @@ app.use((req, res, next) => {
   next();
 });
 
-// 简单共享 Token 认证（/api/health 除外），未配置 API_TOKEN 时不做校验
+// 业务 API 使用共享 Token；健康检查免认证，单位认证也必须先通过同一访问令牌，
+// 防止把单位验证码入口意外暴露成公共注册接口。
 app.use((req, res, next) => {
   if (req.path === '/api/health' || !API_TOKEN) return next();
   if (req.headers['x-api-token'] !== API_TOKEN) {
-    return res.status(401).json({ error: '未授权，请检查设置的访问令牌' });
+    return res.status(401).json({ error: '未授权，请检查设置的访问令牌', code: 'API_TOKEN_INVALID' });
   }
   next();
 });
 
-// 探活接口始终可用；业务请求在远程数据库初始化完成前返回可重试的 503。
-app.use((req, res, next) => {
-  if (req.path === '/api/health' || databaseReady) return next();
+// 探活接口始终可用；业务请求在远程数据库初始化期间等待有限时间，
+// 避免 CloudBase 冷启动时把正常的初始化窗口直接暴露成 503。
+app.use(async (req, res, next) => {
+  if (req.path === '/api/health' || databaseReadiness.ready) return next();
+  await databaseReadiness.wait();
+  if (databaseReadiness.ready) return next();
+  const failed = Boolean(databaseReadiness.error);
   return res.status(503).json({
-    error: databaseReadyError ? '数据库初始化失败，请稍后重试' : '数据库正在初始化，请稍后重试',
-    code: databaseReadyError ? 'DB_INIT_FAILED' : 'DB_INITIALIZING',
+    error: failed ? '数据库初始化失败，请稍后重试' : '数据库正在初始化，请稍后重试',
+    code: failed ? 'DB_INIT_FAILED' : 'DB_INITIALIZING',
   });
+});
+
+// 单位认证由数据库中的 units 记录驱动。未归属历史警情不属于任何普通单位，
+// 不在这里把旧数据强行归属到当前认证单位。
+app.use(async (req, res, next) => {
+  if (!UNIT_AUTH_REQUIRED || req.path === '/api/health' || req.path === '/api/auth/verify') return next();
+  const unitId = String(req.headers['x-unit-id'] || '').trim();
+  const code = String(req.headers['x-unit-code'] || '').trim();
+  if (!unitId || !code || unitId.length > 128 || code.length > 64) {
+    return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  }
+  try {
+    const unit = await db.getUnit(unitId);
+    if (!unit || String(unit.verification_code || '') !== code) {
+      return res.status(403).json({ error: '单位名称或验证码错误', code: 'UNIT_INVALID' });
+    }
+    req.unit = { id: unit.id, name: unit.name };
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 });
 
 function incidentKey(req) {
@@ -99,8 +155,74 @@ function deviceKey(req) {
   return (req.headers['x-device-id'] || '').toString().slice(0, 128) || null;
 }
 
+async function incidentForRequest(req, res, id) {
+  const incident = await db.getIncident(id, { unitId: req.unit?.id || null });
+  if (!incident || (req.unit && incident.unit_id !== req.unit.id)) {
+    res.status(404).json({ error: '警情不存在，请重新选择', code: 'INCIDENT_NOT_FOUND' });
+    return null;
+  }
+  return incident;
+}
+
 function opKey(req) {
   return (req.headers['x-op-id'] || '').toString().slice(0, 64) || null;
+}
+
+function contentDigest(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function isSensitiveLogKey(key) {
+  const normalized = String(key || '').replace(/[A-Z]/g, (letter) => `_${letter}`).toLowerCase();
+  return /(^|_)(text|content|message|raw|token|authorization|access_token|password|secret|error|stack)(_|$)/.test(normalized);
+}
+
+function sanitizeLogText(value) {
+  let clean = String(value ?? '').slice(0, 2000);
+  clean = clean.replace(
+    /(api[_-]?token|authorization|access[_-]?token|password|secret)(\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+/gi,
+    '$1$2[REDACTED]',
+  );
+  return clean.replace(/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]');
+}
+
+function sanitizeLogData(value, key = '', depth = 0) {
+  if (depth > 5) return '[TRUNCATED]';
+  if (isSensitiveLogKey(key)) {
+    if (typeof value === 'string') {
+      return { [`${key}_length`]: value.length, [`${key}_sha256`]: contentDigest(value) };
+    }
+    return '[REDACTED]';
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeLogData(item, '', depth + 1));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [
+      childKey,
+      sanitizeLogData(child, childKey, depth + 1),
+    ]));
+  }
+  return typeof value === 'string' ? sanitizeLogText(value) : value;
+}
+
+const MANAGEMENT_TOKEN = String(
+  process.env.WATCHDOG_MANAGEMENT_TOKEN || (process.env.NODE_ENV === 'test' ? 'test-management-token' : ''),
+);
+
+function hasManagementToken(req) {
+  return Boolean(MANAGEMENT_TOKEN) && req.headers['x-management-token'] === MANAGEMENT_TOKEN;
+}
+
+// client_op_id 是全局唯一索引，但业务幂等的作用域是警情；先拒绝跨警情复用，
+// 避免“返回重复成功”却把当前操作静默吞掉。真正的跨表原子幂等仍需数据库事务/RPC。
+async function ensureOperationScope(req, res, incidentId) {
+  const opId = opKey(req);
+  if (!opId) return true;
+  const previous = await db.getIncidentEventByClientOp(opId);
+  if (previous && previous.incident_id !== incidentId) {
+    res.status(409).json({ error: '操作 ID 已属于其他警情，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+    return false;
+  }
+  return true;
 }
 
 function encodedActorName(req) {
@@ -115,9 +237,18 @@ function encodedActorName(req) {
 
 async function actorName(req) {
   const submitted = String(req.body?.actor_name || req.headers['x-actor-name'] || encodedActorName(req) || '').trim().slice(0, 32);
-  if (submitted) return submitted;
   const device = deviceKey(req);
-  return device ? String((await db.getDeviceProfile(device))?.real_name || '').trim() : '';
+  if (device) {
+    const profile = await db.getDeviceProfile(device);
+    // 生产环境只信任单位认证时写入的设备档案；请求体/请求头中的姓名只是
+    // 兼容旧测试客户端，不能让调用方伪造另一位操作人。
+    if (process.env.NODE_ENV !== 'production' ||
+        (!req.unit || profile?.unit_id === req.unit.id)) {
+      const persisted = String(profile?.real_name || '').trim();
+      if (persisted) return persisted;
+    }
+  }
+  return process.env.NODE_ENV === 'production' ? '' : submitted;
 }
 
 async function requireIncident(req, res, { active = false, management = false } = {}) {
@@ -126,11 +257,8 @@ async function requireIncident(req, res, { active = false, management = false } 
     res.status(409).json({ error: '请先新建或加入一场警情', code: 'INCIDENT_REQUIRED' });
     return null;
   }
-  const incident = await db.getIncident(id);
-  if (!incident) {
-    res.status(404).json({ error: '警情不存在，请重新选择', code: 'INCIDENT_NOT_FOUND' });
-    return null;
-  }
+  const incident = await incidentForRequest(req, res, id);
+  if (!incident) return null;
   if (active && incident.status !== 'active') {
     res.status(409).json({ error: '警情已归档，不能继续写入现场数据', code: 'INCIDENT_ARCHIVED' });
     return null;
@@ -180,8 +308,8 @@ async function logOp(req, level, stage, msg, data = null) {
       opId: opKey(req),
       level,
       stage,
-      msg,
-      data,
+      msg: sanitizeLogText(msg),
+      data: data == null ? null : sanitizeLogData(data),
     });
   } catch (e) {
     logger.warn('写入操作日志失败', e.message || e);
@@ -196,11 +324,107 @@ async function hotwordList(scene) {
 }
 
 app.get('/api/health', async (req, res) => {
-  res.json({ ok: true, time: Date.now(), asrConfigured: !!CFG.asr.appId, llmConfigured: !!CFG.llm.apiKey });
+  const ready = databaseReadiness.ready;
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
+    ready,
+    databaseReady: ready,
+    time: Date.now(),
+    asrConfigured: !!CFG.asr.appId,
+    llmConfigured: !!CFG.llm.apiKey,
+  });
 });
 
 app.get('/api/config', async (req, res) => {
-  res.json({ calc: CFG.calc, asrConfigured: !!CFG.asr.appId, llmConfigured: !!CFG.llm.apiKey });
+  res.json({
+    calc: CFG.calc,
+    asrConfigured: !!CFG.asr.appId,
+    llmConfigured: !!CFG.llm.apiKey,
+    unit: req.unit || null,
+  });
+});
+
+const authFailureBuckets = new Map();
+const AUTH_FAILURE_LIMIT = 5;
+const AUTH_FAILURE_WINDOW_MS = 60 * 1000;
+
+function authFailureKey(req, unitName) {
+  // X-Device-Id 是客户端输入，只能用于业务审计，不能作为认证限流主键。
+  // 使用 Express 解析后的来源地址 + 规范化单位名，避免轮换设备 ID 绕过限制。
+  return `${req.ip || 'anonymous'}:${unitName}`;
+}
+
+function isAuthRateLimited(key, now = Date.now()) {
+  const bucket = authFailureBuckets.get(key);
+  if (!bucket || now - bucket.firstAt >= AUTH_FAILURE_WINDOW_MS) return false;
+  return bucket.count >= AUTH_FAILURE_LIMIT;
+}
+
+function recordAuthFailure(key, now = Date.now()) {
+  const bucket = authFailureBuckets.get(key);
+  if (!bucket || now - bucket.firstAt >= AUTH_FAILURE_WINDOW_MS) {
+    authFailureBuckets.set(key, { firstAt: now, count: 1 });
+  } else {
+    bucket.count++;
+  }
+  if (authFailureBuckets.size > 10000) {
+    const oldest = [...authFailureBuckets.entries()]
+      .sort((a, b) => a[1].firstAt - b[1].firstAt)
+      .slice(0, 1000);
+    for (const [oldKey] of oldest) authFailureBuckets.delete(oldKey);
+  }
+}
+
+// ASR/解析都会调用按量计费的外部服务；限流维度必须包含服务端看到的来源，
+// 不能只使用可伪造的设备请求头。单实例计数用于快速止损，多实例仍应在网关配置共享限流。
+const upstreamRateBuckets = new Map();
+function upstreamRateLimited(req, route, limit, now = Date.now()) {
+  const minute = Math.floor(now / 60000);
+  const source = req.ip || 'anonymous';
+  const unit = req.unit?.id || 'unauthenticated';
+  const key = `${route}:${source}:${unit}`;
+  if (upstreamRateBuckets.size > 10000) {
+    for (const [bucketKey, bucket] of upstreamRateBuckets) {
+      if (bucket.minute < minute - 1) upstreamRateBuckets.delete(bucketKey);
+    }
+  }
+  const bucket = upstreamRateBuckets.get(key);
+  if (!bucket || bucket.minute !== minute) {
+    upstreamRateBuckets.set(key, { minute, count: 1 });
+    return false;
+  }
+  bucket.count++;
+  return bucket.count > limit;
+}
+
+app.post('/api/auth/verify', async (req, res, next) => {
+  try {
+    const code = String(req.body?.unit_code || '').trim();
+    const unitName = String(req.body?.unit_name || '').trim().slice(0, 120);
+    const name = String(req.body?.real_name || '').trim().slice(0, 32);
+    if (!unitName) return res.status(400).json({ error: '请输入单位名称', code: 'UNIT_NAME_REQUIRED' });
+    if (!name) return res.status(400).json({ error: '请输入真实姓名', code: 'REAL_NAME_REQUIRED' });
+    if (code.length > 64) return res.status(400).json({ error: '单位验证码格式错误', code: 'UNIT_CODE_INVALID' });
+    const failureKey = authFailureKey(req, unitName);
+    if (isAuthRateLimited(failureKey)) {
+      return res.status(429).json({ error: '认证尝试过于频繁，请稍后再试', code: 'AUTH_RATE_LIMITED' });
+    }
+    const unit = await db.findUnit(unitName, code);
+    if (!unit) {
+      recordAuthFailure(failureKey);
+      return res.status(403).json({ error: '单位名称或验证码错误', code: 'UNIT_INVALID' });
+    }
+    authFailureBuckets.delete(failureKey);
+    const device = deviceKey(req);
+    if (device) await db.saveDeviceProfile(device, name, unit.id);
+    res.json({
+      authenticated: true,
+      unit: { id: unit.id, name: unit.name },
+      user: { real_name: name },
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 async function incidentView(incident) {
@@ -224,32 +448,52 @@ async function suggestIncidentTitle(incidentId) {
   return text.length > 30 ? `${text.slice(0, 29)}…` : text;
 }
 
-// 当前单位（共享 API Token）下的活跃/归档警情列表。
+// 当前认证单位下的活跃/归档警情列表；历史 unit_id=NULL 记录保留在隔离命名空间。
 app.get('/api/incidents', async (req, res, next) => {
   try {
-    await db.archiveStaleIncidents();
+    // 请求方只负责清理自己单位的陈旧警情；后台定时任务才执行全局清理，
+    // 避免单位 A 的普通查询改变单位 B 的现场状态。
+    await db.archiveStaleIncidents({ unitId: req.unit?.id || null });
     const status = ['active', 'archived'].includes(String(req.query.status || '')) ? String(req.query.status) : null;
-    res.json(await Promise.all((await db.listIncidents(status)).map(incidentView)));
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), 500)
+      : null;
+    res.json(await Promise.all((await db.listIncidents(status, { unitId: req.unit?.id, limit })).map(incidentView)));
   } catch (e) {
     next(e);
   }
 });
 
+let incidentCreationQueue = Promise.resolve();
+
 app.post('/api/incidents', async (req, res, next) => {
+  let releaseCreation;
   try {
+    // 单进程内串行化“冷却检查 + 创建 + 初始事件”，避免同一实例上的
+    // 并发请求各自通过检查。多实例部署仍需数据库事务/RPC 做最终约束。
+    const previousCreation = incidentCreationQueue;
+    incidentCreationQueue = new Promise((resolve) => {
+      releaseCreation = resolve;
+    });
+    await previousCreation;
     const device = deviceKey(req);
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再新建警情', code: 'REAL_NAME_REQUIRED' });
     const opId = opKey(req);
     const previous = await db.getIncidentEventByClientOp(opId);
     if (previous?.type === 'incident_created') {
-      const existing = await db.getIncident(previous.incident_id);
+      const existing = await db.getIncident(previous.incident_id, { unitId: req.unit?.id || null });
       if (existing) return res.json(await incidentView(existing));
+      return res.status(409).json({ error: '操作 ID 已属于其他警情或单位', code: 'CLIENT_OP_ID_CONFLICT' });
+    }
+    if (previous) {
+      return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
     }
     // 服务端串行执行这段检查和后续 INSERT，作为多设备共同遵守的建档闸门。
     // 只限制“仍在处置中且刚刚创建”的警情；已经归档后可以正常开始下一场处置。
     const now = Date.now();
-    const recent = await db.findRecentActiveIncident(now - 60 * 1000);
+    const recent = await db.findRecentActiveIncident(now - 60 * 1000, { unitId: req.unit?.id });
     if (recent) {
       return res.status(409).json({
         error: '为避免多人同时建档，1分钟内暂不允许再次新建警情，请优先加入现有警情',
@@ -258,7 +502,7 @@ app.post('/api/incidents', async (req, res, next) => {
         incident: await incidentView(recent),
       });
     }
-    const created = await db.createIncident({ createdBy: device });
+    const created = await db.createIncident({ unitId: req.unit?.id || null, createdBy: device });
     await db.appendIncidentEvent({
       incidentId: created.id,
       type: 'incident_created',
@@ -270,13 +514,15 @@ app.post('/api/incidents', async (req, res, next) => {
     res.status(201).json(await incidentView(created));
   } catch (e) {
     next(e);
+  } finally {
+    releaseCreation?.();
   }
 });
 
 app.get('/api/incidents/:id', async (req, res, next) => {
   try {
-    const incident = await db.getIncident(req.params.id);
-    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const incident = await incidentForRequest(req, res, req.params.id);
+    if (!incident) return;
     res.json(await incidentView(incident));
   } catch (e) {
     next(e);
@@ -285,8 +531,9 @@ app.get('/api/incidents/:id', async (req, res, next) => {
 
 app.patch('/api/incidents/:id', async (req, res, next) => {
   try {
-    const incident = await db.getIncident(req.params.id);
-    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const incident = await incidentForRequest(req, res, req.params.id);
+    if (!incident) return;
+    if (!await ensureOperationScope(req, res, incident.id)) return;
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再修改警情名称', code: 'REAL_NAME_REQUIRED' });
     const previous = await db.getIncidentEventByClientOp(opKey(req));
@@ -311,23 +558,34 @@ app.patch('/api/incidents/:id', async (req, res, next) => {
 
 app.post('/api/incidents/:id/archive', async (req, res, next) => {
   try {
-    const incident = await db.getIncident(req.params.id);
-    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const incident = await incidentForRequest(req, res, req.params.id);
+    if (!incident) return;
+    if (!await ensureOperationScope(req, res, incident.id)) return;
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再归档警情', code: 'REAL_NAME_REQUIRED' });
     const previous = await db.getIncidentEventByClientOp(opKey(req));
     if (previous?.type === 'incident_archived' && previous.incident_id === req.params.id) return res.json(await incidentView(incident));
-    const archived = await db.archiveIncident(req.params.id, { archivedBy: deviceKey(req), now: Date.now() });
-    if (!archived) return res.status(404).json({ error: '警情不存在' });
-    const suggested = archived.title || (await db.setIncidentSuggestedTitle(req.params.id, await suggestIncidentTitle(req.params.id))).suggested_title;
-    await db.appendIncidentEvent({
-      incidentId: req.params.id,
-      type: 'incident_archived',
-      actorDeviceId: deviceKey(req),
-      actorName: name,
-      clientOpId: opKey(req),
-      payload: { auto: false, unresolved_active_count: archived.unresolved_active_count },
+    const archiveResult = await db.archiveIncident(req.params.id, {
+      archivedBy: deviceKey(req),
+      now: Date.now(),
+      returnMeta: true,
     });
+    const archived = archiveResult.incident;
+    if (!archived) return res.status(404).json({ error: '警情不存在' });
+    let suggested = archived.suggested_title;
+    if (!archived.title && !suggested) {
+      suggested = (await db.setIncidentSuggestedTitle(req.params.id, await suggestIncidentTitle(req.params.id))).suggested_title;
+    }
+    if (archiveResult.changed) {
+      await db.appendIncidentEvent({
+        incidentId: req.params.id,
+        type: 'incident_archived',
+        actorDeviceId: deviceKey(req),
+        actorName: name,
+        clientOpId: opKey(req),
+        payload: { auto: false, unresolved_active_count: archived.unresolved_active_count },
+      });
+    }
     res.json(await incidentView({ ...await db.getIncident(req.params.id), suggested_title: suggested }));
   } catch (e) {
     next(e);
@@ -336,8 +594,8 @@ app.post('/api/incidents/:id/archive', async (req, res, next) => {
 
 app.get('/api/incidents/:id/timeline', async (req, res, next) => {
   try {
-    const incident = await db.getIncident(req.params.id);
-    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const incident = await incidentForRequest(req, res, req.params.id);
+    if (!incident) return;
     const events = await db.listIncidentEvents(req.params.id, { limit: Number(req.query.limit) || 2000 });
     res.json({ incident: await incidentView(incident), events: events.map(formatTimelineEvent) });
   } catch (e) {
@@ -349,8 +607,9 @@ app.get('/api/incidents/:id/timeline', async (req, res, next) => {
 // 归档后的补传只接受发生在归档前、且在归档后 24 小时内送达的数据。
 app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
   try {
-    const incident = await db.getIncident(req.params.id);
-    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const incident = await incidentForRequest(req, res, req.params.id);
+    if (!incident) return;
+    if (!await ensureOperationScope(req, res, incident.id)) return;
     const operations = Array.isArray(req.body?.operations) ? req.body.operations : [];
     if (operations.length > 100) return res.status(400).json({ error: '单次最多补传 100 条现场操作' });
     const now = Date.now();
@@ -366,6 +625,10 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
       }
       const duplicate = await db.getIncidentEventByClientOp(opId);
       if (duplicate) {
+        if (duplicate.incident_id !== incident.id) {
+          results.push({ client_op_id: opId, accepted: false, error: 'client_op_id 已属于其他警情', code: 'CLIENT_OP_ID_CONFLICT' });
+          continue;
+        }
         results.push({ client_op_id: opId, accepted: true, duplicate: true, event_id: duplicate.id });
         continue;
       }
@@ -388,8 +651,19 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
         }
         const id = String(payload.entry_id || crypto.randomUUID());
         const entryAt = occurredAt;
-        const durationMin = Math.round(durationMinutes({ ...CFG.calc, pressureMpa: pressure }));
-        await db.createEntry({ id, scene: incident.id, name, pressureMpa: pressure, durationMin, entryAtMs: entryAt, exitAtMs: exitAtMs({ ...CFG.calc, pressureMpa: pressure, entryAtMs: entryAt }), source: 'offline', rawText: payload.raw_text || null });
+        const volume = payload.volume_l == null || payload.volume_l === ''
+          ? CFG.calc.cylinderVolL
+          : Number(payload.volume_l);
+        const consumption = payload.consumption_lpm == null || payload.consumption_lpm === ''
+          ? CFG.calc.consumptionLpm
+          : Number(payload.consumption_lpm);
+        if (!(volume > 0) || volume > 20 || !(consumption > 0) || consumption > 300) {
+          results.push({ client_op_id: opId, accepted: false, error: '离线进场计算参数无效' });
+          continue;
+        }
+        const calcParam = { ...CFG.calc, cylinderVolL: volume, consumptionLpm: consumption, pressureMpa: pressure };
+        const durationMin = Math.round(durationMinutes(calcParam));
+        await db.createEntry({ id, scene: incident.id, name, pressureMpa: pressure, durationMin, entryAtMs: entryAt, exitAtMs: exitAtMs({ ...calcParam, entryAtMs: entryAt }), source: 'offline', rawText: payload.raw_text || null, cylinderVolL: volume, consumptionLpm: consumption });
         eventPayload = { entry_id: id, name, pressure_mpa: pressure };
       } else if (type === 'exit') {
         const entry = await db.getEntry(String(payload.entry_id || ''));
@@ -406,8 +680,13 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
           results.push({ client_op_id: opId, accepted: false, error: '压力复核记录无效' });
           continue;
         }
+        const volume = Number(entry.cylinder_vol_l) > 0 ? Number(entry.cylinder_vol_l) : CFG.calc.cylinderVolL;
+        const consumption = Number(payload.consumption_lpm) > 0 && Number(payload.consumption_lpm) <= 300
+          ? Number(payload.consumption_lpm)
+          : (Number(entry.consumption_lpm) > 0 ? Number(entry.consumption_lpm) : CFG.calc.consumptionLpm);
+        const calcParam = { ...CFG.calc, cylinderVolL: volume, consumptionLpm: consumption, pressureMpa: pressure };
         await db.addPressureSample({ entryId: entry.id, scene: incident.id, name: entry.name, pressureMpa: pressure, reportedAtMs: occurredAt });
-        await db.updateEntry(entry.id, { pressureMpa: pressure, durationMin: Math.round(durationMinutes({ ...CFG.calc, pressureMpa: pressure })), exitAtMs: exitAtMs({ ...CFG.calc, pressureMpa: pressure, entryAtMs: occurredAt }) });
+        await db.updateEntry(entry.id, { pressureMpa: pressure, durationMin: Math.round(durationMinutes(calcParam)), exitAtMs: exitAtMs({ ...calcParam, entryAtMs: occurredAt }) });
         eventPayload = { entry_id: entry.id, name: entry.name, pressure_mpa: pressure };
       } else {
         const text = String(payload.text || '').trim();
@@ -451,7 +730,7 @@ function formatTimelineEvent(event) {
 
 app.get('/api/incidents/:id/forces', async (req, res, next) => {
   try {
-    if (!await db.getIncident(req.params.id)) return res.status(404).json({ error: '警情不存在' });
+    if (!await incidentForRequest(req, res, req.params.id)) return;
     res.json(await db.listIncidentForces(req.params.id));
   } catch (e) {
     next(e);
@@ -460,8 +739,9 @@ app.get('/api/incidents/:id/forces', async (req, res, next) => {
 
 app.post('/api/incidents/:id/forces', async (req, res, next) => {
   try {
-    const incident = await db.getIncident(req.params.id);
-    if (!incident) return res.status(404).json({ error: '警情不存在' });
+    const incident = await incidentForRequest(req, res, req.params.id);
+    if (!incident) return;
+    if (!await ensureOperationScope(req, res, incident.id)) return;
     if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
@@ -506,9 +786,11 @@ app.patch('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) =
   req.body = { ...(req.body || {}), expected_version: req.body?.expected_version };
   // 复用新增接口的幂等 upsert逻辑，但必须先核对目标记录。
   try {
-    const incident = await db.getIncident(req.params.incidentId);
+    const incident = await incidentForRequest(req, res, req.params.incidentId);
+    if (!incident) return;
+    if (!await ensureOperationScope(req, res, incident.id)) return;
     const current = await db.getIncidentForce(req.params.forceId);
-    if (!incident || !current || current.incident_id !== req.params.incidentId) return res.status(404).json({ error: '参战力量不存在' });
+    if (!current || current.incident_id !== req.params.incidentId) return res.status(404).json({ error: '参战力量不存在' });
     if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
@@ -534,9 +816,11 @@ app.patch('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) =
 
 app.delete('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) => {
   try {
-    const incident = await db.getIncident(req.params.incidentId);
+    const incident = await incidentForRequest(req, res, req.params.incidentId);
+    if (!incident) return;
+    if (!await ensureOperationScope(req, res, incident.id)) return;
     const force = await db.getIncidentForce(req.params.forceId);
-    if (!incident || !force || force.incident_id !== req.params.incidentId) return res.status(404).json({ error: '参战力量不存在' });
+    if (!force || force.incident_id !== req.params.incidentId) return res.status(404).json({ error: '参战力量不存在' });
     if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
@@ -567,19 +851,25 @@ app.get('/api/profile', async (req, res) => res.json(await db.getDeviceProfile(d
 app.put('/api/profile', async (req, res) => {
   const device = deviceKey(req);
   if (!device) return res.status(400).json({ error: '缺少 X-Device-Id 请求头' });
-  res.json(await db.saveDeviceProfile(device, req.body?.real_name));
+  res.json(await db.saveDeviceProfile(device, req.body?.real_name, req.unit?.id || null));
 });
 
 app.post('/api/transcribe', async (req, res, next) => {
   if (!CFG.asr.appId) return res.status(503).json({ error: 'ASR 未配置 VOLC_APP_KEY' });
   const incident = await requireIncident(req, res);
   if (!incident) return;
+  if (upstreamRateLimited(req, 'transcribe', 20)) {
+    return res.status(429).json({ error: '语音转写请求过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
+  }
   const scene = incident.id;
   const chunks = [];
   let total = 0;
+  let tooLarge = false;
   req.on('data', (c) => {
+    if (tooLarge) return;
     total += c.length;
     if (total > 15 * 1024 * 1024) {
+      tooLarge = true;
       res.status(413).json({ error: '音频过大' });
       req.destroy();
       return;
@@ -587,6 +877,7 @@ app.post('/api/transcribe', async (req, res, next) => {
     chunks.push(c);
   });
   req.on('end', async () => {
+    if (tooLarge || res.headersSent) return;
     try {
       const audio = Buffer.concat(chunks);
       if (audio.length < 44) return res.status(400).json({ error: '音频数据过短' });
@@ -605,34 +896,42 @@ app.post('/api/transcribe', async (req, res, next) => {
         format,
         hotwords,
       });
-      await logOp(req, 'info', 'asr_done', 'ASR 识别完成', { text, ms: Date.now() - t0 });
+      await logOp(req, 'info', 'asr_done', 'ASR 识别完成', { textLength: text.length, textSha256: contentDigest(text), ms: Date.now() - t0 });
       // 这里不再同步调用 DeepSeek 修正文本：该调用可能受上游限流影响，
       // 曾出现 ASR 已在 1 秒内完成、但转写响应被额外拖到 70 秒以上的情况。
       // 名单同音字纠正已由后续 /api/parse 携带名单与热词完成。
       res.json({ text, revised: false, hotwordCount: hotwords.length });
-      await logOp(req, 'info', 'transcribe_resp', '转写响应', { text, revised: false, ms: Date.now() - t0 });
+      await logOp(req, 'info', 'transcribe_resp', '转写响应', { textLength: text.length, textSha256: contentDigest(text), revised: false, ms: Date.now() - t0 });
     } catch (e) {
       await logOp(req, 'error', 'transcribe_err', `转写失败: ${e.message || e}`);
       next(e);
     }
   });
-  req.on('error', next);
+  req.on('error', (error) => {
+    if (tooLarge) return;
+    next(error);
+  });
 });
 
 app.post('/api/parse', async (req, res, next) => {
   try {
     const { text } = req.body || {};
     if (!text || !String(text).trim()) return res.status(400).json({ error: '缺少 text' });
+    if (String(text).length > 4000) return res.status(400).json({ error: '解析文本过长（最多 4000 字）' });
     if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY' });
+    if (upstreamRateLimited(req, 'parse', 30)) {
+      return res.status(429).json({ error: '语义解析请求过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
+    }
     const firefighters = (await db.listFirefighters()).map((f) => f.name);
     const hotwords = (await db.listHotwords()).map((h) => h.word);
     const t0 = Date.now();
-    await logOp(req, 'info', 'parse_req', '收到语义解析请求', { text: String(text).trim(), firefighters, hotwords });
+    const cleanText = String(text).trim();
+    await logOp(req, 'info', 'parse_req', '收到语义解析请求', { textLength: cleanText.length, textSha256: contentDigest(cleanText), firefighterCount: firefighters.length, hotwordCount: hotwords.length });
     const parsed = await parseTextWithDeepSeek({
       apiKey: CFG.llm.apiKey,
       baseUrl: CFG.llm.baseUrl,
       model: CFG.llm.model,
-      text: String(text).trim(),
+      text: cleanText,
       firefighters,
       hotwords,
     });
@@ -701,11 +1000,110 @@ function isIncidentBrief(text) {
 const CHAT_INCIDENT_BRIEF_INSTRUCTION = `
 本轮输入已识别为“现场警情简报”。请直接输出初步处置研判：先说警情性质和主要风险，再给当前立即行动、禁忌事项，最后主动列出必须补充核实的信息。即使原文没有提问，也不能只做复述或反问用户想问什么。`;
 
+// 流式问答需要把客户端连接生命周期传给 DeepSeek。parse.js 的公共流式
+// 生成器只知道固定超时，无法感知 HTTP 响应是否已断开；这里保留相同的
+// 请求参数和 SSE 解析规则，但由路由持有 AbortController，断开时立即取消
+// 上游 fetch，避免用户已经离开后仍占用 DeepSeek 连接和计费额度。
+function createUpstreamAbortSignal(clientSignal, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error('DeepSeek 流式请求超时')), timeoutMs);
+  timer.unref?.();
+  const forwardAbort = () => {
+    if (!controller.signal.aborted) controller.abort(clientSignal?.reason);
+  };
+  if (clientSignal) {
+    if (clientSignal.aborted) forwardAbort();
+    else clientSignal.addEventListener('abort', forwardAbort, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timer);
+      clientSignal?.removeEventListener('abort', forwardAbort);
+    },
+  };
+}
+
+async function* streamDeepSeekWithAbort({
+  apiKey,
+  baseUrl,
+  model,
+  messages,
+  signal,
+  timeoutMs = 60000,
+  temperature = 0.3,
+  maxTokens = 800,
+}) {
+  const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
+  const upstream = createUpstreamAbortSignal(signal, timeoutMs);
+  let reader = null;
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: model || 'deepseek-chat',
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: true,
+      }),
+      signal: upstream.signal,
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`DeepSeek API ${response.status}: ${body.slice(0, 200)}`);
+    }
+    if (!response.body) throw new Error('DeepSeek 无响应流');
+
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') return;
+        try {
+          const delta = JSON.parse(data)?.choices?.[0]?.delta?.content;
+          if (delta) yield delta;
+        } catch (_) {
+          // 忽略无法解析的片段（如 keep-alive 行），与原流式解析保持一致。
+        }
+      }
+    }
+  } finally {
+    upstream.dispose();
+    if (reader) await reader.cancel().catch(() => {});
+  }
+}
+
 // 智能体问答限流：按设备内存计数（单实例部署），每分钟最多 10 次提问。
 // 辅助页是设备级 AI 工具，不属于任何警情。
 const chatRateBuckets = new Map();
 function chatRateLimited(clientKey) {
   const minute = Math.floor(Date.now() / 60000);
+  // 设备标识由客户端提交，必须限制高基数 key 的内存生命周期。
+  if (chatRateBuckets.size > 10000) {
+    for (const [key, value] of chatRateBuckets) {
+      if (value.minute < minute - 1) chatRateBuckets.delete(key);
+    }
+    if (chatRateBuckets.size > 10000) {
+      const oldest = [...chatRateBuckets.entries()]
+        .sort((a, b) => a[1].minute - b[1].minute)
+        .slice(0, 1000);
+      for (const [key] of oldest) chatRateBuckets.delete(key);
+    }
+  }
   const bucket = chatRateBuckets.get(clientKey);
   if (!bucket || bucket.minute !== minute) {
     chatRateBuckets.set(clientKey, { minute, count: 1 });
@@ -733,7 +1131,8 @@ app.post('/api/chat', async (req, res, next) => {
     if (!clean) return res.status(400).json({ error: '缺少 message' });
     if (clean.length > 2000) return res.status(400).json({ error: '问题过长（最多 2000 字）' });
     if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY' });
-    const clientKey = deviceKey(req) || req.ip || 'anonymous';
+    // 设备标识可由调用方轮换，不能作为 AI 限流的唯一依据。
+    const clientKey = `${req.ip || 'anonymous'}:${req.unit?.id || 'unauthenticated'}`;
     if (chatRateLimited(clientKey)) return res.status(429).json({ error: '提问过于频繁，请稍后再试' });
     const history = chatHistoryFromRequest(req.body?.history);
     if (isClearlyOffTopicChat(clean)) {
@@ -764,29 +1163,68 @@ app.post('/api/chat', async (req, res, next) => {
       });
       let reply = '';
       let streamError = null;
+      const clientAbortController = new AbortController();
+      let clientDisconnected = false;
+      let responseCompleted = false;
+      const onClientDisconnect = () => {
+        if (clientDisconnected || responseCompleted) return;
+        clientDisconnected = true;
+        clientAbortController.abort();
+      };
+      req.once('aborted', onClientDisconnect);
+      res.once('close', onClientDisconnect);
+      res.once('error', onClientDisconnect);
+      if (req.aborted || res.destroyed) onClientDisconnect();
+      const writeSse = (payload) => {
+        if (clientDisconnected || res.destroyed || res.writableEnded) return false;
+        try {
+          return res.write(payload);
+        } catch (_) {
+          onClientDisconnect();
+          return false;
+        }
+      };
       try {
-        for await (const delta of chatWithDeepSeekStream({
+        for await (const delta of streamDeepSeekWithAbort({
           apiKey: CFG.llm.apiKey,
           baseUrl: CFG.llm.baseUrl,
           model: CFG.llm.chatModel,
           messages,
+          signal: clientAbortController.signal,
         })) {
+          if (clientDisconnected) break;
           reply += delta;
-          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+          if (!writeSse(`data: ${JSON.stringify({ content: delta })}\n\n`)) break;
         }
       } catch (e) {
         streamError = e;
-        await logOp(req, 'error', 'chat_stream_err', `流式问答失败: ${e.message || e}`);
-        res.write(`data: ${JSON.stringify({ error: String(e.message || e) })}\n\n`);
+        if (!clientDisconnected) {
+          await logOp(req, 'error', 'chat_stream_err', `流式问答失败: ${e.message || e}`);
+          // 不把上游响应正文/内部错误细节回显给客户端，避免信息泄露；
+          // 详细原因只进入已脱敏的服务端操作日志。
+          writeSse(`data: ${JSON.stringify({ error: '流式问答失败，请重试' })}\n\n`);
+        }
       }
-      if (!streamError && !reply.trim()) {
+      if (!clientDisconnected && !streamError && !reply.trim()) {
         const error = 'DeepSeek 返回空内容，请重试';
         await logOp(req, 'error', 'chat_stream_err', error);
-        res.write(`data: ${JSON.stringify({ error })}\n\n`);
+        writeSse(`data: ${JSON.stringify({ error })}\n\n`);
       }
-      res.write('data: [DONE]\n\n');
-      res.end();
-      await logOp(req, 'info', 'chat_stream_done', '流式问答完成', { ms: Date.now() - t0, replyLen: reply.length });
+      if (clientDisconnected || res.destroyed || res.writableEnded) {
+        await logOp(req, 'info', 'chat_stream_cancelled', '客户端断开，已取消流式问答', { ms: Date.now() - t0, replyLen: reply.length });
+      } else {
+        const doneWritten = writeSse('data: [DONE]\n\n');
+        if (doneWritten && !clientDisconnected && !res.destroyed && !res.writableEnded) {
+          responseCompleted = true;
+          res.end();
+          await logOp(req, 'info', 'chat_stream_done', '流式问答完成', { ms: Date.now() - t0, replyLen: reply.length });
+        } else {
+          await logOp(req, 'info', 'chat_stream_cancelled', '客户端断开，已取消流式问答', { ms: Date.now() - t0, replyLen: reply.length });
+        }
+      }
+      req.off('aborted', onClientDisconnect);
+      res.off('close', onClientDisconnect);
+      res.off('error', onClientDisconnect);
       return;
     }
     let reply;
@@ -846,10 +1284,16 @@ app.post('/api/entries', async (req, res, next) => {
     const { name, pressure_mpa, source = 'voice', raw_text = null, force = false, volume_l, consumption_lpm } = req.body || {};
     const incident = await requireIncident(req, res, { active: true });
     if (!incident) return;
+    if (!await ensureOperationScope(req, res, incident.id)) return;
     const scene = incident.id;
-    const cleanName = String(name || '').trim();
+    const rawName = String(name || '').trim();
+    if (rawName.length > 64) return res.status(400).json({ error: '姓名过长（最多 64 字）' });
+    const cleanName = rawName;
     if (!cleanName) return res.status(400).json({ error: '缺少姓名' });
     if (pressure_mpa == null) return res.status(400).json({ error: '缺少气瓶压力，请确认压力后再登记' });
+    if (raw_text != null && String(raw_text).length > 4000) {
+      return res.status(400).json({ error: '语音原文过长（最多 4000 字）' });
+    }
     const p = Number(pressure_mpa);
     if (!(p > 0) || p > 40) return res.status(400).json({ error: '压力数值异常' });
 
@@ -893,6 +1337,8 @@ app.post('/api/entries', async (req, res, next) => {
       exitAtMs: exitAtMs({ ...calcParam, pressureMpa: p, entryAtMs: now, cylinderVolL: vol || calcParam.cylinderVolL }),
       source,
       rawText: raw_text,
+      cylinderVolL: vol || calcParam.cylinderVolL,
+      consumptionLpm: consumption,
     });
     await logOp(req, 'info', 'entry_created', '登记进场成功', {
       entryId: entry.id,
@@ -902,7 +1348,8 @@ app.post('/api/entries', async (req, res, next) => {
       consumptionLpm: consumption,
       durationMin,
       force,
-      rawText: raw_text,
+      rawTextLength: raw_text == null ? 0 : String(raw_text).length,
+      rawTextSha256: contentDigest(raw_text),
     });
     if (incident) {
       await db.touchIncidentActivity(incident.id, now);
@@ -925,6 +1372,7 @@ app.patch('/api/entries/:id', async (req, res, next) => {
   try {
     const currentIncident = await requireIncident(req, res, { active: true });
     if (!currentIncident) return;
+    if (!await ensureOperationScope(req, res, currentIncident.id)) return;
     const entry = await db.getEntry(req.params.id);
     if (!entry) return res.status(404).json({ error: '记录不存在' });
     if (entry.scene !== currentIncident.id) return res.status(404).json({ error: '记录不属于当前警情' });
@@ -932,6 +1380,7 @@ app.patch('/api/entries/:id', async (req, res, next) => {
     const { name, pressure_mpa, consumption_lpm } = req.body || {};
     const newName = name != null ? String(name).trim() : null;
     if (name != null && !newName) return res.status(400).json({ error: '姓名不能为空' });
+    if (newName != null && newName.length > 64) return res.status(400).json({ error: '姓名过长' });
     let p = null;
     if (pressure_mpa != null) {
       p = Number(pressure_mpa);
@@ -949,7 +1398,7 @@ app.patch('/api/entries/:id', async (req, res, next) => {
       const prev = await db.lastPressureSample(entry.id);
       if (prev && prev.reported_at < now) {
         actualLpm = measuredConsumptionLpm({
-          cylinderVolL: CFG.calc.cylinderVolL,
+          cylinderVolL: Number(entry.cylinder_vol_l) > 0 ? Number(entry.cylinder_vol_l) : CFG.calc.cylinderVolL,
           prevPressureMpa: prev.pressure_mpa,
           newPressureMpa: p,
           intervalMs: now - prev.reported_at,
@@ -958,7 +1407,11 @@ app.patch('/api/entries/:id', async (req, res, next) => {
       await db.addPressureSample({ entryId: entry.id, scene: entry.scene, name: newName || entry.name, pressureMpa: p, reportedAtMs: now });
     }
     const effConsumption = actualLpm ?? consumption;
-    const calcParam = { ...CFG.calc, consumptionLpm: effConsumption };
+    const calcParam = {
+      ...CFG.calc,
+      cylinderVolL: Number(entry.cylinder_vol_l) > 0 ? Number(entry.cylinder_vol_l) : CFG.calc.cylinderVolL,
+      consumptionLpm: effConsumption,
+    };
     const updated = await db.updateEntry(entry.id, {
       name: newName,
       pressureMpa: p,
@@ -993,6 +1446,7 @@ app.post('/api/entries/:id/exit', async (req, res, next) => {
   try {
     const currentIncident = await requireIncident(req, res, { active: true });
     if (!currentIncident) return;
+    if (!await ensureOperationScope(req, res, currentIncident.id)) return;
     const entry = await db.getEntry(req.params.id);
     if (!entry) {
       await logOp(req, 'warn', 'exit_missing', `登记出火场失败：记录不存在`, { id: req.params.id });
@@ -1000,6 +1454,10 @@ app.post('/api/entries/:id/exit', async (req, res, next) => {
     }
     if (entry.scene !== currentIncident.id) return res.status(404).json({ error: '记录不属于当前警情' });
     const incident = currentIncident;
+    const previous = await db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.type === 'exit' && previous.payload?.entry_id === entry.id) {
+      return res.json(entry);
+    }
     const now = Date.now();
     await logOp(req, 'info', 'entry_exited', `登记出火场`, { entryId: entry.id, name: entry.name });
     const result = await db.markExited(entry.id, now);
@@ -1018,10 +1476,13 @@ app.get('/api/firefighters', async (req, res) => res.json(await db.listFirefight
 app.post('/api/firefighters', async (req, res, next) => {
   try {
     const { name } = req.body || {};
-    if (!name || !String(name).trim()) return res.status(400).json({ error: '缺少姓名' });
+    const cleanName = String(name || '').trim();
+    if (!cleanName) return res.status(400).json({ error: '缺少姓名' });
+    if (cleanName.length > 64) return res.status(400).json({ error: '姓名过长（最多 64 字）', code: 'ROSTER_ITEM_TOO_LONG' });
+    if ((await db.listFirefighters()).length >= 500) return res.status(400).json({ error: '消防员名单已达到 500 人上限', code: 'ROSTER_LIMIT_REACHED' });
     const id = crypto.randomUUID();
     try {
-      res.status(201).json(await db.addFirefighter(id, String(name).trim()));
+      res.status(201).json(await db.addFirefighter(id, cleanName));
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该姓名已存在' });
       throw e;
@@ -1039,10 +1500,13 @@ app.get('/api/hotwords', async (req, res) => res.json(await db.listHotwords()));
 app.post('/api/hotwords', async (req, res, next) => {
   try {
     const { word } = req.body || {};
-    if (!word || !String(word).trim()) return res.status(400).json({ error: '缺少词条' });
+    const cleanWord = String(word || '').trim();
+    if (!cleanWord) return res.status(400).json({ error: '缺少词条' });
+    if (cleanWord.length > 128) return res.status(400).json({ error: '词条过长（最多 128 字）', code: 'ROSTER_ITEM_TOO_LONG' });
+    if ((await db.listHotwords()).length >= 500) return res.status(400).json({ error: '热词已达到 500 条上限', code: 'ROSTER_LIMIT_REACHED' });
     const id = crypto.randomUUID();
     try {
-      res.status(201).json(await db.addHotword(id, String(word).trim()));
+      res.status(201).json(await db.addHotword(id, cleanWord));
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该词条已存在' });
       throw e;
@@ -1078,6 +1542,7 @@ app.post('/api/notes', async (req, res, next) => {
   try {
     const incident = await requireIncident(req, res, { active: true });
     if (!incident) return;
+    if (!await ensureOperationScope(req, res, incident.id)) return;
     const { text, category } = req.body || {};
     const clean = String(text || '').trim();
     if (!clean) return res.status(400).json({ error: '缺少日志内容' });
@@ -1116,6 +1581,7 @@ app.patch('/api/notes/:id', async (req, res, next) => {
   try {
     const currentIncident = await requireIncident(req, res, { active: true });
     if (!currentIncident) return;
+    if (!await ensureOperationScope(req, res, currentIncident.id)) return;
     const note = await db.getNote(req.params.id);
     if (!note) return res.status(404).json({ error: '日志不存在' });
     if (note.scene !== currentIncident.id) return res.status(404).json({ error: '日志不属于当前警情' });
@@ -1148,6 +1614,7 @@ app.delete('/api/notes/:id', async (req, res, next) => {
   try {
     const currentIncident = await requireIncident(req, res, { active: true });
     if (!currentIncident) return;
+    if (!await ensureOperationScope(req, res, currentIncident.id)) return;
     const note = await db.getNote(req.params.id);
     if (!note) return res.status(404).json({ error: '日志不存在' });
     if (note.scene !== currentIncident.id) return res.status(404).json({ error: '日志不属于当前警情' });
@@ -1226,14 +1693,18 @@ app.post('/api/logs', async (req, res, next) => {
       if (!stage) continue;
       const level = levels.includes(item.level) ? item.level : 'info';
       const data = item.data;
+      const safeData = data === undefined || data === null ? null : sanitizeLogData(data);
+      const serializedData = safeData == null ? '' : JSON.stringify(safeData);
       await db.addLog({
         scene,
-        device: device || String(item.device || '').slice(0, 64) || null,
+        // 设备身份只能来自请求头；不接受日志条目自带的 device 字段，
+        // 避免客户端伪造另一台设备的审计记录。
+        device: device || null,
         opId: String(item.op_id || '').slice(0, 64) || null,
         level,
         stage,
-        msg: item.msg == null ? '' : String(item.msg),
-        data: data === undefined || data === null ? null : JSON.stringify(data).length > 8192 ? { truncated: true, data: JSON.stringify(data).slice(0, 8192) } : data,
+        msg: item.msg == null ? '' : sanitizeLogText(item.msg),
+        data: safeData == null ? null : serializedData.length > 8192 ? { truncated: true } : safeData,
       });
       inserted++;
     }
@@ -1258,6 +1729,9 @@ app.get('/api/logs', async (req, res) => {
 });
 
 app.delete('/api/logs', async (req, res) => {
+  if (!hasManagementToken(req)) {
+    return res.status(403).json({ error: '清空操作日志需要管理权限', code: 'MANAGEMENT_REQUIRED' });
+  }
   const incident = await requireIncident(req, res);
   if (!incident) return;
   const n = await db.clearLogs({
@@ -1267,10 +1741,25 @@ app.delete('/api/logs', async (req, res) => {
   res.json({ ok: true, deleted: n });
 });
 
+// Express 4 不会自动把 async handler 的 rejected Promise 交给错误中间件。
+// 统一包裹已注册路由，避免网络数据库异常导致请求挂起和 unhandledRejection。
+function forwardAsyncRouteErrors(router) {
+  for (const layer of router._router?.stack || []) {
+    if (!layer.route) continue;
+    for (const routeLayer of layer.route.stack) {
+      const handler = routeLayer.handle;
+      if (handler?.constructor?.name !== 'AsyncFunction') continue;
+      routeLayer.handle = (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+    }
+  }
+}
+
+forwardAsyncRouteErrors(app);
+
 app.use(async (err, req, res, next) => {
-  logger.error(req.method, req.path, err.stack || err);
+  logger.error(req.method, req.path, sanitizeLogText(err.stack || err));
   if (req.headers['x-op-id']) {
-    await logOp(req, 'error', 'http_err', `${req.method} ${req.path} 失败: ${err.message || err}`);
+    await logOp(req, 'error', 'http_err', `${req.method} ${req.path} 失败: ${sanitizeLogText(err.message || err)}`);
   }
   const status = err.status || 500;
   res.status(status).json({ error: status === 500 ? '服务器内部错误' : err.message });

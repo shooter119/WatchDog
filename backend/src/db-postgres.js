@@ -17,6 +17,12 @@ const DEFAULT_FIREFIGHTERS = [
   '贺官', '孙国彬', '吴志云', '陈子俊', '何金伟', '周子俊', '何哲锴', '徐刚', '姜俊翰', '文闻',
   '张文浩', '宋博韬',
 ];
+// 单位种子仅允许测试环境或显式配置；生产环境绝不默认创建公开验证码。
+const SEED_UNIT = {
+  id: process.env.WATCHDOG_SEED_UNIT_ID || (process.env.NODE_ENV === 'test' ? 'longyou-county-fire-rescue' : ''),
+  name: process.env.WATCHDOG_SEED_UNIT_NAME || (process.env.NODE_ENV === 'test' ? '龙游县消防救援大队' : ''),
+  verificationCode: process.env.WATCHDOG_SEED_UNIT_CODE || (process.env.NODE_ENV === 'test' ? '0570' : ''),
+};
 
 function incidentNumberFor(timestamp) {
   const date = new Date(timestamp);
@@ -35,7 +41,9 @@ function eventWithPayload(row) {
 }
 
 function limitOf(value, fallback, maximum) {
-  return Math.min(Number(value) || fallback, maximum);
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), maximum);
 }
 
 function rowOf(rows) {
@@ -54,6 +62,15 @@ async function initialize() {
     db.select('stations', { select: 'id', limit: 1 }),
   ]);
   const now = Date.now();
+  if (SEED_UNIT.id && SEED_UNIT.name && SEED_UNIT.verificationCode) {
+    await db.insert('units', [{
+      id: SEED_UNIT.id,
+      name: SEED_UNIT.name,
+      verification_code: SEED_UNIT.verificationCode,
+      created_at: 1780000000000,
+      updated_at: 1780000000000,
+    }], { onConflict: 'id', ignoreDuplicates: true });
+  }
   if (hotwords.length === 0) {
     await db.insert('hotwords', DEFAULT_HOTWORDS.map((word, index) => ({ id: randomUUID(), word, created_at: now + index })), {
       onConflict: 'word', ignoreDuplicates: true,
@@ -76,17 +93,29 @@ const ready = initialize();
 async function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}) {
   const filters = { scene };
   if (activeOnly) filters.exited_at = { op: 'is', value: 'null' };
-  return db.select('entries', { filters, order: 'entry_at.desc', limit });
+  return db.select('entries', { filters, order: 'entry_at.desc', limit: limitOf(limit, 500, 2000) });
 }
 
 async function getEntry(id) {
   return db.select('entries', { filters: { id }, single: true });
 }
 
-async function createEntry({ id, scene = 'default', name, pressureMpa, durationMin, entryAtMs, exitAtMs, source = 'voice', rawText = null }) {
+async function getUnit(id) {
+  return db.select('units', { filters: { id: String(id || '') }, single: true });
+}
+
+async function findUnit(name, verificationCode) {
+  return db.select('units', {
+    filters: { name: String(name || '').trim(), verification_code: String(verificationCode || '').trim() },
+    single: true,
+  });
+}
+
+async function createEntry({ id, scene = 'default', name, pressureMpa, durationMin, entryAtMs, exitAtMs, source = 'voice', rawText = null, cylinderVolL = null, consumptionLpm = null }) {
   const entry = await insertOne('entries', {
     id, scene, name, pressure_mpa: pressureMpa, duration_min: durationMin,
-    entry_at: entryAtMs, exit_at: exitAtMs, source, raw_text: rawText, created_at: Date.now(),
+    entry_at: entryAtMs, exit_at: exitAtMs, source, raw_text: rawText,
+    cylinder_vol_l: cylinderVolL, consumption_lpm: consumptionLpm, created_at: Date.now(),
   });
   if (pressureMpa != null) await addPressureSample({ entryId: id, scene, name, pressureMpa, reportedAtMs: entryAtMs });
   return entry || getEntry(id);
@@ -127,7 +156,7 @@ async function lastPressureSample(entryId) {
 }
 
 async function listPressureSamples(entryId, { limit = 20 } = {}) {
-  return db.select('pressure_samples', { filters: { entry_id: entryId }, order: 'reported_at.desc', limit });
+  return db.select('pressure_samples', { filters: { entry_id: entryId }, order: 'reported_at.desc', limit: limitOf(limit, 20, 500) });
 }
 
 async function listFirefighters() {
@@ -259,8 +288,10 @@ async function saveUserSettings(userId, scene = 'default', settings = {}) {
 
 const compatibilityIncidentAliases = new Map();
 
-async function getIncident(id) {
-  return db.select('incidents', { filters: { id: String(id || '') }, single: true });
+async function getIncident(id, { unitId = null } = {}) {
+  const filters = { id: String(id || '') };
+  if (unitId) filters.unit_id = unitId;
+  return db.select('incidents', { filters, single: true });
 }
 
 async function uniqueIncidentNumber(timestamp) {
@@ -272,10 +303,10 @@ async function uniqueIncidentNumber(timestamp) {
   throw new Error('无法生成唯一警情编号');
 }
 
-async function createIncident({ id = randomUUID(), createdAt = Date.now(), createdBy = null } = {}) {
+async function createIncident({ id = randomUUID(), unitId = null, createdAt = Date.now(), createdBy = null } = {}) {
   const created = Number(createdAt) || Date.now();
   return insertOne('incidents', {
-    id, number: await uniqueIncidentNumber(created), status: 'active', created_at: created,
+    id, unit_id: unitId, number: await uniqueIncidentNumber(created), status: 'active', created_at: created,
     last_activity_at: created, created_by: createdBy,
   });
 }
@@ -292,20 +323,38 @@ async function ensureIncidentId(value) {
   return incident.id;
 }
 
-async function listIncidents(status = null) {
+async function listIncidents(status = null, { unitId = null, limit = null } = {}) {
   const filters = status ? { status } : {};
-  const rows = await db.select('incidents', { filters });
-  return rows.sort((a, b) => {
+  if (unitId) filters.unit_id = unitId;
+  const normalizedLimit = Number.isFinite(Number(limit)) && Number(limit) > 0
+    ? Math.min(Math.floor(Number(limit)), 500)
+    : null;
+  // 对按状态查询的列表，把排序和上限下推到 PostgreSQL，避免先读取整个警情表。
+  // 混合状态仍需在 JS 中合并排序，以保持 active 优先的现有返回契约。
+  const pushdownOrder = status === 'active'
+    ? 'last_activity_at.desc,created_at.desc'
+    : status === 'archived'
+      ? 'archived_at.desc,created_at.desc'
+      : null;
+  const rows = await db.select('incidents', {
+    filters,
+    order: pushdownOrder,
+    limit: pushdownOrder ? normalizedLimit : null,
+  });
+  const sorted = rows.sort((a, b) => {
     if (status === 'archived') return Number(b.archived_at || 0) - Number(a.archived_at || 0);
     if (status === 'active') return Number(b.last_activity_at || 0) - Number(a.last_activity_at || 0);
     const activeDiff = (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1);
     return activeDiff || Number(b.archived_at || b.last_activity_at || 0) - Number(a.archived_at || a.last_activity_at || 0);
   });
+  return normalizedLimit == null ? sorted : sorted.slice(0, normalizedLimit);
 }
 
-async function findRecentActiveIncident(createdAfter) {
+async function findRecentActiveIncident(createdAfter, { unitId = null } = {}) {
+  const filters = { status: 'active', created_at: { op: 'gte', value: Number(createdAfter) || 0 } };
+  if (unitId) filters.unit_id = unitId;
   const candidates = await db.select('incidents', {
-    filters: { status: 'active', created_at: { op: 'gte', value: Number(createdAfter) || 0 } },
+    filters,
     order: 'created_at.desc', limit: 100,
   });
   for (const incident of candidates) {
@@ -345,7 +394,10 @@ async function touchIncidentActivity(id, at = Date.now()) {
   const current = await getIncident(id);
   if (!current || current.status !== 'active') return current;
   const value = Math.max(Number(current.last_activity_at) || 0, Number(at) || Date.now());
-  const result = await db.update('incidents', { id }, { last_activity_at: value });
+  // 带条件更新避免两个设备的旧时间戳覆盖较新的现场活动时间。
+  const result = value > Number(current.last_activity_at || 0)
+    ? await db.update('incidents', { id, last_activity_at: { op: 'lt', value } }, { last_activity_at: value })
+    : { rows: [] };
   return result.rows[0] || getIncident(id);
 }
 
@@ -353,29 +405,42 @@ async function unresolvedActiveCount(id) {
   return (await db.select('entries', { filters: { scene: id, exited_at: { op: 'is', value: 'null' } }, select: 'id' })).length;
 }
 
-async function archiveIncident(id, { archivedBy = null, now = Date.now(), auto = false } = {}) {
+async function archiveIncident(id, { archivedBy = null, now = Date.now(), auto = false, returnMeta = false } = {}) {
   const current = await getIncident(id);
-  if (!current) return null;
-  if (current.status === 'archived') return current;
+  if (!current) return returnMeta ? { incident: null, changed: false } : null;
+  if (current.status === 'archived') return returnMeta ? { incident: current, changed: false } : current;
   const result = await db.update('incidents', { id, status: 'active' }, {
     status: 'archived', archived_at: now, archived_by: archivedBy, auto_archived: auto ? 1 : 0,
     unresolved_active_count: await unresolvedActiveCount(id), version: Number(current.version) + 1,
   });
-  return result.rows[0] || getIncident(id);
+  const archived = result.rows[0] || await getIncident(id);
+  return returnMeta ? { incident: archived, changed: result.rows.length > 0 } : archived;
 }
 
-async function archiveStaleIncidents({ now = Date.now(), inactivityMs = 12 * 3600 * 1000 } = {}) {
+async function archiveStaleIncidents({ now = Date.now(), inactivityMs = 12 * 3600 * 1000, unitId = null } = {}) {
   const stale = await db.select('incidents', {
-    filters: { status: 'active', last_activity_at: { op: 'lte', value: now - inactivityMs } }, select: 'id',
+    filters: {
+      status: 'active',
+      last_activity_at: { op: 'lte', value: now - inactivityMs },
+      ...(unitId ? { unit_id: unitId } : {}),
+    },
+    select: 'id',
   });
+  let archivedCount = 0;
   for (const row of stale) {
-    const archived = await archiveIncident(row.id, { archivedBy: 'system', now, auto: true });
-    await appendIncidentEvent({
-      incidentId: row.id, type: 'incident_archived', occurredAt: now, recordedAt: now,
-      actorName: '系统', source: 'online', payload: { auto: true, unresolved_active_count: archived.unresolved_active_count },
-    });
+    const result = await archiveIncident(row.id, { archivedBy: 'system', now, auto: true, returnMeta: true });
+    const archived = result.incident;
+    // 只有本次调用完成了 active→archived 才能追加事件；并发轮询拿到的
+    // 已归档结果不能再次制造一条相同的时间线记录。
+    if (result.changed && archived?.status === 'archived' && Number(archived.archived_at) === now) {
+      archivedCount += 1;
+      await appendIncidentEvent({
+        incidentId: row.id, type: 'incident_archived', occurredAt: now, recordedAt: now,
+        actorName: '系统', source: 'online', payload: { auto: true, unresolved_active_count: archived.unresolved_active_count },
+      });
+    }
   }
-  return stale.length;
+  return archivedCount;
 }
 
 async function getIncidentEvent(id) {
@@ -481,13 +546,13 @@ async function deleteIncidentForce(id) {
 async function getDeviceProfile(deviceId) {
   const id = String(deviceId || '');
   const row = await db.select('device_profiles', { filters: { device_id: id }, single: true });
-  return row || { device_id: id, real_name: '', updated_at: 0 };
+  return row || { device_id: id, unit_id: null, real_name: '', updated_at: 0 };
 }
 
-async function saveDeviceProfile(deviceId, realName) {
+async function saveDeviceProfile(deviceId, realName, unitId = null) {
   const id = String(deviceId || '');
   const name = String(realName || '').trim().slice(0, 32);
-  const row = await insertOne('device_profiles', { device_id: id, real_name: name, updated_at: Date.now() }, {
+  const row = await insertOne('device_profiles', { device_id: id, unit_id: unitId, real_name: name, updated_at: Date.now() }, {
     onConflict: 'device_id',
   });
   return row || getDeviceProfile(id);
@@ -499,6 +564,7 @@ async function dedupeLegacyIncidentEvents() {
 }
 
 module.exports = {
+  getUnit, findUnit,
   getIncident, createIncident, listIncidents, findRecentActiveIncident, updateIncidentTitle,
   setIncidentSuggestedTitle, touchIncidentActivity, archiveIncident, archiveStaleIncidents,
   appendIncidentEvent, getIncidentEvent, getIncidentEventByClientOp, listIncidentEvents,

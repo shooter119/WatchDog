@@ -15,6 +15,21 @@ function requiredEnv(name, value) {
   return value;
 }
 
+function assertHttpsUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch (_) {
+    throw new Error('CLOUDBASE_REST_BASE_URL 无效');
+  }
+  if (url.protocol !== 'https:') {
+    throw new Error('CLOUDBASE_REST_BASE_URL 必须使用 HTTPS');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('CLOUDBASE_REST_BASE_URL 不得包含用户信息、查询参数或片段');
+  }
+}
+
 function encodeFilter(op, value) {
   if (op === 'is') return `is.${value}`;
   if (op === 'in') return `in.(${value.map((item) => String(item).replace(/[(),]/g, '')).join(',')})`;
@@ -59,6 +74,7 @@ class CloudBasePostgrestClient {
   assertConfigured() {
     requiredEnv('CLOUDBASE_ENV_ID 或 CLOUDBASE_REST_BASE_URL', this.baseUrl);
     requiredEnv('CLOUDBASE_API_KEY', this.apiKey);
+    assertHttpsUrl(this.baseUrl);
     if (typeof this.fetchImpl !== 'function') throw new Error('当前 Node.js 运行时缺少 fetch');
   }
 

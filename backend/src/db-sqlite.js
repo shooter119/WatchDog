@@ -17,7 +17,21 @@ if (!allowedJournalModes.has(journalMode)) {
 db.exec(`PRAGMA journal_mode = ${journalMode};`);
 db.exec(`PRAGMA busy_timeout = ${Number(process.env.WATCHDOG_SQLITE_BUSY_TIMEOUT_MS || 5000)};`);
 
+function limitOf(value, fallback, maximum) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.floor(parsed), maximum);
+}
+
 db.exec(`
+CREATE TABLE IF NOT EXISTS units (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  verification_code TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS entries (
   id TEXT PRIMARY KEY,
   scene TEXT NOT NULL DEFAULT 'default',
@@ -29,10 +43,11 @@ CREATE TABLE IF NOT EXISTS entries (
   exited_at INTEGER,
   source TEXT NOT NULL DEFAULT 'voice',
   raw_text TEXT,
+  cylinder_vol_l REAL,
+  consumption_lpm REAL,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_entries_entry_at ON entries(entry_at);
-CREATE INDEX IF NOT EXISTS idx_entries_scene ON entries(scene, entry_at);
 
 CREATE TABLE IF NOT EXISTS firefighters (
   id TEXT PRIMARY KEY,
@@ -57,7 +72,6 @@ CREATE TABLE IF NOT EXISTS logs (
   data TEXT,
   created_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_logs_scene ON logs(scene, created_at);
 CREATE INDEX IF NOT EXISTS idx_logs_op ON logs(op_id);
 
 CREATE TABLE IF NOT EXISTS user_settings (
@@ -68,7 +82,6 @@ CREATE TABLE IF NOT EXISTS user_settings (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, scene, key)
 );
-CREATE INDEX IF NOT EXISTS idx_user_settings_scene ON user_settings(scene, user_id);
 
 CREATE TABLE IF NOT EXISTS pressure_samples (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,7 +102,6 @@ CREATE TABLE IF NOT EXISTS notes (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_notes_scene ON notes(scene, created_at);
 
 CREATE TABLE IF NOT EXISTS chat_messages (
   id TEXT PRIMARY KEY,
@@ -98,14 +110,13 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   content TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_chat_scene ON chat_messages(scene, created_at);
 
 `);
 
 // 警情档案模型：业务主键使用 UUID，旧投影表中的字符串列仅作为一次迁移兼容层。
 db.exec(
   'CREATE TABLE IF NOT EXISTS incidents (' +
-  'id TEXT PRIMARY KEY, number TEXT NOT NULL UNIQUE, title TEXT, suggested_title TEXT, ' +
+  'id TEXT PRIMARY KEY, unit_id TEXT, number TEXT NOT NULL UNIQUE, title TEXT, suggested_title TEXT, ' +
   'status TEXT NOT NULL DEFAULT \'active\' CHECK(status IN (\'active\', \'archived\')), ' +
   'created_at INTEGER NOT NULL, last_activity_at INTEGER NOT NULL, archived_at INTEGER, ' +
   'archived_by TEXT, auto_archived INTEGER NOT NULL DEFAULT 0, ' +
@@ -128,7 +139,7 @@ db.exec(
   'UNIQUE(incident_id, station_name));' +
   'CREATE INDEX IF NOT EXISTS idx_incident_forces_incident ON incident_forces(incident_id, station_name);' +
   'CREATE TABLE IF NOT EXISTS device_profiles (' +
-  'device_id TEXT PRIMARY KEY, real_name TEXT NOT NULL DEFAULT \'\', updated_at INTEGER NOT NULL);'
+  'device_id TEXT PRIMARY KEY, unit_id TEXT, real_name TEXT NOT NULL DEFAULT \'\', updated_at INTEGER NOT NULL);'
 );
 
 function incidentNumberFor(timestamp) {
@@ -220,6 +231,12 @@ for (const stationName of ['龙翔路站', '永安路站', '兴园站']) {
 if (!hasColumn('entries', 'consumption_actual_lpm')) {
   db.exec('ALTER TABLE entries ADD COLUMN consumption_actual_lpm REAL');
 }
+if (!hasColumn('entries', 'cylinder_vol_l')) {
+  db.exec('ALTER TABLE entries ADD COLUMN cylinder_vol_l REAL');
+}
+if (!hasColumn('entries', 'consumption_lpm')) {
+  db.exec('ALTER TABLE entries ADD COLUMN consumption_lpm REAL');
+}
 
 // 实名认证迁移：notes 增加发布者姓名列（可空串 = 匿名）
 if (!hasColumn('notes', 'author')) {
@@ -230,6 +247,15 @@ if (!hasColumn('notes', 'author')) {
 function hasColumn(table, column) {
   return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
 }
+if (!hasColumn('incidents', 'unit_id')) {
+  db.exec('ALTER TABLE incidents ADD COLUMN unit_id TEXT');
+}
+if (!hasColumn('device_profiles', 'unit_id')) {
+  db.exec('ALTER TABLE device_profiles ADD COLUMN unit_id TEXT');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_incidents_unit_status_activity ON incidents(unit_id, status, last_activity_at DESC)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_device_profiles_unit ON device_profiles(unit_id, device_id)');
+
 for (const t of ['entries']) {
   if (hasColumn(t, 'scene')) continue;
   db.exec(`ALTER TABLE ${t} RENAME TO ${t}_old;`);
@@ -246,10 +272,13 @@ for (const t of ['entries']) {
         exited_at INTEGER,
         source TEXT NOT NULL DEFAULT 'voice',
         raw_text TEXT,
+        consumption_actual_lpm REAL,
+        cylinder_vol_l REAL,
+        consumption_lpm REAL,
         created_at INTEGER NOT NULL
       );
-      INSERT INTO entries (id, scene, name, pressure_mpa, duration_min, entry_at, exit_at, exited_at, source, raw_text, created_at)
-        SELECT id, 'default', name, pressure_mpa, duration_min, entry_at, exit_at, exited_at, source, raw_text, created_at FROM entries_old;
+      INSERT INTO entries (id, scene, name, pressure_mpa, duration_min, entry_at, exit_at, exited_at, source, raw_text, consumption_actual_lpm, cylinder_vol_l, consumption_lpm, created_at)
+        SELECT id, 'default', name, pressure_mpa, duration_min, entry_at, exit_at, exited_at, source, raw_text, consumption_actual_lpm, cylinder_vol_l, consumption_lpm, created_at FROM entries_old;
     `);
   } else {
     const nameCol = t === 'firefighters' ? 'name' : 'word';
@@ -296,11 +325,25 @@ if (hasColumn('hotwords', 'scene')) {
   `);
 }
 // 迁移后确保唯一约束与索引
-db.exec(`
-CREATE INDEX IF NOT EXISTS idx_entries_scene ON entries(scene, entry_at);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_firefighters_name ON firefighters(name);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_hotwords_word ON hotwords(word);
-`);
+if (hasColumn('entries', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_entries_scene ON entries(scene, entry_at)');
+if (hasColumn('logs', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_logs_scene ON logs(scene, created_at)');
+if (hasColumn('user_settings', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_user_settings_scene ON user_settings(scene, user_id)');
+if (hasColumn('notes', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_notes_scene ON notes(scene, created_at)');
+if (hasColumn('chat_messages', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_chat_scene ON chat_messages(scene, created_at)');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_firefighters_name ON firefighters(name)');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_hotwords_word ON hotwords(word)');
+
+// 单位种子仅允许测试环境或显式配置；生产环境绝不默认创建公开验证码。
+const seedUnit = {
+  id: process.env.WATCHDOG_SEED_UNIT_ID || (process.env.NODE_ENV === 'test' ? 'longyou-county-fire-rescue' : ''),
+  name: process.env.WATCHDOG_SEED_UNIT_NAME || (process.env.NODE_ENV === 'test' ? '龙游县消防救援大队' : ''),
+  code: process.env.WATCHDOG_SEED_UNIT_CODE || (process.env.NODE_ENV === 'test' ? '0570' : ''),
+};
+if (seedUnit.id && seedUnit.name && seedUnit.code) {
+  db.prepare(
+    'INSERT OR IGNORE INTO units (id, name, verification_code, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(seedUnit.id, seedUnit.name, seedUnit.code, 1780000000000, 1780000000000);
+}
 
 // 装机自带专业热词（全局生效）：仅当表为空时写入，避免覆盖用户已删除的词条
 const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救'];
@@ -341,17 +384,27 @@ function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}
   let sql = 'SELECT * FROM entries WHERE scene = ?';
   if (activeOnly) sql += ' AND exited_at IS NULL';
   sql += ' ORDER BY entry_at DESC LIMIT ?';
-  return db.prepare(sql).all(scene, limit);
+  return db.prepare(sql).all(scene, limitOf(limit, 500, 2000));
 }
 
 function getEntry(id) {
   return db.prepare('SELECT * FROM entries WHERE id = ?').get(id);
 }
 
-function createEntry({ id, scene = 'default', name, pressureMpa, durationMin, entryAtMs, exitAtMs, source = 'voice', rawText = null }) {
+function getUnit(id) {
+  return db.prepare('SELECT id, name, verification_code, created_at, updated_at FROM units WHERE id = ?').get(String(id || ''));
+}
+
+function findUnit(name, verificationCode) {
+  return db.prepare(
+    'SELECT id, name, verification_code, created_at, updated_at FROM units WHERE name = ? AND verification_code = ?'
+  ).get(String(name || '').trim(), String(verificationCode || '').trim());
+}
+
+function createEntry({ id, scene = 'default', name, pressureMpa, durationMin, entryAtMs, exitAtMs, source = 'voice', rawText = null, cylinderVolL = null, consumptionLpm = null }) {
   db.prepare(
-    'INSERT INTO entries (id, scene, name, pressure_mpa, duration_min, entry_at, exit_at, source, raw_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, scene, name, pressureMpa, durationMin, entryAtMs, exitAtMs, source, rawText, Date.now());
+    'INSERT INTO entries (id, scene, name, pressure_mpa, duration_min, entry_at, exit_at, source, raw_text, cylinder_vol_l, consumption_lpm, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, scene, name, pressureMpa, durationMin, entryAtMs, exitAtMs, source, rawText, cylinderVolL, consumptionLpm, Date.now());
   if (pressureMpa != null) {
     addPressureSample({ entryId: id, scene, name, pressureMpa, reportedAtMs: entryAtMs });
   }
@@ -396,7 +449,7 @@ function lastPressureSample(entryId) {
 function listPressureSamples(entryId, { limit = 20 } = {}) {
   return db
     .prepare('SELECT * FROM pressure_samples WHERE entry_id = ? ORDER BY reported_at DESC LIMIT ?')
-    .all(entryId, limit);
+    .all(entryId, limitOf(limit, 20, 500));
 }
 
 /** 消防员名单全局共享，不区分场景 */
@@ -462,7 +515,7 @@ function listLogs({ scene = 'default', limit = 200, opId = null, device = null }
     args.push(device);
   }
   sql += ' ORDER BY created_at DESC LIMIT ?';
-  args.push(Math.min(Number(limit) || 200, 1000));
+  args.push(limitOf(limit, 200, 1000));
   return db.prepare(sql).all(...args).map((r) => {
     let data = null;
     if (r.data) {
@@ -492,7 +545,7 @@ function purgeOldLogs(days = 30) {
 function listNotes({ scene = 'default', limit = 500 } = {}) {
   return db
     .prepare('SELECT * FROM notes WHERE scene = ? ORDER BY created_at DESC LIMIT ?')
-    .all(scene, Math.min(Number(limit) || 500, 2000));
+    .all(scene, limitOf(limit, 500, 2000));
 }
 
 function getNote(id) {
@@ -529,7 +582,7 @@ function purgeOldNotes(days = 30) {
 function listChatMessages({ scene = 'default', limit = 100 } = {}) {
   return db
     .prepare('SELECT * FROM chat_messages WHERE scene = ? ORDER BY created_at ASC LIMIT ?')
-    .all(scene, Math.min(Number(limit) || 100, 500));
+    .all(scene, limitOf(limit, 100, 500));
 }
 
 function createChatMessage({ id, scene = 'default', role, content }) {
@@ -590,15 +643,18 @@ function saveUserSettings(userId, scene = 'default', settings = {}) {
 
 const compatibilityIncidentAliases = new Map();
 
-function getIncident(id) {
+function getIncident(id, { unitId = null } = {}) {
+  if (unitId) {
+    return db.prepare('SELECT * FROM incidents WHERE id = ? AND unit_id = ?').get(String(id || ''), unitId);
+  }
   return db.prepare('SELECT * FROM incidents WHERE id = ?').get(String(id || ''));
 }
 
-function createIncident({ id = randomUUID(), createdAt = Date.now(), createdBy = null } = {}) {
+function createIncident({ id = randomUUID(), unitId = null, createdAt = Date.now(), createdBy = null } = {}) {
   const created = Number(createdAt) || Date.now();
   db.prepare(
-    'INSERT INTO incidents (id, number, status, created_at, last_activity_at, created_by) VALUES (?, ?, \'active\', ?, ?, ?)'
-  ).run(id, uniqueIncidentNumber(created), created, created, createdBy);
+    'INSERT INTO incidents (id, unit_id, number, status, created_at, last_activity_at, created_by) VALUES (?, ?, ?, \'active\', ?, ?, ?)'
+  ).run(id, unitId, uniqueIncidentNumber(created), created, created, createdBy);
   return getIncident(id);
 }
 
@@ -614,20 +670,40 @@ function ensureIncidentId(value) {
   return incident.id;
 }
 
-function listIncidents(status = null) {
-  if (status === 'active') return db.prepare('SELECT * FROM incidents WHERE status = \'active\' ORDER BY last_activity_at DESC, created_at DESC').all();
-  if (status === 'archived') return db.prepare('SELECT * FROM incidents WHERE status = \'archived\' ORDER BY archived_at DESC, created_at DESC').all();
-  return db.prepare('SELECT * FROM incidents ORDER BY CASE WHEN status = \'active\' THEN 0 ELSE 1 END, COALESCE(archived_at, last_activity_at) DESC, created_at DESC').all();
+function listIncidents(status = null, { unitId = null, limit = null } = {}) {
+  const filters = [];
+  const args = [];
+  if (status) {
+    filters.push('status = ?');
+    args.push(status);
+  }
+  if (unitId) {
+    // 未归属历史记录属于隔离的 legacy 命名空间，普通单位不可见。
+    filters.push('unit_id = ?');
+    args.push(unitId);
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const normalizedLimit = Number.isFinite(Number(limit)) && Number(limit) > 0
+    ? Math.min(Math.floor(Number(limit)), 500)
+    : null;
+  const limitSql = normalizedLimit == null ? '' : ' LIMIT ?';
+  if (normalizedLimit != null) args.push(normalizedLimit);
+  return db.prepare(
+    'SELECT * FROM incidents ' + where +
+      ' ORDER BY CASE WHEN status = \'active\' THEN 0 ELSE 1 END, COALESCE(archived_at, last_activity_at) DESC, created_at DESC' + limitSql
+  ).all(...args);
 }
 
 // 只把通过新建接口产生过 incident_created 事件的记录作为建档冷却依据，
 // 避免维护迁移或单元测试直接写入的兼容警情阻塞真实用户建档。
-function findRecentActiveIncident(createdAfter) {
+function findRecentActiveIncident(createdAfter, { unitId = null } = {}) {
+  const unitFilter = unitId ? ' AND i.unit_id = ? ' : '';
+  const args = unitId ? [Number(createdAfter) || 0, unitId] : [Number(createdAfter) || 0];
   return db.prepare(
-    'SELECT i.* FROM incidents i WHERE i.status = \'active\' AND i.created_at >= ? ' +
+    'SELECT i.* FROM incidents i WHERE i.status = \'active\' AND i.created_at >= ? ' + unitFilter +
       'AND EXISTS (SELECT 1 FROM incident_events e WHERE e.incident_id = i.id AND e.type = \'incident_created\') ' +
       'ORDER BY i.created_at DESC LIMIT 1'
-  ).get(Number(createdAfter) || 0) || null;
+  ).get(...args) || null;
 }
 
 function updateIncidentTitle(id, title, { expectedVersion = null } = {}) {
@@ -660,32 +736,42 @@ function unresolvedActiveCount(id) {
   return db.prepare('SELECT COUNT(*) AS count FROM entries WHERE scene = ? AND exited_at IS NULL').get(id).count;
 }
 
-function archiveIncident(id, { archivedBy = null, now = Date.now(), auto = false } = {}) {
+function archiveIncident(id, { archivedBy = null, now = Date.now(), auto = false, returnMeta = false } = {}) {
   const current = getIncident(id);
-  if (!current) return null;
-  if (current.status === 'archived') return current;
-  db.prepare(
-    'UPDATE incidents SET status = \'archived\', archived_at = ?, archived_by = ?, auto_archived = ?, unresolved_active_count = ?, version = version + 1 WHERE id = ?'
+  if (!current) return returnMeta ? { incident: null, changed: false } : null;
+  if (current.status === 'archived') return returnMeta ? { incident: current, changed: false } : current;
+  const result = db.prepare(
+    'UPDATE incidents SET status = \'archived\', archived_at = ?, archived_by = ?, auto_archived = ?, unresolved_active_count = ?, version = version + 1 WHERE id = ? AND status = \'active\''
   ).run(now, archivedBy, auto ? 1 : 0, unresolvedActiveCount(id), id);
-  return getIncident(id);
+  const archived = getIncident(id);
+  return returnMeta ? { incident: archived, changed: result.changes > 0 } : archived;
 }
 
-function archiveStaleIncidents({ now = Date.now(), inactivityMs = 12 * 3600 * 1000 } = {}) {
+function archiveStaleIncidents({ now = Date.now(), inactivityMs = 12 * 3600 * 1000, unitId = null } = {}) {
   const cutoff = now - inactivityMs;
-  const stale = db.prepare('SELECT id FROM incidents WHERE status = \'active\' AND last_activity_at <= ?').all(cutoff);
+  const stale = unitId
+    ? db.prepare('SELECT id FROM incidents WHERE status = \'active\' AND last_activity_at <= ? AND unit_id = ?').all(cutoff, unitId)
+    : db.prepare('SELECT id FROM incidents WHERE status = \'active\' AND last_activity_at <= ?').all(cutoff);
+  let archivedCount = 0;
   for (const row of stale) {
-    const archived = archiveIncident(row.id, { archivedBy: 'system', now, auto: true });
-    appendIncidentEvent({
-      incidentId: row.id,
-      type: 'incident_archived',
-      occurredAt: now,
-      recordedAt: now,
-      actorName: '系统',
-      source: 'online',
-      payload: { auto: true, unresolved_active_count: archived.unresolved_active_count },
-    });
+    const result = archiveIncident(row.id, { archivedBy: 'system', now, auto: true, returnMeta: true });
+    const archived = result.incident;
+    // 多个轮询请求可能同时发现同一条陈旧警情；只有真正完成 active→archived
+    // 的调用可以写归档事件，避免时间线出现重复自动归档记录。
+    if (result.changed && archived?.status === 'archived' && archived.archived_at === now) {
+      archivedCount += 1;
+      appendIncidentEvent({
+        incidentId: row.id,
+        type: 'incident_archived',
+        occurredAt: now,
+        recordedAt: now,
+        actorName: '系统',
+        source: 'online',
+        payload: { auto: true, unresolved_active_count: archived.unresolved_active_count },
+      });
+    }
   }
-  return stale.length;
+  return archivedCount;
 }
 
 function eventWithPayload(row) {
@@ -710,17 +796,26 @@ function appendIncidentEvent({
     const duplicate = getIncidentEventByClientOp(clientOpId);
     if (duplicate) return duplicate;
   }
-  db.prepare(
-    'INSERT INTO incident_events (id, incident_id, type, occurred_at, recorded_at, actor_device_id, actor_name, source, client_op_id, payload, revision_of, voided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, incidentId, type, Number(occurredAt) || Date.now(), Number(recordedAt) || Date.now(),
-    actorDeviceId, actorName, source, clientOpId, payload == null ? null : JSON.stringify(payload), revisionOf, voidedAt);
+  try {
+    db.prepare(
+      'INSERT INTO incident_events (id, incident_id, type, occurred_at, recorded_at, actor_device_id, actor_name, source, client_op_id, payload, revision_of, voided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, incidentId, type, Number(occurredAt) || Date.now(), Number(recordedAt) || Date.now(),
+      actorDeviceId, actorName, source, clientOpId, payload == null ? null : JSON.stringify(payload), revisionOf, voidedAt);
+  } catch (error) {
+    // 并发请求可能在“查询重复”与 INSERT 之间竞争；唯一索引获胜后返回
+    // 已存在事件，保持和 PostgreSQL 驱动相同的幂等语义。
+    if (clientOpId && String(error.message || '').includes('UNIQUE')) {
+      return getIncidentEventByClientOp(clientOpId);
+    }
+    throw error;
+  }
   return getIncidentEvent(id);
 }
 
 function listIncidentEvents(incidentId, { limit = 2000 } = {}) {
   return db.prepare(
     'SELECT * FROM incident_events WHERE incident_id = ? ORDER BY occurred_at DESC, recorded_at DESC LIMIT ?'
-  ).all(incidentId, Math.min(Number(limit) || 2000, 5000)).map(eventWithPayload);
+  ).all(incidentId, limitOf(limit, 2000, 5000)).map(eventWithPayload);
 }
 
 function listStations() {
@@ -781,16 +876,16 @@ function deleteIncidentForce(id) {
 
 function getDeviceProfile(deviceId) {
   const id = String(deviceId || '');
-  const row = db.prepare('SELECT device_id, real_name, updated_at FROM device_profiles WHERE device_id = ?').get(id);
-  return row || { device_id: id, real_name: '', updated_at: 0 };
+  const row = db.prepare('SELECT device_id, unit_id, real_name, updated_at FROM device_profiles WHERE device_id = ?').get(id);
+  return row || { device_id: id, unit_id: null, real_name: '', updated_at: 0 };
 }
 
-function saveDeviceProfile(deviceId, realName) {
+function saveDeviceProfile(deviceId, realName, unitId = null) {
   const id = String(deviceId || '');
   const name = String(realName || '').trim().slice(0, 32);
   const now = Date.now();
-  db.prepare('INSERT INTO device_profiles (device_id, real_name, updated_at) VALUES (?, ?, ?) ON CONFLICT(device_id) DO UPDATE SET real_name = excluded.real_name, updated_at = excluded.updated_at')
-    .run(id, name, now);
+  db.prepare('INSERT INTO device_profiles (device_id, unit_id, real_name, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(device_id) DO UPDATE SET unit_id = excluded.unit_id, real_name = excluded.real_name, updated_at = excluded.updated_at')
+    .run(id, unitId, name, now);
   return getDeviceProfile(id);
 }
 
@@ -847,6 +942,8 @@ backfillIncidentEvents();
 dedupeLegacyIncidentEvents();
 
 module.exports = {
+  getUnit,
+  findUnit,
   getIncident,
   createIncident,
   listIncidents,

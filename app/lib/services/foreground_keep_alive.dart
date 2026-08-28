@@ -5,6 +5,10 @@ import 'dart:io';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:http/http.dart' as http;
 
+import 'settings.dart';
+
+bool _isSafeServerUrl(String value) => Settings.isSafeHttpUrl(value);
+
 /// 后台值守前台服务（flutter_foreground_task 10.x）：
 /// - 前台服务保住进程 + CPU 唤醒锁，App 切后台/锁屏后 5 秒轮询与 1 秒阈值检查照常运行
 ///   （主 isolate 的 Timer 逻辑不变，服务 isolate 独立拉数据只负责刷新常驻通知栏）。
@@ -18,15 +22,34 @@ class ForegroundKeepAlive {
   static const _kServerUrl = 'keepalive_server_url';
   static const _kIncidentId = 'keepalive_incident_id';
   static const _kToken = 'keepalive_token';
+  static const _kUnitId = 'keepalive_unit_id';
+  static const _kUnitCode = 'keepalive_unit_code';
   static const _kWarnMin = 'keepalive_warn_min';
   static const _kAlarmMin = 'keepalive_alarm_min';
 
   static bool _inited = false;
+  static Future<void>? _initFuture;
+  static Future<void> _operationTail = Future<void>.value();
 
   /// 必须在 runApp 前调用一次（注册静态 TaskHandler，供服务 isolate 恢复）
-  static Future<void> init() async {
-    if (_inited) return;
-    _inited = true;
+  static Future<void> init() {
+    if (_inited) return Future<void>.value();
+    final pending = _initFuture;
+    if (pending != null) return pending;
+    final future = _initInternal();
+    _initFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_initFuture, future)) _initFuture = null;
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_initFuture, future)) _initFuture = null;
+      },
+    );
+    return future;
+  }
+
+  static Future<void> _initInternal() async {
     try {
       FlutterForegroundTask.init(
         androidNotificationOptions: AndroidNotificationOptions(
@@ -48,6 +71,7 @@ class ForegroundKeepAlive {
           allowWifiLock: true,
         ),
       );
+      _inited = true;
     } catch (error) {
       // 允许下一次真正使用前台服务时重试；启动阶段失败不应影响核心业务。
       _inited = false;
@@ -55,33 +79,66 @@ class ForegroundKeepAlive {
     }
   }
 
+  /// 串行化 start/stop，避免设置页自动保存、启动恢复和退出单位同时向插件
+  /// 发起互相覆盖的服务操作。失败不会阻塞后续操作。
+  static Future<void> _enqueueOperation(Future<void> Function() operation) {
+    final previous = _operationTail;
+    final future = previous
+        .catchError((Object _) {})
+        .then<void>((_) => operation());
+    _operationTail = future.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return future;
+  }
+
   /// 启动保活服务：先把轮询所需配置写入服务数据，再启动（服务内独立拉看板数据）
   static Future<void> start({
     required String serverUrl,
     required String incidentId,
     required String token,
+    required String unitId,
+    required String unitCode,
     required int warnMin,
     required int alarmMin,
-  }) async {
-    if (!Platform.isAndroid) return; // 非 Android（含测试环境）无前台服务
-    await FlutterForegroundTask.saveData(key: _kServerUrl, value: serverUrl);
-    await FlutterForegroundTask.saveData(key: _kIncidentId, value: incidentId);
-    await FlutterForegroundTask.saveData(key: _kToken, value: token);
-    await FlutterForegroundTask.saveData(key: _kWarnMin, value: warnMin);
-    await FlutterForegroundTask.saveData(key: _kAlarmMin, value: alarmMin);
-    if (await FlutterForegroundTask.isRunningService) return;
-    await FlutterForegroundTask.startService(
-      serviceTypes: const [ForegroundServiceTypes.specialUse],
-      notificationTitle: '火场指挥中',
-      notificationText: '后台轮询与报警保护已开启',
-      callback: watchdogStartCallback,
-    );
+  }) {
+    if (!Platform.isAndroid) {
+      return Future<void>.value(); // 非 Android（含测试环境）无前台服务
+    }
+    if (!_isSafeServerUrl(serverUrl)) {
+      throw ArgumentError('后台值守服务器地址必须使用 HTTPS');
+    }
+    return _enqueueOperation(() async {
+      await init();
+      await FlutterForegroundTask.saveData(key: _kServerUrl, value: serverUrl);
+      await FlutterForegroundTask.saveData(
+        key: _kIncidentId,
+        value: incidentId,
+      );
+      await FlutterForegroundTask.saveData(key: _kToken, value: token);
+      await FlutterForegroundTask.saveData(key: _kUnitId, value: unitId);
+      await FlutterForegroundTask.saveData(key: _kUnitCode, value: unitCode);
+      await FlutterForegroundTask.saveData(key: _kWarnMin, value: warnMin);
+      await FlutterForegroundTask.saveData(key: _kAlarmMin, value: alarmMin);
+      if (await FlutterForegroundTask.isRunningService) return;
+      await FlutterForegroundTask.startService(
+        serviceTypes: const [ForegroundServiceTypes.specialUse],
+        notificationTitle: '火场指挥中',
+        notificationText: '后台轮询与报警保护已开启',
+        callback: watchdogStartCallback,
+      );
+    });
   }
 
   /// 停止保活服务
-  static Future<void> stop() async {
-    if (!Platform.isAndroid) return;
-    await FlutterForegroundTask.stopService();
+  static Future<void> stop() {
+    if (!Platform.isAndroid) return Future<void>.value();
+    return _enqueueOperation(() async {
+      if (await FlutterForegroundTask.isRunningService) {
+        await FlutterForegroundTask.stopService();
+      }
+    });
   }
 
   static Future<bool> get isRunning async =>
@@ -117,8 +174,11 @@ class WatchdogTaskHandler extends TaskHandler {
   String _serverUrl = '';
   String _incidentId = '';
   String _token = '';
+  String _unitId = '';
+  String _unitCode = '';
   int _warnMin = 10;
   int _alarmMin = 5;
+  bool _refreshing = false;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -135,6 +195,14 @@ class WatchdogTaskHandler extends TaskHandler {
         '';
     _token =
         await FlutterForegroundTask.getData<String>(key: 'keepalive_token') ??
+        '';
+    _unitId =
+        await FlutterForegroundTask.getData<String>(key: 'keepalive_unit_id') ??
+        '';
+    _unitCode =
+        await FlutterForegroundTask.getData<String>(
+          key: 'keepalive_unit_code',
+        ) ??
         '';
     _warnMin =
         await FlutterForegroundTask.getData<int>(key: 'keepalive_warn_min') ??
@@ -156,11 +224,19 @@ class WatchdogTaskHandler extends TaskHandler {
 
   Future<void> _refresh() async {
     if (_serverUrl.isEmpty || _incidentId.isEmpty) return;
+    if (!_isSafeServerUrl(_serverUrl)) return;
+    if (_refreshing) return;
+    _refreshing = true;
     try {
       final res = await http
           .get(
             Uri.parse('$_serverUrl/api/entries?active=1'),
-            headers: {'X-Incident-Id': _incidentId, 'X-Api-Token': _token},
+            headers: {
+              'X-Incident-Id': _incidentId,
+              'X-Api-Token': _token,
+              if (_unitId.isNotEmpty) 'X-Unit-Id': _unitId,
+              if (_unitCode.isNotEmpty) 'X-Unit-Code': _unitCode,
+            },
           )
           .timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return;
@@ -171,7 +247,6 @@ class WatchdogTaskHandler extends TaskHandler {
         final m = raw as Map<String, dynamic>;
         if (m['exited_at'] != null) continue;
         final exitAt = (m['exit_at'] as num?)?.toInt() ?? 0;
-        if (exitAt <= now) continue;
         active.add({'name': m['name'] ?? '?', 'exitAt': exitAt});
       }
       active.sort((a, b) => (a['exitAt'] as int).compareTo(b['exitAt'] as int));
@@ -200,6 +275,8 @@ class WatchdogTaskHandler extends TaskHandler {
       );
     } catch (_) {
       // 网络波动静默，下个周期重试
+    } finally {
+      _refreshing = false;
     }
   }
 

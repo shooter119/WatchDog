@@ -194,8 +194,34 @@ class DiagnosticLogService {
         } catch (_) {}
         return;
       }
-      await api.sendLogs(events.take(maxPendingEvents).toList());
-      await file.delete();
+      final batch = events.take(maxPendingEvents).toList();
+      await api.sendLogs(batch);
+      // 发送期间仍可能有新诊断事件追加到 pending 文件；成功后只删除
+      // 本次快照对应的 op_id，避免覆盖并发写入的故障信息。
+      final uploadedIds = batch
+          .map((event) => event['op_id']?.toString())
+          .whereType<String>()
+          .toSet();
+      await _enqueueWrite(() async {
+        final current = await _readEvents(file);
+        final remaining = <Map<String, dynamic>>[];
+        final pendingIds = Set<String>.from(uploadedIds);
+        for (final event in current) {
+          final id = event['op_id']?.toString();
+          if (id != null && pendingIds.remove(id)) continue;
+          remaining.add(event);
+        }
+        if (remaining.isEmpty) {
+          try {
+            await file.delete();
+          } catch (_) {}
+        } else {
+          await file.writeAsString(
+            '${remaining.map(jsonEncode).join('\n')}\n',
+            flush: true,
+          );
+        }
+      });
     } catch (_) {
       // 诊断上传失败不能影响 App；待传文件留到下一次启动/同步重试。
     } finally {
@@ -211,8 +237,10 @@ class DiagnosticLogService {
       ? null
       : File('${_directory!.path}/watchdog_diagnostics_pending.jsonl');
 
-  void _enqueueWrite(Future<void> Function() task) {
-    _writeQueue = _writeQueue.then<void>((_) => task()).catchError((_) {});
+  Future<void> _enqueueWrite(Future<void> Function() task) {
+    final scheduled = _writeQueue.then<void>((_) => task());
+    _writeQueue = scheduled.catchError((_) {});
+    return scheduled;
   }
 
   Future<void> _appendEvent(Map<String, dynamic> event) async {
@@ -308,12 +336,17 @@ class DiagnosticLogService {
   static String _redact(String value) {
     var clean = value;
     final secretPattern = RegExp(
-      r'(api[_-]?token|authorization|access[_-]?token|password|secret)(\s*[:=]\s*)[^\s,;]+',
+      r'(api[_-]?token|authorization|access[_-]?token|password|secret)(\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+',
       caseSensitive: false,
     );
     clean = clean.replaceAllMapped(secretPattern, (match) {
       return '${match.group(1)}${match.group(2)}[REDACTED]';
     });
+    // 异常文本常只有“Bearer <token>”而没有键名，也必须在最终落盘前清理。
+    clean = clean.replaceAll(
+      RegExp(r'\bbearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false),
+      'Bearer [REDACTED]',
+    );
     return clean;
   }
 }

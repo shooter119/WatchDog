@@ -16,7 +16,7 @@ CLOUDBASE_SECRET_KEY=<secret-key> \
 npm run db:migrate
 ```
 
-迁移脚本只执行 `backend/migrations/` 中的 DDL，不读取、不导入历史 SQLite 数据。默认消防员、热词和消防站由服务首次启动时幂等初始化。
+迁移脚本只执行 `backend/migrations/` 中的 DDL，不读取、不导入历史 SQLite 数据。默认消防员、热词和消防站由服务首次启动时幂等初始化。`002_units.sql` 只新增单位表和可空归属字段，不再写入固定验证码；测试环境可通过 `WATCHDOG_SEED_UNIT_*` 显式预置单位，生产环境必须配置实际单位参数，不会把既有警情改归属到该单位。
 
 ## 2. 创建云托管服务
 
@@ -50,6 +50,11 @@ CLOUDBASE_REST_TIMEOUT_MS=10000
 CLOUDBASE_REST_MAX_RETRIES=2
 API_TOKEN=<random-api-token>
 
+# 测试/演示阶段预置单位（可选；生产环境必须替换为实际单位参数）
+WATCHDOG_SEED_UNIT_ID=longyou-county-fire-rescue
+WATCHDOG_SEED_UNIT_NAME=龙游县消防救援大队
+WATCHDOG_SEED_UNIT_CODE=0570
+
 VOLC_APP_KEY=<volc-app-key>
 VOLC_ACCESS_TOKEN=<volc-access-token>
 VOLC_RESOURCE_ID=volc.bigasr.sauc.duration
@@ -74,7 +79,7 @@ GET /api/config
 
 再验证新建警情、进场、出场、压力复核、随手记、操作日志、名单热词、辅助问答和语音转写。重启云托管实例后确认数据仍存在。
 
-验证完成后，将该 HTTPS 网关地址配置为 App 的默认服务器地址。当前 App 已内置上述地址；也可以通过 `WATCHDOG_API_BASE_URL` 覆盖。端侧 ASR 模型通过同一网关的 `/models/` 路径下载，也可以用 `WATCHDOG_MODEL_BASE_URL` 单独覆盖。
+验证完成后，将该 HTTPS 网关地址配置为 App 的默认服务器地址。当前 App 已内置上述地址；也可以通过 `WATCHDOG_API_BASE_URL` 覆盖。首次安装时，启动认证浮层还需输入与运行时 `API_TOKEN` 一致的访问令牌；令牌不再硬编码进 APK。端侧 ASR 模型通过同一网关的 `/models/` 路径下载，也可以用 `WATCHDOG_MODEL_BASE_URL` 单独覆盖。
 
 正式构建 APK 时注入 CloudBase 服务地址：
 

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test \"test/*.test.js\"",
+    "test": "NODE_ENV=test node --test \"test/*.test.js\"",
     "db:migrate": "node scripts/migrate-cloudbase.js"
   },
   "engines": {

@@ -19,8 +19,20 @@ import '../services/settings.dart';
 import '../services/tts_service.dart';
 import '../services/update_service.dart';
 
+typedef OfflineOperationEnqueuer =
+    Future<void> Function({
+      required String incidentId,
+      required String type,
+      required int occurredAt,
+      required String clientOpId,
+      required Map<String, dynamic> payload,
+    });
+typedef OfflineQueueDrainer = Future<void> Function();
+
 class AppController extends ChangeNotifier {
   final LocalAsrService? localAsr;
+  final OfflineOperationEnqueuer? _offlineOperationEnqueuer;
+  final OfflineQueueDrainer? _offlineQueueDrainer;
   final LocalParser localParser = LocalParser();
   ApiClient? api;
   final AlarmService alarm = AlarmService();
@@ -33,7 +45,12 @@ class AppController extends ChangeNotifier {
   /// 语义解析联网开关：开 = 云端优先失败自动切本地；关 = 强制本地
   bool parseCloudEnabled = true;
 
-  AppController({this.localAsr});
+  AppController({
+    this.localAsr,
+    OfflineOperationEnqueuer? offlineOperationEnqueuer,
+    OfflineQueueDrainer? offlineQueueDrainer,
+  }) : _offlineOperationEnqueuer = offlineOperationEnqueuer,
+       _offlineQueueDrainer = offlineQueueDrainer;
 
   List<Entry> entries = [];
   List<Firefighter> firefighters = [];
@@ -58,6 +75,17 @@ class AppController extends ChangeNotifier {
   // 页面会先于异步初始化完成而显示。保留初始化 Future，确保用户在启动
   // 瞬间点击“新建警情”时，操作会等待 ApiClient 就绪，而不是被误判为断线。
   Future<void>? _initFuture;
+  Future<void>? _authenticateFuture;
+  Future<void>? _refreshConfigFuture;
+  Future<void>? _syncFuture;
+  Future<void>? _syncSettingsFuture;
+  Future<void>? _optionalServicesFuture;
+  int _lastOptionalServicesAttemptAt = 0;
+  Future<void>? _loadRosterFuture;
+  Future<void>? _keepAliveFuture;
+  bool _refreshConfigAgain = false;
+  bool _disposed = false;
+  int _sessionGeneration = 0;
 
   /// 最近一次同步成功时间戳（0 = 从未成功过）
   int _lastSyncSuccessAt = 0;
@@ -81,6 +109,11 @@ class AppController extends ChangeNotifier {
   Incident? currentIncident;
   List<Incident> activeIncidents = [];
   List<IncidentForce> forces = [];
+  bool _authenticated = false;
+  bool _syncStarted = false;
+
+  /// 首次安装先完成单位验证码 + 实名认证，再进入警情选择。
+  bool get needsAuthentication => !_authenticated;
   bool get needsIncidentSelection => currentIncident == null;
 
   /// 辅助问答占用独立网络通道时，暂停后台同步，避免请求堆积和 DNS/socket
@@ -107,7 +140,7 @@ class AppController extends ChangeNotifier {
       updateCheckError = '$e';
     }
     updateCheckDone = true;
-    notifyListeners();
+    _notify();
   }
 
   /// 记录一次版本检查结果（设置页手动检查后调用，刷新共享提示状态）
@@ -115,7 +148,7 @@ class AppController extends ChangeNotifier {
     pendingUpdate = info;
     updateCheckError = error;
     updateCheckDone = true;
-    notifyListeners();
+    _notify();
   }
 
   Future<void> init() {
@@ -123,27 +156,184 @@ class AppController extends ChangeNotifier {
     if (existing != null) return existing;
     final future = _initInternal();
     _initFuture = future;
+    future.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {
+        // 初始化失败允许用户稍后重试，不能把一次插件/配置异常永久缓存。
+        if (identical(_initFuture, future)) _initFuture = null;
+      },
+    );
     return future;
   }
 
   Future<void> _initInternal() async {
     // 诊断日志独立于核心同步链路，初始化失败也不能阻塞 App 启动。
     unawaited(DiagnosticLogService.instance.init());
-    // 先建立 API 客户端并启动核心同步。TTS、通知和后台值守属于可选
-    // 能力，不能阻断新建/加入警情等核心服务器操作。
+    // 先建立 API 客户端。首次安装必须先完成单位认证，认证前不拉取业务数据。
     await refreshConfig();
+    if (_disposed) return;
+    _authenticated =
+        (await Settings.realName).isNotEmpty &&
+        (await Settings.unitId).isNotEmpty &&
+        (await Settings.unitName).isNotEmpty &&
+        (await Settings.unitCode).isNotEmpty &&
+        (await Settings.apiToken).isNotEmpty;
+    // 认证前只恢复本地名单，不向服务端发送未认证请求；认证成功后由
+    // _startAuthenticatedServices 统一发起一次远端刷新。
+    await _ensureLocalRoster();
+    if (_authenticated) {
+      _startAuthenticatedServices();
+    } else {
+      _notify();
+    }
+  }
+
+  void _startAuthenticatedServices() {
+    if (_disposed || !_authenticated || _syncStarted) return;
     startSync();
-    loadRoster();
+    // 认证前的名单请求会被服务端拒绝；认证完成后重新拉取，拿到单位当前名单。
+    unawaited(loadRoster());
     // 启动后同步个人设置（服务器较新拉取、本地较新推送）
     syncSettings();
     // 启动后补传上次未上传完的操作日志（fire-and-forget）
     OpLogService.instance.flush(api: api);
     // 报警、TTS 和后台值守在后台初始化，任何系统权限/插件问题都不影响
     // 活跃警情列表与新建警情。
-    unawaited(_initOptionalServices());
+    unawaited(_ensureOptionalServices());
   }
 
-  Future<void> _initOptionalServices() async {
+  /// 完成启动浮层中的单位认证，认证成功后浮层自动切换为警情选择阶段。
+  Future<void> authenticate({
+    required String unitName,
+    required String realName,
+    required String unitCode,
+    required String apiToken,
+  }) {
+    final existing = _authenticateFuture;
+    if (existing != null) return existing;
+    final future = _authenticateInternal(
+      unitName: unitName,
+      realName: realName,
+      unitCode: unitCode,
+      apiToken: apiToken,
+    );
+    _authenticateFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_authenticateFuture, future)) _authenticateFuture = null;
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_authenticateFuture, future)) _authenticateFuture = null;
+      },
+    );
+    return future;
+  }
+
+  Future<void> _authenticateInternal({
+    required String unitName,
+    required String realName,
+    required String unitCode,
+    required String apiToken,
+  }) async {
+    final unit = unitName.trim();
+    final name = realName.trim();
+    final code = unitCode.trim();
+    final token = apiToken.trim();
+    if (unit.isEmpty) throw StateError('请输入单位名称');
+    if (name.isEmpty) throw StateError('请输入真实姓名');
+    if (code.isEmpty) throw StateError('请输入单位验证码');
+    if (token.isEmpty) throw StateError('请输入管理员提供的访问令牌');
+    await _ensureApiReady();
+    if (_disposed) throw StateError('应用控制器已释放');
+    final bootstrap = ApiClient(
+      baseUrl: await Settings.serverUrl,
+      incidentId: '',
+      apiToken: token,
+      deviceId: await OpLogService.instance.deviceId,
+      actorName: name,
+    );
+    late final Map<String, dynamic> result;
+    try {
+      result = await bootstrap.verifyUnit(
+        unitName: unit,
+        unitCode: code,
+        realName: name,
+      );
+    } finally {
+      bootstrap.dispose();
+    }
+    final unitInfo = result['unit'] is Map
+        ? Map<String, dynamic>.from(result['unit'] as Map)
+        : <String, dynamic>{};
+    final unitId = unitInfo['id']?.toString().trim() ?? '';
+    if (unitId.isEmpty) throw StateError('单位认证响应无效，请稍后重试');
+
+    // 在切换门禁和持久化前，使用本次令牌完成第一条受保护请求。
+    final protectedProbe = ApiClient(
+      baseUrl: await Settings.serverUrl,
+      incidentId: '',
+      apiToken: token,
+      deviceId: await OpLogService.instance.deviceId,
+      actorName: name,
+      unitId: unitId,
+      unitCode: code,
+    );
+    try {
+      await protectedProbe.fetchIncidents(status: 'active');
+    } finally {
+      protectedProbe.dispose();
+    }
+
+    await Settings.setApiToken(token);
+    await Settings.setRealName(name);
+    await Settings.setUnitId(unitId);
+    await Settings.setUnitCode(code);
+    await Settings.setUnitName(unitInfo['name']?.toString() ?? unit);
+    await Settings.markModified(DateTime.now().millisecondsSinceEpoch);
+    _authenticated = true;
+    await refreshConfig();
+    _startAuthenticatedServices();
+    await sync();
+    _notify();
+  }
+
+  /// 主动退出当前单位：清理本机认证信息和当前警情，回到启动认证浮层。
+  Future<void> leaveUnit() async {
+    _sessionGeneration++;
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _tickTimer?.cancel();
+    _tickTimer = null;
+    _syncStarted = false;
+    _syncFuture = null;
+    _keepAliveFuture = null;
+    syncing = false;
+    await _stopKeepAliveSafely();
+    await _clearScheduledNotifications();
+
+    await Settings.setCurrentIncidentId('');
+    await Settings.setApiToken('');
+    await Settings.setRealName('');
+    await Settings.setUnitId('');
+    await Settings.setUnitCode('');
+    await Settings.setUnitName('');
+    await Settings.markModified(DateTime.now().millisecondsSinceEpoch);
+
+    final previousApi = api;
+    api = null;
+    previousApi?.dispose();
+    currentIncident = null;
+    activeIncidents = [];
+    entries = [];
+    notes = [];
+    forces = [];
+    _authenticated = false;
+    _resetSessionHealth();
+    await refreshConfig();
+    _notify();
+  }
+
+  Future<void> _initOptionalServices(int generation) async {
     try {
       await tts.init();
     } catch (e) {
@@ -151,10 +341,16 @@ class AppController extends ChangeNotifier {
     }
     try {
       await alarm.init();
+      if (_disposed || generation != _sessionGeneration || !_authenticated) {
+        return;
+      }
       _alarmReady = true;
       await _rescheduleNotifications();
     } catch (e) {
       debugPrint('AlarmService init failed: $e');
+    }
+    if (_disposed || generation != _sessionGeneration || !_authenticated) {
+      return;
     }
     try {
       await syncKeepAlive();
@@ -163,42 +359,122 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// 可选插件初始化失败时允许在用户刷新或下一轮同步时重试，但用短暂
+  /// 闸门避免故障插件导致每 5 秒重复初始化和刷日志。
+  Future<void> _ensureOptionalServices({bool force = false}) {
+    if (_disposed || !_authenticated) return Future<void>.value();
+    if (_alarmReady) return Future<void>.value();
+    final existing = _optionalServicesFuture;
+    if (existing != null) return existing;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (!force && now - _lastOptionalServicesAttemptAt < 30000) {
+      return Future<void>.value();
+    }
+    _lastOptionalServicesAttemptAt = now;
+    final future = _initOptionalServices(_sessionGeneration);
+    _optionalServicesFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_optionalServicesFuture, future)) {
+          _optionalServicesFuture = null;
+        }
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_optionalServicesFuture, future)) {
+          _optionalServicesFuture = null;
+        }
+      },
+    );
+    return future;
+  }
+
   /// 等待启动初始化完成。某些页面在初始化 Future 完成前就可以交互，
   /// 需要使用 API 的操作必须先经过这里。
   Future<void> _ensureApiReady() async {
     if (api != null) return;
     final initFuture = _initFuture;
     if (initFuture != null) await initFuture;
-    if (api == null) await refreshConfig();
+    if (api == null && !_disposed) await refreshConfig();
   }
 
   /// 保活服务与本地设置同步：开启时启动并更新配置，关闭时停止
-  Future<void> syncKeepAlive() async {
+  Future<void> syncKeepAlive() {
+    if (_disposed) return Future<void>.value();
+    final existing = _keepAliveFuture;
+    if (existing != null) return existing;
+    final future = _syncKeepAliveInternal(_sessionGeneration);
+    _keepAliveFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_keepAliveFuture, future)) _keepAliveFuture = null;
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_keepAliveFuture, future)) _keepAliveFuture = null;
+      },
+    );
+    return future;
+  }
+
+  Future<void> _syncKeepAliveInternal(int generation) async {
     final enabled = await Settings.keepAliveEnabled;
+    if (_disposed || generation != _sessionGeneration) return;
     if (!enabled) {
-      await ForegroundKeepAlive.stop();
+      await _stopKeepAliveSafely();
+      return;
+    }
+    if (!_authenticated) {
+      await _stopKeepAliveSafely();
+      return;
+    }
+    final serverUrl = await Settings.serverUrl;
+    final incidentId = await Settings.currentIncidentId;
+    final token = await Settings.apiToken;
+    final unitId = await Settings.unitId;
+    final unitCode = await Settings.unitCode;
+    if (_disposed || generation != _sessionGeneration || !_authenticated) {
       return;
     }
     await ForegroundKeepAlive.start(
-      serverUrl: await Settings.serverUrl,
-      incidentId: await Settings.currentIncidentId,
-      token: await Settings.apiToken,
+      serverUrl: serverUrl,
+      incidentId: incidentId,
+      token: token,
+      unitId: unitId,
+      unitCode: unitCode,
       warnMin: calcConfig.warnMin,
       alarmMin: calcConfig.alarmMin,
     );
   }
 
   /// 用户设置云同步：服务器较新则拉取覆盖本地并生效，本地较新则推送，一致跳过
-  Future<void> syncSettings() async {
-    final a = api;
-    if (a == null) return;
+  Future<void> syncSettings() {
+    if (_disposed || !_authenticated || api == null) {
+      return Future<void>.value();
+    }
+    final existing = _syncSettingsFuture;
+    if (existing != null) return existing;
+    final future = _syncSettingsInternal(api!);
+    _syncSettingsFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_syncSettingsFuture, future)) _syncSettingsFuture = null;
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_syncSettingsFuture, future)) _syncSettingsFuture = null;
+      },
+    );
+    return future;
+  }
+
+  Future<void> _syncSettingsInternal(ApiClient a) async {
     try {
       final remote = await a.fetchUserSettings();
-      final remoteAt = remote['updatedAt'] as int;
+      final remoteAt = (remote['updatedAt'] as num?)?.toInt() ?? 0;
       final localAt = await Settings.modifiedAt;
       if (remoteAt > localAt) {
+        final remoteSettings = remote['settings'];
+        if (remoteSettings is! Map) return;
         await Settings.applyFromServer(
-          remote['settings'] as Map<String, dynamic>,
+          Map<String, dynamic>.from(remoteSettings),
           updatedAt: remoteAt,
         );
         await refreshConfig();
@@ -207,22 +483,66 @@ class AppController extends ChangeNotifier {
       }
     } catch (_) {
       // 网络失败静默，下次启动或保存设置时再试
-      api?.cancelRequests();
+      // 该请求与警情同步共用连接池；不要因为可选设置同步失败而关闭
+      // 核心请求池，下一轮同步会自然重试。
     }
   }
 
-  Future<void> refreshConfig() async {
+  Future<void> refreshConfig() {
+    if (_disposed) return Future<void>.value();
+    final existing = _refreshConfigFuture;
+    if (existing != null) {
+      _refreshConfigAgain = true;
+      return existing;
+    }
+    final future = _refreshConfigLoop();
+    _refreshConfigFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_refreshConfigFuture, future)) {
+          _refreshConfigFuture = null;
+          _refreshConfigAgain = false;
+        }
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_refreshConfigFuture, future)) {
+          _refreshConfigFuture = null;
+          _refreshConfigAgain = false;
+        }
+      },
+    );
+    return future;
+  }
+
+  Future<void> _refreshConfigLoop() async {
+    do {
+      _refreshConfigAgain = false;
+      await _refreshConfigOnce();
+    } while (!_disposed && _refreshConfigAgain);
+  }
+
+  Future<void> _refreshConfigOnce() async {
+    if (_disposed) return;
     final previousApi = api;
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
     final token = await Settings.apiToken;
-    api = ApiClient(
+    final unitId = await Settings.unitId;
+    final unitCode = await Settings.unitCode;
+    final nextApi = ApiClient(
       baseUrl: serverUrl,
       incidentId: incidentId,
       apiToken: token,
       deviceId: await OpLogService.instance.deviceId,
       actorName: await Settings.realName,
+      unitId: unitId,
+      unitCode: unitCode,
     );
+    if (_disposed) {
+      nextApi.dispose();
+      return;
+    }
+    api = nextApi;
     previousApi?.dispose();
     debugPrint(
       'WatchDog config ready: url=$serverUrl, '
@@ -233,7 +553,7 @@ class AppController extends ChangeNotifier {
     // 有当前警情时顺手补传上次启动/异常遗留的诊断日志；没有警情时
     // /api/logs 会拒绝请求，日志仍保存在本机，待加入警情后重试。
     if (incidentId.isNotEmpty) {
-      unawaited(DiagnosticLogService.instance.flush(api: api));
+      unawaited(DiagnosticLogService.instance.flush(api: nextApi));
     }
     tts.enabled = await Settings.ttsEnabled;
     alarm.soundEnabled = await Settings.alarmSoundEnabled;
@@ -248,34 +568,81 @@ class AppController extends ChangeNotifier {
       warnMin: await Settings.warnMin,
       alarmMin: await Settings.alarmMin,
     );
-    notifyListeners();
+    _notify();
   }
 
   void startSync() {
+    if (_disposed || needsAuthentication) return;
+    if (_syncStarted) {
+      // 看板“重试”入口复用现有定时器，只补发一次合并后的同步请求，
+      // 避免重复创建 5 秒/1 秒计时器而又让手动重试失效。
+      unawaited(sync());
+      return;
+    }
+    _syncStarted = true;
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => sync());
     _tickTimer?.cancel();
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _checkThresholds();
-      notifyListeners();
+      _notify();
     });
     sync();
   }
 
-  Future<void> sync() async {
-    if (syncing || _assistantBusy || api == null) return;
+  Future<void> sync() {
+    if (_disposed || _assistantBusy || api == null) {
+      return Future<void>.value();
+    }
+    final existing = _syncFuture;
+    if (existing != null) return existing;
+    final a = api!;
+    final generation = _sessionGeneration;
+    final future = _syncInternal(a, generation);
+    _syncFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_syncFuture, future)) _syncFuture = null;
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_syncFuture, future)) _syncFuture = null;
+      },
+    );
+    return future;
+  }
+
+  Future<void> _syncInternal(ApiClient a, int generation) async {
     syncing = true;
+    // 让页面在慢请求期间立即进入“同步中”，而不是等请求结束后才收到
+    // 一次性状态通知；这也避免短请求沿用上一轮“已连接”文案造成误导。
+    _notify();
     try {
-      await OfflineQueue.instance.drain((id) => api!.forIncident(id));
-      activeIncidents = await api!.fetchIncidents(status: 'active');
+      final fetchedActiveIncidents = await a.fetchIncidents(status: 'active');
+      if (!_isCurrentSession(a, generation)) return;
+      activeIncidents = fetchedActiveIncidents;
       final savedId = await Settings.currentIncidentId;
+      final allowedIncidentIds = {
+        ...activeIncidents.map((incident) => incident.id),
+        if (savedId.isNotEmpty) savedId,
+      };
+      final drain = _offlineQueueDrainer;
+      if (drain != null) {
+        await drain();
+      } else {
+        await OfflineQueue.instance.drain(
+          (id) => a.forIncident(id),
+          allowedIncidentIds: allowedIncidentIds,
+        );
+      }
+      if (!_isCurrentSession(a, generation)) return;
       if (savedId.isEmpty) {
         currentIncident = null;
         entries = [];
         notes = [];
         forces = [];
       } else {
-        final incident = await api!.fetchIncident(savedId);
+        final incident = await a.fetchIncident(savedId);
+        if (!_isCurrentSession(a, generation)) return;
         if (!incident.isActive) {
           currentIncident = null;
           await Settings.setCurrentIncidentId('');
@@ -284,36 +651,295 @@ class AppController extends ChangeNotifier {
           forces = [];
         } else {
           currentIncident = incident;
-          entries = await api!.fetchEntries();
+          entries = await a.fetchEntries();
+          if (!_isCurrentSession(a, generation)) return;
           try {
-            notes = await api!.fetchNotes();
+            notes = await a.fetchNotes();
           } catch (_) {}
           try {
-            forces = await api!.fetchIncidentForces();
+            forces = await a.fetchIncidentForces();
           } catch (_) {}
+          // 补传失败时服务端快照仍可能落后于本地。把活动队列按发生顺序
+          // 重新投影到刚拉取的快照，避免下一轮同步把离线操作的即时反馈抹掉。
+          try {
+            await _applyOfflineProjection(savedId);
+          } catch (error) {
+            debugPrint('WatchDog offline projection failed: $error');
+          }
         }
       }
       syncError = null;
       _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
       _firstSyncFailureAt = 0;
       await _rescheduleNotifications();
+      unawaited(_ensureOptionalServices());
     } catch (e) {
+      if (!_isCurrentSession(a, generation)) return;
+      if (e is ApiException && e.code == 'INCIDENT_NOT_FOUND') {
+        // 当前单位已无法访问本机保存的警情（例如切换单位、警情被撤销
+        // 或服务端权限收紧）。不能继续展示上一单位的缓存快照，避免把
+        // 旧警情、人员和压力数据误呈现给当前用户。
+        await Settings.setCurrentIncidentId('');
+        if (!_isCurrentSession(a, generation)) return;
+        currentIncident = null;
+        entries = [];
+        notes = [];
+        forces = [];
+        syncError = null;
+        _firstSyncFailureAt = 0;
+        await _stopKeepAliveSafely();
+        await _clearScheduledNotifications();
+        return;
+      }
+      if (e is ApiException &&
+          (e.code == 'UNIT_INVALID' ||
+              e.code == 'UNIT_AUTH_REQUIRED' ||
+              e.code == 'API_TOKEN_INVALID')) {
+        await _invalidateAuthentication();
+        return;
+      }
       // Future 超时不会自动释放底层 socket；同步出错后重置请求池，防止
       // Oplus DNS/连接异常导致每轮 5 秒轮询继续堆积旧请求。
-      api?.cancelRequests();
+      a.cancelRequests();
       _firstSyncFailureAt = _firstSyncFailureAt == 0
           ? DateTime.now().millisecondsSinceEpoch
           : _firstSyncFailureAt;
       syncError = e is TimeoutException ? '连接服务器超时，请检查网络后重试' : e.toString();
       debugPrint('WatchDog sync failed: $e');
     } finally {
-      syncing = false;
-      notifyListeners();
+      if (generation == _sessionGeneration && !_disposed) {
+        syncing = false;
+        _notify();
+      }
     }
   }
 
+  Future<void> _applyOfflineProjection(String incidentId) async {
+    // 测试/嵌入方可注入自己的队列排空器；此时不能偷偷打开全局 sqflite
+    // 数据库，否则替身隔离会失效，也会把平台数据库初始化带入核心同步。
+    if (incidentId.isEmpty || _offlineQueueDrainer != null) return;
+    final rows = await OfflineQueue.instance.pendingOperations(incidentId);
+    if (rows.isEmpty) return;
+    final author = await Settings.realName;
+    final projection = applyOfflineOperationProjection(
+      rows: rows,
+      entries: entries,
+      notes: notes,
+      calcConfig: calcConfig,
+      author: author,
+    );
+    entries = projection.$1;
+    notes = projection.$2;
+  }
+
+  /// 将仍在本地待补传的业务操作重新叠加到服务端快照。
+  /// 返回新列表，不修改传入集合，便于同步逻辑和回归测试复用。
+  static (List<Entry>, List<Note>) applyOfflineOperationProjection({
+    required Iterable<Map<String, Object?>> rows,
+    required List<Entry> entries,
+    required List<Note> notes,
+    required CalcConfig calcConfig,
+    required String author,
+  }) {
+    var projectedEntries = List<Entry>.of(entries);
+    var projectedNotes = List<Note>.of(notes);
+    for (final row in rows) {
+      try {
+        final rawPayload = row['payload'];
+        if (rawPayload is! String) continue;
+        final decoded = jsonDecode(rawPayload);
+        if (decoded is! Map) continue;
+        final payload = Map<String, dynamic>.from(decoded);
+        final type = row['type']?.toString();
+        final occurredAt = (row['occurred_at'] as num?)?.toInt() ?? 0;
+        if (occurredAt <= 0) continue;
+        switch (type) {
+          case 'entry':
+            final id = payload['entry_id']?.toString();
+            final name = payload['name']?.toString();
+            final pressure = _offlineNumber(payload['pressure_mpa']);
+            if (id == null || id.isEmpty || name == null || name.isEmpty) {
+              continue;
+            }
+            if (pressure == null || pressure <= 0) continue;
+            final volume =
+                _offlineNumber(payload['volume_l']) ?? calcConfig.cylinderVolL;
+            final consumption =
+                _offlineNumber(payload['consumption_lpm']) ??
+                calcConfig.consumptionLpm;
+            final duration = calcConfig
+                .durationMinFor(
+                  pressure,
+                  cylinderVolL: volume,
+                  consumptionLpm: consumption,
+                )
+                .round();
+            final entry = Entry(
+              id: id,
+              name: name,
+              pressureMpa: pressure,
+              durationMin: duration,
+              entryAt: occurredAt,
+              exitAt: occurredAt + duration * 60000,
+              source: 'offline',
+              rawText: payload['raw_text']?.toString(),
+              cylinderVolL: volume,
+              consumptionLpm: consumption,
+            );
+            projectedEntries = [
+              entry,
+              ...projectedEntries.where((item) => item.id != id),
+            ];
+          case 'pressure':
+            final id = payload['entry_id']?.toString();
+            final pressure = _offlineNumber(payload['pressure_mpa']);
+            if (id == null || id.isEmpty || pressure == null || pressure <= 0) {
+              continue;
+            }
+            final index = projectedEntries.indexWhere((item) => item.id == id);
+            if (index < 0) continue;
+            final current = projectedEntries[index];
+            final volume =
+                _offlineNumber(payload['volume_l']) ??
+                current.cylinderVolL ??
+                calcConfig.cylinderVolL;
+            final consumption =
+                _offlineNumber(payload['consumption_lpm']) ??
+                current.consumptionLpm ??
+                calcConfig.consumptionLpm;
+            final duration = calcConfig
+                .durationMinFor(
+                  pressure,
+                  cylinderVolL: volume,
+                  consumptionLpm: consumption,
+                )
+                .round();
+            projectedEntries = [
+              for (final item in projectedEntries)
+                item.id == id
+                    ? item.copyWith(
+                        pressureMpa: pressure,
+                        durationMin: duration,
+                        exitAt: occurredAt + duration * 60000,
+                        cylinderVolL: volume,
+                        consumptionLpm: consumption,
+                      )
+                    : item,
+            ];
+          case 'exit':
+            final id = payload['entry_id']?.toString();
+            if (id == null || id.isEmpty) continue;
+            projectedEntries = [
+              for (final item in projectedEntries)
+                item.id == id ? item.copyWith(exitedAt: occurredAt) : item,
+            ];
+          case 'note':
+            final id = payload['note_id']?.toString();
+            final text = payload['text']?.toString();
+            if (id == null || id.isEmpty || text == null || text.isEmpty) {
+              continue;
+            }
+            projectedNotes = [
+              Note(
+                id: id,
+                text: text,
+                category: payload['category']?.toString() ?? NoteCategory.other,
+                author: author,
+                createdAt: occurredAt,
+                updatedAt: occurredAt,
+              ),
+              ...projectedNotes.where((item) => item.id != id),
+            ];
+        }
+      } catch (_) {
+        // 单条损坏的本地记录不能阻塞其他合法操作的恢复。
+      }
+    }
+    return (projectedEntries, projectedNotes);
+  }
+
+  static double? _offlineNumber(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
+
+  Future<void> _invalidateAuthentication() async {
+    _sessionGeneration++;
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _tickTimer?.cancel();
+    _tickTimer = null;
+    _syncStarted = false;
+    _syncFuture = null;
+    _keepAliveFuture = null;
+    syncing = false;
+    await _stopKeepAliveSafely();
+    await _clearScheduledNotifications();
+    await Settings.setCurrentIncidentId('');
+    await Settings.setApiToken('');
+    await Settings.setRealName('');
+    await Settings.setUnitId('');
+    await Settings.setUnitCode('');
+    await Settings.setUnitName('');
+    final previousApi = api;
+    api = null;
+    previousApi?.dispose();
+    currentIncident = null;
+    activeIncidents = [];
+    entries = [];
+    notes = [];
+    forces = [];
+    _authenticated = false;
+    _resetSessionHealth();
+    await refreshConfig();
+    _notify();
+  }
+
+  bool _isCurrentSession(ApiClient a, int generation) =>
+      !_disposed && generation == _sessionGeneration && identical(api, a);
+
+  void _resetSessionHealth() {
+    _lastSyncSuccessAt = 0;
+    _firstSyncFailureAt = 0;
+    syncError = null;
+    _announced.clear();
+    _scheduled.clear();
+    alarm.resetSession();
+  }
+
+  Future<void> _clearScheduledNotifications() async {
+    final ids = List<String>.of(_scheduled.keys);
+    _scheduled.clear();
+    if (!_alarmReady) return;
+    for (final id in ids) {
+      try {
+        await alarm.cancelForEntry(id);
+      } catch (_) {
+        // 插件未就绪或已被系统回收时，清理本地状态仍应完成。
+      }
+    }
+    try {
+      await alarm.stopAlarm();
+    } catch (_) {}
+  }
+
+  Future<void> _stopKeepAliveSafely() async {
+    try {
+      await ForegroundKeepAlive.stop();
+    } catch (error) {
+      debugPrint('ForegroundKeepAlive stop failed: $error');
+    }
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
   /// 下拉刷新：等待一次实际同步完成（与轮询互斥），供刷新控件与失败反馈使用
-  Future<void> refreshNow() => sync();
+  Future<void> refreshNow() {
+    unawaited(_ensureOptionalServices(force: true));
+    return sync();
+  }
 
   /// 新条目到达时调度本地通知；exitAt 变化（改名/压力复核）时重新调度
   final Map<String, int> _scheduled = {};
@@ -326,13 +952,18 @@ class AppController extends ChangeNotifier {
 
     for (final e in active) {
       if (_scheduled[e.id] != e.exitAt) {
-        _scheduled[e.id] = e.exitAt;
-        await alarm.cancelForEntry(e.id);
-        await alarm.scheduleForEntry(
-          e,
-          warnMin: calcConfig.warnMin,
-          alarmMin: calcConfig.alarmMin,
-        );
+        try {
+          await alarm.cancelForEntry(e.id);
+          await alarm.scheduleForEntry(
+            e,
+            warnMin: calcConfig.warnMin,
+            alarmMin: calcConfig.alarmMin,
+          );
+          _scheduled[e.id] = e.exitAt;
+        } catch (_) {
+          _scheduled.remove(e.id);
+          rethrow;
+        }
       }
     }
     // 已出火场或已消失的条目：取消通知
@@ -370,9 +1001,25 @@ class AppController extends ChangeNotifier {
     }
     // 红色（alarm/timeout）状态持续循环警报，全部脱险后停止
     if (inDanger) {
-      alarm.startAlarmLoop();
+      unawaited(_startAlarmLoopSafely());
     } else {
-      alarm.stopAlarm();
+      unawaited(_stopAlarmSafely());
+    }
+  }
+
+  Future<void> _startAlarmLoopSafely() async {
+    try {
+      await alarm.startAlarmLoop();
+    } catch (error) {
+      debugPrint('AlarmService start loop failed: $error');
+    }
+  }
+
+  Future<void> _stopAlarmSafely() async {
+    try {
+      await alarm.stopAlarm();
+    } catch (error) {
+      debugPrint('AlarmService stop failed: $error');
     }
   }
 
@@ -410,12 +1057,9 @@ class AppController extends ChangeNotifier {
       if (!_isNetworkError(error)) rethrow;
       final id = 'offline-entry-${DateTime.now().microsecondsSinceEpoch}';
       final at = DateTime.now().millisecondsSinceEpoch;
-      final duration =
-          (calcConfig.cylinderVolL *
-                  pressureMpa *
-                  10 /
-                  calcConfig.consumptionLpm)
-              .round();
+      final volume = volumeL ?? calcConfig.cylinderVolL;
+      final duration = (volume * pressureMpa * 10 / calcConfig.consumptionLpm)
+          .round();
       await OfflineQueue.instance.enqueue(
         incidentId: incident.id,
         type: 'entry',
@@ -425,6 +1069,8 @@ class AppController extends ChangeNotifier {
           'entry_id': id,
           'name': name,
           'pressure_mpa': pressureMpa,
+          'volume_l': volume,
+          'consumption_lpm': calcConfig.consumptionLpm,
           'raw_text': rawText,
         },
       );
@@ -437,12 +1083,14 @@ class AppController extends ChangeNotifier {
         exitAt: at + duration * 60000,
         source: 'offline',
         rawText: rawText,
+        cylinderVolL: volume,
+        consumptionLpm: calcConfig.consumptionLpm,
       );
     }
     // 提交成功立即插入本地列表并通知（看板即时显示倒计时），
     // 不依赖 sync 网络结果——网络不稳时同步失败也不影响本地展示
     entries = [e, ...entries.where((x) => x.id != e.id)];
-    notifyListeners();
+    _notify();
     await sync();
     return e;
   }
@@ -478,20 +1126,61 @@ class AppController extends ChangeNotifier {
     final current = entries.firstWhere((entry) => entry.id == id);
     Entry e;
     try {
-      e = await api!.updateEntry(id: id, pressureMpa: pressureMpa, opId: op);
+      e = await api!.updateEntry(
+        id: id,
+        pressureMpa: pressureMpa,
+        consumptionLpm: calcConfig.consumptionLpm,
+        opId: op,
+      );
     } catch (error) {
       if (!_isNetworkError(error) || currentIncident == null) rethrow;
-      await OfflineQueue.instance.enqueue(
-        incidentId: currentIncident!.id,
-        type: 'pressure',
-        occurredAt: DateTime.now().millisecondsSinceEpoch,
-        clientOpId: op.isEmpty
-            ? 'offline-pressure-${DateTime.now().microsecondsSinceEpoch}'
-            : op,
-        payload: {'entry_id': id, 'pressure_mpa': pressureMpa},
+      final occurredAt = DateTime.now().millisecondsSinceEpoch;
+      final volume = current.cylinderVolL ?? calcConfig.cylinderVolL;
+      final consumption = current.consumptionLpm ?? calcConfig.consumptionLpm;
+      final clientOpId = op.isEmpty
+          ? 'offline-pressure-${DateTime.now().microsecondsSinceEpoch}'
+          : op;
+      final payload = {
+        'entry_id': id,
+        'pressure_mpa': pressureMpa,
+        'volume_l': volume,
+        'consumption_lpm': consumption,
+      };
+      final enqueue = _offlineOperationEnqueuer;
+      if (enqueue != null) {
+        await enqueue(
+          incidentId: currentIncident!.id,
+          type: 'pressure',
+          occurredAt: occurredAt,
+          clientOpId: clientOpId,
+          payload: payload,
+        );
+      } else {
+        await OfflineQueue.instance.enqueue(
+          incidentId: currentIncident!.id,
+          type: 'pressure',
+          occurredAt: occurredAt,
+          clientOpId: clientOpId,
+          payload: payload,
+        );
+      }
+      final duration = calcConfig
+          .durationMinFor(
+            pressureMpa,
+            cylinderVolL: volume,
+            consumptionLpm: consumption,
+          )
+          .round();
+      e = current.copyWith(
+        pressureMpa: pressureMpa,
+        durationMin: duration,
+        exitAt: occurredAt + duration * 60000,
+        cylinderVolL: volume,
+        consumptionLpm: consumption,
       );
-      e = current;
     }
+    entries = [for (final entry in entries) entry.id == id ? e : entry];
+    _notify();
     await sync();
     return e;
   }
@@ -501,21 +1190,31 @@ class AppController extends ChangeNotifier {
       await api!.markExited(id, opId: opId);
     } catch (error) {
       if (!_isNetworkError(error) || currentIncident == null) rethrow;
+      final exitedAt = DateTime.now().millisecondsSinceEpoch;
       await OfflineQueue.instance.enqueue(
         incidentId: currentIncident!.id,
         type: 'exit',
-        occurredAt: DateTime.now().millisecondsSinceEpoch,
+        occurredAt: exitedAt,
         clientOpId:
             opId ?? 'offline-exit-${DateTime.now().microsecondsSinceEpoch}',
         payload: {'entry_id': id},
       );
+      entries = [
+        for (final entry in entries)
+          entry.id == id ? entry.copyWith(exitedAt: exitedAt) : entry,
+      ];
+      _notify();
     }
     await sync();
   }
 
   Future<void> selectIncident(String id, {Incident? knownIncident}) async {
     await Settings.setCurrentIncidentId(id);
+    _sessionGeneration++;
+    _syncFuture = null;
+    _keepAliveFuture = null;
     await refreshConfig();
+    unawaited(syncKeepAlive());
     // 列表或新建冲突响应已经带回了完整警情档案。先完成本机选择，
     // 详细人员/日志数据放到后台同步，避免网络抖动阻塞“加入警情”这个动作。
     if (knownIncident != null) {
@@ -523,7 +1222,7 @@ class AppController extends ChangeNotifier {
       entries = [];
       notes = [];
       forces = [];
-      notifyListeners();
+      _notify();
       unawaited(sync());
       return;
     }
@@ -542,6 +1241,8 @@ class AppController extends ChangeNotifier {
       apiToken: await Settings.apiToken,
       deviceId: await OpLogService.instance.deviceId,
       actorName: name,
+      unitId: await Settings.unitId,
+      unitCode: await Settings.unitCode,
     );
     debugPrint('WatchDog createIncident: api=ready, actor=configured');
     final incident = await a.createIncident(
@@ -549,7 +1250,11 @@ class AppController extends ChangeNotifier {
       opId: 'incident-create-${DateTime.now().microsecondsSinceEpoch}',
     );
     await Settings.setCurrentIncidentId(incident.id);
+    _sessionGeneration++;
+    _syncFuture = null;
+    _keepAliveFuture = null;
     await refreshConfig();
+    unawaited(syncKeepAlive());
     await sync();
     return incident;
   }
@@ -564,7 +1269,7 @@ class AppController extends ChangeNotifier {
       expectedVersion: incident.version,
     );
     currentIncident = updated;
-    notifyListeners();
+    _notify();
     return updated;
   }
 
@@ -573,11 +1278,15 @@ class AppController extends ChangeNotifier {
     if (a == null || currentIncident == null) throw StateError('未选择警情');
     await a.archiveIncident(currentIncident!.id);
     await Settings.setCurrentIncidentId('');
+    _sessionGeneration++;
+    _syncFuture = null;
+    _keepAliveFuture = null;
     currentIncident = null;
     entries = [];
     notes = [];
     forces = [];
     await refreshConfig();
+    unawaited(syncKeepAlive());
     await sync();
   }
 
@@ -585,11 +1294,15 @@ class AppController extends ChangeNotifier {
   Future<void> exitCurrentIncident() async {
     if (currentIncident == null) return;
     await Settings.setCurrentIncidentId('');
+    _sessionGeneration++;
+    _syncFuture = null;
+    _keepAliveFuture = null;
     currentIncident = null;
     entries = [];
     notes = [];
     forces = [];
     await refreshConfig();
+    unawaited(syncKeepAlive());
     await sync();
   }
 
@@ -613,7 +1326,7 @@ class AppController extends ChangeNotifier {
     );
     forces = await a.fetchIncidentForces();
     currentIncident = await a.fetchIncident(currentIncident!.id);
-    notifyListeners();
+    _notify();
   }
 
   Future<void> removeForce(String forceId) async {
@@ -622,7 +1335,7 @@ class AppController extends ChangeNotifier {
     await a.deleteIncidentForce(forceId);
     forces = await a.fetchIncidentForces();
     currentIncident = await a.fetchIncident(currentIncident!.id);
-    notifyListeners();
+    _notify();
   }
 
   Future<List<Incident>> archivedIncidents() async {
@@ -675,7 +1388,7 @@ class AppController extends ChangeNotifier {
       );
     }
     notes = [note, ...notes];
-    notifyListeners();
+    _notify();
     return note;
   }
 
@@ -717,6 +1430,7 @@ class AppController extends ChangeNotifier {
 
   bool _isNetworkError(Object error) =>
       error is TimeoutException ||
+      (error is ApiException && (error.statusCode ?? 0) >= 500) ||
       error.toString().contains('SocketException') ||
       error.toString().contains('ClientException') ||
       error.toString().contains('Connection closed');
@@ -729,7 +1443,7 @@ class AppController extends ChangeNotifier {
       category: category,
     );
     notes = notes.map((n) => n.id == id ? updated : n).toList();
-    notifyListeners();
+    _notify();
     return updated;
   }
 
@@ -782,6 +1496,7 @@ class AppController extends ChangeNotifier {
       if (reply.trim().isEmpty) {
         throw StateError('辅助回复为空，请重试');
       }
+      // 持久化不阻塞首屏回复；ChatHistory 内部队列保证追加/清空按入队顺序执行。
       unawaited(
         ChatHistory.appendExchange(
           question: message,
@@ -806,7 +1521,7 @@ class AppController extends ChangeNotifier {
   Future<void> deleteNote(String id) async {
     await api!.deleteNote(id);
     notes = notes.where((n) => n.id != id).toList();
-    notifyListeners();
+    _notify();
   }
 
   /// 名单/热词本地缓存键（断网/服务器不可达时回退，保证本地识别热词与名单查看离线可用）
@@ -816,12 +1531,31 @@ class AppController extends ChangeNotifier {
 
   /// 拉取名单与热词：成功写入本地缓存；失败（断网/服务器不可达）回退缓存。
   /// 名单热词是本地识别的热词来源，火场无信号时也必须生效。
-  Future<void> loadRoster() async {
+  Future<void> loadRoster() {
+    if (_disposed) return Future<void>.value();
+    final existing = _loadRosterFuture;
+    if (existing != null) return existing;
+    final future = _loadRosterInternal();
+    _loadRosterFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_loadRosterFuture, future)) _loadRosterFuture = null;
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_loadRosterFuture, future)) _loadRosterFuture = null;
+      },
+    );
+    return future;
+  }
+
+  Future<void> _loadRosterInternal() async {
     await _ensureLocalRoster();
-    if (api == null) return;
+    if (_disposed || api == null) return;
+    final a = api!;
     try {
-      final f = await api!.fetchFirefighters();
-      final h = await api!.fetchHotwords();
+      final f = await a.fetchFirefighters();
+      final h = await a.fetchHotwords();
+      if (_disposed || !identical(api, a)) return;
       // 服务器尚未完成种子初始化时，不要把装机自带名单和热词清空。
       if (f.isEmpty && h.isEmpty) {
         await _restoreCachedRoster();
@@ -829,10 +1563,10 @@ class AppController extends ChangeNotifier {
       }
       firefighters = f;
       hotwords = h;
-      notifyListeners();
+      _notify();
       await _cacheRoster();
     } catch (_) {
-      api?.cancelRequests();
+      a.cancelRequests();
       await _restoreCachedRoster();
     }
   }
@@ -867,7 +1601,7 @@ class AppController extends ChangeNotifier {
               .toList();
       firefighters = fNames.map((n) => Firefighter(id: '', name: n)).toList();
       hotwords = hWords.map((w) => Hotword(id: '', word: w)).toList();
-      notifyListeners();
+      _notify();
     } catch (_) {
       // 缓存损坏时也回退内置默认
       _loadBuiltinDefaults();
@@ -899,7 +1633,7 @@ class AppController extends ChangeNotifier {
     hotwords = _defaultHotwordTerms
         .map((w) => Hotword(id: '', word: w))
         .toList();
-    notifyListeners();
+    _notify();
   }
 
   static const _defaultFirefighterNames = [
@@ -994,9 +1728,16 @@ class AppController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _sessionGeneration++;
     _pollTimer?.cancel();
     _tickTimer?.cancel();
+    _syncFuture = null;
+    _keepAliveFuture = null;
     api?.dispose();
+    unawaited(_stopKeepAliveSafely());
+    unawaited(_clearScheduledNotifications());
+    unawaited(localAsr?.dispose());
     tts.stop();
     super.dispose();
   }

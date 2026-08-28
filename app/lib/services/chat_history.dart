@@ -10,8 +10,14 @@ class ChatHistory {
 
   static const _key = 'assistant_chat_history_v1';
   static const maxMessages = 100;
+  static Future<void> _mutationQueue = Future<void>.value();
 
   static Future<List<ChatMessage>> load() async {
+    await _mutationQueue;
+    return _loadRaw();
+  }
+
+  static Future<List<ChatMessage>> _loadRaw() async {
     final sp = await SharedPreferences.getInstance();
     final raw = sp.getString(_key);
     if (raw == null || raw.isEmpty) return [];
@@ -28,13 +34,29 @@ class ChatHistory {
     }
   }
 
-  static Future<void> save(List<ChatMessage> messages) async {
+  static Future<T> _enqueue<T>(Future<T> Function() operation) {
+    final next = _mutationQueue.then((_) => operation());
+    // 某次本地 I/O 失败不能毒化后续清空/追加操作的队列。
+    _mutationQueue = next.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return next;
+  }
+
+  static Future<void> _saveRaw(List<ChatMessage> messages) async {
     final kept = messages.length <= maxMessages
         ? messages
         : messages.sublist(messages.length - maxMessages);
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_key, jsonEncode(kept.map((message) => message.toJson()).toList()));
+    await sp.setString(
+      _key,
+      jsonEncode(kept.map((message) => message.toJson()).toList()),
+    );
   }
+
+  static Future<void> save(List<ChatMessage> messages) =>
+      _enqueue(() => _saveRaw(messages));
 
   static Future<void> appendExchange({
     required String question,
@@ -42,26 +64,28 @@ class ChatHistory {
     required int createdAt,
   }) async {
     if (question.trim().isEmpty || reply.trim().isEmpty) return;
-    final messages = await load();
-    messages.addAll([
-      ChatMessage(
-        id: 'local-user-$createdAt',
-        role: 'user',
-        content: question.trim(),
-        createdAt: createdAt,
-      ),
-      ChatMessage(
-        id: 'local-assistant-$createdAt',
-        role: 'assistant',
-        content: reply.trim(),
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ),
-    ]);
-    await save(messages);
+    await _enqueue(() async {
+      final messages = await _loadRaw();
+      messages.addAll([
+        ChatMessage(
+          id: 'local-user-$createdAt',
+          role: 'user',
+          content: question.trim(),
+          createdAt: createdAt,
+        ),
+        ChatMessage(
+          id: 'local-assistant-$createdAt',
+          role: 'assistant',
+          content: reply.trim(),
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      ]);
+      await _saveRaw(messages);
+    });
   }
 
-  static Future<void> clear() async {
+  static Future<void> clear() => _enqueue(() async {
     final sp = await SharedPreferences.getInstance();
     await sp.remove(_key);
-  }
+  });
 }

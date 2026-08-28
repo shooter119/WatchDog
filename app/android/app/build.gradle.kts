@@ -9,9 +9,14 @@ plugins {
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(keystorePropertiesFile.inputStream())
+if (!keystorePropertiesFile.exists()) {
+    throw GradleException("Release signing configuration is required: android/key.properties is missing")
 }
+keystoreProperties.load(keystorePropertiesFile.inputStream())
+
+fun requiredSigningProperty(name: String): String =
+    keystoreProperties.getProperty(name)
+        ?: throw GradleException("Release signing property is missing: $name")
 
 android {
     namespace = "com.firewatch.watchdog"
@@ -37,22 +42,14 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.create("release") {
-                    keyAlias = keystoreProperties["keyAlias"] as String
-                    keyPassword = keystoreProperties["keyPassword"] as String
-                    storeFile = file(keystoreProperties["storeFile"] as String)
-                    storePassword = keystoreProperties["storePassword"] as String
-                }
-            } else {
-                signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.create("release") {
+                keyAlias = requiredSigningProperty("keyAlias")
+                keyPassword = requiredSigningProperty("keyPassword")
+                storeFile = file(requiredSigningProperty("storeFile"))
+                storePassword = requiredSigningProperty("storePassword")
             }
             isMinifyEnabled = true
             isShrinkResources = true
-            // 端侧 ASR（sherpa-onnx/onnxruntime）体积较大，正式包只保留真机架构
-            ndk {
-                abiFilters += listOf("arm64-v8a")
-            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

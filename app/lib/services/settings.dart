@@ -1,16 +1,29 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Settings {
+  static const maxCylinderVolL = 20.0;
+  static const maxFullPressureMpa = 40.0;
+  static const maxConsumptionLpm = 300.0;
+  static const maxThresholdMin = 1440;
+
   /// 正式 APK 可通过 --dart-define=WATCHDOG_API_BASE_URL 覆盖 CloudBase HTTP 网关地址。
   static const defaultServerUrl = String.fromEnvironment(
     'WATCHDOG_API_BASE_URL',
     defaultValue:
         'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com',
   );
+
   /// 端侧 ASR 模型与后端通过同一 CloudBase 网关分发，也可独立覆盖。
   static const defaultModelBaseUrl = String.fromEnvironment(
     'WATCHDOG_MODEL_BASE_URL',
     defaultValue: '$defaultServerUrl/models',
+  );
+
+  /// 非空时表示通过 dart-define 显式指定了独立模型源；为空时模型源在
+  /// 下载时跟随运行时服务器地址，避免用户切换自部署 API 后仍访问旧网关。
+  static const modelBaseUrlOverride = String.fromEnvironment(
+    'WATCHDOG_MODEL_BASE_URL',
+    defaultValue: '',
   );
   static const _deprecatedCloudRunServiceUrl =
       'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com';
@@ -32,6 +45,35 @@ class Settings {
   static const _kKeepAlive = 'keep_alive_enabled';
   static const _kModifiedAt = 'settings_modified_at';
   static const _kRealName = 'real_name';
+  static const _kUnitId = 'unit_id';
+  static const _kUnitCode = 'unit_code';
+  static const _kUnitName = 'unit_name';
+
+  static bool _isLocalHost(String host) => const {
+    'localhost',
+    '127.0.0.1',
+    '10.0.2.2',
+    'test',
+    'offline',
+    'rec',
+  }.contains(host);
+
+  static bool _isSafeServerUrl(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null || uri.host.isEmpty) return false;
+    if (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) {
+      return false;
+    }
+    return uri.scheme.toLowerCase() == 'https' || _isLocalHost(uri.host);
+  }
+
+  /// URL 校验供端侧模型下载和前台服务共用：生产地址必须 HTTPS，测试/本机地址
+  /// 允许使用受限的本地 host。URL 不允许携带 query/fragment，避免拼接路径时
+  /// 请求落到错误地址或把临时凭据带入后续请求。
+  static bool isSafeHttpUrl(String value) => _isSafeServerUrl(value.trim());
+
+  static String _normalizeBaseUrl(String value) =>
+      value.trim().replaceFirst(RegExp(r'/+$'), '');
 
   /// 可同步到服务器的个人设置键（与后端 user_settings 白名单一致，snake_case）
   static const syncKeys = [
@@ -70,8 +112,9 @@ class Settings {
       'tts_enabled': sp.getBool(_kTts) ?? true,
       'alarm_sound_enabled': sp.getBool(_kAlarmSound) ?? true,
       'keep_screen_on': sp.getBool(_kKeepScreenOn) ?? true,
-      'asr_cloud_enabled': sp.getBool(_kAsrCloud) ?? false,
+      'asr_cloud_enabled': sp.getBool(_kAsrCloud) ?? true,
       'parse_cloud_enabled': sp.getBool(_kParseCloud) ?? true,
+      'real_name': sp.getString(_kRealName) ?? '',
     };
   }
 
@@ -84,21 +127,31 @@ class Settings {
     num? numOf(String k) => map[k] is num ? map[k] as num : null;
     bool? boolOf(String k) => map[k] is bool ? map[k] as bool : null;
     final vol = numOf('cylinder_vol_l');
-    if (vol != null && vol > 0 && vol <= 20) {
+    if (vol != null && vol > 0 && vol <= maxCylinderVolL) {
       await sp.setDouble(_kVolume, vol.toDouble());
     }
     final full = numOf('full_pressure_mpa');
-    if (full != null && full > 0 && full <= 40) {
+    if (full != null && full > 0 && full <= maxFullPressureMpa) {
       await sp.setDouble(_kFullPressure, full.toDouble());
     }
     final cons = numOf('consumption_lpm');
-    if (cons != null && cons > 0 && cons <= 300) {
+    if (cons != null && cons > 0 && cons <= maxConsumptionLpm) {
       await sp.setDouble(_kConsumption, cons.toDouble());
     }
+    final currentWarn = sp.getInt(_kWarn) ?? 10;
+    final currentAlarm = sp.getInt(_kAlarm) ?? 5;
     final warn = numOf('warn_min');
-    if (warn != null && warn >= 0) await sp.setInt(_kWarn, warn.toInt());
     final alarm = numOf('alarm_min');
-    if (alarm != null && alarm >= 0) await sp.setInt(_kAlarm, alarm.toInt());
+    final nextWarn = warn != null && warn >= 0 && warn <= maxThresholdMin
+        ? warn.toInt()
+        : currentWarn;
+    final nextAlarm = alarm != null && alarm >= 0 && alarm <= maxThresholdMin
+        ? alarm.toInt()
+        : currentAlarm;
+    if (nextWarn >= nextAlarm) {
+      await sp.setInt(_kWarn, nextWarn);
+      await sp.setInt(_kAlarm, nextAlarm);
+    }
     final tts = boolOf('tts_enabled');
     if (tts != null) await sp.setBool(_kTts, tts);
     final sound = boolOf('alarm_sound_enabled');
@@ -109,6 +162,16 @@ class Settings {
     if (asrCloud != null) await sp.setBool(_kAsrCloud, asrCloud);
     final parseCloud = boolOf('parse_cloud_enabled');
     if (parseCloud != null) await sp.setBool(_kParseCloud, parseCloud);
+    final realName = map['real_name'];
+    if (realName is String) {
+      final trimmed = realName.trim();
+      final value = trimmed.length > 32 ? trimmed.substring(0, 32) : trimmed;
+      if (value.isEmpty) {
+        await sp.remove(_kRealName);
+      } else {
+        await sp.setString(_kRealName, value);
+      }
+    }
     await sp.setInt(_kModifiedAt, updatedAt);
   }
 
@@ -121,12 +184,22 @@ class Settings {
       await sp.setString(_kServer, defaultServerUrl);
       return defaultServerUrl;
     }
-    return saved ?? defaultServerUrl;
+    final candidate = _normalizeBaseUrl(saved ?? defaultServerUrl);
+    if (!_isSafeServerUrl(candidate)) {
+      await sp.setString(_kServer, defaultServerUrl);
+      return defaultServerUrl;
+    }
+    if (saved != candidate) await sp.setString(_kServer, candidate);
+    return candidate;
   }
 
   static Future<void> setServerUrl(String v) async {
+    final value = _normalizeBaseUrl(v);
+    if (!isSafeHttpUrl(value)) {
+      throw ArgumentError('服务器地址必须使用 HTTPS');
+    }
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_kServer, v);
+    await sp.setString(_kServer, value);
   }
 
   static Future<String> get currentIncidentId async {
@@ -145,12 +218,19 @@ class Settings {
 
   static Future<String> get apiToken async {
     final sp = await SharedPreferences.getInstance();
-    return sp.getString(_kToken) ?? 'watchdog-dev-token-2026';
+    // 不能把任何可用的生产/开发令牌编进 APK；首次安装由运维或设备配置
+    // 注入访问令牌，空值会让受保护业务请求明确返回 401。
+    return (sp.getString(_kToken) ?? '').trim();
   }
 
   static Future<void> setApiToken(String v) async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_kToken, v);
+    final value = v.trim();
+    if (value.isEmpty) {
+      await sp.remove(_kToken);
+    } else {
+      await sp.setString(_kToken, value);
+    }
   }
 
   /// 实名认证：真实姓名（空 = 匿名，日志发布显示"匿名"）
@@ -161,13 +241,66 @@ class Settings {
 
   static Future<void> setRealName(String v) async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_kRealName, v.trim());
+    final value = v.trim();
+    if (value.isEmpty) {
+      await sp.remove(_kRealName);
+    } else {
+      await sp.setString(_kRealName, value);
+    }
+  }
+
+  /// 当前设备已通过认证的单位 ID；为空表示未完成单位认证。
+  static Future<String> get unitId async {
+    final sp = await SharedPreferences.getInstance();
+    return (sp.getString(_kUnitId) ?? '').trim();
+  }
+
+  static Future<void> setUnitId(String v) async {
+    final sp = await SharedPreferences.getInstance();
+    final value = v.trim();
+    if (value.isEmpty) {
+      await sp.remove(_kUnitId);
+    } else {
+      await sp.setString(_kUnitId, value);
+    }
+  }
+
+  /// 当前设备已通过认证的单位验证码；为空表示尚未完成首次认证。
+  static Future<String> get unitCode async {
+    final sp = await SharedPreferences.getInstance();
+    return (sp.getString(_kUnitCode) ?? '').trim();
+  }
+
+  static Future<void> setUnitCode(String v) async {
+    final sp = await SharedPreferences.getInstance();
+    final value = v.trim();
+    if (value.isEmpty) {
+      await sp.remove(_kUnitCode);
+    } else {
+      await sp.setString(_kUnitCode, value);
+    }
+  }
+
+  static Future<String> get unitName async {
+    final sp = await SharedPreferences.getInstance();
+    return (sp.getString(_kUnitName) ?? '').trim();
+  }
+
+  static Future<void> setUnitName(String v) async {
+    final sp = await SharedPreferences.getInstance();
+    final value = v.trim();
+    if (value.isEmpty) {
+      await sp.remove(_kUnitName);
+    } else {
+      await sp.setString(_kUnitName, value);
+    }
   }
 
   static Future<double> get cylinderVolL async =>
       (await SharedPreferences.getInstance()).getDouble(_kVolume) ?? 6.8;
 
   static Future<void> setCylinderVolL(double v) async {
+    validateCalculationParameters(cylinderVolL: v);
     final sp = await SharedPreferences.getInstance();
     await sp.setDouble(_kVolume, v);
   }
@@ -176,6 +309,7 @@ class Settings {
       (await SharedPreferences.getInstance()).getDouble(_kFullPressure) ?? 30;
 
   static Future<void> setFullPressureMpa(double v) async {
+    validateCalculationParameters(fullPressureMpa: v);
     final sp = await SharedPreferences.getInstance();
     await sp.setDouble(_kFullPressure, v);
   }
@@ -184,6 +318,7 @@ class Settings {
       (await SharedPreferences.getInstance()).getDouble(_kConsumption) ?? 80;
 
   static Future<void> setConsumptionLpm(double v) async {
+    validateCalculationParameters(consumptionLpm: v);
     final sp = await SharedPreferences.getInstance();
     await sp.setDouble(_kConsumption, v);
   }
@@ -195,9 +330,42 @@ class Settings {
       (await SharedPreferences.getInstance()).getInt(_kAlarm) ?? 5;
 
   static Future<void> setThresholds(int warn, int alarm) async {
+    if (warn < 0 ||
+        alarm < 0 ||
+        warn > maxThresholdMin ||
+        alarm > maxThresholdMin ||
+        warn < alarm) {
+      throw ArgumentError('提醒阈值必须满足 0 ≤ 报警阈值 ≤ 提醒阈值 ≤ 1440');
+    }
     final sp = await SharedPreferences.getInstance();
     await sp.setInt(_kWarn, warn);
     await sp.setInt(_kAlarm, alarm);
+  }
+
+  /// 设置页保存前的统一计算参数校验；传入 null 的字段表示沿用已有值。
+  static void validateCalculationParameters({
+    double? cylinderVolL,
+    double? fullPressureMpa,
+    double? consumptionLpm,
+  }) {
+    if (cylinderVolL != null &&
+        (!cylinderVolL.isFinite ||
+            cylinderVolL <= 0 ||
+            cylinderVolL > maxCylinderVolL)) {
+      throw ArgumentError('气瓶容量必须在 0 到 $maxCylinderVolL L 之间');
+    }
+    if (fullPressureMpa != null &&
+        (!fullPressureMpa.isFinite ||
+            fullPressureMpa <= 0 ||
+            fullPressureMpa > maxFullPressureMpa)) {
+      throw ArgumentError('满压必须在 0 到 $maxFullPressureMpa MPa 之间');
+    }
+    if (consumptionLpm != null &&
+        (!consumptionLpm.isFinite ||
+            consumptionLpm <= 0 ||
+            consumptionLpm > maxConsumptionLpm)) {
+      throw ArgumentError('消耗率必须在 0 到 $maxConsumptionLpm L/min 之间');
+    }
   }
 
   static Future<bool> get ttsEnabled async =>

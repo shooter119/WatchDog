@@ -14,6 +14,8 @@ class ApiClient {
   final String apiToken;
   final String deviceId;
   final String actorName;
+  final String unitId;
+  final String unitCode;
   IOClient _client = _newHttpClient();
   IOClient? _activeChatClient;
   bool _disposed = false;
@@ -24,6 +26,8 @@ class ApiClient {
     this.apiToken = '',
     this.deviceId = '',
     this.actorName = '',
+    this.unitId = '',
+    this.unitCode = '',
   });
 
   ApiClient forIncident(String id) => ApiClient(
@@ -32,6 +36,8 @@ class ApiClient {
     apiToken: apiToken,
     deviceId: deviceId,
     actorName: actorName,
+    unitId: unitId,
+    unitCode: unitCode,
   );
 
   /// 辅助 AI 不属于任何警情，也不参与警情协同。
@@ -41,6 +47,8 @@ class ApiClient {
     apiToken: apiToken,
     deviceId: deviceId,
     actorName: actorName,
+    unitId: unitId,
+    unitCode: unitCode,
   );
 
   Map<String, String> get _headers => {
@@ -48,6 +56,8 @@ class ApiClient {
     if (incidentId.isNotEmpty) 'X-Incident-Id': incidentId,
     if (apiToken.isNotEmpty) 'X-Api-Token': apiToken,
     if (deviceId.isNotEmpty) 'X-Device-Id': deviceId,
+    if (unitId.isNotEmpty) 'X-Unit-Id': unitId,
+    if (unitCode.isNotEmpty) 'X-Unit-Code': unitCode,
     // HTTP 头只能安全承载 ASCII/Latin-1；消防员实名通常是中文，
     // 直接放入 X-Actor-Name 会被 Dart http 拒绝并导致所有请求失败。
     if (actorName.isNotEmpty)
@@ -60,7 +70,23 @@ class ApiClient {
     if (opId != null && opId.isNotEmpty) 'X-Op-Id': opId,
   };
 
-  Uri _uri(String path) => Uri.parse('$baseUrl$path');
+  Uri _uri(String path) {
+    final uri = Uri.tryParse('$baseUrl$path');
+    if (uri == null || uri.host.isEmpty) {
+      throw StateError('服务器地址无效');
+    }
+    final localHost =
+        uri.host == 'localhost' ||
+        uri.host == '127.0.0.1' ||
+        uri.host == '10.0.2.2' ||
+        uri.host == 'test' ||
+        uri.host == 'offline' ||
+        uri.host == 'rec';
+    if (uri.scheme != 'https' && !localHost) {
+      throw StateError('服务器地址必须使用 HTTPS');
+    }
+    return uri;
+  }
 
   /// 创建带底层连接/空闲超时的移动端 HTTP 客户端。
   ///
@@ -102,7 +128,11 @@ class ApiClient {
     try {
       return jsonDecode(utf8.decode(res.bodyBytes));
     } catch (_) {
-      throw ApiException(_responseError(res.statusCode, null, fallback));
+      throw ApiException(
+        _responseError(res.statusCode, null, fallback),
+        statusCode: res.statusCode,
+        code: 'INVALID_JSON',
+      );
     }
   }
 
@@ -117,6 +147,30 @@ class ApiClient {
     return '$fallback（HTTP $statusCode）';
   }
 
+  ApiException _apiException(
+    http.Response res, {
+    required dynamic body,
+    required String fallback,
+  }) {
+    return ApiException(
+      _responseError(res.statusCode, body, fallback),
+      statusCode: res.statusCode,
+      code: _responseCode(res, body),
+    );
+  }
+
+  String _responseCode(http.Response res, dynamic body) {
+    final code = body is Map ? body['code']?.toString().trim() : null;
+    return code == null || code.isEmpty ? 'HTTP_${res.statusCode}' : code;
+  }
+
+  ApiException _responseShapeException(http.Response res, String message) =>
+      ApiException(
+        message,
+        statusCode: res.statusCode,
+        code: 'INVALID_RESPONSE_SHAPE',
+      );
+
   String _responseErrorText(String raw, int statusCode, String fallback) {
     dynamic body;
     try {
@@ -125,6 +179,32 @@ class ApiClient {
       body = null;
     }
     return _responseError(statusCode, body, fallback);
+  }
+
+  /// CloudBase 冷启动或移动网络切换时，认证请求可能短暂收到 502/503/504
+  /// 或在连接层超时。认证写入按设备幂等，允许短暂退避后重试。
+  Future<http.Response> _withTransientRetry(
+    Future<http.Response> Function() request, {
+    required Duration timeout,
+  }) async {
+    const attempts = 3;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      try {
+        final response = await request().timeout(timeout);
+        final retryable =
+            response.statusCode == 502 ||
+            response.statusCode == 503 ||
+            response.statusCode == 504;
+        if (!retryable || attempt == attempts - 1) return response;
+      } catch (_) {
+        if (attempt == attempts - 1) rethrow;
+        // Future.timeout 不会自动关闭底层 socket；重建客户端，避免下一次
+        // 重试继续复用已经卡住的连接。
+        cancelRequests();
+      }
+      await Future<void>.delayed(Duration(milliseconds: 700 * (attempt + 1)));
+    }
+    throw StateError('请求重试失败');
   }
 
   /// 对完整警情简报补充客户端任务标记。
@@ -162,9 +242,12 @@ class ApiClient {
         .timeout(const Duration(seconds: 30));
     final body = _decodeJson(res, fallback: '转写失败');
     if (res.statusCode != 200) {
-      throw ApiException(_responseError(res.statusCode, body, '转写失败'));
+      throw _apiException(res, body: body, fallback: '转写失败');
     }
-    return (body as Map)['text'] as String? ?? '';
+    if (body is! Map) {
+      throw _responseShapeException(res, '转写响应格式异常');
+    }
+    return body['text'] as String? ?? '';
   }
 
   Future<ParseResult> parse(String text, {String? opId}) async {
@@ -177,7 +260,10 @@ class ApiClient {
         .timeout(const Duration(seconds: 30));
     final body = _decodeJson(res, fallback: '解析失败');
     if (res.statusCode != 200) {
-      throw ApiException(_responseError(res.statusCode, body, '解析失败'));
+      throw _apiException(res, body: body, fallback: '解析失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '解析响应格式异常');
     }
     return ParseResult.fromJson(body as Map<String, dynamic>);
   }
@@ -189,8 +275,14 @@ class ApiClient {
           headers: _headers,
         )
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('获取记录失败(${res.statusCode})');
-    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    final body = _decodeJson(res, fallback: '获取记录失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取记录失败');
+    }
+    if (body is! List) {
+      throw _responseShapeException(res, '记录响应格式异常');
+    }
+    final list = body;
     return list.map((e) => Entry.fromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -219,17 +311,18 @@ class ApiClient {
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
-    if (res.statusCode == 409 && body['entry'] != null) {
+    final body = _decodeJson(res, fallback: '创建失败');
+    if (res.statusCode == 409 && body is Map && body['entry'] != null) {
       throw EntryConflictException(
         body['error']?.toString() ?? '该人员已在火场内',
         Entry.fromJson(body['entry'] as Map<String, dynamic>),
       );
     }
     if (res.statusCode != 201) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '创建失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '创建失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '创建响应格式异常');
     }
     return Entry.fromJson(body as Map<String, dynamic>);
   }
@@ -253,11 +346,12 @@ class ApiClient {
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '更新失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '更新失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '更新失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '更新响应格式异常');
     }
     return Entry.fromJson(body as Map<String, dynamic>);
   }
@@ -266,21 +360,32 @@ class ApiClient {
     final res = await _client
         .post(_uri('/api/entries/$id/exit'), headers: _opHeaders(opId))
         .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) throw ApiException('登记出火场失败(${res.statusCode})');
+    if (res.statusCode != 200) {
+      throw ApiException(
+        _responseError(res.statusCode, null, '登记出火场失败'),
+        statusCode: res.statusCode,
+      );
+    }
   }
 
   Future<List<Firefighter>> fetchFirefighters() async {
     final res = await _client
         .get(_uri('/api/firefighters'), headers: _headers)
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('获取名单失败(${res.statusCode})');
-    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    final body = _decodeJson(res, fallback: '获取名单失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取名单失败');
+    }
+    if (body is! List) {
+      throw _responseShapeException(res, '名单响应格式异常');
+    }
+    final list = body;
     return list
         .map((e) => Firefighter.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
-  Future<void> addFirefighter(String name) async {
+  Future<bool> addFirefighter(String name) async {
     final res = await _client
         .post(
           _uri('/api/firefighters'),
@@ -288,24 +393,35 @@ class ApiClient {
           body: jsonEncode({'name': name}),
         )
         .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(res, fallback: '添加失败');
     if (res.statusCode != 201 && res.statusCode != 409) {
-      throw ApiException('添加失败(${res.statusCode})');
+      throw _apiException(res, body: body, fallback: '添加失败');
     }
+    return res.statusCode == 201;
   }
 
   Future<void> removeFirefighter(String id) async {
     final res = await _client
         .delete(_uri('/api/firefighters/$id'), headers: _headers)
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('删除失败(${res.statusCode})');
+    if (res.statusCode != 200) {
+      final body = _decodeJson(res, fallback: '删除失败');
+      throw _apiException(res, body: body, fallback: '删除失败');
+    }
   }
 
   Future<List<Hotword>> fetchHotwords() async {
     final res = await _client
         .get(_uri('/api/hotwords'), headers: _headers)
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('获取词库失败(${res.statusCode})');
-    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    final body = _decodeJson(res, fallback: '获取词库失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取词库失败');
+    }
+    if (body is! List) {
+      throw _responseShapeException(res, '词库响应格式异常');
+    }
+    final list = body;
     return list
         .map((e) => Hotword.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -315,8 +431,14 @@ class ApiClient {
     final res = await _client
         .get(_uri('/api/notes'), headers: _headers)
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('获取日志失败(${res.statusCode})');
-    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    final body = _decodeJson(res, fallback: '获取日志失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取日志失败');
+    }
+    if (body is! List) {
+      throw _responseShapeException(res, '日志响应格式异常');
+    }
+    final list = body;
     return list.map((e) => Note.fromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -338,11 +460,12 @@ class ApiClient {
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '记录日志失败');
     if (res.statusCode != 201) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '记录日志失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '记录日志失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '日志响应格式异常');
     }
     return Note.fromJson(body as Map<String, dynamic>);
   }
@@ -362,11 +485,12 @@ class ApiClient {
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '编辑日志失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '编辑日志失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '编辑日志失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '日志响应格式异常');
     }
     return Note.fromJson(body as Map<String, dynamic>);
   }
@@ -375,7 +499,10 @@ class ApiClient {
     final res = await _client
         .delete(_uri('/api/notes/$id'), headers: _headers)
         .timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) throw ApiException('删除日志失败(${res.statusCode})');
+    if (res.statusCode != 200) {
+      final body = _decodeJson(res, fallback: '删除日志失败');
+      throw _apiException(res, body: body, fallback: '删除日志失败');
+    }
   }
 
   Future<void> addHotword(String word) async {
@@ -386,8 +513,9 @@ class ApiClient {
           body: jsonEncode({'word': word}),
         )
         .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(res, fallback: '添加失败');
     if (res.statusCode != 201 && res.statusCode != 409) {
-      throw ApiException('添加失败(${res.statusCode})');
+      throw _apiException(res, body: body, fallback: '添加失败');
     }
   }
 
@@ -395,17 +523,24 @@ class ApiClient {
     final res = await _client
         .delete(_uri('/api/hotwords/$id'), headers: _headers)
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('删除失败(${res.statusCode})');
+    if (res.statusCode != 200) {
+      final body = _decodeJson(res, fallback: '删除失败');
+      throw _apiException(res, body: body, fallback: '删除失败');
+    }
   }
 
   Future<CalcConfig> fetchConfig() async {
     final res = await _client
         .get(_uri('/api/config'), headers: _headers)
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('获取配置失败(${res.statusCode})');
-    return CalcConfig.fromJson(
-      jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>,
-    );
+    final body = _decodeJson(res, fallback: '获取配置失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取配置失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '配置响应格式异常');
+    }
+    return CalcConfig.fromJson(body as Map<String, dynamic>);
   }
 
   /// 拉取智能体问答历史（旧→新，供聊天室恢复上下文）
@@ -413,10 +548,14 @@ class ApiClient {
     final res = await _client
         .get(_uri('/api/chat'), headers: _headers)
         .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取问答记录失败');
     if (res.statusCode != 200) {
-      throw ApiException('获取问答记录失败(${res.statusCode})');
+      throw _apiException(res, body: body, fallback: '获取问答记录失败');
     }
-    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    if (body is! List) {
+      throw _responseShapeException(res, '问答记录响应格式异常');
+    }
+    final list = body;
     return list
         .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -442,9 +581,12 @@ class ApiClient {
         .timeout(const Duration(seconds: 100));
     final body = _decodeJson(res, fallback: '提问失败');
     if (res.statusCode != 200) {
-      throw ApiException(_responseError(res.statusCode, body, '提问失败'));
+      throw _apiException(res, body: body, fallback: '提问失败');
     }
-    final m = body as Map;
+    if (body is! Map) {
+      throw _responseShapeException(res, '辅助问答响应格式异常');
+    }
+    final m = body;
     return ChatMessage(
       id: '',
       role: 'assistant',
@@ -560,7 +702,8 @@ class ApiClient {
         .delete(_uri('/api/chat'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
-      throw ApiException('清空问答记录失败(${res.statusCode})');
+      final body = _decodeJson(res, fallback: '清空问答记录失败');
+      throw _apiException(res, body: body, fallback: '清空问答记录失败');
     }
   }
 
@@ -573,7 +716,10 @@ class ApiClient {
           body: jsonEncode({'logs': logs}),
         )
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('日志上报失败(${res.statusCode})');
+    if (res.statusCode != 200) {
+      final body = _decodeJson(res, fallback: '日志上报失败');
+      throw _apiException(res, body: body, fallback: '日志上报失败');
+    }
   }
 
   /// 拉取云端用户设置（按 X-Device-Id 识别用户，按场景隔离）
@@ -582,10 +728,13 @@ class ApiClient {
     final res = await _client
         .get(_uri('/api/user-settings'), headers: _headers)
         .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取云端设置失败');
     if (res.statusCode != 200) {
-      throw ApiException('获取云端设置失败(${res.statusCode})');
+      throw _apiException(res, body: body, fallback: '获取云端设置失败');
     }
-    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    if (body is! Map) {
+      throw _responseShapeException(res, '云端设置响应格式异常');
+    }
     return {
       'settings': body['settings'] is Map<String, dynamic>
           ? body['settings'] as Map<String, dynamic>
@@ -603,7 +752,10 @@ class ApiClient {
           body: jsonEncode({'settings': settings}),
         )
         .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 200) throw ApiException('同步设置失败(${res.statusCode})');
+    if (res.statusCode != 200) {
+      final body = _decodeJson(res, fallback: '同步设置失败');
+      throw _apiException(res, body: body, fallback: '同步设置失败');
+    }
   }
 
   Future<List<Incident>> fetchIncidents({String? status}) async {
@@ -613,10 +765,14 @@ class ApiClient {
     final res = await _client
         .get(_uri(path), headers: _headers)
         .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取警情列表失败');
     if (res.statusCode != 200) {
-      throw ApiException('获取警情列表失败(${res.statusCode})');
+      throw _apiException(res, body: body, fallback: '获取警情列表失败');
     }
-    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    if (body is! List) {
+      throw _responseShapeException(res, '获取警情列表响应格式异常');
+    }
+    final list = body;
     return list
         .map((e) => Incident.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -633,8 +789,8 @@ class ApiClient {
           body: jsonEncode({'actor_name': realName}),
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
-    if (res.statusCode != 201) {
+    final body = _decodeJson(res, fallback: '新建警情失败');
+    if (res.statusCode != 200 && res.statusCode != 201) {
       if (res.statusCode == 409 &&
           body is Map &&
           body['code'] == 'INCIDENT_CREATE_COOLDOWN' &&
@@ -644,22 +800,57 @@ class ApiClient {
           Incident.fromJson(Map<String, dynamic>.from(body['incident'] as Map)),
         );
       }
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '新建警情失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '新建警情失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '新建警情响应格式异常');
     }
     return Incident.fromJson(body as Map<String, dynamic>);
+  }
+
+  /// 首次启动认证：校验单位验证码并登记本机实名。
+  /// 认证请求不把验证码放入请求头，避免失败前被当成已认证业务请求。
+  Future<Map<String, dynamic>> verifyUnit({
+    required String unitName,
+    required String unitCode,
+    required String realName,
+  }) async {
+    final res = await _withTransientRetry(
+      () => _client.post(
+        _uri('/api/auth/verify'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (apiToken.isNotEmpty) 'X-Api-Token': apiToken,
+          if (deviceId.isNotEmpty) 'X-Device-Id': deviceId,
+        },
+        body: jsonEncode({
+          'unit_name': unitName,
+          'unit_code': unitCode,
+          'real_name': realName,
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final body = _decodeJson(res, fallback: '单位认证失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '单位认证失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '单位认证响应格式异常');
+    }
+    return Map<String, dynamic>.from(body);
   }
 
   Future<Incident> fetchIncident(String id) async {
     final res = await _client
         .get(_uri('/api/incidents/$id'), headers: _headers)
         .timeout(const Duration(seconds: 10));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '获取警情失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '获取警情失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '获取警情失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '获取警情响应格式异常');
     }
     return Incident.fromJson(body as Map<String, dynamic>);
   }
@@ -679,12 +870,15 @@ class ApiClient {
           }),
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
-    if (res.statusCode == 409) throw ApiException('警情已被其他设备修改，请刷新后重试');
+    final body = _decodeJson(res, fallback: '修改警情名称失败');
+    if (res.statusCode == 409) {
+      throw _apiException(res, body: body, fallback: '警情已被其他设备修改，请刷新后重试');
+    }
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '修改警情名称失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '修改警情名称失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '警情响应格式异常');
     }
     return Incident.fromJson(body as Map<String, dynamic>);
   }
@@ -697,11 +891,12 @@ class ApiClient {
           body: jsonEncode({'confirm': true}),
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '归档警情失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '归档警情失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '归档警情失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '归档警情响应格式异常');
     }
     return Incident.fromJson(body as Map<String, dynamic>);
   }
@@ -713,10 +908,14 @@ class ApiClient {
     final res = await _client
         .get(_uri('/api/incidents/$id/forces'), headers: _headers)
         .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取参战力量失败');
     if (res.statusCode != 200) {
-      throw ApiException('获取参战力量失败(${res.statusCode})');
+      throw _apiException(res, body: body, fallback: '获取参战力量失败');
     }
-    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    if (body is! List) {
+      throw _responseShapeException(res, '参战力量响应格式异常');
+    }
+    final list = body;
     return list
         .map((e) => IncidentForce.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -745,12 +944,15 @@ class ApiClient {
         if (expectedVersion != null) 'expected_version': expectedVersion,
       }),
     ).timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
-    if (res.statusCode == 409) throw ApiException('参战力量已被其他设备修改，请刷新后重试');
+    final body = _decodeJson(res, fallback: '保存参战力量失败');
+    if (res.statusCode == 409) {
+      throw _apiException(res, body: body, fallback: '参战力量已被其他设备修改，请刷新后重试');
+    }
     if (res.statusCode != 200 && res.statusCode != 201) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '保存参战力量失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '保存参战力量失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '参战力量响应格式异常');
     }
     return IncidentForce.fromJson(body as Map<String, dynamic>);
   }
@@ -763,7 +965,8 @@ class ApiClient {
         )
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
-      throw ApiException('删除参战力量失败(${res.statusCode})');
+      final body = _decodeJson(res, fallback: '删除参战力量失败');
+      throw _apiException(res, body: body, fallback: '删除参战力量失败');
     }
   }
 
@@ -771,10 +974,14 @@ class ApiClient {
     final res = await _client
         .get(_uri('/api/stations'), headers: _headers)
         .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取消防站名录失败');
     if (res.statusCode != 200) {
-      throw ApiException('获取消防站名录失败(${res.statusCode})');
+      throw _apiException(res, body: body, fallback: '获取消防站名录失败');
     }
-    final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+    if (body is! List) {
+      throw _responseShapeException(res, '消防站名录响应格式异常');
+    }
+    final list = body;
     return list
         .map((e) => Station.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -788,11 +995,12 @@ class ApiClient {
           body: jsonEncode({'name': name}),
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '新增消防站失败');
     if (res.statusCode != 201 && res.statusCode != 409) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '新增消防站失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '新增消防站失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '消防站响应格式异常');
     }
     return Station.fromJson(body as Map<String, dynamic>);
   }
@@ -807,13 +1015,21 @@ class ApiClient {
           headers: _headers,
         )
         .timeout(const Duration(seconds: 15));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '获取火场复盘失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '获取火场复盘失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '获取火场复盘失败');
     }
-    final list = (body as Map)['events'] as List? ?? const [];
+    if (body is! Map) {
+      throw _responseShapeException(res, '火场复盘响应格式异常');
+    }
+    final rawEvents = body['events'];
+    if (rawEvents is! List) {
+      throw _responseShapeException(res, '火场复盘事件响应格式异常');
+    }
+    if (rawEvents.any((event) => event is! Map)) {
+      throw _responseShapeException(res, '火场复盘事件项格式异常');
+    }
+    final list = rawEvents;
     return list
         .map((e) => IncidentEvent.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -829,25 +1045,28 @@ class ApiClient {
           body: jsonEncode({'operations': operations}),
         )
         .timeout(const Duration(seconds: 20));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '离线数据补传失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '离线数据补传失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '离线数据补传失败');
     }
-    return Map<String, dynamic>.from(body as Map);
+    if (body is! Map) {
+      throw _responseShapeException(res, '离线补传响应格式异常');
+    }
+    return Map<String, dynamic>.from(body);
   }
 
   Future<Map<String, dynamic>> fetchProfile() async {
     final res = await _client
         .get(_uri('/api/profile'), headers: _headers)
         .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取实名信息失败');
     if (res.statusCode != 200) {
-      throw ApiException('获取实名信息失败(${res.statusCode})');
+      throw _apiException(res, body: body, fallback: '获取实名信息失败');
     }
-    return Map<String, dynamic>.from(
-      jsonDecode(utf8.decode(res.bodyBytes)) as Map,
-    );
+    if (body is! Map) {
+      throw _responseShapeException(res, '实名信息响应格式异常');
+    }
+    return Map<String, dynamic>.from(body);
   }
 
   Future<Map<String, dynamic>> saveProfile(String realName) async {
@@ -858,19 +1077,22 @@ class ApiClient {
           body: jsonEncode({'real_name': realName}),
         )
         .timeout(const Duration(seconds: 10));
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _decodeJson(res, fallback: '保存实名失败');
     if (res.statusCode != 200) {
-      throw ApiException(
-        (body as Map)['error']?.toString() ?? '保存实名失败(${res.statusCode})',
-      );
+      throw _apiException(res, body: body, fallback: '保存实名失败');
     }
-    return Map<String, dynamic>.from(body as Map);
+    if (body is! Map) {
+      throw _responseShapeException(res, '实名信息响应格式异常');
+    }
+    return Map<String, dynamic>.from(body);
   }
 }
 
 class ApiException implements Exception {
   final String message;
-  ApiException(this.message);
+  final int? statusCode;
+  final String? code;
+  ApiException(this.message, {this.statusCode, this.code});
   @override
   String toString() => message;
 }

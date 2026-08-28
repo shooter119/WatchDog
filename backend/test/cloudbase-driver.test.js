@@ -74,3 +74,37 @@ test('兼容 CloudBase 云托管选择 API Key 注入的变量名', () => {
     else process.env.CLOUDBASE_APIKEY = previousInjectedApiKey;
   }
 });
+
+test('CloudBase PostgREST 拒绝使用 HTTP 发送 service_role', async () => {
+  const client = new CloudBasePostgrestClient({
+    baseUrl: 'http://127.0.0.1:8787/v1/rdb/rest',
+    apiKey: 'service-role-test-key',
+    fetchImpl: async () => {
+      throw new Error('不应在不安全 URL 上发起请求');
+    },
+  });
+
+  await assert.rejects(
+    () => client.select('entries'),
+    /必须使用 HTTPS/,
+  );
+});
+
+test('CloudBase PostgREST 拒绝带用户信息或查询参数的服务地址', async () => {
+  for (const baseUrl of [
+    'https://user:password@example.test/v1/rdb/rest',
+    'https://example.test/v1/rdb/rest?redirect=https://evil.test',
+  ]) {
+    const client = new CloudBasePostgrestClient({
+      baseUrl,
+      apiKey: 'service-role-test-key',
+      fetchImpl: async () => {
+        throw new Error('不应在可疑 URL 上发起请求');
+      },
+    });
+    await assert.rejects(
+      () => client.select('entries'),
+      /不得包含用户信息、查询参数或片段/,
+    );
+  }
+});

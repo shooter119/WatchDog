@@ -54,6 +54,9 @@ class HomePageState extends State<HomePage> {
   String? _error;
   StreamSubscription<double>? _ampSub;
   double _amp = 0.15;
+  bool _recordingRequested = false;
+  int _recordingGeneration = 0;
+  bool _recordingStarting = false;
 
   // 本次语音操作 ID：贯穿 录音→转写→解析→确认/出场，客户端与服务端日志以此对齐
   String? _opId;
@@ -71,7 +74,9 @@ class HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     if (widget.autoRecord) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => beginRecording());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.autoRecord) beginRecording();
+      });
     }
   }
 
@@ -87,13 +92,16 @@ class HomePageState extends State<HomePage> {
     super.didUpdateWidget(oldWidget);
     if (widget.autoRecord && !oldWidget.autoRecord) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) beginRecording();
+        if (mounted && widget.autoRecord) beginRecording();
       });
     }
   }
 
   @override
   void dispose() {
+    _recordingRequested = false;
+    _recordingGeneration++;
+    _recordingStarting = false;
     _ampSub?.cancel();
     _clearEditors();
     _audio.dispose();
@@ -140,7 +148,15 @@ class HomePageState extends State<HomePage> {
   /// 开始录音（长按触发）
   Future<void> beginRecording() async {
     widget.onAutoRecordConsumed?.call();
-    if (_recording || _processing) return;
+    if (_recording ||
+        _processing ||
+        _recordingRequested ||
+        _recordingStarting) {
+      return;
+    }
+    final generation = ++_recordingGeneration;
+    _recordingRequested = true;
+    _recordingStarting = true;
     _opId =
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     OpLogService.instance.record(_opId!, 'record_start', '开始录音');
@@ -152,7 +168,23 @@ class HomePageState extends State<HomePage> {
       _permDenied = false;
     });
     // 不清空已录入人员：支持多人分批次语音录入，最后一次性统一确认
-    final ok = await _audio.hasPermission();
+    late final bool ok;
+    try {
+      ok = await _audio.hasPermission();
+    } catch (e) {
+      _recordingRequested = false;
+      _recordingStarting = false;
+      if (mounted) setState(() => _error = '麦克风权限检查失败: $e');
+      _endOp('permission_error');
+      return;
+    }
+    if (!_recordingRequested ||
+        generation != _recordingGeneration ||
+        !mounted) {
+      _recordingStarting = false;
+      _endOp('cancelled');
+      return;
+    }
     if (!ok) {
       OpLogService.instance.record(
         _opId!,
@@ -171,13 +203,22 @@ class HomePageState extends State<HomePage> {
     }
     try {
       await _audio.start();
-      if (!mounted) return;
+      if (!_recordingRequested ||
+          generation != _recordingGeneration ||
+          !mounted) {
+        if (_audio.isRecording) await _audio.stop();
+        _recordingStarting = false;
+        _endOp('cancelled');
+        return;
+      }
       setState(() => _recording = true);
+      _recordingStarting = false;
       widget.onRecordingChanged?.call(true);
       _ampSub = _audio.amplitudeStream().listen((a) {
         if (mounted) setState(() => _amp = a);
       });
     } catch (e) {
+      _recordingStarting = false;
       OpLogService.instance.record(
         _opId!,
         'record_start_err',
@@ -191,7 +232,15 @@ class HomePageState extends State<HomePage> {
 
   /// 结束录音（松手触发）→ 转写 + 解析
   Future<void> finishRecording() async {
-    if (!_recording) return;
+    if (!_recording) {
+      // 松手可能早于麦克风权限/录音插件返回；撤销尚未真正开始的录音请求，
+      // 防止手势结束后异步回调又偷偷启动录音。
+      _recordingRequested = false;
+      _recordingGeneration++;
+      return;
+    }
+    _recordingRequested = false;
+    _recordingGeneration++;
     setState(() {
       _recording = false;
       _processing = true;
@@ -336,6 +385,22 @@ class HomePageState extends State<HomePage> {
         _endOp('ignore');
         return;
       }
+      // 出场意图只处理当前在场记录，不应把识别到的姓名追加进待确认的
+      // 进场编辑器；否则“张伟退场”可能在处理后又显示为待进场。
+      if (parsed.action == 'exit') {
+        setState(() {
+          _transcript = text;
+          _parsed = parsed;
+          _processing = false;
+        });
+        widget.onProcessingChanged?.call(false);
+        if (parsed.people.isNotEmpty) {
+          await _handleExit(parsed.people.map((p) => p.name).toList());
+        } else {
+          await _confirmAllExit(text);
+        }
+        return;
+      }
       // 追加到已录入名单：同名人员更新压力（更正），其余新增一行
       for (final p in parsed.people) {
         final idx = _peopleEditors.indexWhere(
@@ -387,13 +452,6 @@ class HomePageState extends State<HomePage> {
         widget.onProcessingChanged?.call(false);
         _endOp('entry_empty');
         return;
-      }
-      if (parsed.action == 'exit') {
-        if (parsed.people.isNotEmpty) {
-          await _handleExit(parsed.people.map((p) => p.name).toList());
-        } else {
-          await _confirmAllExit(text);
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -974,16 +1032,34 @@ class HomePageState extends State<HomePage> {
     return SafeArea(
       child: LayoutBuilder(
         builder: (context, viewport) {
-          final pageHeader = Row(
-            children: [
-              const Text('警情处置', style: AppTextStyles.h1),
-              const Spacer(),
-              ConnectionStatus(
-                connected: !widget.controller.connectionLost,
-                onRetry: widget.controller.startSync,
-              ),
-            ],
+          final compactHeader =
+              viewport.maxWidth < 400 ||
+              MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
+          final connectionStatus = ConnectionStatus(
+            connected: !widget.controller.connectionLost,
+            syncing: widget.controller.syncing,
+            syncError: widget.controller.syncError,
+            onRetry: widget.controller.refreshNow,
           );
+          final pageHeader = compactHeader
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('警情处置', style: AppTextStyles.h1),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: connectionStatus,
+                    ),
+                  ],
+                )
+              : Row(
+                  children: [
+                    const Text('警情处置', style: AppTextStyles.h1),
+                    const Spacer(),
+                    connectionStatus,
+                  ],
+                );
           final taskBar = incident == null || compactEntryFlow
               ? null
               : _TaskBar(
@@ -1492,6 +1568,7 @@ class HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
                           width: 30,
@@ -1507,12 +1584,15 @@ class HomePageState extends State<HomePage> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const Text(
-                          '按住下方按钮说话',
-                          style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                        Expanded(
+                          child: Text(
+                            '按住下方按钮说话',
+                            softWrap: true,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ],
@@ -1708,7 +1788,7 @@ class HomePageState extends State<HomePage> {
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
-                    height: 52,
+                    height: 56,
                     child: FilledButton.icon(
                       onPressed: _confirmAll,
                       icon: const Icon(Icons.check_circle_outline),
@@ -1721,7 +1801,7 @@ class HomePageState extends State<HomePage> {
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
-                    height: 44,
+                    height: 48,
                     child: OutlinedButton.icon(
                       onPressed: _processing ? null : beginRecording,
                       icon: const Icon(Icons.mic_none),
@@ -1730,7 +1810,7 @@ class HomePageState extends State<HomePage> {
                   ),
                   SizedBox(
                     width: double.infinity,
-                    height: 44,
+                    height: 48,
                     child: TextButton.icon(
                       onPressed: _retry,
                       icon: const Icon(Icons.replay),
@@ -1753,6 +1833,7 @@ class HomePageState extends State<HomePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Icon(
                 Icons.fact_check_outlined,
@@ -1760,12 +1841,15 @@ class HomePageState extends State<HomePage> {
                 color: AppColors.voice,
               ),
               const SizedBox(width: 6),
-              Text(
-                '确认名单（${_peopleEditors.length} 人）：请下滑核对后一次性确认',
-                style: const TextStyle(
-                  color: AppColors.textTertiary,
-                  fontSize: 12,
-                  letterSpacing: 0.5,
+              Expanded(
+                child: Text(
+                  '确认名单（${_peopleEditors.length} 人）：请下滑核对后一次性确认',
+                  softWrap: true,
+                  style: const TextStyle(
+                    color: AppColors.textTertiary,
+                    fontSize: 12,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
             ],
@@ -1783,7 +1867,7 @@ class HomePageState extends State<HomePage> {
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: const Size(0, 36),
+                  minimumSize: const Size(0, 48),
                 ),
               ),
             ),
@@ -1798,7 +1882,7 @@ class HomePageState extends State<HomePage> {
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
-            height: 52,
+            height: 56,
             child: FilledButton.icon(
               onPressed: _processing ? null : _confirmAll,
               icon: const Icon(Icons.check_circle_outline),
@@ -1811,7 +1895,7 @@ class HomePageState extends State<HomePage> {
           const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
-            height: 44,
+            height: 48,
             child: OutlinedButton.icon(
               onPressed: _processing ? null : beginRecording,
               icon: const Icon(Icons.mic_none),
@@ -1820,7 +1904,7 @@ class HomePageState extends State<HomePage> {
           ),
           SizedBox(
             width: double.infinity,
-            height: 44,
+            height: 48,
             child: TextButton.icon(
               onPressed: _retry,
               icon: const Icon(Icons.replay),
@@ -1834,36 +1918,61 @@ class HomePageState extends State<HomePage> {
 
   /// 单个人员的姓名/压力编辑行（列表与逐人确认共用）
   Widget _personEditorRow(int index, _PersonEdit ed) {
-    return Row(
-      children: [
-        _IndexBadge(index: index),
-        const SizedBox(width: 8),
-        Expanded(
-          child: TextField(
-            controller: ed.nameCtrl,
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: '姓名',
-              prefixIcon: Icon(Icons.person_outline, size: 20),
-            ),
-            style: const TextStyle(fontSize: 16),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxWidth < 360 ||
+            MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
+        final nameField = TextField(
+          controller: ed.nameCtrl,
+          decoration: const InputDecoration(
+            isDense: true,
+            labelText: '姓名',
+            prefixIcon: Icon(Icons.person_outline, size: 20),
           ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 104,
-          child: TextField(
-            controller: ed.pressureCtrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: '压力',
-              suffixText: 'MPa',
-            ),
-            style: const TextStyle(fontSize: 16),
+          style: const TextStyle(fontSize: 16),
+        );
+        final pressureField = TextField(
+          controller: ed.pressureCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            isDense: true,
+            labelText: '压力',
+            suffixText: 'MPa',
           ),
-        ),
-      ],
+          style: const TextStyle(fontSize: 16),
+        );
+
+        if (compact) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _IndexBadge(index: index),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    nameField,
+                    const SizedBox(height: 8),
+                    pressureField,
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            _IndexBadge(index: index),
+            const SizedBox(width: 8),
+            Expanded(child: nameField),
+            const SizedBox(width: 8),
+            SizedBox(width: 104, child: pressureField),
+          ],
+        );
+      },
     );
   }
 
@@ -2044,15 +2153,19 @@ class HomePageState extends State<HomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(icon, size: 15, color: AppColors.voice),
               const SizedBox(width: 5),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+              Expanded(
+                child: Text(
+                  label,
+                  softWrap: true,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
             ],
@@ -2147,12 +2260,15 @@ class _PulseMic extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
     return SizedBox(
       width: 112,
       height: 112,
       child: AnimatedScale(
-        scale: 0.96 + intensity.clamp(0, 1) * 0.04,
-        duration: const Duration(milliseconds: 100),
+        scale: disableAnimations ? 1 : 0.96 + intensity.clamp(0, 1) * 0.04,
+        duration: disableAnimations
+            ? Duration.zero
+            : const Duration(milliseconds: 100),
         curve: Curves.easeOut,
         child: Container(
           decoration: BoxDecoration(
@@ -2162,13 +2278,6 @@ class _PulseMic extends StatelessWidget {
               color: AppColors.voice.withValues(alpha: 0.58),
               width: 2,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.voice.withValues(alpha: 0.12),
-                blurRadius: 16,
-                spreadRadius: 2,
-              ),
-            ],
           ),
           child: const Icon(
             Icons.mic_rounded,
@@ -2319,7 +2428,7 @@ class _IncidentPicker extends StatelessWidget {
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 12,
                                     ),
-                                    minimumSize: const Size(64, 44),
+                                    minimumSize: const Size(64, 48),
                                   ),
                                   child: const Row(
                                     mainAxisSize: MainAxisSize.min,
@@ -2438,7 +2547,7 @@ class _TaskBar extends StatelessWidget {
               tooltip: '修改名称',
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             ),
           ],
         ),
@@ -2513,7 +2622,7 @@ class _TaskBar extends StatelessWidget {
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size.fromHeight(42),
+                  minimumSize: const Size.fromHeight(48),
                 ),
               ),
             ),
@@ -2526,7 +2635,7 @@ class _TaskBar extends StatelessWidget {
                   foregroundColor: AppColors.alarm,
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size.fromHeight(42),
+                  minimumSize: const Size.fromHeight(48),
                 ),
               ),
             ),
@@ -2562,6 +2671,7 @@ class _ForceRow extends StatelessWidget {
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
+        excludeFromSemantics: true,
         onTap: onEdit,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
@@ -2600,7 +2710,7 @@ class _ForceRow extends StatelessWidget {
                 color: AppColors.textTertiary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               ),
               IconButton(
                 onPressed: onRemove,
@@ -2609,7 +2719,7 @@ class _ForceRow extends StatelessWidget {
                 color: AppColors.textTertiary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               ),
             ],
           ),
