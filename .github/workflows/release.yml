@@ -406,6 +406,8 @@ jobs:
             local sign_file="$verify_dir/upload-sign.json"
             local upload_log="$verify_dir/upload.log"
             local upload_url
+            local content_length
+            content_length="$(wc -c < "$local_path" | tr -d ' ')"
 
             # 先向 CloudBase 申请一次性上传签名，再用 curl 直传，避免 CLI
             # 的 Node 流式请求在大 APK 上传时触发 STORAGE_ABORTED 空闲超时。
@@ -434,8 +436,9 @@ jobs:
             if ! curl --fail --silent --show-error --location \
               --retry 3 --retry-all-errors --retry-delay 2 \
               --http1.1 --connect-timeout 20 --max-time 300 \
-              --upload-file "$local_path" \
+              --request PUT --data-binary "@$local_path" \
               -H 'Expect:' \
+              -H "Content-Length: $content_length" \
               -H "Content-Type: $content_type" \
               -H "Cache-Control: $cache_control" \
               "$upload_url" > "$upload_log" 2>&1; then
