@@ -419,11 +419,12 @@ jobs:
           const fs = require('node:fs');
           const path = process.argv[2];
           const payload = JSON.parse(fs.readFileSync(path, 'utf8'));
-          if (!payload || typeof payload.url !== 'string' || typeof payload.token !== 'string' || !payload.token) {
+          const result = payload && payload.data ? payload.data : payload;
+          if (!result || typeof result.url !== 'string' || typeof result.token !== 'string' || !result.token) {
             throw new Error('签名上传响应缺少 url 或 token');
           }
-          const url = new URL(payload.url);
-          url.searchParams.set('token', payload.token);
+          const url = new URL(result.url);
+          url.searchParams.set('token', result.token);
           process.stdout.write(url.toString());
           NODE
             )"
