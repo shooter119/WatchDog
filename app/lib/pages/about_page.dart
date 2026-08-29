@@ -156,7 +156,7 @@ class _FeaturesCard extends StatelessWidget {
     (
       Icons.system_update_alt_rounded,
       '国内 OTA 更新',
-      '版本清单与 APK 通过腾讯云 CloudBase 云存储国内分发，GitHub Release 继续保留为归档和旧版本迁移入口',
+      '版本清单与 APK 通过腾讯云 CloudBase 静态托管 CDN 国内分发；旧版可先通过 GitHub Release 或 USB 升级一次，之后自动走国内更新入口',
     ),
     (
       Icons.folder_copy_outlined,

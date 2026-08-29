@@ -48,7 +48,7 @@ class UpdateInfo {
 typedef UpdateEventLogger =
     void Function(String stage, String message, String level);
 
-/// OTA 更新服务：从国内 CloudBase PG Storage 公开对象清单获取版本，
+/// OTA 更新服务：从国内 CloudBase 静态托管公开清单获取版本，
 /// 由 App 自己下载并校验 APK，再交给原生 FileProvider 拉起系统安装。
 ///
 /// 清单和 APK 均只走国内更新入口；GitHub Release 仍由发布流水线保留，
@@ -57,7 +57,7 @@ class UpdateService {
   static const updateManifestUrl = String.fromEnvironment(
     'WATCHDOG_UPDATE_MANIFEST_URL',
     defaultValue:
-        'https://watchdog-prod-d6gch930m378d9a16.api.tcloudbasegateway.com/v1/storages/object/public/watchdog-ota/latest.json',
+        'https://watchdog-prod-d6gch930m378d9a16-1351750301.tcloudbaseapp.com/ota/latest.json',
   );
   static const userAgent = 'watchdog-app-updater/2.0';
   static const _metadataTimeout = Duration(seconds: 15);
