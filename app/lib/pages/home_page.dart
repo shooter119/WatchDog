@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -8,6 +9,7 @@ import '../api/api_client.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import '../services/audio_service.dart';
+import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
 import '../state/app_controller.dart';
@@ -45,6 +47,13 @@ class HomePage extends StatefulWidget {
 
 class HomePageState extends State<HomePage> {
   late final AudioService _audio = widget.audioService ?? AudioService();
+  RealtimeAsrService? _realtime;
+
+  // 测试注入的 AudioService 继续走文件录音；正式运行时使用实时 PCM 会话。
+  bool get _realtimeEnabled =>
+      widget.audioService == null &&
+      widget.controller.asrCloudEnabled &&
+      widget.controller.api != null;
 
   bool _recording = false;
   bool _processing = false;
@@ -110,6 +119,7 @@ class HomePageState extends State<HomePage> {
     _stopRecordingTimer();
     _ampSub?.cancel();
     _clearEditors();
+    unawaited(_realtime?.dispose());
     _audio.dispose();
     super.dispose();
   }
@@ -240,11 +250,42 @@ class HomePageState extends State<HomePage> {
       return;
     }
     try {
-      await _audio.start();
+      if (_realtimeEnabled) {
+        _realtime = RealtimeAsrService(
+          api: widget.controller.api!,
+          onText: (text, {required finalText}) {
+            if (!mounted || (!_recording && !_recordingRequested)) return;
+            setState(() => _transcript = text);
+          },
+        );
+        try {
+          await _realtime!.start(opId: _opId);
+        } catch (error) {
+          await _realtime!.cancel();
+          await _realtime!.dispose();
+          _realtime = null;
+          // WebSocket 冷启动/网关暂时不可用时，仍允许用户完成本次录音，
+          // 松手后沿用旧的云端批量识别与本地兜底链路。
+          OpLogService.instance.record(
+            _opId!,
+            'stream_connect_err',
+            '实时识别连接失败，改用兼容录音模式: $error',
+            level: 'warn',
+          );
+          await _audio.start();
+        }
+      } else {
+        await _audio.start();
+      }
       if (!_recordingRequested ||
           generation != _recordingGeneration ||
           !mounted) {
-        if (_audio.isRecording) await _audio.stop();
+        if (_realtime != null) {
+          await _realtime!.cancel();
+          _realtime = null;
+        } else if (_audio.isRecording) {
+          await _audio.stop();
+        }
         _recordingStarting = false;
         _endOp('cancelled');
         return;
@@ -256,7 +297,7 @@ class HomePageState extends State<HomePage> {
       _recordingStarting = false;
       _startRecordingTimer();
       widget.onRecordingChanged?.call(true);
-      _ampSub = _audio.amplitudeStream().listen((a) {
+      _ampSub = (_realtime?.amplitudeStream() ?? _audio.amplitudeStream()).listen((a) {
         if (mounted) setState(() => _amp = a);
       });
     } catch (e) {
@@ -297,7 +338,30 @@ class HomePageState extends State<HomePage> {
     final opId = _opId ?? '';
     try {
       final sw = Stopwatch()..start();
-      final bytes = await _audio.stop();
+      Uint8List bytes;
+      String? realtimeText;
+      final realtime = _realtime;
+      if (realtime != null) {
+        try {
+          final result = await realtime.stop();
+          bytes = result.wavBytes;
+          realtimeText = result.text;
+        } on RealtimeAsrException catch (error) {
+          bytes = error.result.wavBytes;
+          OpLogService.instance.record(
+            opId,
+            'transcribe_fallback',
+            '实时云端识别失败，切换本地识别',
+            level: 'warn',
+          );
+          realtimeText = null;
+        } finally {
+          await realtime.dispose();
+          _realtime = null;
+        }
+      } else {
+        bytes = await _audio.stop();
+      }
       OpLogService.instance.record(
         opId,
         'record_stop',
@@ -306,7 +370,11 @@ class HomePageState extends State<HomePage> {
       );
       String text;
       try {
-        text = await widget.controller.transcribeAudio(bytes, opId: opId);
+        text = realtimeText?.trim().isNotEmpty == true
+            ? realtimeText!.trim()
+            : realtime != null
+                ? await widget.controller.transcribeAudioLocal(bytes, opId: opId)
+                : await widget.controller.transcribeAudio(bytes, opId: opId);
         OpLogService.instance.record(
           opId,
           'transcribe_ok',
@@ -1517,6 +1585,27 @@ class HomePageState extends State<HomePage> {
               '或：出火场人员姓名',
               style: TextStyle(color: AppColors.textTertiary, fontSize: 14),
             ),
+            if (_transcript != null && _transcript!.trim().isNotEmpty) ...[
+              const SizedBox(height: 22),
+              Container(
+                constraints: const BoxConstraints(maxWidth: 360),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.voice.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Text(
+                  _transcript!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 17,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               _recordingSeconds >= _recordingWarningDuration.inSeconds

@@ -22,7 +22,7 @@
 
 - 后端：在 `backend/` 下运行 `npm test`（node:test），改 server/db/parse/calc 必须通过。
 - App：在 `app/` 下运行 `flutter analyze`（0 问题）+ `flutter test`。
-- 两套测试目前后端 161、App 223 个用例，改动后不应减少。
+- 两套测试目前后端 162、App 223 个用例，改动后不应减少。
 
 ## 架构速览
 

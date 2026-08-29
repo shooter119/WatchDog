@@ -88,6 +88,15 @@ class ApiClient {
     return uri;
   }
 
+  /// 实时 ASR 代理使用同一网关和认证头，但通过 WebSocket 协议连接。
+  Uri realtimeAsrUri() {
+    final httpUri = _uri('/api/asr/stream');
+    return httpUri.replace(scheme: httpUri.scheme == 'https' ? 'wss' : 'ws');
+  }
+
+  Map<String, String> realtimeAsrHeaders({String? opId}) =>
+      _opHeaders(opId);
+
   /// 创建带底层连接/空闲超时的移动端 HTTP 客户端。
   ///
   /// `Future.timeout` 只能停止等待 Dart Future，不能保证底层 socket 被关闭。

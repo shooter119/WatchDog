@@ -1742,6 +1742,11 @@ class AppController extends ChangeNotifier {
     return _localTranscribe(bytes, opId: opId);
   }
 
+  /// 实时云端会话失败后的本地识别入口，避免回退时再次请求云端。
+  Future<String> transcribeAudioLocal(Uint8List bytes, {String? opId}) async {
+    return _localTranscribe(bytes, opId: opId);
+  }
+
   Future<String> _localTranscribe(Uint8List bytes, {String? opId}) async {
     final asr = localAsr;
     if (asr == null) throw StateError('未配置本地语音识别');

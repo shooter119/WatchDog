@@ -119,7 +119,7 @@ function buildFullClientRequest({ appId, accessToken, uid, format, rate, bits, c
     },
   };
   if (hotwords && hotwords.length > 0) {
-    const words = hotwords.slice(0, 5000).map((w) => ({ word: String(w).trim() })).filter((w) => w.word);
+    const words = normalizeHotwords(hotwords).map((word) => ({ word }));
     if (words.length > 0) {
       request.request.corpus = {
         context: JSON.stringify({ hotwords: words }),
@@ -127,6 +127,19 @@ function buildFullClientRequest({ appId, accessToken, uid, format, rate, bits, c
     }
   }
   return request;
+}
+
+function normalizeHotwords(hotwords = []) {
+  const seen = new Set();
+  const result = [];
+  for (const item of hotwords) {
+    const word = String(item ?? '').trim();
+    if (!word || word.length > 64 || seen.has(word)) continue;
+    seen.add(word);
+    result.push(word);
+    if (result.length >= 5000) break;
+  }
+  return result;
 }
 
 function buildStreamingClientRequest({ appId, accessToken, uid, format, rate, bits, channel, hotwords }) {
@@ -159,6 +172,7 @@ function openStreamingSession({
   onResult = () => {},
   onReady = () => {},
   onError = () => {},
+  onDone = () => {},
   onClose = () => {},
 }) {
   const reqid = crypto.randomUUID();
@@ -223,7 +237,12 @@ function openStreamingSession({
           final: Boolean(frame.isLast || utterances.some((item) => item.definite === true)),
           raw: frame.json,
         });
-        if (frame.isLast) end();
+        if (frame.isLast) {
+          ended = true;
+          clearTimeout(timer);
+          try { onDone(); } catch {}
+          try { ws.close(); } catch {}
+        }
       } catch (error) {
         fail(error);
       }
@@ -242,13 +261,13 @@ function openStreamingSession({
     ready,
     get initialized() { return initialized; },
     sendAudio(audio) {
-      if (ended || !ws || ws.readyState !== ws.OPEN) throw new Error('ASR 实时会话未连接');
+      if (ended || !ws || ws.readyState !== 1) throw new Error('ASR 实时会话未连接');
       const bytes = Buffer.from(audio);
       if (bytes.length === 0) return;
       ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NO_SEQUENCE, JSON_SER, GZIP), zlib.gzipSync(bytes)));
     },
     end() {
-      if (ended || !ws || ws.readyState !== ws.OPEN) return;
+      if (ended || !ws || ws.readyState !== 1) return;
       ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NEG_SEQUENCE, JSON_SER, NO_COMPRESSION), Buffer.alloc(0)));
     },
     close() {
@@ -403,6 +422,7 @@ function transcribe({
 module.exports = {
   transcribe,
   openStreamingSession,
+  normalizeHotwords,
   // 仅供本地协议回归使用；业务调用仍只依赖 transcribe。
   __test: { buildHeader, buildFrame, parseFrame },
 };

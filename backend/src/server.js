@@ -23,6 +23,7 @@ const databaseReadiness = createDatabaseReadiness(db.ready, {
 const app = express();
 const realtimeWss = new WebSocketServer({ noServer: true });
 const realtimeSessions = new Set();
+const realtimeDevices = new Set();
 const PORT = process.env.PORT || 3000;
 const API_TOKEN = process.env.API_TOKEN || '';
 const UNIT_AUTH_REQUIRED = String(
@@ -345,6 +346,10 @@ realtimeWss.on('connection', (ws, req, auth) => {
     closeRealtimeSocket(ws, 1013, 'too many sessions');
     return;
   }
+  if (auth.deviceId && realtimeDevices.has(auth.deviceId)) {
+    closeRealtimeSocket(ws, 1008, 'device already has a session');
+    return;
+  }
   const state = {
     started: false,
     stopping: false,
@@ -352,14 +357,20 @@ realtimeWss.on('connection', (ws, req, auth) => {
     chunks: [],
     bufferedBytes: 0,
     upstream: null,
+    deviceId: auth.deviceId,
+    sessionTimer: null,
+    startTimer: null,
     heartbeat: setInterval(() => {
-      try { if (ws.readyState === ws.OPEN) ws.ping(); } catch (_) {}
+      try { if (ws.readyState === 1) ws.ping(); } catch (_) {}
     }, 10000),
   };
   realtimeSessions.add(state);
+  if (state.deviceId) realtimeDevices.add(state.deviceId);
+  state.startTimer = setTimeout(() => fail(Object.assign(new Error('实时会话未开始'), { code: 'ASR_START_TIMEOUT' })), 8000);
+  state.sessionTimer = setTimeout(() => fail(Object.assign(new Error('实时会话超时'), { code: 'ASR_STREAM_TIMEOUT' })), 70000);
 
   const sendJson = (value) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(value));
+    if (ws.readyState === 1) ws.send(JSON.stringify(value));
   };
   const fail = (error) => {
     sendJson({ type: 'error', code: error.code || 'ASR_STREAM_ERROR', message: error.message || '实时识别失败' });
@@ -368,7 +379,11 @@ realtimeWss.on('connection', (ws, req, auth) => {
   const start = () => {
     const hotwordsPromise = hotwordList(auth.incident.id);
     hotwordsPromise.then((hotwords) => {
-      if (state.stopping || ws.readyState !== ws.OPEN) return;
+      if (state.stopping || ws.readyState !== 1) {
+        sendJson({ type: 'done' });
+        closeRealtimeSocket(ws);
+        return;
+      }
       state.upstream = openStreamingSession({
         appId: CFG.asr.appId,
         accessToken: CFG.asr.accessToken,
@@ -389,6 +404,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
           text: result.text,
           sequence: result.sequence ?? null,
         }),
+        onDone: () => sendJson({ type: 'done' }),
         onError: fail,
         onClose: () => {
           if (!state.stopping) fail(Object.assign(new Error('ASR 连接已断开'), { code: 'ASR_UPSTREAM_CLOSED' }));
@@ -416,6 +432,8 @@ realtimeWss.on('connection', (ws, req, auth) => {
       if (message.type === 'start') {
         if (state.started) throw Object.assign(new Error('实时会话已启动'), { code: 'ASR_STREAM_ALREADY_STARTED' });
         state.started = true;
+        clearTimeout(state.startTimer);
+        state.startTimer = null;
         state.opId = String(message.opId || state.opId || '').slice(0, 64) || null;
         start();
       } else if (message.type === 'stop') {
@@ -429,9 +447,12 @@ realtimeWss.on('connection', (ws, req, auth) => {
   });
   ws.on('close', () => {
     clearInterval(state.heartbeat);
+    clearTimeout(state.startTimer);
+    clearTimeout(state.sessionTimer);
     state.stopping = true;
     state.upstream?.close();
     realtimeSessions.delete(state);
+    if (state.deviceId) realtimeDevices.delete(state.deviceId);
   });
   ws.on('error', () => {
     state.stopping = true;

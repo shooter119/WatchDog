@@ -1,8 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const zlib = require('node:zlib');
 
-const { transcribe, __test } = require('../src/asr');
+const { transcribe, openStreamingSession, __test } = require('../src/asr');
 
 const MT_SERVER_RESPONSE = 9;
 const MT_ERROR = 15;
@@ -33,6 +34,7 @@ class FakeWebSocket extends EventEmitter {
     this.behavior = behavior;
     this.sent = [];
     this.closed = false;
+    this.readyState = 1;
     queueMicrotask(() => {
       if (this.behavior.openError) {
         this.emit('error', new Error(this.behavior.openError));
@@ -52,6 +54,7 @@ class FakeWebSocket extends EventEmitter {
 
   close() {
     this.closed = true;
+    this.readyState = 3;
     this.emit('close');
   }
 }
@@ -151,4 +154,41 @@ test('ASR WebSocket 工厂同步抛错时仍返回失败 Promise', async () => {
     }),
     /factory failed/,
   );
+});
+
+test('ASR 双向流式会话转发初始化、PCM，并交付 partial/final', async () => {
+  const instances = [];
+  const partial = serverFrame(MT_SERVER_RESPONSE, {
+    code: 1000,
+    result: { text: '张伟', utterances: [{ text: '张伟', definite: false }] },
+  }, 0);
+  const final = serverFrame(MT_SERVER_RESPONSE, {
+    code: 1000,
+    result: { text: '张伟进场', utterances: [{ text: '张伟进场', definite: true }] },
+  }, 2);
+  const events = [];
+  const wsFactory = (url, options) => {
+    const socket = new FakeWebSocket(url, options, {});
+    instances.push(socket);
+    queueMicrotask(() => socket.emit('message', partial));
+    setTimeout(() => socket.emit('message', final), 2);
+    return socket;
+  };
+  const session = openStreamingSession({
+    appId: 'app-id',
+    audioBuffer: Buffer.alloc(0),
+    hotwords: ['张伟', '气瓶'],
+    wsFactory,
+    wsUrl: 'wss://fake.example.test/async',
+    onResult: (result) => events.push(result),
+  });
+  await session.ready;
+  session.sendAudio(Buffer.alloc(3200));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(events.map((item) => [item.text, item.final]), [['张伟', false], ['张伟进场', true]]);
+  const init = __test.parseFrame(instances[0].sent[0]);
+  assert.equal(init.messageType, 1);
+  const initJson = JSON.parse(zlib.gunzipSync(instances[0].sent[0].subarray(8)).toString('utf8'));
+  assert.equal(initJson.request.enable_nostream, false);
+  assert.equal(initJson.request.corpus.context.includes('张伟'), true);
 });
