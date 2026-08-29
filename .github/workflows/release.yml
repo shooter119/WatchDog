@@ -57,6 +57,8 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: backend/package-lock.json
+      - name: Release automation tests
+        run: node --test .github/scripts/*.test.cjs
       - name: Backend quality gate and runtime count gate
         working-directory: backend
         env:
@@ -365,6 +367,7 @@ jobs:
           verify_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/watchdog-ota-verify.XXXXXX")"
           trap 'rm -rf "$verify_dir"' EXIT
           existing_latest_status="$(curl --silent --show-error --location --retry 3 --retry-delay 2 \
+            --connect-timeout 20 --max-time 60 \
             -o "$verify_dir/existing-latest.json" -w '%{http_code}' \
             "$OTA_PUBLIC_BASE_URL/latest.json" || true)"
           case "$existing_latest_status" in
@@ -397,49 +400,18 @@ jobs:
             local object_path="$2"
             local content_type="$3"
             local cache_control="$4"
-            local upload_log="$verify_dir/upload.log"
-            local object_url
-            object_url="$(node - "$object_path" <<'NODE'
-          const fs = require('node:fs');
-          const objectPath = process.argv[2];
-          if (!objectPath || objectPath.startsWith('/') || objectPath.includes('//')) {
-            throw new Error('对象路径不合法');
-          }
-          const encodedBucket = encodeURIComponent(process.env.CLOUDBASE_OTA_BUCKET_ID);
-          const encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');
-          process.stdout.write(
-            `https://${process.env.CLOUDBASE_OTA_ENV_ID}.api.tcloudbasegateway.com/v1/storages/object/${encodedBucket}/${encodedPath}`,
-          );
-          NODE
-          )"
-            if ! curl --fail --silent --show-error --location \
-              --retry 2 --retry-all-errors --retry-delay 2 \
-              --http1.1 --connect-timeout 20 --max-time 300 \
-              --request POST \
-              -H 'Expect:' \
-              -H "Authorization: Bearer $CLOUDBASE_OTA_API_KEY" \
-              -H 'x-upsert: true' \
-              -F "file=@$local_path;type=$content_type" \
-              -F "cacheControl=$cache_control" \
-              -F "contentType=$content_type" \
-              "$object_url" > "$upload_log" 2>&1; then
-              sed -E 's/([?&]token=)[^&[:space:]]*/\1REDACTED/g' "$upload_log" >&2
-              return 1
-            fi
+            # CloudBase PG Storage 官方契约的 binary body 路径：普通对象接口
+            # 使用 POST，Body 为原始文件字节。独立上传器固定 HTTPS 目标、显式
+            # Content-Length，且不跟随重定向，避免 multipart 网关超时和凭据外带。
+            node ../.github/scripts/cloudbase-ota-upload.cjs \
+              --file "$local_path" \
+              --object "$object_path" \
+              --content-type "$content_type" \
+              --cache-control "$cache_control"
           }
 
-          upload_object \
-            "$APK_FILE" \
-            "$APK_PATH" \
-            'application/vnd.android.package-archive' \
-            'public,max-age=31536000,immutable'
-
-          public_apk_url="$OTA_PUBLIC_BASE_URL/$APK_PATH"
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
-            "$public_apk_url" -o "$verify_dir/remote.apk"
-          test "$(sha256sum "$verify_dir/remote.apk" | awk '{print $1}')" = "$SHA256"
-          test "$(wc -c < "$verify_dir/remote.apk" | tr -d ' ')" = "$SIZE_BYTES"
-
+          # 先生成与 latest.json 字节完全一致的版本化清单。它既是小对象生产
+          # 探针，也是每个版本不可变的发布元数据；探针公开回读失败时不传 APK。
           node <<'NODE'
           const fs = require('node:fs');
           const manifest = {
@@ -463,6 +435,31 @@ jobs:
           fs.writeFileSync('latest.json', `${JSON.stringify(manifest)}\n`);
           NODE
 
+          VERSION_MANIFEST_PATH="${APK_PATH%/*}/manifest.json"
+          upload_object \
+            latest.json \
+            "$VERSION_MANIFEST_PATH" \
+            'application/json; charset=utf-8' \
+            'public,max-age=31536000,immutable'
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            --connect-timeout 20 --max-time 60 \
+            "$OTA_PUBLIC_BASE_URL/$VERSION_MANIFEST_PATH" \
+            -o "$verify_dir/version-manifest.json"
+          cmp --silent latest.json "$verify_dir/version-manifest.json"
+
+          upload_object \
+            "$APK_FILE" \
+            "$APK_PATH" \
+            'application/vnd.android.package-archive' \
+            'public,max-age=31536000,immutable'
+
+          public_apk_url="$OTA_PUBLIC_BASE_URL/$APK_PATH"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            --connect-timeout 20 --max-time 900 \
+            "$public_apk_url" -o "$verify_dir/remote.apk"
+          test "$(sha256sum "$verify_dir/remote.apk" | awk '{print $1}')" = "$SHA256"
+          test "$(wc -c < "$verify_dir/remote.apk" | tr -d ' ')" = "$SIZE_BYTES"
+
           upload_object \
             latest.json \
             latest.json \
@@ -470,13 +467,23 @@ jobs:
             'no-cache,max-age=0,must-revalidate'
 
           curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            --connect-timeout 20 --max-time 60 \
             -H 'Cache-Control: no-cache' \
             "$OTA_PUBLIC_BASE_URL/latest.json" -o "$verify_dir/latest.json"
+          cmp --silent latest.json "$verify_dir/latest.json"
           node - "$verify_dir/latest.json" <<'NODE'
           const fs = require('node:fs');
           const path = process.argv[2];
           const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
-          for (const key of ['schemaVersion', 'tagName', 'versionCode', 'apkPath', 'sizeBytes', 'sha256']) {
+          for (const key of [
+            'schemaVersion',
+            'tagName',
+            'versionCode',
+            'apkPath',
+            'sizeBytes',
+            'sha256',
+            'changelog',
+          ]) {
             if (!(key in manifest)) throw new Error(`manifest missing ${key}`);
           }
           if (manifest.schemaVersion !== 1 || manifest.tagName !== process.env.TAG_NAME) {
@@ -485,7 +492,8 @@ jobs:
           if (manifest.versionCode !== Number(process.env.VERSION_CODE) ||
               manifest.apkPath !== process.env.APK_PATH ||
               manifest.sizeBytes !== Number(process.env.SIZE_BYTES) ||
-              manifest.sha256 !== process.env.SHA256.toLowerCase()) {
+              manifest.sha256 !== process.env.SHA256.toLowerCase() ||
+              typeof manifest.changelog !== 'string') {
             throw new Error('manifest release values mismatch');
           }
           NODE
