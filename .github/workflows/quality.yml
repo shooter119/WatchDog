@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 15
     env:
       # 通过 npm test 运行时摘要校验；新增测试后只允许提高此基线。
-      MIN_BACKEND_TESTS: '117'
+      MIN_BACKEND_TESTS: '162'
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -78,15 +78,27 @@ jobs:
     timeout-minutes: 20
     env:
       # Flutter JSON reporter 的可见 testDone 事件是运行时计数；新增测试后只允许提高此基线。
-      MIN_APP_TESTS: '196'
+      MIN_APP_TESTS: '223'
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Setup Flutter 3.38.5
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
-        with:
-          flutter-version: '3.38.5'
-          cache: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          FLUTTER_ARCHIVE="${RUNNER_TEMP}/flutter_linux_3.38.5-stable.tar.xz"
+          FLUTTER_ROOT="${RUNNER_TEMP}/watchdog-flutter"
+          FLUTTER_URL="https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.38.5-stable.tar.xz"
+          FLUTTER_SHA256="a264940cfc431c1778f34f7413fa6ab71443ad52c71f38c50b0284397a4039b0"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            "$FLUTTER_URL" --output "$FLUTTER_ARCHIVE"
+          echo "$FLUTTER_SHA256  $FLUTTER_ARCHIVE" | sha256sum --check --status
+          test ! -e "$FLUTTER_ROOT"
+          tar -xJf "$FLUTTER_ARCHIVE" -C "$RUNNER_TEMP"
+          mv "${RUNNER_TEMP}/flutter" "$FLUTTER_ROOT"
+          echo "$FLUTTER_ROOT/bin" >> "$GITHUB_PATH"
+          echo "$FLUTTER_ROOT/bin/cache/dart-sdk/bin" >> "$GITHUB_PATH"
+          "$FLUTTER_ROOT/bin/flutter" --version
       - name: Flutter checks and runtime count gate
         working-directory: app
         shell: bash

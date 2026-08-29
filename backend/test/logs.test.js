@@ -33,8 +33,8 @@ test('POST /api/logs 批量上报并按警情/设备/时间入库', async () => 
     body: JSON.stringify({
       logs: [
         { op_id: 'op-1', level: 'info', stage: 'record_start', msg: '开始录音' },
-        { op_id: 'op-1', level: 'info', stage: 'transcribe_ok', msg: '转写成功', data: { text: '张伟，20兆帕', nested: { apiToken: 'secret-token' } } },
-        { op_id: 'op-1', level: 'error', stage: 'parse_err', msg: '解析失败 Authorization: Bearer secret-value', data: { code: 500 } },
+        { op_id: 'op-1', level: 'info', stage: 'transcribe_ok', msg: '转写成功', data: { text: '张伟，20兆帕', note: '现场原文', nested: { apiToken: 'secret-token' } } },
+        { op_id: 'op-1', level: 'error', stage: 'parse_err', msg: 'DeepSeek API 500: 原始上游响应 secret-value Authorization: Bearer secret-value', data: { code: 500 } },
       ],
     }),
   });
@@ -49,9 +49,11 @@ test('POST /api/logs 批量上报并按警情/设备/时间入库', async () => 
   assert.equal(logs[0].device, 'dev-abc');
   assert.equal(logs[0].op_id, 'op-1');
   assert.deepEqual(logs[0].data, { code: 500 });
-  assert.equal(logs[1].data.text.text_length, 7);
+    assert.equal(logs[1].data.text.text_length, 7);
+  assert.equal(logs[1].data.note.note_length, 4);
   assert.equal(logs[1].data.nested.apiToken.apiToken_length, 12);
   assert.doesNotMatch(logs[0].msg, /secret-value/);
+  assert.match(logs[0].msg, /details redacted/);
   assert.equal(logs[2].msg, '开始录音');
   assert.ok(typeof logs[2].created_at === 'number');
 });
@@ -64,6 +66,19 @@ test('日志警情隔离：其他警情不可见', async () => {
   });
   const logs = await (await fetch(`${base}/api/logs`, { headers: H })).json();
   assert.equal(logs.length, 3); // 当前警情数量不变
+});
+
+test('服务端操作日志不保存姓名、压力和作者原文', async () => {
+  const response = await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ text: '现场随手记', author: '李娜' }),
+  });
+  assert.equal(response.status, 201);
+  const logs = await (await fetch(`${base}/api/logs`, { headers: H })).json();
+  const noteLog = logs.find((l) => l.stage === 'note_created');
+  assert.equal(noteLog.data.author.author_length, 2);
+  assert.notEqual(noteLog.data.author, '李娜');
 });
 
 test('GET /api/logs 支持 op_id/device 过滤与 limit', async () => {
@@ -117,6 +132,24 @@ test('DELETE /api/logs 清空当前警情日志', async () => {
   assert.equal(logs.length, 0);
 });
 
+test('错误日志即使没有冒号也不保存异常原文', async () => {
+  const leaked = 'upstream-secret-diagnostic-without-separator';
+  const res = await fetch(`${base}/api/logs`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ logs: [{ level: 'error', stage: 'diagnostic_error', msg: leaked }] }),
+  });
+  assert.equal(res.status, 200);
+  const logs = await (await fetch(`${base}/api/logs`, { headers: H })).json();
+  const diagnostic = logs.find((item) => item.stage === 'diagnostic_error');
+  assert.equal(diagnostic.msg, '[error details redacted]');
+  assert.doesNotMatch(diagnostic.msg, new RegExp(leaked));
+  await fetch(`${base}/api/logs`, {
+    method: 'DELETE',
+    headers: { ...H, 'X-Management-Token': 'test-management-token' },
+  });
+});
+
 test('服务端埋点：X-Op-Id 下 entry_created / entry_conflict / entry_exited', async () => {
   const opHeaders = { ...H, 'X-Op-Id': 'op-srv-1', 'X-Device-Id': 'dev-srv' };
 
@@ -130,19 +163,19 @@ test('服务端埋点：X-Op-Id 下 entry_created / entry_conflict / entry_exite
   // 重复进场 → entry_conflict
   const dup = await fetch(`${base}/api/entries`, {
     method: 'POST',
-    headers: opHeaders,
+    headers: { ...opHeaders, 'X-Op-Id': 'op-srv-dup' },
     body: JSON.stringify({ name: '赵磊', pressure_mpa: 18 }),
   });
   assert.equal(dup.status, 409);
 
   // 出场 → entry_exited
-  await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: opHeaders });
+  await fetch(`${base}/api/entries/${created.id}/exit`, { method: 'POST', headers: { ...opHeaders, 'X-Op-Id': 'op-srv-exit' } });
 
   // 不存在的记录出场 → exit_missing
-  const miss = await fetch(`${base}/api/entries/nope/exit`, { method: 'POST', headers: opHeaders });
+  const miss = await fetch(`${base}/api/entries/nope/exit`, { method: 'POST', headers: { ...opHeaders, 'X-Op-Id': 'op-srv-miss' } });
   assert.equal(miss.status, 404);
 
-  const logs = await (await fetch(`${base}/api/logs?op_id=op-srv-1`, { headers: H })).json();
+  const logs = await (await fetch(`${base}/api/logs`, { headers: H })).json();
   const stages = logs.map((l) => l.stage);
   assert.ok(stages.includes('entry_created'), `应有 entry_created: ${stages}`);
   assert.ok(stages.includes('entry_conflict'), `应有 entry_conflict: ${stages}`);
@@ -151,7 +184,8 @@ test('服务端埋点：X-Op-Id 下 entry_created / entry_conflict / entry_exite
   assert.ok(logs.every((l) => l.device === 'dev-srv'));
 
   const createdLog = logs.find((l) => l.stage === 'entry_created');
-  assert.equal(createdLog.data.name, '赵磊');
-  assert.equal(createdLog.data.pressureMpa, 20);
+  assert.equal(createdLog.data.name.name_length, 2);
+  assert.notEqual(createdLog.data.name, '赵磊');
+  assert.equal(createdLog.data.pressureMpa, '[REDACTED]');
   assert.equal(createdLog.data.entryId, created.id);
 });

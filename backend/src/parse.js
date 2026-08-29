@@ -43,6 +43,7 @@ function callDeepSeek({ apiKey, baseUrl, model, systemPrompt, userPrompt, timeou
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
   return fetch(url, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
@@ -234,6 +235,7 @@ async function chatWithDeepSeek({ apiKey, baseUrl, model, messages, timeoutMs = 
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
   const res = await fetch(url, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
@@ -262,6 +264,7 @@ async function* chatWithDeepSeekStream({ apiKey, baseUrl, model, messages, timeo
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
   const res = await fetch(url, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
@@ -328,6 +331,7 @@ async function chatWithWebSearch({ apiKey, baseUrl, model, messages, timeoutMs =
     .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
   const res = await fetch(url, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,

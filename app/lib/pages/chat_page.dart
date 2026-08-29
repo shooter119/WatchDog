@@ -58,6 +58,11 @@ class ChatPageState extends State<ChatPage> {
   bool _recordingRequested = false;
   int _recordingGeneration = 0;
   bool _recordingStarting = false;
+  static const _maxRecordingDuration = Duration(seconds: 60);
+  static const _recordingWarningDuration = Duration(seconds: 50);
+  Timer? _recordingTimer;
+  DateTime? _recordingStartedAt;
+  int _recordingSeconds = 0;
 
   @override
   void initState() {
@@ -70,6 +75,7 @@ class ChatPageState extends State<ChatPage> {
     _recordingRequested = false;
     _recordingGeneration++;
     _recordingStarting = false;
+    _stopRecordingTimer();
     _endOp('page_disposed');
     widget.controller.cancelAssistantRequest();
     _scroll.dispose();
@@ -237,6 +243,38 @@ class ChatPageState extends State<ChatPage> {
   }
 
   /// 就地语音提问（底部语音按钮在问答页长按时调用）
+  void _startRecordingTimer() {
+    _recordingTimer?.cancel();
+    _recordingStartedAt = DateTime.now();
+    _recordingSeconds = 0;
+    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || !_recording) {
+        _stopRecordingTimer();
+        return;
+      }
+      final wallClockSeconds = _recordingStartedAt == null
+          ? 0
+          : DateTime.now().difference(_recordingStartedAt!).inSeconds;
+      final seconds = min(
+        max(timer.tick, wallClockSeconds),
+        _maxRecordingDuration.inSeconds,
+      );
+      if (seconds != _recordingSeconds) {
+        setState(() => _recordingSeconds = seconds);
+      }
+      if (seconds >= _maxRecordingDuration.inSeconds) {
+        _stopRecordingTimer();
+        unawaited(finishRecording());
+      }
+    });
+  }
+
+  void _stopRecordingTimer() {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    _recordingStartedAt = null;
+  }
+
   Future<void> beginRecording() async {
     if (_recording ||
         _processing ||
@@ -301,8 +339,12 @@ class ChatPageState extends State<ChatPage> {
         _endOp('cancelled');
         return;
       }
-      setState(() => _recording = true);
+      setState(() {
+        _recording = true;
+        _recordingSeconds = 0;
+      });
       _recordingStarting = false;
+      _startRecordingTimer();
       widget.onRecordingChanged?.call(true);
     } catch (e) {
       _recordingStarting = false;
@@ -330,13 +372,16 @@ class ChatPageState extends State<ChatPage> {
     if (!_recording) {
       _recordingRequested = false;
       _recordingGeneration++;
+      _stopRecordingTimer();
       return;
     }
     _recordingRequested = false;
     _recordingGeneration++;
+    _stopRecordingTimer();
     setState(() {
       _recording = false;
       _processing = true;
+      _recordingSeconds = 0;
     });
     widget.onRecordingChanged?.call(false);
     widget.onProcessingChanged?.call(true);
@@ -475,6 +520,7 @@ class ChatPageState extends State<ChatPage> {
       child: Column(
         children: [
           _buildHeader(context),
+          if (_recording) _buildRecordingHint(),
           Expanded(child: _buildBody()),
           Container(
             width: double.infinity,
@@ -487,6 +533,33 @@ class ChatPageState extends State<ChatPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRecordingHint() {
+    final warning = _recordingSeconds >= _recordingWarningDuration.inSeconds;
+    return Container(
+      key: const Key('chat-recording-limit'),
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: (warning ? AppColors.caution : AppColors.voice).withValues(
+          alpha: 0.10,
+        ),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Text(
+        warning
+            ? '录音还剩 ${max(0, _maxRecordingDuration.inSeconds - _recordingSeconds)} 秒，时间到将自动结束'
+            : '录音中 · 最长 60 秒 · 已录 $_recordingSeconds 秒',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: warning ? AppColors.caution : AppColors.voice,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

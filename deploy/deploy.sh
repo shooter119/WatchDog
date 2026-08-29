@@ -11,6 +11,8 @@ ENV_ID="${CLOUDBASE_ENV_ID:-${CLOUDBASE_ENV:-}}"
 SERVICE_NAME="${CLOUDBASE_SERVICE_NAME:-watchdog-api-prod}"
 SERVICE_PORT="${CLOUDBASE_SERVICE_PORT:-3000}"
 HEALTH_URL="${WATCHDOG_HEALTH_URL:-https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com/api/health}"
+MODEL_MANIFEST_URL="${WATCHDOG_MODEL_MANIFEST_URL:-${HEALTH_URL%/api/health}/models/manifest.json}"
+CLOUDBASE_CLI_VERSION="${WATCHDOG_CLOUDBASE_CLI_VERSION:-3.8.1}"
 DRY_RUN=0
 
 for arg in "$@"; do
@@ -42,11 +44,14 @@ cp "$BACKEND_DIR/Dockerfile" "$STAGE_DIR/Dockerfile"
 cp "$BACKEND_DIR/package.json" "$BACKEND_DIR/package-lock.json" "$STAGE_DIR/"
 cp -R "$BACKEND_DIR/src/." "$STAGE_DIR/src/"
 
-if [ -d "$MODELS_DIR" ]; then
-  cp -R "$MODELS_DIR/." "$STAGE_DIR/models/"
-else
-  echo "警告：未找到端侧 ASR 模型目录，部署后只能使用已安装模型的设备。" >&2
+if [ ! -d "$MODELS_DIR" ] || [ ! -s "$MODELS_DIR/manifest.json" ]; then
+  echo "错误：端侧 ASR 模型目录或 manifest.json 缺失，已拒绝部署。" >&2
+  exit 1
 fi
+node "$ROOT_DIR/deploy/verify-model-manifest.js" local "$MODELS_DIR/manifest.json" "$MODELS_DIR"
+cp -R "$MODELS_DIR/." "$STAGE_DIR/models/"
+test -s "$STAGE_DIR/models/manifest.json"
+node "$ROOT_DIR/deploy/verify-model-manifest.js" local "$STAGE_DIR/models/manifest.json" "$STAGE_DIR/models"
 
 echo "==> CloudBase 部署包已准备: $STAGE_DIR"
 echo "    环境: ${ENV_ID:-<未设置>}; 服务: $SERVICE_NAME; 端口: $SERVICE_PORT"
@@ -58,13 +63,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-if command -v tcb >/dev/null 2>&1; then
-  CLOUD_BASE_CLI=(tcb)
-else
-  # @cloudbase/cli exposes the tcb binary, but npx only resolves a package
-  # executable reliably when the package is declared explicitly.
-  CLOUD_BASE_CLI=(npx --yes --package @cloudbase/cli tcb)
-fi
+# 固定 CLI 版本，避免本地环境或 npx 最新版本变更部署参数语义。
+CLOUD_BASE_CLI=(npx --yes --package "@cloudbase/cli@${CLOUDBASE_CLI_VERSION}" tcb)
 
 echo "==> 部署到 CloudBase 云托管"
 "${CLOUD_BASE_CLI[@]}" cloudrun deploy \
@@ -79,4 +79,31 @@ echo "==> 部署到 CloudBase 云托管"
 echo "==> 健康检查: $HEALTH_URL"
 curl --fail --silent --show-error --retry 3 --retry-delay 2 "$HEALTH_URL"
 echo
+echo "==> 模型清单检查: $MODEL_MANIFEST_URL"
+manifest_payload="$(curl --fail --silent --show-error --max-redirs 0 --retry 3 --retry-delay 2 "$MODEL_MANIFEST_URL")"
+printf '%s' "$manifest_payload" | node "$ROOT_DIR/deploy/verify-model-manifest.js" remote "$MODELS_DIR/manifest.json"
+case "$MODEL_MANIFEST_URL" in
+  */manifest.json) MODEL_BASE_URL="${MODEL_MANIFEST_URL%/manifest.json}" ;;
+  *) echo "错误：模型清单地址必须以 /manifest.json 结尾。" >&2; exit 1 ;;
+esac
+REMOTE_MODELS_DIR="$STAGE_DIR/remote-models"
+while IFS=$'\t' read -r relative expected_size expected_sha; do
+  [ -n "$relative" ] || continue
+  target="$REMOTE_MODELS_DIR/$relative"
+  mkdir -p "$(dirname "$target")"
+  curl --fail --silent --show-error --max-redirs 0 --retry 3 --retry-delay 2 \
+    "$MODEL_BASE_URL/$relative" -o "$target"
+  actual_size="$(wc -c < "$target" | tr -d ' ')"
+  actual_sha="$(node -e 'const fs=require("node:fs"); const crypto=require("node:crypto"); process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"));' "$target")"
+  if [ "$actual_size" != "$expected_size" ] || [ "$actual_sha" != "$expected_sha" ]; then
+    echo "错误：线上模型资源校验失败：$relative" >&2
+    exit 1
+  fi
+done < <(node -e '
+const fs = require("node:fs");
+const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+for (const [relative, item] of Object.entries(manifest.files)) {
+  process.stdout.write(`${relative}\t${item.sizeBytes}\t${String(item.sha256).toLowerCase()}\n`);
+}
+' "$MODELS_DIR/manifest.json")
 echo "CloudBase 部署完成 ✅"

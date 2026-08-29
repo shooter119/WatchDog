@@ -1,9 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
@@ -67,6 +66,7 @@ class OpLogService {
   String? _lastSyncError;
   int? _lastSyncedAt;
   Future<void> _persistTail = Future<void>.value();
+  bool _persistScheduled = false;
   Future<void>? _initFuture;
   SharedPreferences? _preferences;
 
@@ -100,6 +100,7 @@ class OpLogService {
     if (_preferences != null && !identical(_preferences, sp)) {
       // 测试存储被替换、或宿主切换了偏好后端时，旧实例上的未完成写入
       // 不能继续阻塞新实例；同时重新从新实例加载本地日志。
+      _persistScheduled = false;
       _persistTail = Future<void>.value();
       _logs.clear();
       _pending.clear();
@@ -107,10 +108,11 @@ class OpLogService {
     }
     _preferences = sp;
     _syncEnabled = sp.getBool(_kSyncEnabled) ?? true;
-    // 用户识别码：优先 Android ID 加盐哈希（重装不变）；拿不到时回退已存/随机 ID
+    // 使用随机安装 ID，不读取 Android ID 等稳定硬件标识；重装后重新生成，
+    // 降低跨应用、跨生命周期追踪风险。服务端只把它作为当前安装的关联句柄。
     final cached = sp.getString(_kDeviceId);
-    _deviceId = (await _deviceIdFromAndroid()) ?? cached ?? _generateRandomId();
-    if (_deviceId != null) await sp.setString(_kDeviceId, _deviceId!);
+    _deviceId = cached ?? _generateRandomId();
+    await sp.setString(_kDeviceId, _deviceId!);
     if (!_loaded) {
       final raw = sp.getString(_kLogs);
       if (raw != null) {
@@ -155,9 +157,10 @@ class OpLogService {
       _pending.add(_logs.last);
       if (_pending.length > maxPending) _pending.removeAt(0);
     }
-    // record() 由多个异步业务链路 fire-and-forget 调用；串行化快照写入，
-    // 避免 SharedPreferences 的完成顺序反转导致较旧日志覆盖较新日志。
-    _persist();
+    // record() 由多个异步业务链路 fire-and-forget 调用。短窗口合并快照，
+    // 避免每一步都序列化并写入完整日志列表；真正写入仍串行化，防止
+    // SharedPreferences 的完成顺序反转导致较旧日志覆盖较新日志。
+    _schedulePersist();
   }
 
   /// 操作日志会在用户可见的日志页展示，也可能上传到服务端；不把语音原文、
@@ -251,6 +254,22 @@ class OpLogService {
     await _persist();
   }
 
+  /// 在退出单位、进入后台或测试收口前立即写入当前快照。
+  Future<void> flushLocal() async {
+    await _persist();
+  }
+
+  void _schedulePersist() {
+    if (_persistScheduled) return;
+    _persistScheduled = true;
+    // 同一事件循环内的连续 record 调用只合并成一次序列化；使用微任务而非
+    // 延迟定时器，避免页面/控制器销毁后留下未收口的后台定时器。
+    scheduleMicrotask(() {
+      _persistScheduled = false;
+      unawaited(_persist());
+    });
+  }
+
   Future<void> _persist() {
     // 在排队时捕获不可变快照；否则前一个任务开始执行前，后续 clear/record
     // 会改变 _logs，最终无法保证队列顺序对应调用顺序。
@@ -264,23 +283,6 @@ class OpLogService {
     });
     _persistTail = next.catchError((Object _) {});
     return next;
-  }
-
-  /// 用户识别码：ANDROID_ID（SSAID，零权限、同一签名下重装不变）加盐哈希
-  /// 哈希后不可反推原始 ID；拿不到（异常/非 Android）时返回 null
-  Future<String?> _deviceIdFromAndroid() async {
-    if (!Platform.isAndroid) return null;
-    try {
-      const channel = MethodChannel('watchdog/screen');
-      final androidId = await channel
-          .invokeMethod<String>('androidId')
-          .timeout(const Duration(seconds: 2));
-      if (androidId == null || androidId.isEmpty) return null;
-      final digest = sha256.convert(utf8.encode('watchdog-user-v1:$androidId'));
-      return 'dev-${digest.toString()}';
-    } catch (_) {
-      return null;
-    }
   }
 
   String _generateRandomId() {

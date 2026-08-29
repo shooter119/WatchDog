@@ -1,11 +1,15 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+import 'package:convert/convert.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
 
 import 'settings.dart';
+import 'storage_service.dart';
 
 /// 本地语音识别服务：sherpa-onnx 离线 zipformer-transducer 中文模型（multi-zh-hans int8，约 75MB）。
 /// 多方言（普通话/粤语/上海话等）大模型，识别精度显著高于 14M 小模型；
@@ -15,6 +19,10 @@ import 'settings.dart';
 /// 注：streaming 系列模型 + bbpe 热词在 sherpa-onnx 1.13.4 存在 CreateOnlineRecognizer 崩溃，暂用离线版。
 class LocalAsrService {
   static const modelName = 'multi-zh-hans-2023-9-2';
+
+  /// 下载时保留当前模型并预留文件系统余量，避免低空间时覆盖可用离线能力。
+  static const minimumRecommendedFreeBytes = 128 * 1024 * 1024;
+  static const _storageSafetyMarginBytes = 32 * 1024 * 1024;
   static const _encoderFile = 'encoder-epoch-20-avg-1.int8.onnx';
   static const _decoderFile = 'decoder-epoch-20-avg-1.onnx';
   static const _joinerFile = 'joiner-epoch-20-avg-1.int8.onnx';
@@ -25,6 +33,9 @@ class LocalAsrService {
   static const _activePointerName = '.active';
   static const _completeMarkerName = '.complete';
   static const _completeMarkerContents = 'watchdog-asr-collection-v1';
+  static const _manifestFileName = 'manifest.json';
+  static const _integrityFileName = '.integrity.json';
+  static const _manifestMaxBytes = 512 * 1024;
   static const _requiredModelFiles = [
     _encoderFile,
     _decoderFile,
@@ -56,19 +67,24 @@ class LocalAsrService {
   Future<void>? _disposeFuture;
   Future<void> _transcriptionQueue = Future<void>.value();
   String? _recognizerGenerationId;
+  String? _denoiserGenerationId;
   bool _disposed = false;
 
   final Future<Directory> Function() _supportDirectoryProvider;
   final http.Client Function() _httpClientFactory;
+  final Future<int?> Function() _availableStorageBytesProvider;
   final String? _modelBaseUrlOverride;
 
   LocalAsrService({
     Future<Directory> Function()? supportDirectoryProvider,
     http.Client Function()? httpClientFactory,
+    Future<int?> Function()? availableStorageBytesProvider,
     String? modelBaseUrl,
   }) : _supportDirectoryProvider =
            supportDirectoryProvider ?? getApplicationSupportDirectory,
        _httpClientFactory = httpClientFactory ?? (() => http.Client()),
+       _availableStorageBytesProvider =
+           availableStorageBytesProvider ?? StorageService.availableBytes,
        _modelBaseUrlOverride = modelBaseUrl?.trim().replaceFirst(
          RegExp(r'/+$'),
          '',
@@ -101,7 +117,7 @@ class LocalAsrService {
   Future<bool> isDenoiserInstalled() async {
     final dir = await _activeGeneration(await _denoiserRoot(), const [
       _denoiserFile,
-    ]);
+    ], verifyIntegrity: true);
     return dir != null;
   }
 
@@ -110,6 +126,7 @@ class LocalAsrService {
     final dir = await _activeGeneration(
       await _modelRoot(),
       _requiredModelFiles,
+      verifyIntegrity: true,
     );
     return dir != null;
   }
@@ -120,7 +137,7 @@ class LocalAsrService {
   }) async {
     if (_disposed) throw StateError('本地语音识别服务已释放');
     final modelBaseUrl = await _resolvedModelBaseUrl();
-    if (!Settings.isSafeHttpUrl(modelBaseUrl)) {
+    if (!Settings.isSafeModelUrl(modelBaseUrl)) {
       throw ArgumentError('本地模型服务器地址必须使用 HTTPS');
     }
     final removing = _removeFuture;
@@ -148,10 +165,20 @@ class LocalAsrService {
     required String modelBaseUrl,
     required void Function(int received, int total)? onProgress,
   }) async {
+    final manifest = await _fetchManifest(modelBaseUrl);
+    final expectedMainFiles = {
+      for (final name in _requiredModelFiles)
+        name: manifest.integrityFor('$modelName/$name'),
+    };
+    await _ensureStorageForFiles(
+      _requiredModelFiles,
+      expectedFiles: expectedMainFiles,
+    );
     await _downloadCollection(
       root: await _modelRoot(),
       files: _requiredModelFiles,
       urlFor: (name) => '$modelBaseUrl/$modelName/$name',
+      expectedFiles: expectedMainFiles,
       onProgress: onProgress,
     );
     // 降噪模型（DPDFNet）：失败不阻断 ASR 模型下载（降噪只是增强项）
@@ -160,18 +187,26 @@ class LocalAsrService {
         root: await _denoiserRoot(),
         files: const [_denoiserFile],
         urlFor: (name) => '$modelBaseUrl/$_denoiserName/$name',
+        expectedFiles: {
+          _denoiserFile: manifest.integrityFor('$_denoiserName/$_denoiserFile'),
+        },
         onProgress: onProgress,
       );
     } catch (_) {
       // 降噪模型下载失败静默：识别仍可用，只是少了降噪
     }
     await _cleanupLegacyModels();
+    // 下载采用新 generation，不影响正在使用旧 generation 的识别器；只有
+    // 当前识别队列和初始化都完成后，才删除无人引用的旧集合。
+    await _waitForRecognitionIdle();
+    await _cleanupUnusedGenerations();
   }
 
   Future<void> _downloadCollection({
     required Directory root,
     required List<String> files,
     required String Function(String name) urlFor,
+    required Map<String, _ModelFileIntegrity> expectedFiles,
     required void Function(int received, int total)? onProgress,
   }) async {
     await root.create(recursive: true);
@@ -182,20 +217,33 @@ class LocalAsrService {
     final staging = Directory('${generations.path}/.$generationId.staging');
     await staging.create(recursive: true);
     try {
-      for (final name in files) {
+      for (var i = 0; i < files.length; i++) {
+        final name = files[i];
+        // 复核每个文件前的剩余空间。即使系统在下载期间被其它进程
+        // 抢占空间，也只会失败并清理 staging，不会触碰 active generation。
+        await _ensureStorageForFiles(
+          files.skip(i),
+          expectedFiles: expectedFiles,
+        );
         await _downloadFile(
           url: urlFor(name),
           path: '${staging.path}/$name',
           onProgress: onProgress,
         );
+        final expectation = expectedFiles[name];
+        if (expectation == null) {
+          throw StateError('模型清单缺少文件 $name');
+        }
+        await _verifyDownloadedFile(File('${staging.path}/$name'), expectation);
       }
       if (!await _allFilesPresent(staging, files)) {
         throw StateError('模型集合不完整，已拒绝激活');
       }
+      await _writeIntegritySnapshot(staging, files, expectedFiles);
       await File(
         '${staging.path}/$_completeMarkerName',
       ).writeAsString(_completeMarkerContents, flush: true);
-      if (!await _isCompleteCollection(staging, files)) {
+      if (!await _isCompleteCollection(staging, files, verifyIntegrity: true)) {
         throw StateError('模型集合完成标记校验失败');
       }
       final committed = Directory('${generations.path}/$generationId');
@@ -209,6 +257,32 @@ class LocalAsrService {
     }
   }
 
+  Future<void> _ensureStorageForFiles(
+    Iterable<String> files, {
+    required Map<String, _ModelFileIntegrity> expectedFiles,
+  }) async {
+    final requiredBytes = files.fold<int>(
+      0,
+      (sum, name) => sum + (expectedFiles[name]?.sizeBytes ?? 0),
+    );
+    int? available;
+    try {
+      available = await _availableStorageBytesProvider();
+    } catch (_) {
+      // 平台空间接口不可用时不阻断已有下载流程；文件写入失败仍会
+      // 通过 staging 回滚保护当前模型。
+      return;
+    }
+    if (available == null ||
+        available >= requiredBytes + _storageSafetyMarginBytes) {
+      return;
+    }
+    throw InsufficientStorageException(
+      requiredBytes: requiredBytes + _storageSafetyMarginBytes,
+      availableBytes: available,
+    );
+  }
+
   Future<void> _cleanupLegacyModels() async {
     final base = await _supportDirectoryProvider();
     for (final name in _legacyModelDirs) {
@@ -218,6 +292,65 @@ class LocalAsrService {
           await dir.delete(recursive: true);
         }
       } catch (_) {}
+    }
+  }
+
+  Future<void> _waitForRecognitionIdle() async {
+    while (true) {
+      final pendingInit = _pendingInit;
+      if (pendingInit != null) {
+        try {
+          await pendingInit;
+        } catch (_) {}
+        continue;
+      }
+      final queue = _transcriptionQueue;
+      await queue;
+      if (identical(queue, _transcriptionQueue) && _pendingInit == null) return;
+    }
+  }
+
+  Future<void> _cleanupUnusedGenerations() async {
+    final protectedModel = <String>{
+      if (_recognizer != null && _recognizerGenerationId != null)
+        _recognizerGenerationId!,
+    };
+    final protectedDenoiser = <String>{
+      if (_denoiser != null && _denoiserGenerationId != null)
+        _denoiserGenerationId!,
+    };
+    await _deleteUnusedGenerations(
+      await _modelRoot(),
+      protected: protectedModel,
+    );
+    await _deleteUnusedGenerations(
+      await _denoiserRoot(),
+      protected: protectedDenoiser,
+    );
+  }
+
+  Future<void> _deleteUnusedGenerations(
+    Directory root, {
+    required Set<String> protected,
+  }) async {
+    try {
+      final active = await _readActivePointer(root);
+      final generations = Directory('${root.path}/$_generationDirName');
+      if (!await generations.exists()) return;
+      await for (final entity in generations.list(followLinks: false)) {
+        if (entity is! Directory) continue;
+        final name = entity.path.split(Platform.pathSeparator).last;
+        if (!RegExp(r'^g-[0-9]+$').hasMatch(name) ||
+            name == active ||
+            protected.contains(name)) {
+          continue;
+        }
+        try {
+          await entity.delete(recursive: true);
+        } catch (_) {}
+      }
+    } catch (_) {
+      // 空间回收是增强项，失败不能影响已激活模型或本次识别。
     }
   }
 
@@ -269,9 +402,14 @@ class LocalAsrService {
 
   Future<Directory?> _activeGeneration(
     Directory root,
-    List<String> files,
-  ) async {
-    final generationId = await _activeGenerationId(root, files);
+    List<String> files, {
+    bool verifyIntegrity = false,
+  }) async {
+    final generationId = await _activeGenerationId(
+      root,
+      files,
+      verifyIntegrity: verifyIntegrity,
+    );
     if (generationId == null) return null;
     final generation = Directory(
       '${root.path}/$_generationDirName/$generationId',
@@ -281,8 +419,9 @@ class LocalAsrService {
 
   Future<String?> _activeGenerationId(
     Directory root,
-    List<String> files,
-  ) async {
+    List<String> files, {
+    bool verifyIntegrity = false,
+  }) async {
     final generationId = await _readActivePointer(root);
     if (generationId == null || !RegExp(r'^g-[0-9]+$').hasMatch(generationId)) {
       return null;
@@ -290,7 +429,13 @@ class LocalAsrService {
     final generation = Directory(
       '${root.path}/$_generationDirName/$generationId',
     );
-    if (!await _isCompleteCollection(generation, files)) return null;
+    if (!await _isCompleteCollection(
+      generation,
+      files,
+      verifyIntegrity: verifyIntegrity,
+    )) {
+      return null;
+    }
     return generationId;
   }
 
@@ -328,15 +473,116 @@ class LocalAsrService {
     return true;
   }
 
-  Future<bool> _isCompleteCollection(Directory dir, List<String> files) async {
+  Future<bool> _isCompleteCollection(
+    Directory dir,
+    List<String> files, {
+    bool verifyIntegrity = false,
+  }) async {
     if (!await _allFilesPresent(dir, files)) return false;
     final marker = File('${dir.path}/$_completeMarkerName');
     if (!await marker.exists()) return false;
     try {
-      return (await marker.readAsString()).trim() == _completeMarkerContents;
+      if ((await marker.readAsString()).trim() != _completeMarkerContents) {
+        return false;
+      }
+      if (!verifyIntegrity) return true;
+      return await _verifyIntegritySnapshot(dir, files);
     } catch (_) {
       return false;
     }
+  }
+
+  Future<_ModelManifest> _fetchManifest(String modelBaseUrl) async {
+    final client = _httpClientFactory();
+    try {
+      final request =
+          http.Request('GET', Uri.parse('$modelBaseUrl/$_manifestFileName'))
+            ..followRedirects = false
+            ..maxRedirects = 0;
+      final response = await client
+          .send(request)
+          .timeout(const Duration(seconds: 60));
+      if (response.statusCode != 200) {
+        throw StateError('模型完整性清单请求失败（HTTP ${response.statusCode}）');
+      }
+      final builder = BytesBuilder(copy: false);
+      var received = 0;
+      await for (final chunk in response.stream.timeout(
+        const Duration(seconds: 60),
+      )) {
+        received += chunk.length;
+        if (received > _manifestMaxBytes) {
+          throw StateError('模型完整性清单过大，已拒绝读取');
+        }
+        builder.add(chunk);
+      }
+      try {
+        return _ModelManifest.fromJson(
+          jsonDecode(utf8.decode(builder.takeBytes())),
+        );
+      } catch (error) {
+        throw StateError('模型完整性清单无效：$error');
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> _writeIntegritySnapshot(
+    Directory dir,
+    List<String> files,
+    Map<String, _ModelFileIntegrity> expectedFiles,
+  ) async {
+    final snapshot = <String, Object?>{
+      'schemaVersion': 1,
+      'files': {for (final name in files) name: expectedFiles[name]!.toJson()},
+    };
+    await File(
+      '${dir.path}/$_integrityFileName',
+    ).writeAsString(jsonEncode(snapshot), flush: true);
+  }
+
+  Future<bool> _verifyIntegritySnapshot(
+    Directory dir,
+    List<String> files,
+  ) async {
+    final file = File('${dir.path}/$_integrityFileName');
+    if (!await file.exists()) return false;
+    final decoded = jsonDecode(await file.readAsString());
+    if (decoded is! Map || decoded['schemaVersion'] != 1) return false;
+    final rawFiles = decoded['files'];
+    if (rawFiles is! Map) return false;
+    for (final name in files) {
+      final expectation = _ModelFileIntegrity.fromJson(rawFiles[name]);
+      if (expectation == null) return false;
+      if (!await _verifyDownloadedFile(
+        File('${dir.path}/$name'),
+        expectation,
+      )) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _verifyDownloadedFile(
+    File file,
+    _ModelFileIntegrity expectation,
+  ) async {
+    if (!await file.exists() || await file.length() != expectation.sizeBytes) {
+      throw StateError('模型文件大小校验失败：${file.path}');
+    }
+    final sink = AccumulatorSink<Digest>();
+    final input = sha256.startChunkedConversion(sink);
+    await for (final chunk in file.openRead()) {
+      input.add(chunk);
+    }
+    input.close();
+    final actual = sink.events.single.toString();
+    if (actual != expectation.sha256) {
+      throw StateError('模型文件 SHA-256 校验失败：${file.path}');
+    }
+    return true;
   }
 
   Future<void> _downloadFile({
@@ -350,7 +596,9 @@ class LocalAsrService {
       try {
         final client = _httpClientFactory();
         try {
-          final request = http.Request('GET', Uri.parse(url));
+          final request = http.Request('GET', Uri.parse(url))
+            ..followRedirects = false
+            ..maxRedirects = 0;
           final res = await client
               .send(request)
               .timeout(const Duration(seconds: 60));
@@ -431,6 +679,7 @@ class LocalAsrService {
     _recognizerGenerationId = null;
     _denoiser?.free();
     _denoiser = null;
+    _denoiserGenerationId = null;
     final dir = await _modelRoot();
     try {
       await dir.delete(recursive: true);
@@ -523,7 +772,11 @@ class LocalAsrService {
   Future<void> _init({required List<String> hotwords}) async {
     initBindings();
     final root = await _modelRoot();
-    final generationId = await _activeGenerationId(root, _requiredModelFiles);
+    final generationId = await _activeGenerationId(
+      root,
+      _requiredModelFiles,
+      verifyIntegrity: true,
+    );
     if (generationId == null) {
       throw LocalAsrNotInstalledException();
     }
@@ -623,17 +876,21 @@ class LocalAsrService {
     _recognizerGenerationId = null;
     _denoiser?.free();
     _denoiser = null;
+    _denoiserGenerationId = null;
   }
 
   /// 加载降噪模型（DPDFNet）：模型缺失/加载失败时静默跳过（降噪是增强项，不影响识别）
   Future<void> _ensureDenoiser() async {
     _denoiser?.free();
     _denoiser = null;
+    _denoiserGenerationId = null;
     try {
-      final dir = await _activeGeneration(await _denoiserRoot(), const [
+      final root = await _denoiserRoot();
+      final generationId = await _activeGenerationId(root, const [
         _denoiserFile,
-      ]);
-      if (dir == null) return;
+      ], verifyIntegrity: true);
+      if (generationId == null) return;
+      final dir = Directory('${root.path}/$_generationDirName/$generationId');
       final model = '${dir.path}/$_denoiserFile';
       _denoiser = OfflineSpeechDenoiser(
         OfflineSpeechDenoiserConfig(
@@ -643,12 +900,94 @@ class LocalAsrService {
           ),
         ),
       );
+      _denoiserGenerationId = generationId;
     } catch (_) {
       // 降噪器加载失败静默
     }
   }
 
   String _signatureFor(List<String> hotwords) => hotwords.join('|');
+}
+
+class _ModelManifest {
+  final String modelVersion;
+  final Map<String, _ModelFileIntegrity> files;
+
+  _ModelManifest({required this.modelVersion, required this.files});
+
+  factory _ModelManifest.fromJson(Object? raw) {
+    if (raw is! Map) throw const FormatException('清单顶层必须是对象');
+    if (raw['schemaVersion'] != 1) {
+      throw const FormatException('清单版本不受支持');
+    }
+    final modelVersion = raw['modelVersion'];
+    if (modelVersion is! String || modelVersion != LocalAsrService.modelName) {
+      throw const FormatException('清单模型版本不匹配');
+    }
+    final rawFiles = raw['files'];
+    if (rawFiles is! Map || rawFiles.isEmpty) {
+      throw const FormatException('清单缺少文件列表');
+    }
+    final files = <String, _ModelFileIntegrity>{};
+    for (final entry in rawFiles.entries) {
+      final path = entry.key;
+      if (path is! String || !_isSafeManifestPath(path)) {
+        throw const FormatException('清单包含不安全文件路径');
+      }
+      final integrity = _ModelFileIntegrity.fromJson(entry.value);
+      if (integrity == null) {
+        throw FormatException('清单文件摘要无效：$path');
+      }
+      files[path] = integrity;
+    }
+    return _ModelManifest(modelVersion: modelVersion, files: files);
+  }
+
+  _ModelFileIntegrity integrityFor(String path) {
+    final integrity = files[path];
+    if (integrity == null) throw StateError('模型清单缺少文件 $path');
+    return integrity;
+  }
+}
+
+class _ModelFileIntegrity {
+  final int sizeBytes;
+  final String sha256;
+
+  _ModelFileIntegrity({required this.sizeBytes, required this.sha256});
+
+  Map<String, Object> toJson() => <String, Object>{
+    'sizeBytes': sizeBytes,
+    'sha256': sha256,
+  };
+
+  static _ModelFileIntegrity? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final size = raw['sizeBytes'];
+    final digest = raw['sha256'];
+    if (size is! num ||
+        !size.isFinite ||
+        size < 1 ||
+        size != size.round() ||
+        digest is! String ||
+        !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(digest)) {
+      return null;
+    }
+    return _ModelFileIntegrity(
+      sizeBytes: size.toInt(),
+      sha256: digest.toLowerCase(),
+    );
+  }
+}
+
+bool _isSafeManifestPath(String path) {
+  if (path.isEmpty || path.startsWith('/') || path.contains('\\')) {
+    return false;
+  }
+  final segments = path.split('/');
+  return segments.every(
+    (segment) => segment.isNotEmpty && segment != '.' && segment != '..',
+  );
 }
 
 class _WavData {
@@ -707,4 +1046,24 @@ _WavData _parseWav(Uint8List bytes) {
 class LocalAsrNotInstalledException implements Exception {
   @override
   String toString() => '本地语音模型未下载，请先在设置中下载';
+}
+
+class InsufficientStorageException implements Exception {
+  final int requiredBytes;
+  final int availableBytes;
+
+  const InsufficientStorageException({
+    required this.requiredBytes,
+    required this.availableBytes,
+  });
+
+  String get userMessage {
+    final requiredMb = (requiredBytes / (1024 * 1024)).ceil();
+    final availableMb = (availableBytes / (1024 * 1024)).floor();
+    return '设备可用空间不足：至少需要约 ${requiredMb}MB，当前约 ${availableMb}MB。'
+        '为保护当前模型和现场数据，未开始替换下载。';
+  }
+
+  @override
+  String toString() => userMessage;
 }

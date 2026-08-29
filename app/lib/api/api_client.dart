@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
 import '../models/models.dart';
+import '../services/settings.dart';
 
 class ApiClient {
   final String baseUrl;
@@ -16,8 +17,10 @@ class ApiClient {
   final String actorName;
   final String unitId;
   final String unitCode;
-  IOClient _client = _newHttpClient();
+  final String sessionToken;
+  final IOClient _client = _newHttpClient();
   IOClient? _activeChatClient;
+  final Set<IOClient> _transientClients = <IOClient>{};
   bool _disposed = false;
 
   ApiClient({
@@ -28,6 +31,7 @@ class ApiClient {
     this.actorName = '',
     this.unitId = '',
     this.unitCode = '',
+    this.sessionToken = '',
   });
 
   ApiClient forIncident(String id) => ApiClient(
@@ -38,6 +42,7 @@ class ApiClient {
     actorName: actorName,
     unitId: unitId,
     unitCode: unitCode,
+    sessionToken: sessionToken,
   );
 
   /// 辅助 AI 不属于任何警情，也不参与警情协同。
@@ -49,12 +54,14 @@ class ApiClient {
     actorName: actorName,
     unitId: unitId,
     unitCode: unitCode,
+    sessionToken: sessionToken,
   );
 
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
     if (incidentId.isNotEmpty) 'X-Incident-Id': incidentId,
     if (apiToken.isNotEmpty) 'X-Api-Token': apiToken,
+    if (sessionToken.isNotEmpty) 'Authorization': 'Bearer $sessionToken',
     if (deviceId.isNotEmpty) 'X-Device-Id': deviceId,
     if (unitId.isNotEmpty) 'X-Unit-Id': unitId,
     if (unitCode.isNotEmpty) 'X-Unit-Code': unitCode,
@@ -71,22 +78,24 @@ class ApiClient {
   };
 
   Uri _uri(String path) {
+    if (!Settings.isSafeHttpUrl(baseUrl)) {
+      throw StateError('服务器地址不安全');
+    }
     final uri = Uri.tryParse('$baseUrl$path');
     if (uri == null || uri.host.isEmpty) {
       throw StateError('服务器地址无效');
     }
-    final localHost =
-        uri.host == 'localhost' ||
-        uri.host == '127.0.0.1' ||
-        uri.host == '10.0.2.2' ||
-        uri.host == 'test' ||
-        uri.host == 'offline' ||
-        uri.host == 'rec';
-    if (uri.scheme != 'https' && !localHost) {
-      throw StateError('服务器地址必须使用 HTTPS');
-    }
     return uri;
   }
+
+  /// 实时 ASR 代理使用同一网关和认证头，但通过 WebSocket 协议连接。
+  Uri realtimeAsrUri() {
+    final httpUri = _uri('/api/asr/stream');
+    return httpUri.replace(scheme: httpUri.scheme == 'https' ? 'wss' : 'ws');
+  }
+
+  Map<String, String> realtimeAsrHeaders({String? opId}) =>
+      _opHeaders(opId);
 
   /// 创建带底层连接/空闲超时的移动端 HTTP 客户端。
   ///
@@ -106,20 +115,15 @@ class ApiClient {
     _activeChatClient?.close();
   }
 
-  /// 取消并重建通用请求池。Future 超时不会自动关闭底层 socket，后台同步
-  /// 在 DNS/连接层失败时必须调用此方法，避免下一轮继续复用挂起连接。
-  void cancelRequests() {
-    if (_disposed) return;
-    final old = _client;
-    old.close();
-    _client = _newHttpClient();
-  }
-
   /// 释放 API 客户端及其底层 socket。
   void dispose() {
     _disposed = true;
     cancelChatRequest();
     _client.close();
+    for (final client in List<IOClient>.of(_transientClients)) {
+      client.close();
+    }
+    _transientClients.clear();
   }
 
   /// CloudBase 网关故障时可能返回 HTML（例如 503），不能直接 jsonDecode，
@@ -184,13 +188,16 @@ class ApiClient {
   /// CloudBase 冷启动或移动网络切换时，认证请求可能短暂收到 502/503/504
   /// 或在连接层超时。认证写入按设备幂等，允许短暂退避后重试。
   Future<http.Response> _withTransientRetry(
-    Future<http.Response> Function() request, {
+    Future<http.Response> Function(IOClient client) request, {
     required Duration timeout,
   }) async {
     const attempts = 3;
     for (var attempt = 0; attempt < attempts; attempt++) {
+      if (_disposed) throw StateError('API 客户端已释放');
+      final client = _newHttpClient();
+      _transientClients.add(client);
       try {
-        final response = await request().timeout(timeout);
+        final response = await request(client).timeout(timeout);
         final retryable =
             response.statusCode == 502 ||
             response.statusCode == 503 ||
@@ -198,9 +205,11 @@ class ApiClient {
         if (!retryable || attempt == attempts - 1) return response;
       } catch (_) {
         if (attempt == attempts - 1) rethrow;
-        // Future.timeout 不会自动关闭底层 socket；重建客户端，避免下一次
-        // 重试继续复用已经卡住的连接。
-        cancelRequests();
+      } finally {
+        // Future.timeout 不会自动关闭底层 socket；每次重试结束后关闭本次
+        // 专用客户端，不能触碰同时进行的共享 API 请求。
+        _transientClients.remove(client);
+        client.close();
       }
       await Future<void>.delayed(Duration(milliseconds: 700 * (attempt + 1)));
     }
@@ -361,10 +370,8 @@ class ApiClient {
         .post(_uri('/api/entries/$id/exit'), headers: _opHeaders(opId))
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
-      throw ApiException(
-        _responseError(res.statusCode, null, '登记出火场失败'),
-        statusCode: res.statusCode,
-      );
+      final body = _decodeJson(res, fallback: '登记出火场失败');
+      throw _apiException(res, body: body, fallback: '登记出火场失败');
     }
   }
 
@@ -759,23 +766,39 @@ class ApiClient {
   }
 
   Future<List<Incident>> fetchIncidents({String? status}) async {
-    final path = status == null
-        ? '/api/incidents'
-        : '/api/incidents?status=${Uri.encodeQueryComponent(status)}';
-    final res = await _client
-        .get(_uri(path), headers: _headers)
-        .timeout(const Duration(seconds: 10));
-    final body = _decodeJson(res, fallback: '获取警情列表失败');
-    if (res.statusCode != 200) {
-      throw _apiException(res, body: body, fallback: '获取警情列表失败');
+    // 服务端按稳定的有限页返回；客户端继续聚合为原有 List 契约，避免
+    // 旧页面看到分页细节，同时防止一次响应无界增长。100 页/10000 条
+    // 是本机同步的硬上限，远端异常不会让轮询无限发请求。
+    const pageSize = 100;
+    const maxPages = 100;
+    final incidents = <Incident>[];
+    for (var page = 0; page < maxPages; page++) {
+      final query = <String, String>{
+        if (status != null) 'status': status,
+        'limit': '$pageSize',
+        'offset': '${page * pageSize}',
+      };
+      final path = Uri(
+        path: '/api/incidents',
+        queryParameters: query,
+      ).toString();
+      final res = await _client
+          .get(_uri(path), headers: _headers)
+          .timeout(const Duration(seconds: 10));
+      final body = _decodeJson(res, fallback: '获取警情列表失败');
+      if (res.statusCode != 200) {
+        throw _apiException(res, body: body, fallback: '获取警情列表失败');
+      }
+      if (body is! List) {
+        throw _responseShapeException(res, '获取警情列表响应格式异常');
+      }
+      final list = body;
+      incidents.addAll(
+        list.map((e) => Incident.fromJson(e as Map<String, dynamic>)),
+      );
+      if (list.length < pageSize) break;
     }
-    if (body is! List) {
-      throw _responseShapeException(res, '获取警情列表响应格式异常');
-    }
-    final list = body;
-    return list
-        .map((e) => Incident.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return incidents;
   }
 
   Future<Incident> createIncident({
@@ -816,7 +839,7 @@ class ApiClient {
     required String realName,
   }) async {
     final res = await _withTransientRetry(
-      () => _client.post(
+      (client) => client.post(
         _uri('/api/auth/verify'),
         headers: {
           'Content-Type': 'application/json',
@@ -839,6 +862,17 @@ class ApiClient {
       throw _responseShapeException(res, '单位认证响应格式异常');
     }
     return Map<String, dynamic>.from(body);
+  }
+
+  /// 主动注销当前服务端会话；网络失败时由调用方继续清理本地凭据。
+  Future<void> logout() async {
+    final res = await _client
+        .post(_uri('/api/auth/logout'), headers: _headers)
+        .timeout(const Duration(seconds: 8));
+    final body = _decodeJson(res, fallback: '退出认证失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '退出认证失败');
+    }
   }
 
   Future<Incident> fetchIncident(String id) async {

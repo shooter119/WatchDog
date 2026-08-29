@@ -48,6 +48,20 @@ void main() {
   // 需要 testWidgets 的测试 binding 环境（与 widget_test 一致）
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('倒计时 tick 独立刷新，不广播整棵页面树', (tester) async {
+    final c = AppController();
+    var controllerNotifications = 0;
+    var clockNotifications = 0;
+    c.addListener(() => controllerNotifications++);
+    c.clockTick.addListener(() => clockNotifications++);
+
+    c.clockTick.value++;
+
+    expect(clockNotifications, 1);
+    expect(controllerNotifications, 0);
+    c.dispose();
+  });
+
   testWidgets('旧 canary 服务地址自动迁移到生产网关', (tester) async {
     SharedPreferences.setMockInitialValues({
       'server_url':

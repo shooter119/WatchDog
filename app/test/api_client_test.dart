@@ -149,6 +149,150 @@ void main() {
     );
   });
 
+  test('markExited preserves HTTP error status and server code', () async {
+    final fixture = await _jsonFixture(
+      statusCode: 409,
+      responseBody: {'error': '记录已出场', 'code': 'ENTRY_ALREADY_EXITED'},
+    );
+    addTearDown(fixture.close);
+
+    await expectLater(
+      fixture.api.markExited('entry-1'),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 409)
+            .having((error) => error.code, 'code', 'ENTRY_ALREADY_EXITED'),
+      ),
+    );
+  });
+
+  test('non-JSON gateway errors become structured ApiException', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      await request.drain();
+      request.response
+        ..statusCode = 503
+        ..headers.contentType = ContentType.html
+        ..write('<html><body>upstream unavailable</body></html>');
+      await request.response.close();
+    });
+    final api = ApiClient(
+      baseUrl: 'http://${server.address.address}:${server.port}',
+      incidentId: 'incident-for-test',
+    );
+    addTearDown(() async {
+      api.dispose();
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    await expectLater(
+      api.fetchIncident('incident-1'),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 503)
+            .having((error) => error.code, 'code', 'INVALID_JSON'),
+      ),
+    );
+  });
+
+  test('fetchIncidents 聚合服务端分页且限制请求页数', () async {
+    const incident = {
+      'id': 'incident-page',
+      'number': '2026-001',
+      'status': 'active',
+      'created_at': 1,
+      'last_activity_at': 1,
+    };
+    final offsets = <String>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      await request.drain();
+      offsets.add(request.uri.queryParameters['offset'] ?? '');
+      final offset = int.parse(offsets.last);
+      final body = offset == 0
+          ? List<Map<String, dynamic>>.generate(100, (index) {
+              return {...incident, 'id': 'incident-$index'};
+            })
+          : [incident];
+      request.response
+        ..statusCode = 200
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode(body));
+      await request.response.close();
+    });
+    final api = ApiClient(
+      baseUrl: 'http://${server.address.address}:${server.port}',
+      incidentId: 'incident-for-test',
+    );
+    addTearDown(() async {
+      api.dispose();
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    final incidents = await api.fetchIncidents(status: 'active');
+    expect(incidents, hasLength(101));
+    expect(offsets, ['0', '100']);
+  });
+
+  test('认证重试不会关闭同时进行的共享同步请求', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final entriesStarted = Completer<void>();
+    final releaseEntries = Completer<void>();
+    var verifyAttempts = 0;
+    final subscription = server.listen((request) async {
+      await request.drain();
+      if (request.uri.path == '/api/entries') {
+        if (!entriesStarted.isCompleted) entriesStarted.complete();
+        await releaseEntries.future;
+        request.response
+          ..statusCode = 200
+          ..headers.contentType = ContentType.json
+          ..write('[]');
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/api/auth/verify') {
+        verifyAttempts++;
+        request.response
+          ..statusCode = verifyAttempts == 1 ? 503 : 200
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode(
+              verifyAttempts == 1
+                  ? {'error': '暂时不可用'}
+                  : {'unit_id': 'unit-a', 'session_token': 'session-a'},
+            ),
+          );
+        await request.response.close();
+      }
+    });
+    final api = ApiClient(
+      baseUrl: 'http://${server.address.address}:${server.port}',
+      incidentId: 'incident-a',
+    );
+    addTearDown(() async {
+      api.dispose();
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    final entries = api.fetchEntries();
+    await entriesStarted.future;
+    final verification = api.verifyUnit(
+      unitName: '测试单位',
+      unitCode: '1234',
+      realName: '测试人员',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    releaseEntries.complete();
+
+    expect(await entries, isEmpty);
+    expect((await verification)['session_token'], 'session-a');
+    expect(verifyAttempts, 2);
+  });
+
   test(
     'addFirefighter distinguishes inserted and duplicate responses',
     () async {
@@ -215,5 +359,43 @@ void main() {
     expect(reply.content, contains('先确认现场人员安全'));
     expect(body['message'], contains('真实的现场警情简报'));
     expect(body['message'], contains(incident));
+  });
+
+  test('会话令牌使用 Bearer 头并由警情/辅助派生客户端保留', () async {
+    final authorizationHeaders = <String?>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      await request.drain();
+      authorizationHeaders.add(request.headers.value('authorization'));
+      request.response
+        ..statusCode = 200
+        ..headers.contentType = ContentType.json
+        ..write('[]');
+      await request.response.close();
+    });
+    final api = ApiClient(
+      baseUrl: 'http://${server.address.address}:${server.port}',
+      incidentId: 'incident-a',
+      sessionToken: 'session-token-123',
+    );
+    final incidentApi = api.forIncident('incident-b');
+    final assistantApi = api.forAssistant();
+    addTearDown(() async {
+      api.dispose();
+      incidentApi.dispose();
+      assistantApi.dispose();
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    expect(incidentApi.sessionToken, 'session-token-123');
+    expect(assistantApi.sessionToken, 'session-token-123');
+    await incidentApi.fetchIncidents();
+    await assistantApi.fetchIncidents();
+
+    expect(authorizationHeaders, [
+      'Bearer session-token-123',
+      'Bearer session-token-123',
+    ]);
   });
 }

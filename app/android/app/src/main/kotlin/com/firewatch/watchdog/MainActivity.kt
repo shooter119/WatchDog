@@ -17,6 +17,7 @@ import java.util.Locale
 class MainActivity : FlutterActivity() {
     private val channelName = "watchdog/screen"
     private val alarmChannelName = "watchdog/alarm"
+    private val storageChannelName = "watchdog/storage"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -121,6 +122,34 @@ class MainActivity : FlutterActivity() {
                             result.success(null)
                         } catch (e: Exception) {
                             result.error("open_installer_failed", e.message, null)
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, storageChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "availableBytes" -> {
+                    result.success(android.os.StatFs(filesDir.path).availableBytes)
+                }
+                "openStorageSettings" -> {
+                    runOnUiThread {
+                        try {
+                            val intent = Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (_: Exception) {
+                            try {
+                                startActivity(Intent(Settings.ACTION_SETTINGS).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                })
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.error("open_storage_settings_failed", e.message, null)
+                            }
                         }
                     }
                 }

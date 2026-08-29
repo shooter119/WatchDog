@@ -86,7 +86,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: AnimatedBuilder(
-        animation: widget.controller,
+        animation: Listenable.merge([
+          widget.controller,
+          widget.controller.clockTick,
+        ]),
         builder: (context, _) {
           final e = _find();
           final exited = e == null || !e.isActive;

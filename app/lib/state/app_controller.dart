@@ -69,6 +69,9 @@ class AppController extends ChangeNotifier {
   String? syncError;
   Timer? _pollTimer;
   Timer? _tickTimer;
+
+  /// 仅供倒计时页面刷新；不向根页面树广播，避免每秒重建所有 Tab。
+  final ValueNotifier<int> clockTick = ValueNotifier<int>(0);
   final Map<String, int> _announced = {};
   bool _alarmReady = false;
 
@@ -131,13 +134,27 @@ class AppController extends ChangeNotifier {
 
   /// 启动静默检查更新：失败不打扰用户，只更新状态供设置页展示
   Future<void> checkUpdateSilently() async {
+    final opId = 'ota-check-${DateTime.now().millisecondsSinceEpoch}';
+    void trace(String stage, String message, String level) {
+      OpLogService.instance.record(
+        opId,
+        stage,
+        message,
+        level: level,
+        data: {'source': '国内更新服务'},
+      );
+    }
+
     try {
-      final (info, error) = await UpdateService().checkForUpdate();
+      final (info, error) = await UpdateService(
+        logger: (stage, message, level) => trace(stage, message, level),
+      ).checkForUpdate();
       pendingUpdate = info;
       updateCheckError = error;
     } catch (e) {
       // 网络/解析失败静默，用户可在设置页手动检查
       updateCheckError = '$e';
+      trace('ota_manifest_fail', '$e', 'error');
     }
     updateCheckDone = true;
     _notify();
@@ -267,6 +284,9 @@ class AppController extends ChangeNotifier {
         : <String, dynamic>{};
     final unitId = unitInfo['id']?.toString().trim() ?? '';
     if (unitId.isEmpty) throw StateError('单位认证响应无效，请稍后重试');
+    // 兼容窗口内旧后端可能尚未签发会话令牌；一旦服务端启用强制会话，
+    // 受保护探测会返回 SESSION_REQUIRED，随后按统一失效流程回到认证浮层。
+    final sessionToken = result['session_token']?.toString().trim() ?? '';
 
     // 在切换门禁和持久化前，使用本次令牌完成第一条受保护请求。
     final protectedProbe = ApiClient(
@@ -277,6 +297,7 @@ class AppController extends ChangeNotifier {
       actorName: name,
       unitId: unitId,
       unitCode: code,
+      sessionToken: sessionToken,
     );
     try {
       await protectedProbe.fetchIncidents(status: 'active');
@@ -285,6 +306,7 @@ class AppController extends ChangeNotifier {
     }
 
     await Settings.setApiToken(token);
+    await Settings.setSessionToken(sessionToken);
     await Settings.setRealName(name);
     await Settings.setUnitId(unitId);
     await Settings.setUnitCode(code);
@@ -299,6 +321,8 @@ class AppController extends ChangeNotifier {
 
   /// 主动退出当前单位：清理本机认证信息和当前警情，回到启动认证浮层。
   Future<void> leaveUnit() async {
+    final activeApi = api;
+    await OpLogService.instance.flushLocal();
     _sessionGeneration++;
     _pollTimer?.cancel();
     _pollTimer = null;
@@ -308,11 +332,17 @@ class AppController extends ChangeNotifier {
     _syncFuture = null;
     _keepAliveFuture = null;
     syncing = false;
+    try {
+      await activeApi?.logout();
+    } catch (_) {
+      // 注销的安全底线是本地凭据清理；网络不可用时服务端会话自然过期。
+    }
     await _stopKeepAliveSafely();
     await _clearScheduledNotifications();
 
     await Settings.setCurrentIncidentId('');
     await Settings.setApiToken('');
+    await Settings.setSessionToken('');
     await Settings.setRealName('');
     await Settings.setUnitId('');
     await Settings.setUnitCode('');
@@ -429,15 +459,25 @@ class AppController extends ChangeNotifier {
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
     final token = await Settings.apiToken;
+    final sessionToken = await Settings.sessionToken;
     final unitId = await Settings.unitId;
     final unitCode = await Settings.unitCode;
     if (_disposed || generation != _sessionGeneration || !_authenticated) {
+      return;
+    }
+    if (!shouldRunForegroundKeepAlive(
+      enabled: enabled,
+      authenticated: _authenticated,
+      incidentId: incidentId,
+    )) {
+      await _stopKeepAliveSafely();
       return;
     }
     await ForegroundKeepAlive.start(
       serverUrl: serverUrl,
       incidentId: incidentId,
       token: token,
+      sessionToken: sessionToken,
       unitId: unitId,
       unitCode: unitCode,
       warnMin: calcConfig.warnMin,
@@ -527,12 +567,14 @@ class AppController extends ChangeNotifier {
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
     final token = await Settings.apiToken;
+    final sessionToken = await Settings.sessionToken;
     final unitId = await Settings.unitId;
     final unitCode = await Settings.unitCode;
     final nextApi = ApiClient(
       baseUrl: serverUrl,
       incidentId: incidentId,
       apiToken: token,
+      sessionToken: sessionToken,
       deviceId: await OpLogService.instance.deviceId,
       actorName: await Settings.realName,
       unitId: unitId,
@@ -585,7 +627,7 @@ class AppController extends ChangeNotifier {
     _tickTimer?.cancel();
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _checkThresholds();
-      _notify();
+      clockTick.value++;
     });
     sync();
   }
@@ -671,6 +713,12 @@ class AppController extends ChangeNotifier {
       syncError = null;
       _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
       _firstSyncFailureAt = 0;
+      final activeEntries = entries.where((entry) => entry.isActive).toList()
+        ..sort((a, b) => a.exitAt.compareTo(b.exitAt));
+      ForegroundKeepAlive.reportMainSnapshot(
+        activeCount: activeEntries.length,
+        earliestExitAt: activeEntries.isEmpty ? 0 : activeEntries.first.exitAt,
+      );
       await _rescheduleNotifications();
       unawaited(_ensureOptionalServices());
     } catch (e) {
@@ -694,13 +742,15 @@ class AppController extends ChangeNotifier {
       if (e is ApiException &&
           (e.code == 'UNIT_INVALID' ||
               e.code == 'UNIT_AUTH_REQUIRED' ||
-              e.code == 'API_TOKEN_INVALID')) {
+              e.code == 'API_TOKEN_INVALID' ||
+              e.code == 'SESSION_REQUIRED' ||
+              e.code == 'SESSION_INVALID' ||
+              e.code == 'SESSION_EXPIRED')) {
         await _invalidateAuthentication();
         return;
       }
-      // Future 超时不会自动释放底层 socket；同步出错后重置请求池，防止
-      // Oplus DNS/连接异常导致每轮 5 秒轮询继续堆积旧请求。
-      a.cancelRequests();
+      // 请求级超时和 HttpClient 的连接/空闲超时负责回收失败连接；不能为了
+      // 一次同步失败关闭共享客户端，否则会中断同时进行的日志或其他请求。
       _firstSyncFailureAt = _firstSyncFailureAt == 0
           ? DateTime.now().millisecondsSinceEpoch
           : _firstSyncFailureAt;
@@ -877,6 +927,7 @@ class AppController extends ChangeNotifier {
     await _clearScheduledNotifications();
     await Settings.setCurrentIncidentId('');
     await Settings.setApiToken('');
+    await Settings.setSessionToken('');
     await Settings.setRealName('');
     await Settings.setUnitId('');
     await Settings.setUnitCode('');
@@ -1239,6 +1290,7 @@ class AppController extends ChangeNotifier {
       baseUrl: await Settings.serverUrl,
       incidentId: await Settings.currentIncidentId,
       apiToken: await Settings.apiToken,
+      sessionToken: await Settings.sessionToken,
       deviceId: await OpLogService.instance.deviceId,
       actorName: name,
       unitId: await Settings.unitId,
@@ -1566,7 +1618,6 @@ class AppController extends ChangeNotifier {
       _notify();
       await _cacheRoster();
     } catch (_) {
-      a.cancelRequests();
       await _restoreCachedRoster();
     }
   }
@@ -1691,6 +1742,11 @@ class AppController extends ChangeNotifier {
     return _localTranscribe(bytes, opId: opId);
   }
 
+  /// 实时云端会话失败后的本地识别入口，避免回退时再次请求云端。
+  Future<String> transcribeAudioLocal(Uint8List bytes, {String? opId}) async {
+    return _localTranscribe(bytes, opId: opId);
+  }
+
   Future<String> _localTranscribe(Uint8List bytes, {String? opId}) async {
     final asr = localAsr;
     if (asr == null) throw StateError('未配置本地语音识别');
@@ -1730,6 +1786,7 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _sessionGeneration++;
+    unawaited(OpLogService.instance.flushLocal());
     _pollTimer?.cancel();
     _tickTimer?.cancel();
     _syncFuture = null;
@@ -1739,6 +1796,7 @@ class AppController extends ChangeNotifier {
     unawaited(_clearScheduledNotifications());
     unawaited(localAsr?.dispose());
     tts.stop();
+    clockTick.dispose();
     super.dispose();
   }
 }
@@ -1754,3 +1812,10 @@ bool isConnectionLost({
   if (lastSyncSuccessAt <= 0) return false;
   return nowMs - lastSyncSuccessAt > thresholdMs;
 }
+
+/// 后台值守只属于当前已认证且已选择的警情；开关偏好本身不因退出警情而改变。
+bool shouldRunForegroundKeepAlive({
+  required bool enabled,
+  required bool authenticated,
+  required String incidentId,
+}) => enabled && authenticated && incidentId.trim().isNotEmpty;

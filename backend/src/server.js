@@ -1,32 +1,58 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
-const { transcribe } = require('./asr');
+const http = require('http');
+const { WebSocketServer } = require('ws');
+const { transcribe, openStreamingSession } = require('./asr');
 const { parseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch } = require('./parse');
 const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
 const { createDatabaseReadiness } = require('./database-readiness');
+const { parseAllowedHosts, isHostAllowed } = require('./network-policy');
+const { MinuteRateLimiter } = require('./rate-limiter');
 
 // CloudBase PostgreSQL 是网络依赖，不能阻塞端口监听等待初始化完成；否则
 // CloudRun 的探活会在数据库初始化期间收到 connection refused，版本直接失败。
 const databaseReadiness = createDatabaseReadiness(db.ready, {
   waitMs: process.env.WATCHDOG_DB_READY_WAIT_MS || 8000,
   onReady: () => logger.info('数据库初始化完成'),
-  onError: (error) => logger.error('数据库初始化失败', error.stack || error),
+  onError: (error) => logger.error('数据库初始化失败', errorSummary(error)),
 });
 
 const app = express();
+const realtimeWss = new WebSocketServer({ noServer: true });
+const realtimeSessions = new Set();
+const realtimeDevices = new Set();
 const PORT = process.env.PORT || 3000;
 const API_TOKEN = process.env.API_TOKEN || '';
 const UNIT_AUTH_REQUIRED = String(
   process.env.WATCHDOG_UNIT_AUTH_REQUIRED ?? (process.env.NODE_ENV === 'test' ? '0' : '1'),
 ) !== '0';
+// 会话/成员白名单采用可回滚的分阶段开关：先完成数据库迁移和客户端升级，
+// 再在生产运行时显式设置为 1。关闭时保留旧单位验证码兼容路径，避免新后端先上线导致旧 APK 全部掉线。
+const SESSION_AUTH_REQUIRED = String(process.env.WATCHDOG_SESSION_AUTH_REQUIRED || '0') !== '0';
+const MEMBER_AUTH_REQUIRED = String(process.env.WATCHDOG_MEMBER_AUTH_REQUIRED || '0') !== '0';
+// 操作账本随数据库迁移分阶段启用；测试环境默认打开，生产需在 005 迁移完成后显式打开。
+const OPERATION_LEDGER_ENABLED = String(
+  process.env.WATCHDOG_OPERATION_LEDGER_ENABLED || (process.env.NODE_ENV === 'test' ? '1' : '0'),
+) !== '0';
+const ATOMIC_OPS_ENABLED = process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1';
+const configuredSessionTtl = Number(process.env.WATCHDOG_SESSION_TTL_MS || 8 * 60 * 60 * 1000);
+const SESSION_TTL_MS = Number.isFinite(configuredSessionTtl)
+  ? Math.min(Math.max(configuredSessionTtl, 15 * 60 * 1000), 7 * 24 * 60 * 60 * 1000)
+  : 8 * 60 * 60 * 1000;
 if (process.env.NODE_ENV === 'production' && !API_TOKEN) {
   throw new Error('生产环境必须配置 API_TOKEN（拒绝未认证启动）');
 }
 if (process.env.NODE_ENV === 'production' && !UNIT_AUTH_REQUIRED) {
   throw new Error('生产环境必须启用 WATCHDOG_UNIT_AUTH_REQUIRED');
+}
+if (process.env.NODE_ENV === 'production' && SESSION_AUTH_REQUIRED && !MEMBER_AUTH_REQUIRED) {
+  throw new Error('启用 WATCHDOG_SESSION_AUTH_REQUIRED 时必须同时启用 WATCHDOG_MEMBER_AUTH_REQUIRED');
+}
+if (ATOMIC_OPS_ENABLED && !OPERATION_LEDGER_ENABLED) {
+  throw new Error('启用 WATCHDOG_ATOMIC_OPS_ENABLED 时必须同时启用 WATCHDOG_OPERATION_LEDGER_ENABLED');
 }
 
 const CFG = {
@@ -52,6 +78,30 @@ const CFG = {
   },
 };
 
+// PG Storage 的公开对象入口不等同于云托管服务的网关路径。保留 /ota 作为
+// 旧版 App 的兼容入口，但只允许重定向到固定公开 bucket 中的已知 OTA 对象。
+const OTA_ENV_ID = String(
+  process.env.WATCHDOG_OTA_ENV_ID || process.env.CLOUDBASE_ENV_ID || process.env.CLOUDBASE_ENV || '',
+).trim();
+const OTA_BUCKET_ID = String(process.env.WATCHDOG_OTA_BUCKET_ID || 'watchdog-ota').trim();
+const SAFE_OTA_ENV_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/.test(OTA_ENV_ID);
+const SAFE_OTA_BUCKET_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(OTA_BUCKET_ID);
+
+function isSafeOtaObjectPath(value) {
+  const objectPath = String(value || '');
+  if (objectPath === 'latest.json') return true;
+  return /^releases\/[A-Za-z0-9._+\-]+-arm64-v8a\.apk$/.test(objectPath);
+}
+
+function publicOtaObjectUrl(objectPath) {
+  const encodedObjectPath = objectPath.split('/').map((segment) => encodeURIComponent(segment)).join('/');
+  return `https://${OTA_ENV_ID}.api.tcloudbasegateway.com/v1/storages/object/public/${encodeURIComponent(OTA_BUCKET_ID)}/${encodedObjectPath}`;
+}
+
+const LLM_ALLOWED_HOSTS = parseAllowedHosts(
+  process.env.WATCHDOG_LLM_ALLOWED_HOSTS || 'api.deepseek.com',
+);
+
 if (process.env.NODE_ENV === 'production') {
   let deepSeekUrl;
   try {
@@ -65,6 +115,9 @@ if (process.env.NODE_ENV === 'production') {
   if (deepSeekUrl.username || deepSeekUrl.password || deepSeekUrl.search || deepSeekUrl.hash) {
     throw new Error('生产环境 DEEPSEEK_BASE_URL 不得包含用户信息、查询参数或片段');
   }
+  if (!isHostAllowed(deepSeekUrl, LLM_ALLOWED_HOSTS)) {
+    throw new Error('生产环境 DEEPSEEK_BASE_URL 主机不在 WATCHDOG_LLM_ALLOWED_HOSTS 允许列表');
+  }
 }
 
 // 业务正文都有更小的字段级上限；保留一定余量给 JSON 包装，避免异常请求
@@ -73,8 +126,18 @@ app.use(express.json({ limit: '512kb' }));
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, X-Incident-Id, X-Api-Token, X-Device-Id, X-Unit-Id, X-Unit-Code, X-Actor-Name, X-Actor-Name-B64, X-Op-Id, X-Expected-Version, X-Management-Token');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Session-Token, X-Incident-Id, X-Api-Token, X-Device-Id, X-Unit-Id, X-Unit-Code, X-Actor-Name, X-Actor-Name-B64, X-Op-Id, X-Expected-Version, X-Management-Token');
+  res.set('Access-Control-Expose-Headers', 'X-Request-Id');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// 为每个请求建立可安全回传的链路 ID。只接受有限字符集的调用方 ID，
+// 避免把任意请求头内容直接写入日志；没有合法 ID 时由服务端生成。
+app.use((req, res, next) => {
+  const supplied = String(req.headers['x-request-id'] || '').trim();
+  req.requestId = /^[A-Za-z0-9._:-]{1,96}$/.test(supplied) ? supplied : crypto.randomUUID();
+  res.set('X-Request-Id', req.requestId);
   next();
 });
 
@@ -91,14 +154,34 @@ app.use((req, res, next) => {
 app.use('/models', express.static(path.join(__dirname, '..', 'models'), {
   maxAge: '1y',
   immutable: true,
+  setHeaders: (res, filePath) => {
+    // 模型二进制可长期 immutable 缓存；manifest 会随模型版本更新，必须允许重新验证。
+    if (path.basename(filePath) === 'manifest.json') {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      res.removeHeader('Expires');
+    }
+  },
 }));
+
+// CloudBase PG Storage 的公开 URL 由 Storage API 提供；/ota 仅为已发布旧版
+// App 保留兼容重定向，不代理文件、不接受任意目标，避免形成开放重定向。
+app.get('/ota/*', (req, res) => {
+  const objectPath = String(req.params[0] || '');
+  if (!SAFE_OTA_ENV_ID || !SAFE_OTA_BUCKET_ID) {
+    return res.status(503).json({ error: '国内更新服务未配置', code: 'OTA_NOT_CONFIGURED' });
+  }
+  if (!isSafeOtaObjectPath(objectPath)) {
+    return res.status(404).json({ error: '更新文件不存在', code: 'OTA_OBJECT_NOT_FOUND' });
+  }
+  return res.redirect(302, publicOtaObjectUrl(objectPath));
+});
 
 // 请求日志（health 探活不刷屏）
 app.use((req, res, next) => {
   if (req.path === '/api/health') return next();
   const start = Date.now();
   res.on('finish', () => {
-    logger.info(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms`);
+    logger.info(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms request_id=${req.requestId}`);
   });
   next();
 });
@@ -129,7 +212,36 @@ app.use(async (req, res, next) => {
 // 单位认证由数据库中的 units 记录驱动。未归属历史警情不属于任何普通单位，
 // 不在这里把旧数据强行归属到当前认证单位。
 app.use(async (req, res, next) => {
-  if (!UNIT_AUTH_REQUIRED || req.path === '/api/health' || req.path === '/api/auth/verify') return next();
+  if (req.path === '/api/health' || req.path === '/api/auth/verify') return next();
+  if (SESSION_AUTH_REQUIRED) {
+    const rawToken = sessionTokenFromRequest(req);
+    if (!rawToken || rawToken.length > 256) {
+      return res.status(401).json({ error: '请先完成单位认证', code: 'SESSION_REQUIRED' });
+    }
+    try {
+      const session = await db.getAuthSession(hashSessionToken(rawToken));
+      if (!session) {
+        return res.status(401).json({ error: '认证会话已失效，请重新认证', code: 'SESSION_INVALID' });
+      }
+      const unit = await db.getUnit(session.unit_id);
+      if (!unit) {
+        return res.status(401).json({ error: '认证单位不存在，请重新认证', code: 'SESSION_INVALID' });
+      }
+      req.auth = {
+        sessionId: session.id,
+        unitId: session.unit_id,
+        memberId: session.member_id || null,
+        deviceId: session.device_id || null,
+        realName: String(session.real_name || '').trim(),
+        role: ['member', 'manager', 'admin'].includes(session.role) ? session.role : 'member',
+      };
+      req.unit = { id: unit.id, name: unit.name };
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  }
+  if (!UNIT_AUTH_REQUIRED) return next();
   const unitId = String(req.headers['x-unit-id'] || '').trim();
   const code = String(req.headers['x-unit-code'] || '').trim();
   if (!unitId || !code || unitId.length > 128 || code.length > 64) {
@@ -147,11 +259,29 @@ app.use(async (req, res, next) => {
   }
 });
 
+function hashSessionToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function sessionTokenFromRequest(req) {
+  const explicit = String(req.headers['x-session-token'] || '').trim();
+  if (explicit) return explicit;
+  const authorization = String(req.headers.authorization || '').trim();
+  return /^Bearer\s+\S+$/i.test(authorization)
+    ? authorization.replace(/^Bearer\s+/i, '')
+    : '';
+}
+
+function newSessionToken() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
 function incidentKey(req) {
   return String(req.headers['x-incident-id'] || '').trim().slice(0, 128);
 }
 
 function deviceKey(req) {
+  if (req.auth) return req.auth.deviceId || null;
   return (req.headers['x-device-id'] || '').toString().slice(0, 128) || null;
 }
 
@@ -168,13 +298,290 @@ function opKey(req) {
   return (req.headers['x-op-id'] || '').toString().slice(0, 64) || null;
 }
 
+function realtimeHeader(req, name) {
+  return String(req.headers[name] || '').trim();
+}
+
+async function authenticateRealtimeRequest(req) {
+  if (API_TOKEN && realtimeHeader(req, 'x-api-token') !== API_TOKEN) {
+    throw Object.assign(new Error('未授权'), { code: 'API_TOKEN_INVALID' });
+  }
+  let unit = null;
+  if (SESSION_AUTH_REQUIRED) {
+    const raw = sessionTokenFromRequest(req);
+    const session = raw && raw.length <= 256
+      ? await db.getAuthSession(hashSessionToken(raw))
+      : null;
+    if (!session) throw Object.assign(new Error('认证会话已失效'), { code: 'SESSION_INVALID' });
+    unit = await db.getUnit(session.unit_id);
+    if (!unit) throw Object.assign(new Error('认证单位不存在'), { code: 'SESSION_INVALID' });
+    req.auth = {
+      deviceId: session.device_id || null,
+      realName: String(session.real_name || '').trim(),
+      role: session.role || 'member',
+    };
+  } else if (UNIT_AUTH_REQUIRED) {
+    const unitId = realtimeHeader(req, 'x-unit-id');
+    const unitCode = realtimeHeader(req, 'x-unit-code');
+    unit = unitId && unitCode ? await db.getUnit(unitId) : null;
+    if (!unit || String(unit.verification_code || '') !== unitCode) {
+      throw Object.assign(new Error('单位认证失败'), { code: 'UNIT_INVALID' });
+    }
+  }
+  const incidentId = realtimeHeader(req, 'x-incident-id');
+  if (!incidentId) throw Object.assign(new Error('请先选择警情'), { code: 'INCIDENT_REQUIRED' });
+  const incident = await db.getIncident(incidentId, { unitId: unit?.id || null });
+  if (!incident || (unit && incident.unit_id !== unit.id)) {
+    throw Object.assign(new Error('警情不存在'), { code: 'INCIDENT_NOT_FOUND' });
+  }
+  return { unit, incident, deviceId: req.auth?.deviceId || realtimeHeader(req, 'x-device-id') || null };
+}
+
+function closeRealtimeSocket(ws, code = 1000, reason = 'closed') {
+  try { ws.close(code, reason); } catch (_) {}
+}
+
+realtimeWss.on('connection', (ws, req, auth) => {
+  if (realtimeSessions.size >= 64) {
+    closeRealtimeSocket(ws, 1013, 'too many sessions');
+    return;
+  }
+  if (auth.deviceId && realtimeDevices.has(auth.deviceId)) {
+    closeRealtimeSocket(ws, 1008, 'device already has a session');
+    return;
+  }
+  const state = {
+    started: false,
+    stopping: false,
+    opId: realtimeHeader(req, 'x-op-id') || null,
+    chunks: [],
+    bufferedBytes: 0,
+    upstream: null,
+    deviceId: auth.deviceId,
+    sessionTimer: null,
+    startTimer: null,
+    heartbeat: setInterval(() => {
+      try { if (ws.readyState === 1) ws.ping(); } catch (_) {}
+    }, 10000),
+  };
+  realtimeSessions.add(state);
+  if (state.deviceId) realtimeDevices.add(state.deviceId);
+  state.startTimer = setTimeout(() => fail(Object.assign(new Error('实时会话未开始'), { code: 'ASR_START_TIMEOUT' })), 8000);
+  state.sessionTimer = setTimeout(() => fail(Object.assign(new Error('实时会话超时'), { code: 'ASR_STREAM_TIMEOUT' })), 70000);
+
+  const sendJson = (value) => {
+    if (ws.readyState === 1) ws.send(JSON.stringify(value));
+  };
+  const fail = (error) => {
+    sendJson({ type: 'error', code: error.code || 'ASR_STREAM_ERROR', message: error.message || '实时识别失败' });
+    closeRealtimeSocket(ws, 1011, 'asr error');
+  };
+  const start = () => {
+    const hotwordsPromise = hotwordList(auth.incident.id);
+    hotwordsPromise.then((hotwords) => {
+      if (state.stopping || ws.readyState !== 1) {
+        sendJson({ type: 'done' });
+        closeRealtimeSocket(ws);
+        return;
+      }
+      state.upstream = openStreamingSession({
+        appId: CFG.asr.appId,
+        accessToken: CFG.asr.accessToken,
+        resourceId: CFG.asr.resourceId,
+        format: 'pcm',
+        rate: 16000,
+        bits: 16,
+        channel: 1,
+        hotwords,
+        onReady: () => {
+          sendJson({ type: 'ready', hotwordCount: hotwords.length });
+          for (const chunk of state.chunks) state.upstream?.sendAudio(chunk);
+          state.chunks = [];
+          state.bufferedBytes = 0;
+        },
+        onResult: (result) => sendJson({
+          type: result.final ? 'final' : 'partial',
+          text: result.text,
+          sequence: result.sequence ?? null,
+        }),
+        onDone: () => sendJson({ type: 'done' }),
+        onError: fail,
+        onClose: () => {
+          if (!state.stopping) fail(Object.assign(new Error('ASR 连接已断开'), { code: 'ASR_UPSTREAM_CLOSED' }));
+        },
+      });
+    }).catch(fail);
+  };
+
+  ws.on('message', (data, isBinary) => {
+    try {
+      if (isBinary) {
+        const chunk = Buffer.from(data);
+        if (chunk.length === 0 || chunk.length > 256 * 1024) return;
+        if (state.bufferedBytes + chunk.length > 2 * 1024 * 1024) {
+          throw Object.assign(new Error('实时音频缓冲过大'), { code: 'ASR_AUDIO_TOO_LARGE' });
+        }
+        if (state.upstream?.initialized) state.upstream.sendAudio(chunk);
+        else {
+          state.chunks.push(chunk);
+          state.bufferedBytes += chunk.length;
+        }
+        return;
+      }
+      const message = JSON.parse(Buffer.from(data).toString('utf8'));
+      if (message.type === 'start') {
+        if (state.started) throw Object.assign(new Error('实时会话已启动'), { code: 'ASR_STREAM_ALREADY_STARTED' });
+        state.started = true;
+        clearTimeout(state.startTimer);
+        state.startTimer = null;
+        state.opId = String(message.opId || state.opId || '').slice(0, 64) || null;
+        start();
+      } else if (message.type === 'stop') {
+        if (!state.started || state.stopping) return;
+        state.stopping = true;
+        state.upstream?.end();
+      }
+    } catch (error) {
+      fail(error);
+    }
+  });
+  ws.on('close', () => {
+    clearInterval(state.heartbeat);
+    clearTimeout(state.startTimer);
+    clearTimeout(state.sessionTimer);
+    state.stopping = true;
+    state.upstream?.close();
+    realtimeSessions.delete(state);
+    if (state.deviceId) realtimeDevices.delete(state.deviceId);
+  });
+  ws.on('error', () => {
+    state.stopping = true;
+    state.upstream?.close();
+  });
+});
+
 function contentDigest(value) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex');
 }
 
+function stableOperationValue(value) {
+  if (Array.isArray(value)) return value.map(stableOperationValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableOperationValue(value[key])]));
+  }
+  return value;
+}
+
+function operationRequestHash(req, incidentId, operationType, body = req.body) {
+  const snapshot = {
+    method: req.method,
+    path: req.path,
+    operation_type: operationType,
+    unit_id: req.unit?.id || '',
+    incident_id: incidentId || null,
+    body: stableOperationValue(body || {}),
+  };
+  return contentDigest(JSON.stringify(snapshot));
+}
+
+async function operationReplay(row) {
+  let reference = null;
+  try { reference = row.result_json == null ? null : JSON.parse(row.result_json); } catch (_) { return null; }
+  let result = reference;
+  const resourceId = reference?.id || reference?.resource_id;
+  if (resourceId) {
+    switch (row.operation_type) {
+      case 'incident_create':
+      case 'incident_rename':
+      case 'incident_archive': {
+        const incident = await db.getIncident(resourceId, { unitId: row.unit_id || null });
+        result = incident ? await incidentView(incident) : reference;
+        break;
+      }
+      case 'entry':
+      case 'entry_update':
+      case 'pressure':
+      case 'exit':
+        result = await db.getEntry(resourceId) || reference;
+        break;
+      case 'note':
+      case 'note_update':
+        result = await db.getNote(resourceId) || reference;
+        break;
+      case 'force_upsert':
+      case 'force_update':
+        result = await db.getIncidentForce(resourceId) || reference;
+        break;
+      default:
+        break;
+    }
+  }
+  return { status: Number(row.response_status) || 200, result };
+}
+
+function operationResultReference(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+  if (result.id) return { id: String(result.id) };
+  return {
+    ok: result.ok === true,
+    duplicate: result.duplicate === true,
+    ...(result.event_id ? { event_id: String(result.event_id) } : {}),
+  };
+}
+
+// 为关键写操作建立“待处理→成功”的账本记录。账本只保存摘要和结果，
+// 不把请求正文复制到数据库；同操作号的请求摘要变化时必须显式冲突。
+async function beginTrackedOperation(req, incidentId, operationType, body = req.body, clientOpIdOverride = null) {
+  const clientOpId = clientOpIdOverride || opKey(req);
+  if (!OPERATION_LEDGER_ENABLED || !clientOpId || typeof db.beginOperation !== 'function') return null;
+  const requestHash = operationRequestHash(req, incidentId, operationType, body);
+  const row = await db.beginOperation({
+    unitId: req.unit?.id || '',
+    clientOpId,
+    incidentId,
+    operationType,
+    requestHash,
+    actorDeviceId: deviceKey(req),
+    actorName: req.auth?.realName || null,
+  });
+  if (!row) return null;
+  if (row.request_hash !== requestHash) {
+    return {
+      conflict: true,
+      code: row.operation_type !== operationType ? 'CLIENT_OP_ID_CONFLICT' : 'OPERATION_REQUEST_CONFLICT',
+    };
+  }
+  if (row.status === 'succeeded') return { replay: await operationReplay(row) };
+  if (!row.created) return { pending: true };
+  return {
+    unitId: req.unit?.id || '',
+    clientOpId,
+    requestHash,
+    incidentId,
+  };
+}
+
+async function completeTrackedOperation(context, result, responseStatus = 200, eventId = null) {
+  if (!context || context.conflict || context.replay || context.pending) return;
+  await db.completeOperation({
+    unitId: context.unitId,
+    clientOpId: context.clientOpId,
+    incidentId: context.incidentId,
+    requestHash: context.requestHash,
+    result: operationResultReference(result),
+    responseStatus,
+    eventId,
+  });
+}
+
+async function releaseTrackedOperation(context) {
+  if (!context || context.conflict || context.replay || context.pending) return;
+  await db.releaseOperation({ unitId: context.unitId, clientOpId: context.clientOpId, requestHash: context.requestHash });
+}
+
 function isSensitiveLogKey(key) {
   const normalized = String(key || '').replace(/[A-Z]/g, (letter) => `_${letter}`).toLowerCase();
-  return /(^|_)(text|content|message|raw|token|authorization|access_token|password|secret|error|stack)(_|$)/.test(normalized);
+  return /(^|_)(text|content|message|note|prompt|query|raw|token|authorization|access_token|password|secret|error|stack|name|author|actor|people|pressure|volume|consumption|station)(_|$)/.test(normalized);
 }
 
 function sanitizeLogText(value) {
@@ -184,6 +591,27 @@ function sanitizeLogText(value) {
     '$1$2[REDACTED]',
   );
   return clean.replace(/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]');
+}
+
+// 错误正文可能包含上游响应、SQL 片段或用户输入；操作日志只需要知道
+// 哪个阶段失败，不应把异常详情复制到普通业务日志或诊断上报中。
+function sanitizeErrorLogText(value) {
+  const clean = sanitizeLogText(value);
+  const separator = clean.indexOf(':');
+  return separator > 0
+    ? `${clean.slice(0, separator).slice(0, 160)} [details redacted]`
+    : '[error details redacted]';
+}
+
+function errorSummary(error) {
+  const parts = [];
+  const name = String(error?.name || '').trim();
+  const code = String(error?.code || '').trim();
+  const status = Number(error?.status);
+  if (name && /^[A-Za-z][A-Za-z0-9_]*$/.test(name)) parts.push(name);
+  if (code && /^[A-Z][A-Z0-9_]{1,48}$/.test(code)) parts.push(`code=${code}`);
+  if (Number.isInteger(status) && status >= 400 && status <= 599) parts.push(`status=${status}`);
+  return parts.join(' ') || 'internal_error';
 }
 
 function sanitizeLogData(value, key = '', depth = 0) {
@@ -212,6 +640,18 @@ function hasManagementToken(req) {
   return Boolean(MANAGEMENT_TOKEN) && req.headers['x-management-token'] === MANAGEMENT_TOKEN;
 }
 
+function hasManagementAccess(req) {
+  if (hasManagementToken(req)) return true;
+  return Boolean(req.auth && ['manager', 'admin'].includes(req.auth.role));
+}
+
+function requireManagementRole(req, res) {
+  // 测试/兼容模式继续允许历史测试客户端；生产或会话模式必须使用管理令牌或管理角色。
+  if (!(SESSION_AUTH_REQUIRED || process.env.NODE_ENV === 'production') || hasManagementAccess(req)) return true;
+  res.status(403).json({ error: '该操作需要管理权限', code: 'MANAGEMENT_REQUIRED' });
+  return false;
+}
+
 // client_op_id 是全局唯一索引，但业务幂等的作用域是警情；先拒绝跨警情复用，
 // 避免“返回重复成功”却把当前操作静默吞掉。真正的跨表原子幂等仍需数据库事务/RPC。
 async function ensureOperationScope(req, res, incidentId) {
@@ -236,6 +676,7 @@ function encodedActorName(req) {
 }
 
 async function actorName(req) {
+  if (req.auth?.realName) return req.auth.realName;
   const submitted = String(req.body?.actor_name || req.headers['x-actor-name'] || encodedActorName(req) || '').trim().slice(0, 32);
   const device = deviceKey(req);
   if (device) {
@@ -308,11 +749,11 @@ async function logOp(req, level, stage, msg, data = null) {
       opId: opKey(req),
       level,
       stage,
-      msg: sanitizeLogText(msg),
+      msg: level === 'error' ? sanitizeErrorLogText(msg) : sanitizeLogText(msg),
       data: data == null ? null : sanitizeLogData(data),
     });
   } catch (e) {
-    logger.warn('写入操作日志失败', e.message || e);
+    logger.warn('写入操作日志失败', errorSummary(e));
   }
 }
 
@@ -377,24 +818,12 @@ function recordAuthFailure(key, now = Date.now()) {
 
 // ASR/解析都会调用按量计费的外部服务；限流维度必须包含服务端看到的来源，
 // 不能只使用可伪造的设备请求头。单实例计数用于快速止损，多实例仍应在网关配置共享限流。
-const upstreamRateBuckets = new Map();
+const upstreamRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
 function upstreamRateLimited(req, route, limit, now = Date.now()) {
-  const minute = Math.floor(now / 60000);
   const source = req.ip || 'anonymous';
   const unit = req.unit?.id || 'unauthenticated';
   const key = `${route}:${source}:${unit}`;
-  if (upstreamRateBuckets.size > 10000) {
-    for (const [bucketKey, bucket] of upstreamRateBuckets) {
-      if (bucket.minute < minute - 1) upstreamRateBuckets.delete(bucketKey);
-    }
-  }
-  const bucket = upstreamRateBuckets.get(key);
-  if (!bucket || bucket.minute !== minute) {
-    upstreamRateBuckets.set(key, { minute, count: 1 });
-    return false;
-  }
-  bucket.count++;
-  return bucket.count > limit;
+  return upstreamRateLimiter.isLimited(key, limit, now);
 }
 
 app.post('/api/auth/verify', async (req, res, next) => {
@@ -414,28 +843,65 @@ app.post('/api/auth/verify', async (req, res, next) => {
       recordAuthFailure(failureKey);
       return res.status(403).json({ error: '单位名称或验证码错误', code: 'UNIT_INVALID' });
     }
+    const member = MEMBER_AUTH_REQUIRED ? await db.findUnitMember(unit.id, name) : null;
+    if (MEMBER_AUTH_REQUIRED && !member) {
+      recordAuthFailure(failureKey);
+      return res.status(403).json({ error: '该姓名未被单位授权，请联系管理员', code: 'MEMBER_NOT_ALLOWED' });
+    }
     authFailureBuckets.delete(failureKey);
     const device = deviceKey(req);
     if (device) await db.saveDeviceProfile(device, name, unit.id);
+    let sessionToken = null;
+    let sessionExpiresAt = null;
+    if (SESSION_AUTH_REQUIRED) {
+      sessionToken = newSessionToken();
+      const now = Date.now();
+      sessionExpiresAt = now + SESSION_TTL_MS;
+      await db.createAuthSession({
+        id: crypto.randomUUID(),
+        tokenHash: hashSessionToken(sessionToken),
+        unitId: unit.id,
+        memberId: member?.id || null,
+        deviceId: device,
+        realName: name,
+        role: member?.role || 'member',
+        createdAt: now,
+        expiresAt: sessionExpiresAt,
+      });
+    }
     res.json({
       authenticated: true,
       unit: { id: unit.id, name: unit.name },
-      user: { real_name: name },
+      user: { real_name: name, role: member?.role || 'member' },
+      session_token: sessionToken,
+      expires_at: sessionExpiresAt,
     });
   } catch (e) {
     next(e);
   }
 });
 
-async function incidentView(incident) {
+app.post('/api/auth/logout', async (req, res, next) => {
+  try {
+    const rawToken = sessionTokenFromRequest(req);
+    if (rawToken && rawToken.length <= 256 && typeof db.revokeAuthSession === 'function') {
+      await db.revokeAuthSession(hashSessionToken(rawToken));
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function incidentView(incident, { forces = null, generateSuggestedTitle = true } = {}) {
   if (!incident) return null;
-  if (incident.status === 'archived' && !incident.title && !incident.suggested_title) {
+  if (generateSuggestedTitle && incident.status === 'archived' && !incident.title && !incident.suggested_title) {
     incident = await db.setIncidentSuggestedTitle(incident.id, await suggestIncidentTitle(incident.id));
   }
   return {
     ...incident,
     display_name: incident.title || incident.number,
-    forces: await db.listIncidentForces(incident.id),
+    forces: forces || await db.listIncidentForces(incident.id),
   };
 }
 
@@ -448,18 +914,50 @@ async function suggestIncidentTitle(incidentId) {
   return text.length > 30 ? `${text.slice(0, 29)}…` : text;
 }
 
+const INCIDENT_PAGE_SIZE = 100;
+const INCIDENT_MAX_OFFSET = 10000;
+
+function parseIncidentPageNumber(value, fallback, maximum, field) {
+  if (value == null || String(value).trim() === '') return fallback;
+  const raw = String(value).trim();
+  if (!/^\d+$/.test(raw)) {
+    const error = new Error(`${field} 必须是非负整数`);
+    error.code = 'INVALID_PAGE_PARAMETER';
+    error.status = 400;
+    throw error;
+  }
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed > maximum) {
+    const error = new Error(`${field} 超出允许范围`);
+    error.code = 'INVALID_PAGE_PARAMETER';
+    error.status = 400;
+    throw error;
+  }
+  return parsed;
+}
+
 // 当前认证单位下的活跃/归档警情列表；历史 unit_id=NULL 记录保留在隔离命名空间。
 app.get('/api/incidents', async (req, res, next) => {
   try {
-    // 请求方只负责清理自己单位的陈旧警情；后台定时任务才执行全局清理，
-    // 避免单位 A 的普通查询改变单位 B 的现场状态。
-    await db.archiveStaleIncidents({ unitId: req.unit?.id || null });
     const status = ['active', 'archived'].includes(String(req.query.status || '')) ? String(req.query.status) : null;
-    const requestedLimit = Number(req.query.limit);
-    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
-      ? Math.min(Math.floor(requestedLimit), 500)
-      : null;
-    res.json(await Promise.all((await db.listIncidents(status, { unitId: req.unit?.id, limit })).map(incidentView)));
+    const limit = parseIncidentPageNumber(req.query.limit, INCIDENT_PAGE_SIZE, INCIDENT_PAGE_SIZE, 'limit');
+    const offset = parseIncidentPageNumber(req.query.offset, 0, INCIDENT_MAX_OFFSET, 'offset');
+    const incidents = await db.listIncidents(status, { unitId: req.unit?.id, limit, offset });
+    const forceRows = typeof db.listIncidentForcesBatch === 'function'
+      ? await db.listIncidentForcesBatch(incidents.map((item) => item.id))
+      : [];
+    const forcesByIncident = new Map();
+    for (const force of forceRows) {
+      if (!forcesByIncident.has(force.incident_id)) forcesByIncident.set(force.incident_id, []);
+      forcesByIncident.get(force.incident_id).push(force);
+    }
+    res.set('X-Page-Limit', String(limit));
+    res.set('X-Page-Offset', String(offset));
+    res.set('X-Page-Has-More', incidents.length === limit ? 'true' : 'false');
+    res.json(await Promise.all(incidents.map((incident) => incidentView(incident, {
+      forces: forcesByIncident.get(incident.id) || [],
+      generateSuggestedTitle: false,
+    }))));
   } catch (e) {
     next(e);
   }
@@ -469,6 +967,7 @@ let incidentCreationQueue = Promise.resolve();
 
 app.post('/api/incidents', async (req, res, next) => {
   let releaseCreation;
+  let tracked = null;
   try {
     // 单进程内串行化“冷却检查 + 创建 + 初始事件”，避免同一实例上的
     // 并发请求各自通过检查。多实例部署仍需数据库事务/RPC 做最终约束。
@@ -481,7 +980,8 @@ app.post('/api/incidents', async (req, res, next) => {
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再新建警情', code: 'REAL_NAME_REQUIRED' });
     const opId = opKey(req);
-    const previous = await db.getIncidentEventByClientOp(opId);
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opId);
     if (previous?.type === 'incident_created') {
       const existing = await db.getIncident(previous.incident_id, { unitId: req.unit?.id || null });
       if (existing) return res.json(await incidentView(existing));
@@ -490,11 +990,50 @@ app.post('/api/incidents', async (req, res, next) => {
     if (previous) {
       return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
     }
-    // 服务端串行执行这段检查和后续 INSERT，作为多设备共同遵守的建档闸门。
-    // 只限制“仍在处置中且刚刚创建”的警情；已经归档后可以正常开始下一场处置。
+    // 必须先登记操作再做冷却判断：同一请求在首次响应丢失后重试时，
+    // 应返回原结果，而不是被“1 分钟冷却”误判成一条新建请求。
+    tracked = await beginTrackedOperation(req, null, 'incident_create');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opId);
+      if (previous) {
+        if (previous.type !== 'incident_created') {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const existing = await db.getIncident(previous.incident_id, { unitId: req.unit?.id || null });
+        if (existing) {
+          const view = await incidentView(existing);
+          await completeTrackedOperation(tracked, view, 200, previous.id);
+          return res.json(view);
+        }
+        await releaseTrackedOperation(tracked);
+        return res.status(409).json({ error: '操作记录已存在但警情数据缺失，请联系管理员核查', code: 'CLIENT_OP_ID_INCOMPLETE' });
+      }
+    }
+    // SQLite 通过 BEGIN IMMEDIATE、PostgreSQL 通过事务函数共同执行冷却检查、
+    // 编号分配、警情创建和初始事件，避免多实例同时建档。
     const now = Date.now();
-    const recent = await db.findRecentActiveIncident(now - 60 * 1000, { unitId: req.unit?.id });
-    if (recent) {
+    const creation = typeof db.createIncidentWithEvent === 'function'
+      ? await db.createIncidentWithEvent({
+        unitId: req.unit?.id || null,
+        createdBy: device,
+        createdAt: now,
+        event: {
+          type: 'incident_created',
+          occurredAt: now,
+          actorDeviceId: device,
+          actorName: name,
+          clientOpId: opId,
+          source: 'online',
+        },
+      })
+      : null;
+    if (creation?.cooldown) {
+      const recent = creation.recent;
+      await releaseTrackedOperation(tracked);
       return res.status(409).json({
         error: '为避免多人同时建档，1分钟内暂不允许再次新建警情，请优先加入现有警情',
         code: 'INCIDENT_CREATE_COOLDOWN',
@@ -502,17 +1041,16 @@ app.post('/api/incidents', async (req, res, next) => {
         incident: await incidentView(recent),
       });
     }
-    const created = await db.createIncident({ unitId: req.unit?.id || null, createdBy: device });
-    await db.appendIncidentEvent({
-      incidentId: created.id,
-      type: 'incident_created',
-      actorDeviceId: device,
-      actorName: name,
-      clientOpId: opId,
-      payload: { number: created.number },
+    const created = creation?.incident || await db.createIncident({ unitId: req.unit?.id || null, createdBy: device });
+    const event = creation?.event || await db.appendIncidentEvent({
+      incidentId: created.id, type: 'incident_created', actorDeviceId: device, actorName: name,
+      clientOpId: opId, payload: { number: created.number },
     });
-    res.status(201).json(await incidentView(created));
+    const view = await incidentView(created);
+    await completeTrackedOperation(tracked, view, 201, event?.id);
+    res.status(201).json(view);
   } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
   } finally {
     releaseCreation?.();
@@ -530,64 +1068,135 @@ app.get('/api/incidents/:id', async (req, res, next) => {
 });
 
 app.patch('/api/incidents/:id', async (req, res, next) => {
+  let tracked = null;
   try {
     const incident = await incidentForRequest(req, res, req.params.id);
     if (!incident) return;
     if (!await ensureOperationScope(req, res, incident.id)) return;
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再修改警情名称', code: 'REAL_NAME_REQUIRED' });
-    const previous = await db.getIncidentEventByClientOp(opKey(req));
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
     if (previous?.type === 'incident_renamed' && previous.incident_id === req.params.id) return res.json(await incidentView(await db.getIncident(req.params.id)));
-    const updated = await db.updateIncidentTitle(req.params.id, req.body?.title, {
-      expectedVersion: req.body?.expected_version ?? req.headers['x-expected-version'],
-    });
-    await db.appendIncidentEvent({
+    tracked = await beginTrackedOperation(req, incident.id, 'incident_rename');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === req.params.id) {
+        if (previous.type !== 'incident_renamed') {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const current = await db.getIncident(req.params.id, { unitId: req.unit?.id || null });
+        if (current) {
+          const view = await incidentView(current);
+          await completeTrackedOperation(tracked, view, 200, previous.id);
+          return res.json(view);
+        }
+      }
+    }
+    const cleanTitle = req.body?.title == null ? null : String(req.body.title).trim().slice(0, 120) || null;
+    const eventArgs = {
       incidentId: req.params.id,
       type: 'incident_renamed',
       actorDeviceId: deviceKey(req),
       actorName: name,
       clientOpId: opKey(req),
-      payload: { before: incident.title, after: updated.title },
+      payload: { before: incident.title, after: cleanTitle },
+    };
+    const atomicResult = typeof db.updateIncidentTitleWithEvent === 'function'
+      ? await db.updateIncidentTitleWithEvent({
+        id: req.params.id,
+        title: req.body?.title,
+        expectedVersion: req.body?.expected_version ?? req.headers['x-expected-version'],
+        event: eventArgs,
+      })
+      : null;
+    const updated = atomicResult?.incident || await db.updateIncidentTitle(req.params.id, req.body?.title, {
+      expectedVersion: req.body?.expected_version ?? req.headers['x-expected-version'],
     });
-    res.json(await incidentView(updated));
+    const event = atomicResult?.event || (atomicResult ? null : await db.appendIncidentEvent(eventArgs));
+    const view = await incidentView(updated);
+    await completeTrackedOperation(tracked, view, 200, event?.id);
+    res.json(view);
   } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
     if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
     next(e);
   }
 });
 
 app.post('/api/incidents/:id/archive', async (req, res, next) => {
+  let tracked = null;
   try {
     const incident = await incidentForRequest(req, res, req.params.id);
     if (!incident) return;
     if (!await ensureOperationScope(req, res, incident.id)) return;
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再归档警情', code: 'REAL_NAME_REQUIRED' });
-    const previous = await db.getIncidentEventByClientOp(opKey(req));
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
     if (previous?.type === 'incident_archived' && previous.incident_id === req.params.id) return res.json(await incidentView(incident));
-    const archiveResult = await db.archiveIncident(req.params.id, {
-      archivedBy: deviceKey(req),
-      now: Date.now(),
-      returnMeta: true,
-    });
+    tracked = await beginTrackedOperation(req, incident.id, 'incident_archive');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === req.params.id) {
+        if (previous.type !== 'incident_archived') {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const current = await db.getIncident(req.params.id, { unitId: req.unit?.id || null });
+        if (current) {
+          const view = await incidentView(current);
+          await completeTrackedOperation(tracked, view, 200, previous.id);
+          return res.json(view);
+        }
+      }
+    }
+    const archiveAt = Date.now();
+    const archiveEventArgs = {
+      incidentId: req.params.id,
+      type: 'incident_archived',
+      actorDeviceId: deviceKey(req),
+      actorName: name,
+      clientOpId: opKey(req),
+      payload: { auto: false },
+    };
+    const archiveResult = typeof db.archiveIncidentWithEvent === 'function'
+      ? await db.archiveIncidentWithEvent({
+        id: req.params.id,
+        archivedBy: deviceKey(req),
+        now: archiveAt,
+        event: archiveEventArgs,
+      })
+      : await db.archiveIncident(req.params.id, {
+        archivedBy: deviceKey(req),
+        now: archiveAt,
+        returnMeta: true,
+      });
     const archived = archiveResult.incident;
     if (!archived) return res.status(404).json({ error: '警情不存在' });
     let suggested = archived.suggested_title;
     if (!archived.title && !suggested) {
       suggested = (await db.setIncidentSuggestedTitle(req.params.id, await suggestIncidentTitle(req.params.id))).suggested_title;
     }
-    if (archiveResult.changed) {
-      await db.appendIncidentEvent({
-        incidentId: req.params.id,
-        type: 'incident_archived',
-        actorDeviceId: deviceKey(req),
-        actorName: name,
-        clientOpId: opKey(req),
+    let event = archiveResult.event || null;
+    if (!archiveResult.event && archiveResult.changed) {
+      event = await db.appendIncidentEvent({
+        ...archiveEventArgs,
         payload: { auto: false, unresolved_active_count: archived.unresolved_active_count },
       });
     }
-    res.json(await incidentView({ ...await db.getIncident(req.params.id), suggested_title: suggested }));
+    const view = await incidentView({ ...await db.getIncident(req.params.id), suggested_title: suggested });
+    await completeTrackedOperation(tracked, view, 200, event?.id);
+    res.json(view);
   } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
   }
 });
@@ -616,20 +1225,13 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
     const actor = await actorName(req);
     if (!actor) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
     const results = [];
+    let tracked = null;
     for (const operation of operations) {
-      const opId = String(operation?.client_op_id || '').trim().slice(0, 64);
+      const rawOpId = String(operation?.client_op_id || '').trim();
+      const opId = rawOpId.slice(0, 64);
       const type = String(operation?.type || '').trim();
-      if (!opId || !['entry', 'exit', 'pressure', 'note'].includes(type)) {
+      if (!opId || rawOpId.length > 64 || !['entry', 'exit', 'pressure', 'note'].includes(type)) {
         results.push({ client_op_id: opId, accepted: false, error: '操作类型或 client_op_id 无效' });
-        continue;
-      }
-      const duplicate = await db.getIncidentEventByClientOp(opId);
-      if (duplicate) {
-        if (duplicate.incident_id !== incident.id) {
-          results.push({ client_op_id: opId, accepted: false, error: 'client_op_id 已属于其他警情', code: 'CLIENT_OP_ID_CONFLICT' });
-          continue;
-        }
-        results.push({ client_op_id: opId, accepted: true, duplicate: true, event_id: duplicate.id });
         continue;
       }
       const occurredAt = Number(operation.occurred_at) || now;
@@ -642,6 +1244,10 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
       }
       const payload = operation.payload && typeof operation.payload === 'object' ? operation.payload : {};
       let eventPayload;
+      let entryArgs = null;
+      let noteArgs = null;
+      let exitEntryId = null;
+      let pressureArgs = null;
       if (type === 'entry') {
         const name = String(payload.name || '').trim();
         const pressure = Number(payload.pressure_mpa);
@@ -663,7 +1269,7 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
         }
         const calcParam = { ...CFG.calc, cylinderVolL: volume, consumptionLpm: consumption, pressureMpa: pressure };
         const durationMin = Math.round(durationMinutes(calcParam));
-        await db.createEntry({ id, scene: incident.id, name, pressureMpa: pressure, durationMin, entryAtMs: entryAt, exitAtMs: exitAtMs({ ...calcParam, entryAtMs: entryAt }), source: 'offline', rawText: payload.raw_text || null, cylinderVolL: volume, consumptionLpm: consumption });
+        entryArgs = { id, scene: incident.id, name, pressureMpa: pressure, durationMin, entryAtMs: entryAt, exitAtMs: exitAtMs({ ...calcParam, entryAtMs: entryAt }), source: 'offline', rawText: payload.raw_text || null, cylinderVolL: volume, consumptionLpm: consumption };
         eventPayload = { entry_id: id, name, pressure_mpa: pressure };
       } else if (type === 'exit') {
         const entry = await db.getEntry(String(payload.entry_id || ''));
@@ -671,7 +1277,7 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
           results.push({ client_op_id: opId, accepted: false, error: '出场记录不存在' });
           continue;
         }
-        await db.markExited(entry.id, occurredAt);
+        exitEntryId = entry.id;
         eventPayload = { entry_id: entry.id, name: entry.name };
       } else if (type === 'pressure') {
         const entry = await db.getEntry(String(payload.entry_id || ''));
@@ -685,8 +1291,7 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
           ? Number(payload.consumption_lpm)
           : (Number(entry.consumption_lpm) > 0 ? Number(entry.consumption_lpm) : CFG.calc.consumptionLpm);
         const calcParam = { ...CFG.calc, cylinderVolL: volume, consumptionLpm: consumption, pressureMpa: pressure };
-        await db.addPressureSample({ entryId: entry.id, scene: incident.id, name: entry.name, pressureMpa: pressure, reportedAtMs: occurredAt });
-        await db.updateEntry(entry.id, { pressureMpa: pressure, durationMin: Math.round(durationMinutes(calcParam)), exitAtMs: exitAtMs({ ...calcParam, entryAtMs: occurredAt }) });
+        pressureArgs = { entryId: entry.id, scene: incident.id, name: entry.name, pressureMpa: pressure, reportedAtMs: occurredAt, durationMin: Math.round(durationMinutes(calcParam)), exitAtMs: exitAtMs({ ...calcParam, entryAtMs: occurredAt }) };
         eventPayload = { entry_id: entry.id, name: entry.name, pressure_mpa: pressure };
       } else {
         const text = String(payload.text || '').trim();
@@ -694,15 +1299,69 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
           results.push({ client_op_id: opId, accepted: false, error: '随手记内容无效' });
           continue;
         }
-        const note = await db.createNote({ id: String(payload.note_id || crypto.randomUUID()), scene: incident.id, text, category: cleanCategory(payload.category), author: actor });
-        eventPayload = { note_id: note.id, text: note.text, category: note.category, author: actor };
+        noteArgs = { id: String(payload.note_id || crypto.randomUUID()), scene: incident.id, text, category: cleanCategory(payload.category), author: actor, createdAt: occurredAt };
+        eventPayload = { note_id: noteArgs.id, text, category: noteArgs.category, author: actor };
       }
-      const event = await db.appendIncidentEvent({ incidentId: incident.id, type, occurredAt, recordedAt: now, actorDeviceId: deviceKey(req), actorName: actor, source: 'offline', clientOpId: opId, payload: eventPayload });
-      if (incident.status === 'active') await db.touchIncidentActivity(incident.id, occurredAt);
+      tracked = await beginTrackedOperation(req, incident.id, `offline_${type}`, operation, opId);
+      if (tracked?.conflict) {
+        results.push({ client_op_id: opId, accepted: false, error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+        continue;
+      }
+      if (tracked?.pending) {
+        results.push({ client_op_id: opId, accepted: false, error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+        continue;
+      }
+      if (tracked?.replay) {
+        const replay = tracked.replay;
+        results.push({
+          client_op_id: opId,
+          accepted: replay.status < 400,
+          ...(replay.result || {}),
+          duplicate: true,
+        });
+        continue;
+      }
+      const duplicate = await db.getIncidentEventByClientOp(opId);
+      if (duplicate) {
+        if (duplicate.incident_id !== incident.id) {
+          await releaseTrackedOperation(tracked);
+          results.push({ client_op_id: opId, accepted: false, error: 'client_op_id 已属于其他警情', code: 'CLIENT_OP_ID_CONFLICT' });
+          continue;
+        }
+        await completeTrackedOperation(tracked, { ok: true, duplicate: true, event_id: duplicate.id }, 200, duplicate.id);
+        results.push({ client_op_id: opId, accepted: true, duplicate: true, event_id: duplicate.id });
+        continue;
+      }
+      const eventArgs = { incidentId: incident.id, type, occurredAt, recordedAt: now, actorDeviceId: deviceKey(req), actorName: actor, source: 'offline', clientOpId: opId, payload: eventPayload };
+      let atomicResult = null;
+      if (entryArgs && typeof db.createEntryWithEvent === 'function') {
+        atomicResult = await db.createEntryWithEvent({ entry: entryArgs, event: eventArgs, activityAt: occurredAt });
+      } else if (exitEntryId && typeof db.exitEntryWithEvent === 'function') {
+        atomicResult = await db.exitEntryWithEvent({ entryId: exitEntryId, exitedAtMs: occurredAt, incidentId: incident.id, activityAt: occurredAt, event: eventArgs });
+      } else if (noteArgs && typeof db.createNoteWithEvent === 'function') {
+        atomicResult = await db.createNoteWithEvent({ note: noteArgs, event: eventArgs, activityAt: occurredAt });
+      } else if (pressureArgs && typeof db.updatePressureWithEvent === 'function') {
+        atomicResult = await db.updatePressureWithEvent({ ...pressureArgs, incidentId: incident.id, activityAt: occurredAt, event: eventArgs });
+      }
+      if (atomicResult?.changed === false) {
+        await completeTrackedOperation(tracked, { ok: true, duplicate: true }, 200, atomicResult.event?.id);
+        results.push({ client_op_id: opId, accepted: true, duplicate: true, ...(atomicResult.event?.id ? { event_id: atomicResult.event.id } : {}) });
+        continue;
+      }
+      if (!atomicResult && entryArgs) await db.createEntry(entryArgs);
+      if (!atomicResult && noteArgs) await db.createNote(noteArgs);
+      if (!atomicResult && pressureArgs) {
+        await db.addPressureSample({ entryId: pressureArgs.entryId, scene: pressureArgs.scene, name: pressureArgs.name, pressureMpa: pressureArgs.pressureMpa, reportedAtMs: pressureArgs.reportedAtMs });
+        await db.updateEntry(pressureArgs.entryId, pressureArgs);
+      }
+      const event = atomicResult?.event || await db.appendIncidentEvent(eventArgs);
+      if (!atomicResult && incident.status === 'active') await db.touchIncidentActivity(incident.id, occurredAt);
+      await completeTrackedOperation(tracked, { ok: true, event_id: event.id }, 200, event.id);
       results.push({ client_op_id: opId, accepted: true, event_id: event.id });
     }
     res.json({ incident_status: incident.status, results });
   } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
   }
 });
@@ -738,6 +1397,7 @@ app.get('/api/incidents/:id/forces', async (req, res, next) => {
 });
 
 app.post('/api/incidents/:id/forces', async (req, res, next) => {
+  let tracked = null;
   try {
     const incident = await incidentForRequest(req, res, req.params.id);
     if (!incident) return;
@@ -745,37 +1405,64 @@ app.post('/api/incidents/:id/forces', async (req, res, next) => {
     if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
-    const previous = await db.getIncidentEventByClientOp(opKey(req));
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
     if (previous?.incident_id === req.params.id && ['force_added', 'force_updated'].includes(previous.type)) {
       const force = await db.getIncidentForce(previous.payload?.force_id);
       if (force) return res.json(force);
     }
+    tracked = await beginTrackedOperation(req, incident.id, 'force_upsert');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === req.params.id) {
+        if (!['force_added', 'force_updated'].includes(previous.type)) {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const current = await db.getIncidentForce(previous.payload?.force_id);
+        if (current) {
+          await completeTrackedOperation(tracked, current, 200, previous.id);
+          return res.json(current);
+        }
+      }
+    }
     const existing = (await db.listIncidentForces(req.params.id)).find((item) => item.station_name === String(req.body?.station_name || '').trim());
-    const force = await db.upsertIncidentForce({
+    const forceArgs = {
+      id: existing?.id || crypto.randomUUID(),
       incidentId: req.params.id,
       stationId: req.body?.station_id || null,
       stationName: req.body?.station_name,
       vehicleCount: req.body?.vehicle_count,
       personnelCount: req.body?.personnel_count,
       expectedVersion: req.body?.expected_version,
-    });
-    await db.touchIncidentActivity(req.params.id);
-    await db.appendIncidentEvent({
+    };
+    const forceEventArgs = {
       incidentId: req.params.id,
       type: existing ? 'force_updated' : 'force_added',
       actorDeviceId: deviceKey(req),
       actorName: name,
       clientOpId: opKey(req),
       payload: {
-        force_id: force.id,
-        station_name: force.station_name,
-        vehicle_count: force.vehicle_count,
-        personnel_count: force.personnel_count,
+        force_id: forceArgs.id,
+        station_name: String(req.body?.station_name || '').trim().slice(0, 80),
+        vehicle_count: req.body?.vehicle_count == null ? 0 : Number(req.body.vehicle_count),
+        personnel_count: req.body?.personnel_count == null ? 0 : Number(req.body.personnel_count),
         before: existing ? { vehicle_count: existing.vehicle_count, personnel_count: existing.personnel_count } : null,
       },
-    });
+    };
+    const atomicResult = typeof db.upsertIncidentForceWithEvent === 'function'
+      ? await db.upsertIncidentForceWithEvent({ force: forceArgs, event: forceEventArgs, activityAt: Date.now() })
+      : null;
+    const force = atomicResult?.force || await db.upsertIncidentForce(forceArgs);
+    if (!atomicResult) await db.touchIncidentActivity(req.params.id);
+    const event = atomicResult ? atomicResult.event : await db.appendIncidentEvent(forceEventArgs);
+    await completeTrackedOperation(tracked, force, 201, event?.id);
     res.status(201).json(force);
   } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
     if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
     next(e);
   }
@@ -785,6 +1472,7 @@ app.patch('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) =
   req.params.id = req.params.incidentId;
   req.body = { ...(req.body || {}), expected_version: req.body?.expected_version };
   // 复用新增接口的幂等 upsert逻辑，但必须先核对目标记录。
+  let tracked = null;
   try {
     const incident = await incidentForRequest(req, res, req.params.incidentId);
     if (!incident) return;
@@ -794,9 +1482,28 @@ app.patch('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) =
     if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
-    const previous = await db.getIncidentEventByClientOp(opKey(req));
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
     if (previous?.incident_id === incident.id && previous.type === 'force_updated') return res.json(current);
-    const force = await db.upsertIncidentForce({
+    tracked = await beginTrackedOperation(req, incident.id, 'force_update');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === incident.id) {
+        if (previous.type !== 'force_updated' || previous.payload?.force_id !== current.id) {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const latest = await db.getIncidentForce(current.id);
+        if (latest) {
+          await completeTrackedOperation(tracked, latest, 200, previous.id);
+          return res.json(latest);
+        }
+      }
+    }
+    const forceArgs = {
       id: current.id,
       incidentId: current.incident_id,
       stationId: req.body?.station_id ?? current.station_id,
@@ -804,17 +1511,37 @@ app.patch('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) =
       vehicleCount: req.body?.vehicle_count ?? current.vehicle_count,
       personnelCount: req.body?.personnel_count ?? current.personnel_count,
       expectedVersion: req.body?.expected_version,
-    });
-    await db.touchIncidentActivity(incident.id);
-    await db.appendIncidentEvent({ incidentId: incident.id, type: 'force_updated', actorDeviceId: deviceKey(req), actorName: name, clientOpId: opKey(req), payload: { force_id: force.id, station_name: force.station_name, vehicle_count: force.vehicle_count, personnel_count: force.personnel_count } });
+    };
+    const forceEventArgs = {
+      incidentId: incident.id,
+      type: 'force_updated',
+      actorDeviceId: deviceKey(req),
+      actorName: name,
+      clientOpId: opKey(req),
+      payload: {
+        force_id: current.id,
+        station_name: String(forceArgs.stationName || '').trim().slice(0, 80),
+        vehicle_count: Number(forceArgs.vehicleCount),
+        personnel_count: Number(forceArgs.personnelCount),
+      },
+    };
+    const atomicResult = typeof db.upsertIncidentForceWithEvent === 'function'
+      ? await db.upsertIncidentForceWithEvent({ force: forceArgs, event: forceEventArgs, activityAt: Date.now() })
+      : null;
+    const force = atomicResult?.force || await db.upsertIncidentForce(forceArgs);
+    if (!atomicResult) await db.touchIncidentActivity(incident.id);
+    const event = atomicResult ? atomicResult.event : await db.appendIncidentEvent(forceEventArgs);
+    await completeTrackedOperation(tracked, force, 200, event?.id);
     res.json(force);
   } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
     if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
     next(e);
   }
 });
 
 app.delete('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) => {
+  let tracked = null;
   try {
     const incident = await incidentForRequest(req, res, req.params.incidentId);
     if (!incident) return;
@@ -824,19 +1551,51 @@ app.delete('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) 
     if (incident.status !== 'active') return res.status(409).json({ error: '警情已归档，不能修改参战力量', code: 'INCIDENT_ARCHIVED' });
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
-    const previous = await db.getIncidentEventByClientOp(opKey(req));
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
     if (previous?.incident_id === incident.id && previous.type === 'force_removed') return res.json({ ok: true, duplicate: true });
-    await db.deleteIncidentForce(force.id);
-    await db.touchIncidentActivity(incident.id);
-    await db.appendIncidentEvent({ incidentId: incident.id, type: 'force_removed', actorDeviceId: deviceKey(req), actorName: name, clientOpId: opKey(req), payload: { force_id: force.id, station_name: force.station_name, vehicle_count: force.vehicle_count, personnel_count: force.personnel_count } });
+    tracked = await beginTrackedOperation(req, incident.id, 'force_remove');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === incident.id) {
+        if (previous.type !== 'force_removed' || previous.payload?.force_id !== force.id) {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        await completeTrackedOperation(tracked, { ok: true }, 200, previous.id);
+        return res.json({ ok: true, duplicate: true });
+      }
+    }
+    const forceEventArgs = {
+      incidentId: incident.id,
+      type: 'force_removed',
+      actorDeviceId: deviceKey(req),
+      actorName: name,
+      clientOpId: opKey(req),
+      payload: { force_id: force.id, station_name: force.station_name, vehicle_count: force.vehicle_count, personnel_count: force.personnel_count },
+    };
+    const atomicResult = typeof db.deleteIncidentForceWithEvent === 'function'
+      ? await db.deleteIncidentForceWithEvent({ id: force.id, incidentId: incident.id, event: forceEventArgs, activityAt: Date.now() })
+      : null;
+    if (!atomicResult) {
+      await db.deleteIncidentForce(force.id);
+      await db.touchIncidentActivity(incident.id);
+    }
+    const event = atomicResult ? atomicResult.event : await db.appendIncidentEvent(forceEventArgs);
+    await completeTrackedOperation(tracked, { ok: true }, 200, event?.id);
     res.json({ ok: true });
   } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
   }
 });
 
 app.get('/api/stations', async (req, res) => res.json(await db.listStations()));
 app.post('/api/stations', async (req, res, next) => {
+  if (!requireManagementRole(req, res)) return;
   try {
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
@@ -844,6 +1603,45 @@ app.post('/api/stations', async (req, res, next) => {
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该消防站已存在' });
     next(e);
+  }
+});
+
+// 单位准入名单管理：只允许当前认证单位的管理角色操作，禁用代替物理删除以保留审计可追溯性。
+app.get('/api/unit-members', async (req, res) => {
+  if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  if (!requireManagementRole(req, res)) return;
+  res.json(await db.listUnitMembers(req.unit.id));
+});
+
+app.post('/api/unit-members', async (req, res, next) => {
+  if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  if (!requireManagementRole(req, res)) return;
+  try {
+    const realName = String(req.body?.real_name || req.body?.name || '').trim();
+    if (!realName) return res.status(400).json({ error: '缺少成员姓名', code: 'REAL_NAME_REQUIRED' });
+    if (realName.length > 32) return res.status(400).json({ error: '成员姓名过长（最多 32 字）', code: 'REAL_NAME_TOO_LONG' });
+    const role = req.body?.role == null ? 'member' : String(req.body.role);
+    if (!['member', 'manager', 'admin'].includes(role)) return res.status(400).json({ error: '成员角色无效', code: 'ROLE_INVALID' });
+    res.status(201).json(await db.addUnitMember({ unitId: req.unit.id, realName, role }));
+  } catch (error) {
+    if (String(error.message || '').includes('UNIQUE')) return res.status(409).json({ error: '该成员已存在', code: 'MEMBER_EXISTS' });
+    next(error);
+  }
+});
+
+app.patch('/api/unit-members/:id', async (req, res, next) => {
+  if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  if (!requireManagementRole(req, res)) return;
+  try {
+    const role = req.body?.role == null ? null : String(req.body.role);
+    const status = req.body?.status == null ? null : String(req.body.status);
+    if (role == null && status == null) return res.status(400).json({ error: '至少提供 role 或 status', code: 'MEMBER_UPDATE_EMPTY' });
+    const updated = await db.updateUnitMember(req.params.id, req.unit.id, { role, status });
+    if (!updated) return res.status(404).json({ error: '单位成员不存在', code: 'MEMBER_NOT_FOUND' });
+    res.json(updated);
+  } catch (error) {
+    if (error.message === '成员角色无效' || error.message === '成员状态无效') return res.status(400).json({ error: error.message, code: 'MEMBER_UPDATE_INVALID' });
+    next(error);
   }
 });
 
@@ -860,6 +1658,10 @@ app.post('/api/transcribe', async (req, res, next) => {
   if (!incident) return;
   if (upstreamRateLimited(req, 'transcribe', 20)) {
     return res.status(429).json({ error: '语音转写请求过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
+  }
+  const declaredLength = Number(req.headers['content-length']);
+  if (Number.isFinite(declaredLength) && declaredLength > 15 * 1024 * 1024) {
+    return res.status(413).json({ error: '音频过大' });
   }
   const scene = incident.id;
   const chunks = [];
@@ -903,7 +1705,7 @@ app.post('/api/transcribe', async (req, res, next) => {
       res.json({ text, revised: false, hotwordCount: hotwords.length });
       await logOp(req, 'info', 'transcribe_resp', '转写响应', { textLength: text.length, textSha256: contentDigest(text), revised: false, ms: Date.now() - t0 });
     } catch (e) {
-      await logOp(req, 'error', 'transcribe_err', `转写失败: ${e.message || e}`);
+      await logOp(req, 'error', 'transcribe_err', `转写失败: ${errorSummary(e)}`);
       next(e);
     }
   });
@@ -938,7 +1740,7 @@ app.post('/api/parse', async (req, res, next) => {
     await logOp(req, 'info', 'parse_done', '语义解析完成', { parsed, ms: Date.now() - t0 });
     res.json(parsed);
   } catch (e) {
-    await logOp(req, 'error', 'parse_err', `解析失败: ${e.message || e}`);
+    await logOp(req, 'error', 'parse_err', `解析失败: ${errorSummary(e)}`);
     next(e);
   }
 });
@@ -1040,6 +1842,7 @@ async function* streamDeepSeekWithAbort({
   try {
     const response = await fetch(url, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
@@ -1087,35 +1890,17 @@ async function* streamDeepSeekWithAbort({
   }
 }
 
-// 智能体问答限流：按设备内存计数（单实例部署），每分钟最多 10 次提问。
-// 辅助页是设备级 AI 工具，不属于任何警情。
-const chatRateBuckets = new Map();
-function chatRateLimited(clientKey) {
-  const minute = Math.floor(Date.now() / 60000);
-  // 设备标识由客户端提交，必须限制高基数 key 的内存生命周期。
-  if (chatRateBuckets.size > 10000) {
-    for (const [key, value] of chatRateBuckets) {
-      if (value.minute < minute - 1) chatRateBuckets.delete(key);
-    }
-    if (chatRateBuckets.size > 10000) {
-      const oldest = [...chatRateBuckets.entries()]
-        .sort((a, b) => a[1].minute - b[1].minute)
-        .slice(0, 1000);
-      for (const [key] of oldest) chatRateBuckets.delete(key);
-    }
-  }
-  const bucket = chatRateBuckets.get(clientKey);
-  if (!bucket || bucket.minute !== minute) {
-    chatRateBuckets.set(clientKey, { minute, count: 1 });
-    return false;
-  }
-  bucket.count++;
-  return bucket.count > 10;
+// 智能体问答限流：单实例每分钟最多 10 次提问；固定容量防止调用方
+// 轮换来源标识制造高基数 key，跨实例共享限流仍由网关负责。
+const chatRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
+function chatRateLimited(clientKey, now = Date.now()) {
+  return chatRateLimiter.isLimited(clientKey, 10, now);
 }
 
 function chatHistoryFromRequest(value) {
   if (!Array.isArray(value)) return [];
-  return value
+  // 只需最近 40 条；先截断输入数组，避免恶意请求用大量无效历史消耗 CPU。
+  return value.slice(-40)
     .filter((item) => item && (item.role === 'user' || item.role === 'assistant'))
     .map((item) => ({ role: item.role, content: String(item.content || '').trim().slice(0, 2000) }))
     .filter((item) => item.content)
@@ -1199,7 +1984,7 @@ app.post('/api/chat', async (req, res, next) => {
       } catch (e) {
         streamError = e;
         if (!clientDisconnected) {
-          await logOp(req, 'error', 'chat_stream_err', `流式问答失败: ${e.message || e}`);
+          await logOp(req, 'error', 'chat_stream_err', `流式问答失败: ${errorSummary(e)}`);
           // 不把上游响应正文/内部错误细节回显给客户端，避免信息泄露；
           // 详细原因只进入已脱敏的服务端操作日志。
           writeSse(`data: ${JSON.stringify({ error: '流式问答失败，请重试' })}\n\n`);
@@ -1237,7 +2022,7 @@ app.post('/api/chat', async (req, res, next) => {
           messages,
         });
       } catch (e) {
-        await logOp(req, 'error', 'chat_search_err', `联网搜索问答失败: ${e.message || e}`);
+        await logOp(req, 'error', 'chat_search_err', `联网搜索问答失败: ${errorSummary(e)}`);
         return res.status(503).json({
           error: '联网检索失败，请检查网络后重试',
           code: 'CHAT_SEARCH_UNAVAILABLE',
@@ -1254,7 +2039,7 @@ app.post('/api/chat', async (req, res, next) => {
     await logOp(req, 'info', 'chat_done', '问答完成', { ms: Date.now() - t0, replyLen: reply.length });
     res.json({ reply, created_at: Date.now(), search_used: CFG.llm.chatSearch });
   } catch (e) {
-    await logOp(req, 'error', 'chat_err', `问答失败: ${e.message || e}`);
+    await logOp(req, 'error', 'chat_err', `问答失败: ${errorSummary(e)}`);
     next(e);
   }
 });
@@ -1280,11 +2065,22 @@ app.get('/api/entries', async (req, res) => {
 });
 
 app.post('/api/entries', async (req, res, next) => {
+  let tracked = null;
   try {
     const { name, pressure_mpa, source = 'voice', raw_text = null, force = false, volume_l, consumption_lpm } = req.body || {};
     const incident = await requireIncident(req, res, { active: true });
     if (!incident) return;
     if (!await ensureOperationScope(req, res, incident.id)) return;
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === incident.id) {
+      if (previous.type !== 'entry') {
+        return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+      }
+      const previousEntry = await db.getEntry(previous.payload?.entry_id);
+      if (previousEntry) return res.json(previousEntry);
+      return res.status(409).json({ error: '操作记录已存在但业务数据缺失，请联系管理员核查', code: 'CLIENT_OP_ID_INCOMPLETE' });
+    }
     const scene = incident.id;
     const rawName = String(name || '').trim();
     if (rawName.length > 64) return res.status(400).json({ error: '姓名过长（最多 64 字）' });
@@ -1312,13 +2108,35 @@ app.post('/api/entries', async (req, res, next) => {
     }
     const calcParam = { ...CFG.calc, consumptionLpm: consumption };
 
+    tracked = await beginTrackedOperation(req, incident.id, 'entry');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === incident.id) {
+        if (previous.type !== 'entry') {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const previousEntry = await db.getEntry(previous.payload?.entry_id);
+        if (previousEntry) {
+          await completeTrackedOperation(tracked, previousEntry, 200, previous.id);
+          return res.json(previousEntry);
+        }
+        await releaseTrackedOperation(tracked);
+        return res.status(409).json({ error: '操作记录已存在但业务数据缺失，请联系管理员核查', code: 'CLIENT_OP_ID_INCOMPLETE' });
+      }
+    }
+
     // 同名在场记录：防止同一人重复登记（改名合并走 PATCH，重复进场须 force）
     const existing = await db.findActiveByName(scene, cleanName);
     if (existing && !force) {
+      await releaseTrackedOperation(tracked);
       const at = new Date(existing.entry_at);
       const hh = String(at.getHours()).padStart(2, '0');
       const mm = String(at.getMinutes()).padStart(2, '0');
-      await logOp(req, 'warn', 'entry_conflict', `「${cleanName}」已在火场内，拒绝重复进场`, { entryId: existing.id });
+      await logOp(req, 'warn', 'entry_conflict', '已有人员在场，拒绝重复进场', { entryId: existing.id });
       return res.status(409).json({
         error: `「${existing.name}」已在火场内（${hh}:${mm} 进入，尚未出场）。请选择改名合并或确认重复进场`,
         entry: existing,
@@ -1327,7 +2145,7 @@ app.post('/api/entries', async (req, res, next) => {
 
     const now = Date.now();
     const durationMin = Math.round(durationMinutes({ ...calcParam, pressureMpa: p, cylinderVolL: vol || calcParam.cylinderVolL }));
-    const entry = await db.createEntry({
+    const entryArgs = {
       id: crypto.randomUUID(),
       scene,
       name: cleanName,
@@ -1339,7 +2157,21 @@ app.post('/api/entries', async (req, res, next) => {
       rawText: raw_text,
       cylinderVolL: vol || calcParam.cylinderVolL,
       consumptionLpm: consumption,
-    });
+    };
+    const eventArgs = {
+      incidentId: incident.id,
+      type: 'entry',
+      occurredAt: now,
+      actorDeviceId: deviceKey(req),
+      actorName: await actorName(req),
+      source: 'online',
+      clientOpId: opKey(req),
+      payload: { entry_id: entryArgs.id, name: cleanName, pressure_mpa: p, source },
+    };
+    const atomicResult = typeof db.createEntryWithEvent === 'function'
+      ? await db.createEntryWithEvent({ entry: entryArgs, event: eventArgs, activityAt: now })
+      : null;
+    const entry = atomicResult?.entry || await db.createEntry(entryArgs);
     await logOp(req, 'info', 'entry_created', '登记进场成功', {
       entryId: entry.id,
       name: cleanName,
@@ -1351,24 +2183,28 @@ app.post('/api/entries', async (req, res, next) => {
       rawTextLength: raw_text == null ? 0 : String(raw_text).length,
       rawTextSha256: contentDigest(raw_text),
     });
-    if (incident) {
+    let event = atomicResult?.event || null;
+    if (!atomicResult && incident) {
       await db.touchIncidentActivity(incident.id, now);
-      await appendEvent(req, incident.id, 'entry', {
+      event = await appendEvent(req, incident.id, 'entry', {
         entry_id: entry.id,
         name: entry.name,
         pressure_mpa: entry.pressure_mpa,
         source,
       });
     }
+    await completeTrackedOperation(tracked, entry, 201, event?.id);
     res.status(201).json(entry);
   } catch (e) {
-    await logOp(req, 'error', 'entry_err', `登记进场失败: ${e.message || e}`);
+    await releaseTrackedOperation(tracked).catch(() => {});
+    await logOp(req, 'error', 'entry_err', `登记进场失败: ${errorSummary(e)}`);
     next(e);
   }
 });
 
 // 在场记录改名/复核压力（合并场景：保留原记录，不产生重复计数）
 app.patch('/api/entries/:id', async (req, res, next) => {
+  let tracked = null;
   try {
     const currentIncident = await requireIncident(req, res, { active: true });
     if (!currentIncident) return;
@@ -1376,6 +2212,14 @@ app.patch('/api/entries/:id', async (req, res, next) => {
     const entry = await db.getEntry(req.params.id);
     if (!entry) return res.status(404).json({ error: '记录不存在' });
     if (entry.scene !== currentIncident.id) return res.status(404).json({ error: '记录不属于当前警情' });
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === currentIncident.id) {
+      if (previous.type !== 'pressure' || previous.payload?.entry_id !== entry.id) {
+        return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+      }
+      return res.json(entry);
+    }
     const incident = currentIncident;
     const { name, pressure_mpa, consumption_lpm } = req.body || {};
     const newName = name != null ? String(name).trim() : null;
@@ -1391,6 +2235,27 @@ app.patch('/api/entries/:id', async (req, res, next) => {
       consumption = Number(consumption_lpm);
       if (!(consumption > 0) || consumption > 300) return res.status(400).json({ error: '消耗率数值异常' });
     }
+    const operationType = pressure_mpa != null ? 'pressure' : 'entry_update';
+    tracked = await beginTrackedOperation(req, currentIncident.id, operationType);
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === currentIncident.id) {
+        if (previous.type !== 'pressure' || previous.payload?.entry_id !== entry.id) {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const current = await db.getEntry(entry.id);
+        if (current) {
+          await completeTrackedOperation(tracked, current, 200, previous.id);
+          return res.json(current);
+        }
+        await releaseTrackedOperation(tracked);
+        return res.status(409).json({ error: '操作记录已存在但业务数据缺失，请联系管理员核查', code: 'CLIENT_OP_ID_INCOMPLETE' });
+      }
+    }
     const now = Date.now();
     // 动态耗气率：每次压力报数存采样，与上次报数差分实测消耗率
     let actualLpm = null;
@@ -1404,7 +2269,6 @@ app.patch('/api/entries/:id', async (req, res, next) => {
           intervalMs: now - prev.reported_at,
         });
       }
-      await db.addPressureSample({ entryId: entry.id, scene: entry.scene, name: newName || entry.name, pressureMpa: p, reportedAtMs: now });
     }
     const effConsumption = actualLpm ?? consumption;
     const calcParam = {
@@ -1412,14 +2276,43 @@ app.patch('/api/entries/:id', async (req, res, next) => {
       cylinderVolL: Number(entry.cylinder_vol_l) > 0 ? Number(entry.cylinder_vol_l) : CFG.calc.cylinderVolL,
       consumptionLpm: effConsumption,
     };
-    const updated = await db.updateEntry(entry.id, {
+    const updateArgs = {
       name: newName,
       pressureMpa: p,
       // 压力视为现场复核读数，从此刻起按实测（无实测用默认）消耗率重新倒计时
       durationMin: p != null ? Math.round(durationMinutes({ ...calcParam, pressureMpa: p })) : null,
       exitAtMs: p != null ? exitAtMs({ ...calcParam, pressureMpa: p, entryAtMs: now }) : null,
       consumptionActualLpm: actualLpm,
-    });
+    };
+    const eventArgs = p == null ? null : {
+      incidentId: incident.id,
+      type: 'pressure',
+      occurredAt: now,
+      actorDeviceId: deviceKey(req),
+      actorName: await actorName(req),
+      source: 'online',
+      clientOpId: opKey(req),
+      payload: { entry_id: entry.id, name: newName || entry.name, pressure_mpa: p, actual_consumption_lpm: actualLpm },
+    };
+    const atomicResult = p != null && typeof db.updatePressureWithEvent === 'function'
+      ? await db.updatePressureWithEvent({
+        entryId: entry.id,
+        scene: entry.scene,
+        name: newName || entry.name,
+        pressureMpa: p,
+        reportedAtMs: now,
+        durationMin: updateArgs.durationMin,
+        exitAtMs: updateArgs.exitAtMs,
+        consumptionActualLpm: actualLpm,
+        incidentId: incident.id,
+        activityAt: now,
+        event: eventArgs,
+      })
+      : null;
+    if (!atomicResult && p != null) {
+      await db.addPressureSample({ entryId: entry.id, scene: entry.scene, name: newName || entry.name, pressureMpa: p, reportedAtMs: now });
+    }
+    const updated = atomicResult?.entry || await db.updateEntry(entry.id, updateArgs);
     await logOp(req, 'info', 'entry_pressure_recheck', '压力报数复核', {
       entryId: entry.id,
       name: updated.name,
@@ -1427,22 +2320,26 @@ app.patch('/api/entries/:id', async (req, res, next) => {
       actualConsumptionLpm: actualLpm,
       durationMin: updated.duration_min,
     });
-    if (incident && p != null) {
+    let event = atomicResult?.event || null;
+    if (!atomicResult && incident && p != null) {
       await db.touchIncidentActivity(incident.id, now);
-      await appendEvent(req, incident.id, 'pressure', {
+      event = await appendEvent(req, incident.id, 'pressure', {
         entry_id: entry.id,
         name: updated.name,
         pressure_mpa: p,
         actual_consumption_lpm: actualLpm,
       });
     }
+    await completeTrackedOperation(tracked, updated, 200, event?.id);
     res.json(updated);
   } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
   }
 });
 
 app.post('/api/entries/:id/exit', async (req, res, next) => {
+  let tracked = null;
   try {
     const currentIncident = await requireIncident(req, res, { active: true });
     if (!currentIncident) return;
@@ -1454,26 +2351,64 @@ app.post('/api/entries/:id/exit', async (req, res, next) => {
     }
     if (entry.scene !== currentIncident.id) return res.status(404).json({ error: '记录不属于当前警情' });
     const incident = currentIncident;
-    const previous = await db.getIncidentEventByClientOp(opKey(req));
-    if (previous?.type === 'exit' && previous.payload?.entry_id === entry.id) {
-      return res.json(entry);
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === currentIncident.id) {
+      if (previous.type === 'exit' && previous.payload?.entry_id === entry.id) return res.json(entry);
+      return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+    }
+    tracked = await beginTrackedOperation(req, currentIncident.id, 'exit');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === currentIncident.id) {
+        if (previous.type === 'exit' && previous.payload?.entry_id === entry.id) {
+          await completeTrackedOperation(tracked, entry, 200, previous.id);
+          return res.json(entry);
+        }
+        await releaseTrackedOperation(tracked);
+        return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+      }
     }
     const now = Date.now();
     await logOp(req, 'info', 'entry_exited', `登记出火场`, { entryId: entry.id, name: entry.name });
-    const result = await db.markExited(entry.id, now);
-    if (incident) {
-      await db.touchIncidentActivity(incident.id, now);
-      await appendEvent(req, incident.id, 'exit', { entry_id: entry.id, name: entry.name });
+    const eventArgs = {
+      incidentId: incident.id,
+      type: 'exit',
+      occurredAt: now,
+      actorDeviceId: deviceKey(req),
+      actorName: await actorName(req),
+      source: 'online',
+      clientOpId: opKey(req),
+      payload: { entry_id: entry.id, name: entry.name },
+    };
+    const atomicResult = typeof db.exitEntryWithEvent === 'function'
+      ? await db.exitEntryWithEvent({ entryId: entry.id, exitedAtMs: now, incidentId: incident.id, activityAt: now, event: eventArgs })
+      : null;
+    const result = atomicResult?.entry || (await db.markExitedIfActive(entry.id, now)).entry;
+    if (atomicResult && !atomicResult.changed) {
+      await completeTrackedOperation(tracked, result, 200);
+      return res.json(result);
     }
+    let event = atomicResult?.event || null;
+    if (!atomicResult && incident) {
+      await db.touchIncidentActivity(incident.id, now);
+      event = await appendEvent(req, incident.id, 'exit', { entry_id: entry.id, name: entry.name });
+    }
+    await completeTrackedOperation(tracked, result, 200, event?.id);
     res.json(result);
   } catch (e) {
-    await logOp(req, 'error', 'exit_err', `登记出火场失败: ${e.message || e}`);
+    await releaseTrackedOperation(tracked).catch(() => {});
+    await logOp(req, 'error', 'exit_err', `登记出火场失败: ${errorSummary(e)}`);
     next(e);
   }
 });
 
 app.get('/api/firefighters', async (req, res) => res.json(await db.listFirefighters()));
 app.post('/api/firefighters', async (req, res, next) => {
+  if (!requireManagementRole(req, res)) return;
   try {
     const { name } = req.body || {};
     const cleanName = String(name || '').trim();
@@ -1492,12 +2427,14 @@ app.post('/api/firefighters', async (req, res, next) => {
   }
 });
 app.delete('/api/firefighters/:id', async (req, res) => {
+  if (!requireManagementRole(req, res)) return;
   await db.removeFirefighter(req.params.id);
   res.json({ ok: true });
 });
 
 app.get('/api/hotwords', async (req, res) => res.json(await db.listHotwords()));
 app.post('/api/hotwords', async (req, res, next) => {
+  if (!requireManagementRole(req, res)) return;
   try {
     const { word } = req.body || {};
     const cleanWord = String(word || '').trim();
@@ -1516,6 +2453,7 @@ app.post('/api/hotwords', async (req, res, next) => {
   }
 });
 app.delete('/api/hotwords/:id', async (req, res) => {
+  if (!requireManagementRole(req, res)) return;
   await db.removeHotword(req.params.id);
   res.json({ ok: true });
 });
@@ -1539,18 +2477,48 @@ app.get('/api/notes', async (req, res) => {
 });
 
 app.post('/api/notes', async (req, res, next) => {
+  let tracked = null;
   try {
     const incident = await requireIncident(req, res, { active: true });
     if (!incident) return;
     if (!await ensureOperationScope(req, res, incident.id)) return;
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === incident.id) {
+      if (previous.type !== 'note') {
+        return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+      }
+      const previousNote = await db.getNote(previous.payload?.note_id);
+      if (previousNote) return res.json(previousNote);
+    }
     const { text, category } = req.body || {};
     const clean = String(text || '').trim();
     if (!clean) return res.status(400).json({ error: '缺少日志内容' });
     if (clean.length > 2000) return res.status(400).json({ error: '日志内容过长（最多 2000 字）' });
-    // 发布者姓名：优先用请求体 author（App 本地实名，实时生效）；
-    // 未携带时按设备实名（user_settings）兜底；都无则匿名
+    tracked = await beginTrackedOperation(req, incident.id, 'note');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === incident.id) {
+        if (previous.type !== 'note') {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const previousNote = await db.getNote(previous.payload?.note_id);
+        if (previousNote) {
+          await completeTrackedOperation(tracked, previousNote, 200, previous.id);
+          return res.json(previousNote);
+        }
+        await releaseTrackedOperation(tracked);
+        return res.status(409).json({ error: '操作记录已存在但业务数据缺失，请联系管理员核查', code: 'CLIENT_OP_ID_INCOMPLETE' });
+      }
+    }
+    // 会话模式下发布者必须使用服务端认证的成员身份，不能被请求体覆盖；
+    // 旧兼容模式仍按本地实名和设备设置兜底。
     const submitted = String(req.body?.author || '').trim().slice(0, 32);
-    let author = submitted;
+    let author = req.auth?.realName || submitted;
     if (!author) {
       const device = deviceKey(req);
       if (device) {
@@ -1558,26 +2526,48 @@ app.post('/api/notes', async (req, res, next) => {
         author = String(settings.real_name || '').trim().slice(0, 32);
       }
     }
-    const note = await db.createNote({
+    const noteArgs = {
       id: crypto.randomUUID(),
       scene: incident.id,
       text: clean,
       category: cleanCategory(category),
       author,
-    });
+      createdAt: Date.now(),
+    };
+    const atomicResult = typeof db.createNoteWithEvent === 'function'
+      ? await db.createNoteWithEvent({
+        note: noteArgs,
+        activityAt: noteArgs.createdAt,
+        event: {
+          incidentId: incident.id,
+          type: 'note',
+          occurredAt: noteArgs.createdAt,
+          actorDeviceId: deviceKey(req),
+          actorName: author || null,
+          source: 'online',
+          clientOpId: opKey(req),
+          payload: { note_id: noteArgs.id, text: clean, category: noteArgs.category, author },
+        },
+      })
+      : null;
+    const note = atomicResult?.note || await db.createNote(noteArgs);
     await logOp(req, 'info', 'note_created', '已记录随手记', { noteId: note.id, category: note.category, author: author || '(匿名)', text: clean.slice(0, 100) });
-    if (incident) {
+    let event = atomicResult?.event || null;
+    if (!atomicResult && incident) {
       await db.touchIncidentActivity(incident.id, note.created_at);
-      await appendEvent(req, incident.id, 'note', { note_id: note.id, text: note.text, category: note.category, author: note.author }, { occurredAt: note.created_at });
+      event = await appendEvent(req, incident.id, 'note', { note_id: note.id, text: note.text, category: note.category, author: note.author }, { occurredAt: note.created_at });
     }
+    await completeTrackedOperation(tracked, note, 201, event?.id);
     res.status(201).json(note);
   } catch (e) {
-    await logOp(req, 'error', 'note_err', `记录随手记失败: ${e.message || e}`);
+    await releaseTrackedOperation(tracked).catch(() => {});
+    await logOp(req, 'error', 'note_err', `记录随手记失败: ${errorSummary(e)}`);
     next(e);
   }
 });
 
 app.patch('/api/notes/:id', async (req, res, next) => {
+  let tracked = null;
   try {
     const currentIncident = await requireIncident(req, res, { active: true });
     if (!currentIncident) return;
@@ -1590,27 +2580,78 @@ app.patch('/api/notes/:id', async (req, res, next) => {
     const clean = text != null ? String(text).trim() : null;
     if (text != null && !clean) return res.status(400).json({ error: '日志内容不能为空' });
     if (clean != null && clean.length > 2000) return res.status(400).json({ error: '日志内容过长（最多 2000 字）' });
-    const updated = await db.updateNote(note.id, {
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === incident.id && previous.type === 'note_updated' && previous.payload?.note_id === note.id) {
+      return res.json(await db.getNote(note.id));
+    }
+    tracked = await beginTrackedOperation(req, incident.id, 'note_update');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === incident.id) {
+        if (previous.type !== 'note_updated' || previous.payload?.note_id !== note.id) {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        const latest = await db.getNote(note.id);
+        if (latest) {
+          await completeTrackedOperation(tracked, latest, 200, previous.id);
+          return res.json(latest);
+        }
+      }
+    }
+    const cleanCategoryValue = category != null ? cleanCategory(category) : null;
+    const noteEventArgs = {
+      incidentId: incident.id,
+      type: 'note_updated',
+      actorDeviceId: deviceKey(req),
+      actorName: await actorName(req) || null,
+      clientOpId: opKey(req),
+      revisionOf: note.id,
+      payload: {
+        note_id: note.id,
+        before: { text: note.text, category: note.category, author: note.author },
+        after: { text: clean == null ? note.text : clean, category: cleanCategoryValue == null ? note.category : cleanCategoryValue, author: note.author },
+      },
+    };
+    const atomicResult = typeof db.updateNoteWithEvent === 'function'
+      ? await db.updateNoteWithEvent({
+        id: note.id,
+        text: clean,
+        category: cleanCategoryValue,
+        incidentId: incident.id,
+        event: noteEventArgs,
+        activityAt: Date.now(),
+      })
+      : null;
+    const updated = atomicResult?.note || await db.updateNote(note.id, {
       text: clean,
-      category: category != null ? cleanCategory(category) : null,
+      category: cleanCategoryValue,
     });
     await logOp(req, 'info', 'note_updated', '已编辑随手记', { noteId: note.id, category: updated.category });
-    if (incident) {
-      await appendEvent(req, incident.id, 'note_updated', {
+    let event = atomicResult?.event || null;
+    if (!atomicResult && incident) {
+      event = await appendEvent(req, incident.id, 'note_updated', {
         note_id: note.id,
         before: { text: note.text, category: note.category, author: note.author },
         after: { text: updated.text, category: updated.category, author: updated.author },
       }, { revisionOf: note.id });
       await db.touchIncidentActivity(incident.id);
     }
+    await completeTrackedOperation(tracked, updated, 200, event?.id);
     res.json(updated);
   } catch (e) {
-    await logOp(req, 'error', 'note_err', `编辑随手记失败: ${e.message || e}`);
+    await releaseTrackedOperation(tracked).catch(() => {});
+    await logOp(req, 'error', 'note_err', `编辑随手记失败: ${errorSummary(e)}`);
     next(e);
   }
 });
 
 app.delete('/api/notes/:id', async (req, res, next) => {
+  let tracked = null;
   try {
     const currentIncident = await requireIncident(req, res, { active: true });
     if (!currentIncident) return;
@@ -1619,18 +2660,56 @@ app.delete('/api/notes/:id', async (req, res, next) => {
     if (!note) return res.status(404).json({ error: '日志不存在' });
     if (note.scene !== currentIncident.id) return res.status(404).json({ error: '日志不属于当前警情' });
     const incident = currentIncident;
-    const n = await db.deleteNote(req.params.id);
+    let previous = null;
+    if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
+    if (previous?.incident_id === incident.id && previous.type === 'note_voided' && previous.payload?.note_id === note.id) {
+      return res.json({ ok: true, duplicate: true });
+    }
+    tracked = await beginTrackedOperation(req, incident.id, 'note_delete');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+    if (OPERATION_LEDGER_ENABLED) {
+      previous = await db.getIncidentEventByClientOp(opKey(req));
+      if (previous?.incident_id === incident.id) {
+        if (previous.type !== 'note_voided' || previous.payload?.note_id !== note.id) {
+          await releaseTrackedOperation(tracked);
+          return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
+        }
+        await completeTrackedOperation(tracked, { ok: true, duplicate: true }, 200, previous.id);
+        return res.json({ ok: true, duplicate: true });
+      }
+    }
+    const noteEventArgs = {
+      incidentId: incident.id,
+      type: 'note_voided',
+      actorDeviceId: deviceKey(req),
+      actorName: await actorName(req) || null,
+      clientOpId: opKey(req),
+      revisionOf: note.id,
+      payload: {
+        note_id: note.id,
+        before: { text: note.text, category: note.category, author: note.author },
+      },
+    };
+    const atomicResult = typeof db.deleteNoteWithEvent === 'function'
+      ? await db.deleteNoteWithEvent({ id: note.id, incidentId: incident.id, event: noteEventArgs, activityAt: Date.now() })
+      : null;
+    const n = atomicResult ? (atomicResult.changed ? 1 : 0) : await db.deleteNote(req.params.id);
     await logOp(req, 'info', 'note_deleted', '已删除随手记', { noteId: req.params.id });
-    if (incident) {
-      await appendEvent(req, incident.id, 'note_voided', {
+    let event = atomicResult?.event || null;
+    if (!atomicResult && incident) {
+      event = await appendEvent(req, incident.id, 'note_voided', {
         note_id: note.id,
         before: { text: note.text, category: note.category, author: note.author },
       }, { revisionOf: note.id });
       await db.touchIncidentActivity(incident.id);
     }
+    await completeTrackedOperation(tracked, { ok: true }, 200, event?.id);
     res.json({ ok: true });
   } catch (e) {
-    await logOp(req, 'error', 'note_err', `删除随手记失败: ${e.message || e}`);
+    await releaseTrackedOperation(tracked).catch(() => {});
+    await logOp(req, 'error', 'note_err', `删除随手记失败: ${errorSummary(e)}`);
     next(e);
   }
 });
@@ -1686,7 +2765,7 @@ app.post('/api/logs', async (req, res, next) => {
     const scene = incident.id;
     const device = deviceKey(req);
     const levels = ['info', 'warn', 'error'];
-    let inserted = 0;
+    const safeLogs = [];
     for (const item of logs) {
       if (!item || typeof item !== 'object') continue;
       const stage = String(item.stage || '').slice(0, 64);
@@ -1695,7 +2774,7 @@ app.post('/api/logs', async (req, res, next) => {
       const data = item.data;
       const safeData = data === undefined || data === null ? null : sanitizeLogData(data);
       const serializedData = safeData == null ? '' : JSON.stringify(safeData);
-      await db.addLog({
+      safeLogs.push({
         scene,
         // 设备身份只能来自请求头；不接受日志条目自带的 device 字段，
         // 避免客户端伪造另一台设备的审计记录。
@@ -1703,11 +2782,13 @@ app.post('/api/logs', async (req, res, next) => {
         opId: String(item.op_id || '').slice(0, 64) || null,
         level,
         stage,
-        msg: item.msg == null ? '' : sanitizeLogText(item.msg),
+        msg: item.msg == null ? '' : level === 'error' ? sanitizeErrorLogText(item.msg) : sanitizeLogText(item.msg),
         data: safeData == null ? null : serializedData.length > 8192 ? { truncated: true } : safeData,
       });
-      inserted++;
     }
+    const inserted = typeof db.addLogs === 'function'
+      ? await db.addLogs(safeLogs)
+      : (await Promise.all(safeLogs.map((item) => db.addLog(item))), safeLogs.length);
     res.json({ ok: true, count: inserted });
   } catch (e) {
     next(e);
@@ -1729,7 +2810,7 @@ app.get('/api/logs', async (req, res) => {
 });
 
 app.delete('/api/logs', async (req, res) => {
-  if (!hasManagementToken(req)) {
+  if (!hasManagementAccess(req)) {
     return res.status(403).json({ error: '清空操作日志需要管理权限', code: 'MANAGEMENT_REQUIRED' });
   }
   const incident = await requireIncident(req, res);
@@ -1757,12 +2838,28 @@ function forwardAsyncRouteErrors(router) {
 forwardAsyncRouteErrors(app);
 
 app.use(async (err, req, res, next) => {
-  logger.error(req.method, req.path, sanitizeLogText(err.stack || err));
+  logger.error(req.method, req.path, `request_id=${req.requestId}`, errorSummary(err));
   if (req.headers['x-op-id']) {
-    await logOp(req, 'error', 'http_err', `${req.method} ${req.path} 失败: ${sanitizeLogText(err.message || err)}`);
+    await logOp(req, 'error', 'http_err', `${req.method} ${req.path} 失败: ${errorSummary(err)}`);
   }
-  const status = err.status || 500;
-  res.status(status).json({ error: status === 500 ? '服务器内部错误' : err.message });
+  // 上游数据库/模型错误可能携带表名、SQL 细节甚至供应商响应，不能原样返回给客户端。
+  // 业务校验错误在路由内已明确返回；统一错误处理只公开必要的协议级结果。
+  let status = 500;
+  let message = '服务器内部错误';
+  if (err?.name === 'CloudBasePostgrestError') {
+    status = Number(err.status) === 409 ? 409 : 503;
+    message = status === 409 ? '数据冲突，请刷新后重试' : '数据服务暂不可用，请稍后重试';
+  } else if (err?.type === 'entity.too.large' || Number(err?.status) === 413) {
+    status = 413;
+    message = '请求数据过大';
+  } else if (err?.code === 'INVALID_PAGE_PARAMETER' || Number(err?.status) === 400) {
+    status = 400;
+    message = '分页参数无效';
+  } else if (Number(err?.status) === 422 && err.message === '未听清，请再说一遍') {
+    status = 422;
+    message = err.message;
+  }
+  res.status(status).json({ error: message });
 });
 
 // 仅作为入口运行时监听端口；被测试 require 时导出 app
@@ -1774,34 +2871,50 @@ if (require.main === module) {
       const n = await db.archiveStaleIncidents();
       if (n > 0) logger.info(`已自动归档 ${n} 场超过 12 小时无业务活动的警情`);
     } catch (e) {
-      logger.error('自动归档警情失败', e.message);
+      logger.error('自动归档警情失败', errorSummary(e));
     }
     try {
       const n = await db.purgeOldExited(purgeDays);
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${purgeDays} 天的出场记录`);
     } catch (e) {
-      logger.error('清理旧记录失败', e.message);
+      logger.error('清理旧记录失败', errorSummary(e));
     }
     try {
       const n = await db.purgeOldLogs(logPurgeDays);
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的操作日志`);
     } catch (e) {
-      logger.error('清理旧日志失败', e.message);
+      logger.error('清理旧日志失败', errorSummary(e));
     }
     try {
       const n = await db.purgeOldNotes(logPurgeDays);
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的随手记`);
     } catch (e) {
-      logger.error('清理旧随手记失败', e.message);
+      logger.error('清理旧随手记失败', errorSummary(e));
     }
     try {
       const n = await db.purgeOldChatMessages(logPurgeDays);
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的问答记录`);
     } catch (e) {
-      logger.error('清理旧问答记录失败', e.message);
+      logger.error('清理旧问答记录失败', errorSummary(e));
     }
   };
-  app.listen(PORT, () => {
+  const server = http.createServer(app);
+  server.on('upgrade', (req, socket, head) => {
+    if (req.url?.split('?')[0] !== '/api/asr/stream') {
+      socket.destroy();
+      return;
+    }
+    authenticateRealtimeRequest(req).then((auth) => {
+      realtimeWss.handleUpgrade(req, socket, head, (ws) => {
+        realtimeWss.emit('connection', ws, req, auth);
+      });
+    }).catch((error) => {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      logger.warn(`实时 ASR WebSocket 鉴权失败: ${errorSummary(error)}`);
+    });
+  });
+  server.listen(PORT, () => {
     logger.info(`WatchDog 后端已启动: http://0.0.0.0:${PORT}`);
     logger.info(`ASR 配置: ${CFG.asr.appId ? '已配置' : '未配置 (VOLC_APP_KEY)'}`);
     logger.info(`LLM 配置: ${CFG.llm.apiKey ? `已配置 (${CFG.llm.provider})` : '未配置 (DeepSeek)'}`);
@@ -1814,7 +2927,7 @@ if (require.main === module) {
       // 错误已在上方记录；保持进程运行，让探活和日志接口可用于诊断。
     });
   } else {
-    doPurge().catch((error) => logger.error('启动清理任务失败', error.stack || error));
+    doPurge().catch((error) => logger.error('启动清理任务失败', errorSummary(error)));
     setInterval(doPurge, 24 * 3600 * 1000);
   }
 }

@@ -36,6 +36,13 @@ class BoardPage extends StatefulWidget {
 class _BoardPageState extends State<BoardPage> {
   @override
   Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.controller.clockTick,
+      builder: (context, _) => _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     final cfg = widget.controller.calcConfig;
     String statusOf(Entry e) =>
         e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);

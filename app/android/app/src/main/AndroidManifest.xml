@@ -18,7 +18,10 @@
         android:label="火场智控"
         android:name="${applicationName}"
         android:icon="@drawable/fire_control_logo"
-        android:roundIcon="@drawable/fire_control_logo">
+        android:roundIcon="@drawable/fire_control_logo"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <activity
             android:name=".MainActivity"
             android:exported="true"

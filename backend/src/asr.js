@@ -4,6 +4,7 @@ const zlib = require('zlib');
 
 const DEFAULT_RESOURCE_ID = 'volc.bigasr.sauc.duration';
 const ASR_WS_URL = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream';
+const ASR_STREAM_WS_URL = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async';
 
 const MT_FULL_CLIENT_REQUEST = 1;
 const MT_AUDIO_ONLY = 2;
@@ -48,7 +49,20 @@ function parseFrame(buf) {
   const flags = buf[1] & 0x0f;
   const serialization = (buf[2] >> 4) & 0x0f;
   const compression = buf[2] & 0x0f;
-  let payload = buf.subarray(headerSize * 4);
+  // 每个协议帧都在消息头后带一个 4 字节的外层 payload 长度。
+  // 服务端响应的 payload 内部还会再带业务 JSON 长度；必须先跳过外层长度，
+  // 否则外层长度会被误当成业务长度，合法响应最终会变成“响应为空”。
+  const payloadOffset = headerSize * 4;
+  if (buf.length < payloadOffset + 4) {
+    return { messageType, flags, isLast: (flags & 2) !== 0 };
+  }
+  const framePayloadSize = buf.readUInt32BE(payloadOffset);
+  const payloadStart = payloadOffset + 4;
+  const payloadEnd = payloadStart + framePayloadSize;
+  if (payloadEnd > buf.length) {
+    return { messageType, flags, isLast: (flags & 2) !== 0, truncated: true };
+  }
+  let payload = buf.subarray(payloadStart, payloadEnd);
   const out = { messageType, flags, isLast: (flags & 2) !== 0 };
   if (flags & 0x01) {
     out.sequence = payload.length >= 4 ? payload.readInt32BE(0) : undefined;
@@ -105,7 +119,7 @@ function buildFullClientRequest({ appId, accessToken, uid, format, rate, bits, c
     },
   };
   if (hotwords && hotwords.length > 0) {
-    const words = hotwords.slice(0, 5000).map((w) => ({ word: String(w).trim() })).filter((w) => w.word);
+    const words = normalizeHotwords(hotwords).map((word) => ({ word }));
     if (words.length > 0) {
       request.request.corpus = {
         context: JSON.stringify({ hotwords: words }),
@@ -115,13 +129,179 @@ function buildFullClientRequest({ appId, accessToken, uid, format, rate, bits, c
   return request;
 }
 
+function normalizeHotwords(hotwords = []) {
+  const seen = new Set();
+  const result = [];
+  for (const item of hotwords) {
+    const word = String(item ?? '').trim();
+    if (!word || word.length > 64 || seen.has(word)) continue;
+    seen.add(word);
+    result.push(word);
+    if (result.length >= 5000) break;
+  }
+  return result;
+}
+
+function buildStreamingClientRequest({ appId, accessToken, uid, format, rate, bits, channel, hotwords }) {
+  const request = buildFullClientRequest({ appId, accessToken, uid, format, rate, bits, channel, hotwords });
+  request.audio.format = format || 'pcm';
+  request.request.enable_nostream = false;
+  request.request.model_name = 'bigmodel';
+  // async 是双向流式优化版本：服务端仅在识别结果变化时返回新快照。
+  request.request.result_type = 'full';
+  request.request.show_utterances = true;
+  return request;
+}
+
+/**
+ * 打开一条双向流式 ASR 会话。调用方按实时节奏传入 PCM，结果通过 onResult
+ * 回调返回；回调中的 text 是当前完整识别快照，不是增量字符串。
+ */
+function openStreamingSession({
+  appId,
+  accessToken,
+  resourceId,
+  format = 'pcm',
+  rate = 16000,
+  bits = 16,
+  channel = 1,
+  hotwords = [],
+  timeoutMs = 70000,
+  wsFactory = defaultWebSocketFactory,
+  wsUrl = ASR_STREAM_WS_URL,
+  onResult = () => {},
+  onReady = () => {},
+  onError = () => {},
+  onDone = () => {},
+  onClose = () => {},
+}) {
+  const reqid = crypto.randomUUID();
+  const connectId = crypto.randomUUID();
+  const headers = {
+    'X-Api-Key': appId,
+    'X-Api-Resource-Id': resourceId || DEFAULT_RESOURCE_ID,
+    'X-Api-Request-Id': reqid,
+    'X-Api-Sequence': '-1',
+    'X-Api-Connect-Id': connectId,
+  };
+  if (accessToken) headers['X-Api-Access-Key'] = accessToken;
+
+  let ws;
+  let ended = false;
+  let initialized = false;
+  let lastJson = null;
+  let timer;
+  const ready = new Promise((resolve, reject) => {
+    const fail = (error) => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(timer);
+      try { ws?.close(); } catch {}
+      try { onError(error); } catch {}
+      reject(error);
+    };
+    try {
+      ws = wsFactory(wsUrl, { headers, handshakeTimeout: 10000 });
+    } catch (error) {
+      fail(error);
+      return;
+    }
+    timer = setTimeout(() => fail(new Error('ASR 实时会话超时')), timeoutMs);
+    ws.on('open', () => {
+      const payload = Buffer.from(JSON.stringify(buildStreamingClientRequest({
+        appId, accessToken, uid: 'watchdog', format, rate, bits, channel, hotwords,
+      })), 'utf8');
+      ws.send(buildFrame(buildHeader(MT_FULL_CLIENT_REQUEST, NO_SEQUENCE, JSON_SER, GZIP), zlib.gzipSync(payload)), (error) => {
+        if (error) fail(error);
+      });
+      initialized = true;
+      try { onReady(); } catch {}
+      resolve(session);
+    });
+    ws.on('message', (data) => {
+      try {
+        const frame = parseFrame(Buffer.from(data));
+        if (frame.messageType === MT_ERROR) throw new Error('ASR 服务端错误');
+        if (frame.messageType !== MT_SERVER_RESPONSE || !frame.json) return;
+        lastJson = frame.json;
+        const code = frame.json.code ?? frame.json.message?.code;
+        if (code !== undefined && code !== 1000) throw new Error(`ASR 错误码 ${code}`);
+        const result = frame.json.result;
+        const utterances = Array.isArray(result?.utterances) ? result.utterances : [];
+        const text = typeof result?.text === 'string'
+          ? result.text
+          : utterances.map((item) => item.text || '').join('');
+        if (text) onResult({
+          text: text.trim(),
+          sequence: frame.sequence,
+          final: Boolean(frame.isLast || utterances.some((item) => item.definite === true)),
+          raw: frame.json,
+        });
+        if (frame.isLast) {
+          ended = true;
+          clearTimeout(timer);
+          try { onDone(); } catch {}
+          try { ws.close(); } catch {}
+        }
+      } catch (error) {
+        fail(error);
+      }
+    });
+    ws.on('error', fail);
+    ws.on('close', () => {
+      if (!ended) {
+        ended = true;
+        clearTimeout(timer);
+        try { onClose(); } catch {}
+      }
+    });
+  });
+
+  const session = {
+    ready,
+    get initialized() { return initialized; },
+    sendAudio(audio) {
+      if (ended || !ws || ws.readyState !== 1) throw new Error('ASR 实时会话未连接');
+      const bytes = Buffer.from(audio);
+      if (bytes.length === 0) return;
+      ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NO_SEQUENCE, JSON_SER, GZIP), zlib.gzipSync(bytes)));
+    },
+    end() {
+      if (ended || !ws || ws.readyState !== 1) return;
+      ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NEG_SEQUENCE, JSON_SER, NO_COMPRESSION), Buffer.alloc(0)));
+    },
+    close() {
+      if (ended) return;
+      ended = true;
+      clearTimeout(timer);
+      try { ws?.close(); } catch {}
+    },
+  };
+  return session;
+}
+
 /**
  * 一句话转写：上传完整音频，等待 nostream 流式识别结果。
  * 音频格式支持 wav/pcm/mp3/ogg（不支持 m4a/aac，App 端录音需为 wav/pcm）。
  * 分包规则：音频按 100~200ms 分包发送（带正 sequence），最后发一个空 LAST 包
  * （flags=NEG_WITH_SEQUENCE + sequence 取负 + 不压缩）。
  */
-function transcribe({ appId, accessToken, resourceId, audioBuffer, format = 'wav', rate = 16000, bits = 16, channel = 1, hotwords = [], timeoutMs = 25000 }) {
+const defaultWebSocketFactory = (url, options) => new WebSocket(url, options);
+
+function transcribe({
+  appId,
+  accessToken,
+  resourceId,
+  audioBuffer,
+  format = 'wav',
+  rate = 16000,
+  bits = 16,
+  channel = 1,
+  hotwords = [],
+  timeoutMs = 25000,
+  wsFactory = defaultWebSocketFactory,
+  wsUrl = ASR_WS_URL,
+}) {
   return new Promise((resolve, reject) => {
     const reqid = crypto.randomUUID();
     const connectId = crypto.randomUUID();
@@ -154,7 +334,7 @@ function transcribe({ appId, accessToken, resourceId, audioBuffer, format = 'wav
     };
 
     try {
-      ws = new WebSocket(ASR_WS_URL, { headers, handshakeTimeout: 10000 });
+      ws = wsFactory(wsUrl, { headers, handshakeTimeout: 10000 });
     } catch (e) {
       return finish(e);
     }
@@ -239,4 +419,10 @@ function transcribe({ appId, accessToken, resourceId, audioBuffer, format = 'wav
   });
 }
 
-module.exports = { transcribe };
+module.exports = {
+  transcribe,
+  openStreamingSession,
+  normalizeHotwords,
+  // 仅供本地协议回归使用；业务调用仍只依赖 transcribe。
+  __test: { buildHeader, buildFrame, parseFrame },
+};

@@ -6,9 +6,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../models/models.dart';
 import '../services/alarm_service.dart';
 import '../services/foreground_keep_alive.dart';
+import '../services/local_asr_service.dart';
 import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
+import '../services/storage_service.dart';
 import '../services/update_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
@@ -20,7 +22,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.2.1+49';
+const appVersion = '1.2.2+58';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -166,14 +168,27 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// 检查更新：GitHub Releases 最新版 → 提示/下载/安装
+  /// 检查更新：国内 OTA 清单最新版 → 提示/下载/安装
   Future<void> _checkUpdate() async {
     if (_checkingUpdate) return;
     setState(() => _checkingUpdate = true);
     String? error;
     UpdateInfo? info;
+    final opId = 'ota-check-${DateTime.now().millisecondsSinceEpoch}';
+    void trace(String stage, String message, String level) {
+      OpLogService.instance.record(
+        opId,
+        stage,
+        message,
+        level: level,
+        data: {'source': '国内更新服务'},
+      );
+    }
+
     try {
-      (info, error) = await UpdateService().checkForUpdate();
+      (info, error) = await UpdateService(
+        logger: (stage, message, level) => trace(stage, message, level),
+      ).checkForUpdate();
     } catch (e) {
       error = '$e';
     }
@@ -320,7 +335,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     final progress = ValueNotifier<int>(0);
     var installPrompted = false; // 已提示「安装中」（避免完成后重复弹框）
-    var downloadStarted = false;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -354,18 +368,15 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
     String? fail;
-    await UpdateService().downloadAndInstall(
+    await UpdateService(
+      logger: (stage, message, level) => trace(stage, message, level: level),
+    ).downloadAndInstall(
       info,
       onProgress: (p) {
-        if (!downloadStarted) {
-          downloadStarted = true;
-          trace('ota_download_start', '开始下载更新包');
-        }
         progress.value = p;
       },
       onInstalling: () {
         installPrompted = true;
-        trace('ota_installing', '下载完成，进入系统安装阶段');
         // 关闭进度对话框，提示用户去系统安装界面操作
         if (mounted) Navigator.of(context, rootNavigator: true).pop();
         if (mounted) _showUpdateResult('安装中', '安装包已就绪，请在弹出的系统界面完成安装');
@@ -374,7 +385,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (!mounted) return;
     if (fail != null) {
-      trace('ota_fail', fail!, level: 'error');
       // 安装类失败（未授权/系统拦截）：提供一键跳转授权页，避免用户无从下手
       if (fail!.contains('安装未完成') || fail!.contains('未知来源')) {
         final go = await showDialog<bool>(
@@ -470,6 +480,12 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _downloadModel() async {
     final asr = widget.controller.localAsr;
     if (asr == null) return;
+    final available = await StorageService.availableBytes();
+    if (available != null &&
+        available < LocalAsrService.minimumRecommendedFreeBytes) {
+      await _showStorageRecovery(available);
+      return;
+    }
     setState(() {
       _downloading = true;
       _downloadError = null;
@@ -483,6 +499,11 @@ class _SettingsPageState extends State<SettingsPage> {
           }
         },
       );
+    } on InsufficientStorageException catch (e) {
+      if (mounted) {
+        setState(() => _downloadError = e.userMessage);
+        await _showStorageRecovery(e.availableBytes);
+      }
     } catch (e) {
       if (mounted) setState(() => _downloadError = '$e');
     } finally {
@@ -494,6 +515,33 @@ class _SettingsPageState extends State<SettingsPage> {
         });
       }
     }
+  }
+
+  Future<void> _showStorageRecovery(int availableBytes) async {
+    if (!mounted) return;
+    final availableMb = (availableBytes / (1024 * 1024)).floor();
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('设备存储空间不足'),
+        content: Text(
+          '当前可用空间约 ${availableMb}MB。为保护当前本地模型和现场数据，App 不会自动删除它们。\n\n'
+          '清理空间后可重新下载；暂时也可以继续使用联网语音识别。',
+          style: const TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('继续联网识别'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('去系统存储设置'),
+          ),
+        ],
+      ),
+    );
+    if (openSettings == true) await StorageService.openStorageSettings();
   }
 
   /// 自动保存：文本框失焦（点空白/收起键盘/焦点转移）或开关切换时立即保存本地并触发云端同步（静默）。
@@ -1312,7 +1360,7 @@ class _SettingsPageState extends State<SettingsPage> {
       subtitle = '已是最新版本';
       subtitleColor = AppColors.textTertiary;
     } else {
-      subtitle = '从 GitHub Releases 获取最新版本';
+      subtitle = '从国内更新服务获取最新版本';
       subtitleColor = AppColors.textTertiary;
     }
     return AppCard(

@@ -1,4 +1,5 @@
 const DEFAULT_TIMEOUT_MS = 10000;
+const { parseAllowedHosts, isHostAllowed } = require('./network-policy');
 
 class CloudBasePostgrestError extends Error {
   constructor(message, { status = 500, details = null, body = null } = {}) {
@@ -27,6 +28,24 @@ function assertHttpsUrl(value) {
   }
   if (url.username || url.password || url.search || url.hash) {
     throw new Error('CLOUDBASE_REST_BASE_URL 不得包含用户信息、查询参数或片段');
+  }
+}
+
+function assertProductionHost({ url, envId, hasExplicitBaseUrl, allowedHostsValue }) {
+  const parsedUrl = url instanceof URL ? url : new URL(url);
+  const configuredHosts = parseAllowedHosts(allowedHostsValue);
+  if (configuredHosts.length > 0) {
+    if (!isHostAllowed(parsedUrl, configuredHosts)) {
+      throw new Error('生产环境 CLOUDBASE_REST_BASE_URL 主机不在 CLOUDBASE_REST_ALLOWED_HOSTS 允许列表');
+    }
+    return;
+  }
+  if (hasExplicitBaseUrl) {
+    throw new Error('生产环境使用自定义 CLOUDBASE_REST_BASE_URL 时必须配置 CLOUDBASE_REST_ALLOWED_HOSTS');
+  }
+  const expectedHost = `${envId}.api.tcloudbasegateway.com`;
+  if (!isHostAllowed(parsedUrl, [expectedHost])) {
+    throw new Error('生产环境 CloudBase REST 主机与 CLOUDBASE_ENV_ID 不匹配');
   }
 }
 
@@ -60,13 +79,15 @@ class CloudBasePostgrestClient {
   constructor({
     envId = process.env.CLOUDBASE_ENV_ID || process.env.CLOUDBASE_ENV || '',
     apiKey = process.env.CLOUDBASE_API_KEY || process.env.CLOUDBASE_APIKEY || process.env.CLOUDBASE_SERVICE_ROLE_KEY || '',
-    baseUrl = process.env.CLOUDBASE_REST_BASE_URL || '',
+    baseUrl,
     timeoutMs = Number(process.env.CLOUDBASE_REST_TIMEOUT_MS || DEFAULT_TIMEOUT_MS),
     fetchImpl = global.fetch,
   } = {}) {
     this.envId = envId;
     this.apiKey = apiKey;
-    this.baseUrl = String(baseUrl || (envId ? `https://${envId}.api.tcloudbasegateway.com/v1/rdb/rest` : '')).replace(/\/$/, '');
+    const configuredBaseUrl = String(baseUrl ?? process.env.CLOUDBASE_REST_BASE_URL ?? '').trim();
+    this.hasExplicitBaseUrl = configuredBaseUrl.length > 0;
+    this.baseUrl = String(configuredBaseUrl || (envId ? `https://${envId}.api.tcloudbasegateway.com/v1/rdb/rest` : '')).replace(/\/$/, '');
     this.timeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
     this.fetchImpl = fetchImpl;
   }
@@ -75,6 +96,14 @@ class CloudBasePostgrestClient {
     requiredEnv('CLOUDBASE_ENV_ID 或 CLOUDBASE_REST_BASE_URL', this.baseUrl);
     requiredEnv('CLOUDBASE_API_KEY', this.apiKey);
     assertHttpsUrl(this.baseUrl);
+    if (process.env.NODE_ENV === 'production') {
+      assertProductionHost({
+        url: this.baseUrl,
+        envId: this.envId,
+        hasExplicitBaseUrl: this.hasExplicitBaseUrl,
+        allowedHostsValue: process.env.CLOUDBASE_REST_ALLOWED_HOSTS,
+      });
+    }
     if (typeof this.fetchImpl !== 'function') throw new Error('当前 Node.js 运行时缺少 fetch');
   }
 
@@ -103,6 +132,7 @@ class CloudBasePostgrestClient {
       try {
         response = await this.fetchImpl(url, {
           method,
+          redirect: 'error',
           headers,
           body: body === undefined ? undefined : JSON.stringify(body),
           signal: AbortSignal.timeout(this.timeoutMs),
@@ -229,4 +259,4 @@ class CloudBasePostgrestClient {
   }
 }
 
-module.exports = { CloudBasePostgrestClient, CloudBasePostgrestError, normalizeFilter };
+module.exports = { CloudBasePostgrestClient, CloudBasePostgrestError, normalizeFilter, assertProductionHost };

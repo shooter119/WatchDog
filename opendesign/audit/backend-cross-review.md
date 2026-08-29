@@ -55,7 +55,7 @@
   1. `backend/src/server.js:96-101` 的 Token 中间件对 `req.path === '/api/auth/verify'` 直接 `next()`，不比较 `X-Api-Token`。
   2. `backend/src/server.js:330-348` 的认证处理器也没有读取或验证 API_TOKEN；有效单位码即可调用 `db.findUnit()` 并保存设备档案。
   3. 客户端仍在 `app/lib/api/api_client.dart:731-749` 发送用户输入的 `X-Api-Token`；部署说明 `deploy/cloudbase/README.md:82` 也要求首次认证输入运行时 API_TOKEN。
-  4. 临时 HTTP 子进程复现：服务配置 `API_TOKEN=expected-token`、单位认证开启，向 `/api/auth/verify` 发送 `X-Api-Token: wrong-token` 与正确单位码，响应仍为 `200`、`authenticated: true`。
+  4. 临时 HTTP 子进程复现：服务配置使用测试占位令牌、单位认证开启，向 `/api/auth/verify` 发送错误令牌与正确单位码，响应仍为 `200`、`authenticated: true`。
 - 根本原因：将首次单位认证设计成免 Token 的公共 bootstrap 入口，但客户端与运维契约仍把 API_TOKEN 当作认证必填项；两套入口策略没有统一。
 - 涉及文件：`backend/src/server.js:96-101,330-348`；`app/lib/api/api_client.dart:731-749`；`deploy/cloudbase/README.md:82`。
 - 建议修改方案：若 API_TOKEN 是所有业务入口的共享访问门槛，则认证路由也必须验证它；若产品确实需要公共 bootstrap，则应明确移除该请求对 API_TOKEN 的伪必填，并为公共入口设计独立、短时、可撤销的注册/认证保护，不能同时保留两套互相矛盾的契约。

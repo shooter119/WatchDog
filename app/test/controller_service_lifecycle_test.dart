@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -53,6 +55,15 @@ class _RecordingModelClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     requests.add(request.url);
+    if (request.url.path.endsWith('/manifest.json')) {
+      final body = utf8.encode(_modelManifestBody());
+      return http.StreamedResponse(
+        Stream<List<int>>.value(body),
+        statusCode,
+        contentLength: body.length,
+        request: request,
+      );
+    }
     return http.StreamedResponse(
       Stream<List<int>>.value(<int>[1]),
       statusCode,
@@ -63,6 +74,44 @@ class _RecordingModelClient extends http.BaseClient {
 
   @override
   void close() {}
+}
+
+String _modelManifestBody() {
+  const modelFiles = [
+    'encoder-epoch-20-avg-1.int8.onnx',
+    'decoder-epoch-20-avg-1.onnx',
+    'joiner-epoch-20-avg-1.int8.onnx',
+    'tokens.txt',
+    'bpe.vocab',
+  ];
+  final digest = sha256.convert(<int>[1]).toString();
+  final files = <String, Object>{
+    for (final name in modelFiles)
+      '${LocalAsrService.modelName}/$name': {'sizeBytes': 1, 'sha256': digest},
+    'denoiser/dpdfnet2.onnx': {'sizeBytes': 1, 'sha256': digest},
+  };
+  return jsonEncode({
+    'schemaVersion': 1,
+    'modelVersion': LocalAsrService.modelName,
+    'files': files,
+  });
+}
+
+class _AuthLifecycleController extends AppController {
+  @override
+  Future<void> refreshConfig() async {}
+
+  @override
+  void startSync() {}
+
+  @override
+  Future<void> sync() async {}
+
+  @override
+  Future<void> loadRoster() async {}
+
+  @override
+  Future<void> syncSettings() async {}
 }
 
 void main() {
@@ -128,7 +177,13 @@ void main() {
 
     await service.downloadModel();
     expect(
-      client.requests.first.toString(),
+      client.requests
+          .firstWhere(
+            (request) => request.path.endsWith(
+              '/${LocalAsrService.modelName}/encoder-epoch-20-avg-1.int8.onnx',
+            ),
+          )
+          .toString(),
       'https://example.test/models/multi-zh-hans-2023-9-2/encoder-epoch-20-avg-1.int8.onnx',
     );
     expect(
@@ -179,7 +234,13 @@ void main() {
     await service.downloadModel();
 
     expect(
-      client.requests.first.toString(),
+      client.requests
+          .firstWhere(
+            (request) => request.path.endsWith(
+              '/${LocalAsrService.modelName}/encoder-epoch-20-avg-1.int8.onnx',
+            ),
+          )
+          .toString(),
       'https://self-hosted.example/firewatch/models/${LocalAsrService.modelName}/encoder-epoch-20-avg-1.int8.onnx',
     );
     expect(
@@ -207,5 +268,39 @@ void main() {
     expect(await Settings.apiToken, 'configured-token');
     await Settings.setApiToken('   ');
     expect(await Settings.apiToken, isEmpty);
+
+    await Settings.setSessionToken('  session-token  ');
+    expect(await Settings.sessionToken, 'session-token');
+    final sp = await SharedPreferences.getInstance();
+    // 测试平台没有原生 Keystore，SecureStore 会兼容落到 mock preferences。
+    expect(sp.getString('session_token'), 'session-token');
+    await Settings.setSessionToken('   ');
+    expect(await Settings.sessionToken, isEmpty);
+    expect(sp.getString('session_token'), isNull);
+  });
+
+  test('兼容窗口恢复认证状态并清除会话令牌', () async {
+    SharedPreferences.setMockInitialValues({
+      'real_name': '测试人员',
+      'unit_id': 'unit-a',
+      'unit_code': '1234',
+      'unit_name': '测试单位',
+      'api_token': 'api-token',
+    });
+    final unauthenticated = _AuthLifecycleController();
+    await unauthenticated.init();
+    // 后端完成迁移前可能未返回 session_token，客户端暂时走旧认证头。
+    expect(unauthenticated.needsAuthentication, isFalse);
+    unauthenticated.dispose();
+
+    await Settings.setSessionToken('session-token');
+    final authenticated = _AuthLifecycleController();
+    addTearDown(authenticated.dispose);
+    await authenticated.init();
+    expect(authenticated.needsAuthentication, isFalse);
+
+    await authenticated.leaveUnit();
+    expect(authenticated.needsAuthentication, isTrue);
+    expect(await Settings.sessionToken, isEmpty);
   });
 }

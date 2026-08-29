@@ -20,7 +20,9 @@ fun requiredSigningProperty(name: String): String =
 
 android {
     namespace = "com.firewatch.watchdog"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage 11 requires API 37 at compile time.
+    // A higher compile SDK remains backward-compatible with the app's min/target SDK.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

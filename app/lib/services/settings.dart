@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'secure_store.dart';
 
 class Settings {
   static const maxCylinderVolL = 20.0;
@@ -25,6 +28,13 @@ class Settings {
     'WATCHDOG_MODEL_BASE_URL',
     defaultValue: '',
   );
+
+  /// 正式包默认只访问编译时登记的服务地址；开发/测试或显式开启自定义服务时，
+  /// 才允许使用其他受 HTTPS/本机规则保护的地址。
+  static const allowCustomServer = bool.fromEnvironment(
+    'WATCHDOG_ALLOW_CUSTOM_SERVER',
+    defaultValue: false,
+  );
   static const _deprecatedCloudRunServiceUrl =
       'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com';
   static const _deprecatedCanaryServiceUrl =
@@ -32,6 +42,7 @@ class Settings {
   static const _kServer = 'server_url';
   static const _kIncident = 'current_incident_id';
   static const _kToken = 'api_token';
+  static const _kSessionToken = 'session_token';
   static const _kVolume = 'cylinder_vol_l';
   static const _kFullPressure = 'full_pressure_mpa';
   static const _kConsumption = 'consumption_lpm';
@@ -64,7 +75,38 @@ class Settings {
     if (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) {
       return false;
     }
-    return uri.scheme.toLowerCase() == 'https' || _isLocalHost(uri.host);
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'https' && !(scheme == 'http' && _isLocalHost(uri.host))) {
+      return false;
+    }
+    if (kReleaseMode && !allowCustomServer) {
+      final defaultUri = Uri.tryParse(_normalizeBaseUrl(defaultServerUrl));
+      if (defaultUri == null || !_sameEndpoint(uri, defaultUri)) return false;
+    }
+    return true;
+  }
+
+  static bool _sameEndpoint(Uri left, Uri right) =>
+      left.scheme.toLowerCase() == right.scheme.toLowerCase() &&
+      left.host.toLowerCase() == right.host.toLowerCase() &&
+      left.port == right.port &&
+      left.path == right.path;
+
+  /// 模型下载地址是默认服务的 /models 子路径，正式包同样只信任编译时登记的模型源。
+  static bool isSafeModelUrl(String value) {
+    final trimmed = _normalizeBaseUrl(value.trim());
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null || uri.host.isEmpty) return false;
+    if (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) return false;
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme != 'https' && !(scheme == 'http' && _isLocalHost(uri.host))) {
+      return false;
+    }
+    if (kReleaseMode && !allowCustomServer) {
+      final defaultUri = Uri.tryParse(_normalizeBaseUrl(defaultModelBaseUrl));
+      if (defaultUri == null || !_sameEndpoint(uri, defaultUri)) return false;
+    }
+    return true;
   }
 
   /// URL 校验供端侧模型下载和前台服务共用：生产地址必须 HTTPS，测试/本机地址
@@ -217,19 +259,33 @@ class Settings {
   }
 
   static Future<String> get apiToken async {
-    final sp = await SharedPreferences.getInstance();
     // 不能把任何可用的生产/开发令牌编进 APK；首次安装由运维或设备配置
-    // 注入访问令牌，空值会让受保护业务请求明确返回 401。
-    return (sp.getString(_kToken) ?? '').trim();
+    // 注入访问令牌，优先保存在系统安全存储；空值会让受保护业务请求
+    // 明确返回 401。
+    return (await SecureStore.read(_kToken) ?? '').trim();
   }
 
   static Future<void> setApiToken(String v) async {
-    final sp = await SharedPreferences.getInstance();
     final value = v.trim();
     if (value.isEmpty) {
-      await sp.remove(_kToken);
+      await SecureStore.delete(_kToken);
     } else {
-      await sp.setString(_kToken, value);
+      await SecureStore.write(_kToken, value);
+    }
+  }
+
+  /// 当前单位认证后由服务端签发的短期会话令牌。
+  /// 令牌只用于受保护 API 请求，不参与个人设置同步。
+  static Future<String> get sessionToken async {
+    return (await SecureStore.read(_kSessionToken) ?? '').trim();
+  }
+
+  static Future<void> setSessionToken(String v) async {
+    final value = v.trim();
+    if (value.isEmpty) {
+      await SecureStore.delete(_kSessionToken);
+    } else {
+      await SecureStore.write(_kSessionToken, value);
     }
   }
 
@@ -267,17 +323,15 @@ class Settings {
 
   /// 当前设备已通过认证的单位验证码；为空表示尚未完成首次认证。
   static Future<String> get unitCode async {
-    final sp = await SharedPreferences.getInstance();
-    return (sp.getString(_kUnitCode) ?? '').trim();
+    return (await SecureStore.read(_kUnitCode) ?? '').trim();
   }
 
   static Future<void> setUnitCode(String v) async {
-    final sp = await SharedPreferences.getInstance();
     final value = v.trim();
     if (value.isEmpty) {
-      await sp.remove(_kUnitCode);
+      await SecureStore.delete(_kUnitCode);
     } else {
-      await sp.setString(_kUnitCode, value);
+      await SecureStore.write(_kUnitCode, value);
     }
   }
 
