@@ -86,7 +86,9 @@ jobs:
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: '3.38.5'
-          cache: true
+          # 仓库规则要求所有 Actions 固定完整 SHA；Flutter Action 的
+          # 内置缓存会间接调用未固定的 actions/cache，关闭以避免 CI 被拒绝。
+          cache: false
       - name: Flutter checks and runtime count gate
         working-directory: app
         shell: bash

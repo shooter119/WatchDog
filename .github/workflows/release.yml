@@ -36,7 +36,9 @@ jobs:
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: '3.38.5'
-          cache: true
+          # 仓库规则要求所有 Actions 固定完整 SHA；Flutter Action 的
+          # 内置缓存会间接调用未固定的 actions/cache，关闭以避免发布被拒绝。
+          cache: false
 
       # tag 发布必须先通过与合并相同的质量门禁，不能绕过失败的回归测试。
       - name: Setup Node 24
