@@ -433,8 +433,9 @@ jobs:
             )"
             if ! curl --fail --silent --show-error --location \
               --retry 3 --retry-all-errors --retry-delay 2 \
-              --connect-timeout 20 --max-time 900 \
+              --http1.1 --connect-timeout 20 --max-time 300 \
               --upload-file "$local_path" \
+              -H 'Expect:' \
               -H "Content-Type: $content_type" \
               -H "Cache-Control: $cache_control" \
               "$upload_url" > "$upload_log" 2>&1; then
