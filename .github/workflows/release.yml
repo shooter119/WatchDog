@@ -398,13 +398,52 @@ jobs:
             -e "$CLOUDBASE_OTA_ENV_ID"
           "${cloudbase_cli[@]}" env use "$CLOUDBASE_OTA_ENV_ID"
 
-          "${cloudbase_cli[@]}" storage objects upload \
+          upload_object() {
+            local local_path="$1"
+            local object_path="$2"
+            local content_type="$3"
+            local cache_control="$4"
+            local sign_file="$verify_dir/upload-sign.json"
+            local upload_log="$verify_dir/upload.log"
+            local upload_url
+
+            # 先向 CloudBase 申请一次性上传签名，再用 curl 直传，避免 CLI
+            # 的 Node 流式请求在大 APK 上传时触发 STORAGE_ABORTED 空闲超时。
+            "${cloudbase_cli[@]}" storage objects sign \
+              "$object_path" \
+              --bucket "$CLOUDBASE_OTA_BUCKET_ID" \
+              --upload \
+              --upsert \
+              --json > "$sign_file"
+            upload_url="$(node - "$sign_file" <<'NODE'
+          const fs = require('node:fs');
+          const path = process.argv[2];
+          const payload = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (!payload || typeof payload.url !== 'string' || typeof payload.token !== 'string' || !payload.token) {
+            throw new Error('签名上传响应缺少 url 或 token');
+          }
+          const url = new URL(payload.url);
+          url.searchParams.set('token', payload.token);
+          process.stdout.write(url.toString());
+          NODE
+            )"
+            if ! curl --fail --silent --show-error --location \
+              --retry 3 --retry-all-errors --retry-delay 2 \
+              --connect-timeout 20 --max-time 900 \
+              --upload-file "$local_path" \
+              -H "Content-Type: $content_type" \
+              -H "Cache-Control: $cache_control" \
+              "$upload_url" > "$upload_log" 2>&1; then
+              sed -E 's/([?&]token=)[^&[:space:]]*/\1REDACTED/g' "$upload_log" >&2
+              return 1
+            fi
+          }
+
+          upload_object \
             "$APK_FILE" \
             "$APK_PATH" \
-            --bucket "$CLOUDBASE_OTA_BUCKET_ID" \
-            --content-type 'application/vnd.android.package-archive' \
-            --cache-control 'public,max-age=31536000,immutable' \
-            --use-put
+            'application/vnd.android.package-archive' \
+            'public,max-age=31536000,immutable'
 
           public_apk_url="$OTA_PUBLIC_BASE_URL/$APK_PATH"
           curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
@@ -435,13 +474,11 @@ jobs:
           fs.writeFileSync('latest.json', `${JSON.stringify(manifest)}\n`);
           NODE
 
-          "${cloudbase_cli[@]}" storage objects upload \
+          upload_object \
             latest.json \
             latest.json \
-            --bucket "$CLOUDBASE_OTA_BUCKET_ID" \
-            --content-type 'application/json; charset=utf-8' \
-            --cache-control 'no-cache,max-age=0,must-revalidate' \
-            --use-put
+            'application/json; charset=utf-8' \
+            'no-cache,max-age=0,must-revalidate'
 
           curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
             -H 'Cache-Control: no-cache' \
