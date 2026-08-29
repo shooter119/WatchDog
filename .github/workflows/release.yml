@@ -1,5 +1,5 @@
 # WatchDog 发布流水线：push tag v* → 构建 arm64 正式签名 APK → 发布 GitHub Release
-# 并将同一 APK 发布到 CloudBase 静态托管 CDN；App 端只访问国内 latest.json。
+# 并将同一 APK 发布到 CloudBase OTA 存储；App 端只访问国内 latest.json。
 name: Build & Release APK
 
 on:
@@ -216,29 +216,32 @@ jobs:
           EOF
           ls -la app/android/app/watchdog-release.keystore
 
-      # 静态托管凭据缺失时尽早失败，避免先构建大包再在发布末尾才发现
-      # 无法完成国内 OTA。
+      # OTA bucket 是 PG Storage 的公开对象入口；缺少配置时尽早失败，避免
+      # 先构建大包再在发布末尾才发现无法完成 OTA。
       - name: Validate OTA configuration
         env:
           CLOUDBASE_OTA_ENV_ID: ${{ secrets.CLOUDBASE_OTA_ENV_ID }}
+          CLOUDBASE_OTA_BUCKET_ID: ${{ secrets.CLOUDBASE_OTA_BUCKET_ID }}
           CLOUDBASE_OTA_API_KEY: ${{ secrets.CLOUDBASE_OTA_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "$CLOUDBASE_OTA_ENV_ID"
+          test -n "$CLOUDBASE_OTA_BUCKET_ID"
           test -n "$CLOUDBASE_OTA_API_KEY"
           [[ "$CLOUDBASE_OTA_ENV_ID" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]]
+          [[ "$CLOUDBASE_OTA_BUCKET_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]]
           echo '国内 OTA 配置格式检查通过'
 
       - name: Build release APK
         working-directory: app
         env:
           CLOUDBASE_OTA_ENV_ID: ${{ secrets.CLOUDBASE_OTA_ENV_ID }}
+          CLOUDBASE_OTA_BUCKET_ID: ${{ secrets.CLOUDBASE_OTA_BUCKET_ID }}
         run: |
           set -euo pipefail
           flutter pub get
-          OTA_HOSTING_DOMAIN="watchdog-prod-d6gch930m378d9a16-1351750301.tcloudbaseapp.com"
-          OTA_MANIFEST_URL="https://${OTA_HOSTING_DOMAIN}/ota/latest.json"
+          OTA_MANIFEST_URL="https://${CLOUDBASE_OTA_ENV_ID}.api.tcloudbasegateway.com/v1/storages/object/public/${CLOUDBASE_OTA_BUCKET_ID}/latest.json"
           # 只发布 arm64 split APK；Prepare release assets 从包内读取最终
           # versionCode，确保 Flutter 的 ABI 偏移与 OTA 清单保持一致。
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
@@ -337,13 +340,12 @@ jobs:
       # 先完成国内 OTA 上传并校验，再创建 GitHub Release；这样 OTA 配置缺失或
       # 上传校验失败时不会留下已创建但不可用的半成品 Release。
       # 国内 OTA：上传与 GitHub Release 完全相同的 APK，最后才更新 latest.json。
-      # CloudBase 静态托管由 COS + CDN 提供国内 HTTPS 分发，避开 PG Storage
-      # API 网关对大 APK 的 300 秒上游连接超时。当前 arm64 APK 必须小于官方
-      # 静态托管单文件 50 MB 限制；远端回读仍是发布成功的硬门禁。
+      # CloudBase 环境 API Key 仅授予专用 OTA bucket 的写权限，不复用后端 service_role 密钥。
       - name: Publish domestic OTA
         working-directory: app
         env:
           CLOUDBASE_OTA_ENV_ID: ${{ secrets.CLOUDBASE_OTA_ENV_ID }}
+          CLOUDBASE_OTA_BUCKET_ID: ${{ secrets.CLOUDBASE_OTA_BUCKET_ID }}
           CLOUDBASE_OTA_API_KEY: ${{ secrets.CLOUDBASE_OTA_API_KEY }}
           TAG_NAME: ${{ github.ref_name }}
           APK_FILE: ${{ steps.release.outputs.apk_file }}
@@ -355,16 +357,12 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$CLOUDBASE_OTA_ENV_ID"
+          test -n "$CLOUDBASE_OTA_BUCKET_ID"
           test -n "$CLOUDBASE_OTA_API_KEY"
           test -f "$APK_FILE"
           test "$(sha256sum "$APK_FILE" | awk '{print $1}')" = "$SHA256"
           test "$(wc -c < "$APK_FILE" | tr -d ' ')" = "$SIZE_BYTES"
-          OTA_HOSTING_DOMAIN="watchdog-prod-d6gch930m378d9a16-1351750301.tcloudbaseapp.com"
-          OTA_PUBLIC_BASE_URL="https://${OTA_HOSTING_DOMAIN}/ota"
-          if [ "$SIZE_BYTES" -ge 50000000 ]; then
-            echo "::error::APK 超过 CloudBase 静态托管单文件 50 MB 限制：$SIZE_BYTES bytes"
-            exit 1
-          fi
+          OTA_PUBLIC_BASE_URL="https://${CLOUDBASE_OTA_ENV_ID}.api.tcloudbasegateway.com/v1/storages/object/public/${CLOUDBASE_OTA_BUCKET_ID}"
 
           verify_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/watchdog-ota-verify.XXXXXX")"
           trap 'rm -rf "$verify_dir"' EXIT
@@ -402,18 +400,15 @@ jobs:
             local object_path="$2"
             local content_type="$3"
             local cache_control="$4"
-            local hosting_path="ota/$object_path"
-            # 静态托管 CLI 直接将文件上传到 COS/CDN；不用 --location 携带
-            # 任何管理凭证，也不把 API Key 写入参数或产物。
-            "${cloudbase_cli[@]}" hosting deploy "$local_path" "$hosting_path" \
-              -e "$CLOUDBASE_OTA_ENV_ID" \
-              --concurrency 1 --retry-count 3 --json >/dev/null
+            # CloudBase PG Storage 官方契约的 binary body 路径：普通对象接口
+            # 使用 POST，Body 为原始文件字节。独立上传器固定 HTTPS 目标、显式
+            # Content-Length，且不跟随重定向，避免 multipart 网关超时和凭据外带。
+            node ../.github/scripts/cloudbase-ota-upload.cjs \
+              --file "$local_path" \
+              --object "$object_path" \
+              --content-type "$content_type" \
+              --cache-control "$cache_control"
           }
-
-          cloudbase_cli=(npx --yes --package @cloudbase/cli@3.8.1 tcb)
-          "${cloudbase_cli[@]}" login \
-            --cloudbase-api-key "$CLOUDBASE_OTA_API_KEY" \
-            -e "$CLOUDBASE_OTA_ENV_ID"
 
           # 先生成与 latest.json 字节完全一致的版本化清单。它既是小对象生产
           # 探针，也是每个版本不可变的发布元数据；探针公开回读失败时不传 APK。

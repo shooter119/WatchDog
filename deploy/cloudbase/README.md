@@ -85,22 +85,25 @@ CHAT_SEARCH_ENABLED=1
 
 ## 3. 国内 OTA 发布 Secrets
 
-`.github/workflows/release.yml` 还需要配置以下两个 GitHub Actions Repository Secrets，专门用于国内 OTA 静态托管发布：
+`.github/workflows/release.yml` 还需要配置以下三个 GitHub Actions Repository Secrets，专门用于国内 OTA 存储发布：
 
 ```text
 CLOUDBASE_OTA_ENV_ID
+CLOUDBASE_OTA_BUCKET_ID
 CLOUDBASE_OTA_API_KEY
 ```
 
-该 API Key 只用于静态托管文件发布，不得复用后端 `service_role` API Key，也不得写入仓库、构建产物或日志。发布工作流会先检查凭据、版本递增、APK 大小与 SHA-256，并通过国内 CDN 回读 OTA APK 和 `latest.json` 完成远端校验；全部通过后才创建 GitHub Release。缺少配置或校验失败时不会创建新的 Release。
+这些凭据只授予专用 OTA bucket 的最小写权限，不得复用后端 `service_role` API Key，也不得写入仓库、构建产物或日志。发布工作流会先检查凭据、版本递增、APK 大小与 SHA-256，并回读 OTA APK 和 `latest.json` 完成远端校验；全部通过后才创建 GitHub Release。缺少配置或校验失败时不会创建新的 Release。
 
-国内 OTA 使用 CloudBase 静态网站托管（底层 COS + CDN）。当前正式 arm64 APK 必须小于官方单文件 50 MB 限制；发布文件统一放在静态托管的 `ota/` 目录，公开入口为：
+OTA 使用 CloudBase PG Storage，约定公开 bucket ID 为 `watchdog-ota`。首次启用前，必须在备份/预生产条件具备后执行
+`backend/migrations/009_ota_public_bucket.sql`，确认 bucket 为公开读并已创建 `anon`/`authenticated` 的对象读取策略。
+App 和 Release workflow 使用以下公开对象入口：
 
 ```text
-https://watchdog-prod-d6gch930m378d9a16-1351750301.tcloudbaseapp.com/ota/latest.json
+https://<env-id>.api.tcloudbasegateway.com/v1/storages/object/public/<bucket-id>/<object-path>
 ```
 
-其中域名中的环境后缀以 CloudBase 静态托管控制台实际显示为准，正式项目当前域名为 `watchdog-prod-d6gch930m378d9a16-1351750301.tcloudbaseapp.com`；清单为 `/ota/latest.json`，APK 位于 `/ota/releases/<tag>/watchdog-<version>-arm64-v8a.apk`。新版 App 默认读取该入口；已经安装的旧版 App 仍需通过 GitHub Release 或 USB 先升级一次，升级后即可进入新的国内 OTA 链路。
+其中清单为 `latest.json`，APK 位于 `releases/<tag>-arm64-v8a.apk`。云托管服务的旧 `/ota/*` 路径只作为旧版 App 的兼容重定向，不能替代 PG Storage bucket，也不应作为新版本默认地址。
 
 ## 4. 验证
 
