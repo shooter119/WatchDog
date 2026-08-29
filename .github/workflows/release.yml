@@ -220,14 +220,12 @@ jobs:
         env:
           CLOUDBASE_OTA_ENV_ID: ${{ secrets.CLOUDBASE_OTA_ENV_ID }}
           CLOUDBASE_OTA_BUCKET_ID: ${{ secrets.CLOUDBASE_OTA_BUCKET_ID }}
-          CLOUDBASE_OTA_API_KEY_ID: ${{ secrets.CLOUDBASE_OTA_API_KEY_ID }}
           CLOUDBASE_OTA_API_KEY: ${{ secrets.CLOUDBASE_OTA_API_KEY }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "$CLOUDBASE_OTA_ENV_ID"
           test -n "$CLOUDBASE_OTA_BUCKET_ID"
-          test -n "$CLOUDBASE_OTA_API_KEY_ID"
           test -n "$CLOUDBASE_OTA_API_KEY"
           [[ "$CLOUDBASE_OTA_ENV_ID" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]]
           [[ "$CLOUDBASE_OTA_BUCKET_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]]
@@ -340,13 +338,12 @@ jobs:
       # 先完成国内 OTA 上传并校验，再创建 GitHub Release；这样 OTA 配置缺失或
       # 上传校验失败时不会留下已创建但不可用的半成品 Release。
       # 国内 OTA：上传与 GitHub Release 完全相同的 APK，最后才更新 latest.json。
-      # CloudBase API Key 仅授予专用 OTA bucket 的写权限，不复用后端 service_role 密钥。
+      # CloudBase 环境 API Key 仅授予专用 OTA bucket 的写权限，不复用后端 service_role 密钥。
       - name: Publish domestic OTA
         working-directory: app
         env:
           CLOUDBASE_OTA_ENV_ID: ${{ secrets.CLOUDBASE_OTA_ENV_ID }}
           CLOUDBASE_OTA_BUCKET_ID: ${{ secrets.CLOUDBASE_OTA_BUCKET_ID }}
-          CLOUDBASE_OTA_API_KEY_ID: ${{ secrets.CLOUDBASE_OTA_API_KEY_ID }}
           CLOUDBASE_OTA_API_KEY: ${{ secrets.CLOUDBASE_OTA_API_KEY }}
           TAG_NAME: ${{ github.ref_name }}
           APK_FILE: ${{ steps.release.outputs.apk_file }}
@@ -359,7 +356,6 @@ jobs:
           set -euo pipefail
           test -n "$CLOUDBASE_OTA_ENV_ID"
           test -n "$CLOUDBASE_OTA_BUCKET_ID"
-          test -n "$CLOUDBASE_OTA_API_KEY_ID"
           test -n "$CLOUDBASE_OTA_API_KEY"
           test -f "$APK_FILE"
           test "$(sha256sum "$APK_FILE" | awk '{print $1}')" = "$SHA256"
@@ -398,8 +394,8 @@ jobs:
 
           cloudbase_cli=(npx --yes --package @cloudbase/cli@3.8.1 tcb)
           "${cloudbase_cli[@]}" login \
-            --apiKeyId "$CLOUDBASE_OTA_API_KEY_ID" \
-            --apiKey "$CLOUDBASE_OTA_API_KEY"
+            --cloudbase-api-key "$CLOUDBASE_OTA_API_KEY" \
+            -e "$CLOUDBASE_OTA_ENV_ID"
           "${cloudbase_cli[@]}" env use "$CLOUDBASE_OTA_ENV_ID"
 
           "${cloudbase_cli[@]}" storage objects upload \

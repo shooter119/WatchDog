@@ -85,12 +85,11 @@ CHAT_SEARCH_ENABLED=1
 
 ## 3. 国内 OTA 发布 Secrets
 
-`.github/workflows/release.yml` 还需要配置以下四个 GitHub Actions Repository Secrets，专门用于国内 OTA 存储发布：
+`.github/workflows/release.yml` 还需要配置以下三个 GitHub Actions Repository Secrets，专门用于国内 OTA 存储发布：
 
 ```text
 CLOUDBASE_OTA_ENV_ID
 CLOUDBASE_OTA_BUCKET_ID
-CLOUDBASE_OTA_API_KEY_ID
 CLOUDBASE_OTA_API_KEY
 ```
 
