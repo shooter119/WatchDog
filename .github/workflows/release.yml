@@ -392,56 +392,37 @@ jobs:
               ;;
           esac
 
-          cloudbase_cli=(npx --yes --package @cloudbase/cli@3.8.1 tcb)
-          "${cloudbase_cli[@]}" login \
-            --cloudbase-api-key "$CLOUDBASE_OTA_API_KEY" \
-            -e "$CLOUDBASE_OTA_ENV_ID"
-          "${cloudbase_cli[@]}" env use "$CLOUDBASE_OTA_ENV_ID"
-
           upload_object() {
             local local_path="$1"
             local object_path="$2"
             local content_type="$3"
             local cache_control="$4"
-            local sign_file="$verify_dir/upload-sign.json"
             local upload_log="$verify_dir/upload.log"
-            local upload_url
-            local content_length
-            content_length="$(wc -c < "$local_path" | tr -d ' ')"
-
-            # 先向 CloudBase 申请一次性上传签名，再用 curl 直传，避免 CLI
-            # 的 Node 流式请求在大 APK 上传时触发 STORAGE_ABORTED 空闲超时。
-            "${cloudbase_cli[@]}" storage objects sign \
-              "$object_path" \
-              --bucket "$CLOUDBASE_OTA_BUCKET_ID" \
-              --upload \
-              --upsert \
-              --json > "$sign_file"
-            upload_url="$(node - "$sign_file" <<'NODE'
+            local object_url
+            object_url="$(node - "$object_path" <<'NODE'
           const fs = require('node:fs');
-          const path = process.argv[2];
-          const payload = JSON.parse(fs.readFileSync(path, 'utf8'));
-          const result = payload && payload.data ? payload.data : payload;
-          if (!result || typeof result.url !== 'string' || typeof result.token !== 'string' || !result.token) {
-            throw new Error('签名上传响应缺少 url 或 token');
+          const objectPath = process.argv[2];
+          if (!objectPath || objectPath.startsWith('/') || objectPath.includes('//')) {
+            throw new Error('对象路径不合法');
           }
-          const url = new URL(
-            result.url,
-            `https://${process.env.CLOUDBASE_OTA_ENV_ID}.api.tcloudbasegateway.com`,
+          const encodedBucket = encodeURIComponent(process.env.CLOUDBASE_OTA_BUCKET_ID);
+          const encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');
+          process.stdout.write(
+            `https://${process.env.CLOUDBASE_OTA_ENV_ID}.api.tcloudbasegateway.com/v1/storages/object/${encodedBucket}/${encodedPath}`,
           );
-          url.searchParams.set('token', result.token);
-          process.stdout.write(url.toString());
           NODE
-            )"
+          )"
             if ! curl --fail --silent --show-error --location \
-              --retry 3 --retry-all-errors --retry-delay 2 \
+              --retry 2 --retry-all-errors --retry-delay 2 \
               --http1.1 --connect-timeout 20 --max-time 300 \
-              --request PUT --data-binary "@$local_path" \
+              --request POST \
               -H 'Expect:' \
-              -H "Content-Length: $content_length" \
-              -H "Content-Type: $content_type" \
-              -H "Cache-Control: $cache_control" \
-              "$upload_url" > "$upload_log" 2>&1; then
+              -H "Authorization: Bearer $CLOUDBASE_OTA_API_KEY" \
+              -H 'x-upsert: true' \
+              -F "file=@$local_path;type=$content_type" \
+              -F "cacheControl=$cache_control" \
+              -F "contentType=$content_type" \
+              "$object_url" > "$upload_log" 2>&1; then
               sed -E 's/([?&]token=)[^&[:space:]]*/\1REDACTED/g' "$upload_log" >&2
               return 1
             fi
