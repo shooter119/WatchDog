@@ -31,12 +31,12 @@
 - 根本原因：GitHub Runner 到 CloudBase PG Storage API 网关承载大请求体时触发固定上游连接时限；PG 预签名仍走同一网关。
 - 涉及文件：`.github/workflows/release.yml`、`app/lib/services/update_service.dart`、`app/lib/pages/about_page.dart`、`README.md`、`deploy/cloudbase/README.md`。
 - 修改方案：使用 CloudBase 静态托管 CDN 作为 `/ota/` 根入口；发布前检查 APK 小于 50,000,000 bytes；通过固定 API Key 登录 CLI，串行上传并公开完整回读验证；APK 校验成功后最后覆盖 `latest.json`；新版本清单仍保持七字段和相对 `releases/...` APK 路径。
-- 修复状态：代码已实现；GitHub Actions 静态托管探针已通过，待正式构建、国内公开下载和真机升级验收。
-- 验证结果：本地静态托管 `ota-probe/mapping-test.txt` HTTP 200 且与源文件一致；Actions 运行 `33258137182` 使用同一专用 API Key 上传临时 JSON，并从未登录公网地址逐字节回读通过；正式版本验证待新 tag 执行。
+- 修复状态：代码已实现，待 GitHub Actions 探针、正式构建、国内公开下载和真机升级验收。
+- 验证结果：本地静态托管 `ota-probe/mapping-test.txt` HTTP 200 且与源文件一致；正式版本验证待新 tag 执行。
 
 ## 验证矩阵与停止条件
 
-1. GitHub Actions 先上传一个临时 JSON 到静态托管并公开回读（已通过，运行 `33258137182`）；若 API Key 无静态托管写权限，停止发布，改为在控制台调整该专用 Key 权限，不再改变 App 校验。
+1. GitHub Actions 先上传一个临时 JSON 到静态托管并公开回读；若 API Key 无静态托管写权限，停止发布，改为在控制台调整该专用 Key 权限，不再改变 App 校验。
 2. 通过探针后运行后端、Flutter、OTA 脚本和 YAML 全量质量门禁；测试数量不得下降。
 3. 新 tag 构建并校验包名、versionName、arm64、正式签名、大小和 SHA-256。
 4. 上传版本化 manifest，再上传 APK；完整公开下载后核对大小和 SHA-256。
