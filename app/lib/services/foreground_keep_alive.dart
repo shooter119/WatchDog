@@ -5,9 +5,17 @@ import 'dart:io';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:http/http.dart' as http;
 
+import 'secure_store.dart';
 import 'settings.dart';
 
 bool _isSafeServerUrl(String value) => Settings.isSafeHttpUrl(value);
+
+/// 主 isolate 最近一次成功同步仍在有效窗口内时，前台服务无需重复拉取。
+bool isMainSnapshotFresh({
+  required int lastSyncAt,
+  required int nowMs,
+  int freshnessMs = 8000,
+}) => lastSyncAt > 0 && nowMs >= lastSyncAt && nowMs - lastSyncAt < freshnessMs;
 
 /// 后台值守前台服务（flutter_foreground_task 10.x）：
 /// - 前台服务保住进程 + CPU 唤醒锁，App 切后台/锁屏后 5 秒轮询与 1 秒阈值检查照常运行
@@ -22,10 +30,30 @@ class ForegroundKeepAlive {
   static const _kServerUrl = 'keepalive_server_url';
   static const _kIncidentId = 'keepalive_incident_id';
   static const _kToken = 'keepalive_token';
+  static const _kSessionToken = 'keepalive_session_token';
   static const _kUnitId = 'keepalive_unit_id';
   static const _kUnitCode = 'keepalive_unit_code';
   static const _kWarnMin = 'keepalive_warn_min';
   static const _kAlarmMin = 'keepalive_alarm_min';
+  static const _contextUpdatedMessage = 'keepalive_context_updated';
+
+  /// 将主 isolate 的最新摘要交给服务 isolate，避免前台时重复请求。
+  static void reportMainSnapshot({
+    required int activeCount,
+    required int earliestExitAt,
+  }) {
+    if (!Platform.isAndroid) return;
+    try {
+      FlutterForegroundTask.sendDataToTask({
+        'type': 'main_snapshot',
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'activeCount': activeCount,
+        'earliestExitAt': earliestExitAt,
+      });
+    } catch (_) {
+      // 服务未启动或插件尚未就绪时忽略；下一次服务启动会自行拉取完整快照。
+    }
+  }
 
   static bool _inited = false;
   static Future<void>? _initFuture;
@@ -98,6 +126,7 @@ class ForegroundKeepAlive {
     required String serverUrl,
     required String incidentId,
     required String token,
+    required String sessionToken,
     required String unitId,
     required String unitCode,
     required int warnMin,
@@ -116,12 +145,24 @@ class ForegroundKeepAlive {
         key: _kIncidentId,
         value: incidentId,
       );
-      await FlutterForegroundTask.saveData(key: _kToken, value: token);
+      await _writeSensitive(_kToken, token);
+      await _writeSensitive(_kSessionToken, sessionToken);
       await FlutterForegroundTask.saveData(key: _kUnitId, value: unitId);
-      await FlutterForegroundTask.saveData(key: _kUnitCode, value: unitCode);
+      await _writeSensitive(_kUnitCode, unitCode);
       await FlutterForegroundTask.saveData(key: _kWarnMin, value: warnMin);
       await FlutterForegroundTask.saveData(key: _kAlarmMin, value: alarmMin);
-      if (await FlutterForegroundTask.isRunningService) return;
+      if (await FlutterForegroundTask.isRunningService) {
+        // 配置已经完整写入后再通知服务 isolate 重读；消息本身不携带
+        // 令牌或现场数据，避免在跨 isolate 通道中传递敏感上下文。
+        try {
+          FlutterForegroundTask.sendDataToTask({
+            'type': _contextUpdatedMessage,
+          });
+        } catch (_) {
+          // 服务正在退出时消息可能无接收端；下一次启动会读取最新配置。
+        }
+        return;
+      }
       await FlutterForegroundTask.startService(
         serviceTypes: const [ForegroundServiceTypes.specialUse],
         notificationTitle: '火场指挥中',
@@ -138,7 +179,47 @@ class ForegroundKeepAlive {
       if (await FlutterForegroundTask.isRunningService) {
         await FlutterForegroundTask.stopService();
       }
+      // 前台服务存储独立于 Settings；退出单位后必须清掉其中的令牌和警情，
+      // 避免服务停止后仍在设备持久化区残留可用凭据或旧现场上下文。
+      for (final key in [
+        _kServerUrl,
+        _kIncidentId,
+        _kToken,
+        _kSessionToken,
+        _kUnitId,
+        _kUnitCode,
+        _kWarnMin,
+        _kAlarmMin,
+      ]) {
+        try {
+          await FlutterForegroundTask.removeData(key: key);
+        } catch (_) {
+          // 继续清理其他键；插件清理失败不应中断安全存储清理。
+        }
+      }
+      await _deleteSensitive(_kToken);
+      await _deleteSensitive(_kSessionToken);
+      await _deleteSensitive(_kUnitCode);
     });
+  }
+
+  static Future<void> _writeSensitive(String key, String value) async {
+    if (value.trim().isEmpty) {
+      await SecureStore.delete(key);
+    } else {
+      await SecureStore.write(key, value);
+    }
+    // 删除旧版本前台服务写入的 SharedPreferences 数据；新版本不再使用
+    // flutter_foreground_task 的持久化区保存凭据。
+    try {
+      await FlutterForegroundTask.removeData(key: key);
+    } catch (_) {}
+  }
+
+  static Future<void> _deleteSensitive(String key) async {
+    try {
+      await SecureStore.delete(key);
+    } catch (_) {}
   }
 
   static Future<bool> get isRunning async =>
@@ -171,75 +252,220 @@ void watchdogStartCallback() {
 
 /// 服务 isolate 内的任务处理器：每 5 秒拉一次看板数据，刷新常驻通知栏
 class WatchdogTaskHandler extends TaskHandler {
+  WatchdogTaskHandler({http.Client? httpClient})
+    : _httpClient = httpClient ?? http.Client();
+
+  final http.Client _httpClient;
   String _serverUrl = '';
   String _incidentId = '';
   String _token = '';
+  String _sessionToken = '';
   String _unitId = '';
   String _unitCode = '';
   int _warnMin = 10;
   int _alarmMin = 5;
-  bool _refreshing = false;
+  int _contextGeneration = 0;
+  Future<void>? _refreshFuture;
+  int _lastMainSyncAt = 0;
+  int _mainActiveCount = 0;
+  int _mainEarliestExitAt = 0;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // 服务 isolate 运行在独立后台 isolate：Flutter 3.38+ 引擎启动 isolate 时自动注册插件
-    _serverUrl =
-        await FlutterForegroundTask.getData<String>(
-          key: 'keepalive_server_url',
-        ) ??
-        '';
-    _incidentId =
-        await FlutterForegroundTask.getData<String>(
-          key: 'keepalive_incident_id',
-        ) ??
-        '';
-    _token =
-        await FlutterForegroundTask.getData<String>(key: 'keepalive_token') ??
-        '';
-    _unitId =
-        await FlutterForegroundTask.getData<String>(key: 'keepalive_unit_id') ??
-        '';
-    _unitCode =
-        await FlutterForegroundTask.getData<String>(
-          key: 'keepalive_unit_code',
-        ) ??
-        '';
-    _warnMin =
-        await FlutterForegroundTask.getData<int>(key: 'keepalive_warn_min') ??
-        10;
-    _alarmMin =
-        await FlutterForegroundTask.getData<int>(key: 'keepalive_alarm_min') ??
-        5;
-    await _refresh();
+    await _reloadContext();
   }
 
   @override
   void onRepeatEvent(DateTime timestamp) {
+    if (_incidentId.isEmpty) return;
+    if (isMainSnapshotFresh(
+      lastSyncAt: _lastMainSyncAt,
+      nowMs: timestamp.millisecondsSinceEpoch,
+    )) {
+      return;
+    }
     // fire-and-forget：拉数据刷通知栏，失败静默（下次周期重试）
-    unawaited(_refresh());
+    unawaited(_refreshForContext(_contextGeneration));
   }
 
   @override
-  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
+  void onReceiveData(Object data) {
+    if (data is Map &&
+        data['type'] == ForegroundKeepAlive._contextUpdatedMessage) {
+      // 只接收刷新信号，完整上下文仍从各自的持久化存储读取。
+      unawaited(_reloadContext());
+      return;
+    }
+    if (data is! Map || data['type'] != 'main_snapshot') return;
+    final at = (data['at'] as num?)?.toInt() ?? 0;
+    if (at <= _lastMainSyncAt) return;
+    _lastMainSyncAt = at;
+    _mainActiveCount = (data['activeCount'] as num?)?.toInt() ?? 0;
+    _mainEarliestExitAt = (data['earliestExitAt'] as num?)?.toInt() ?? 0;
+    unawaited(_updateNotificationFromMain(at));
+  }
 
-  Future<void> _refresh() async {
-    if (_serverUrl.isEmpty || _incidentId.isEmpty) return;
-    if (!_isSafeServerUrl(_serverUrl)) return;
-    if (_refreshing) return;
-    _refreshing = true;
+  Future<void> _updateNotificationFromMain(int at) async {
+    if (at != _lastMainSyncAt || _incidentId.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_mainActiveCount <= 0) {
+      await FlutterForegroundTask.updateService(
+        notificationTitle: '火场指挥中',
+        notificationText: '当前暂无在场人员',
+      );
+      return;
+    }
+    final leftMs = _mainEarliestExitAt - now;
+    final warnMs = _warnMin * 60000;
+    final alarmMs = _alarmMin * 60000;
+    final status = leftMs < 0
+        ? '超时！'
+        : leftMs <= alarmMs
+        ? '报警！'
+        : leftMs <= warnMs
+        ? '注意'
+        : '';
+    await FlutterForegroundTask.updateService(
+      notificationTitle: '火场指挥中 · 在场 $_mainActiveCount 人$status',
+      notificationText: '最早剩余 ${_fmt(leftMs)}',
+    );
+  }
+
+  @override
+  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    _httpClient.close();
+  }
+
+  Future<void> _reloadContext() async {
+    final generation = ++_contextGeneration;
+    // 在异步读取完成前先清空旧上下文，防止切换窗口继续用旧警情请求。
+    _serverUrl = '';
+    _incidentId = '';
+    _token = '';
+    _sessionToken = '';
+    _unitId = '';
+    _unitCode = '';
+    _lastMainSyncAt = 0;
+    _mainActiveCount = 0;
+    _mainEarliestExitAt = 0;
+
+    final serverUrl =
+        await FlutterForegroundTask.getData<String>(
+          key: ForegroundKeepAlive._kServerUrl,
+        ) ??
+        '';
+    final incidentId =
+        await FlutterForegroundTask.getData<String>(
+          key: ForegroundKeepAlive._kIncidentId,
+        ) ??
+        '';
+    final token = await SecureStore.read(ForegroundKeepAlive._kToken) ?? '';
+    final sessionToken =
+        await SecureStore.read(ForegroundKeepAlive._kSessionToken) ?? '';
+    final unitId =
+        await FlutterForegroundTask.getData<String>(
+          key: ForegroundKeepAlive._kUnitId,
+        ) ??
+        '';
+    final unitCode =
+        await SecureStore.read(ForegroundKeepAlive._kUnitCode) ?? '';
+    final warnMin =
+        await FlutterForegroundTask.getData<int>(
+          key: ForegroundKeepAlive._kWarnMin,
+        ) ??
+        10;
+    final alarmMin =
+        await FlutterForegroundTask.getData<int>(
+          key: ForegroundKeepAlive._kAlarmMin,
+        ) ??
+        5;
+    if (generation != _contextGeneration) return;
+
+    // 前台服务可配置为开机/应用更新后自启。服务 isolate 恢复时必须和
+    // App 的当前警情选择交叉校验，避免退出警情后仅凭旧服务配置恢复监控。
+    final selectedIncidentId = await Settings.currentIncidentId;
+    if (generation != _contextGeneration) return;
+    if (selectedIncidentId.isEmpty || selectedIncidentId != incidentId) {
+      await _stopForStaleContext();
+      return;
+    }
+
+    _serverUrl = serverUrl;
+    _incidentId = incidentId;
+    _token = token;
+    _sessionToken = sessionToken;
+    _unitId = unitId;
+    _unitCode = unitCode;
+    _warnMin = warnMin;
+    _alarmMin = alarmMin;
+
+    // 清理旧版本可能已写入 flutter_foreground_task SharedPreferences 的
+    // 敏感键，但不读取它们，避免升级后继续使用明文凭据。
+    for (final key in [
+      ForegroundKeepAlive._kToken,
+      ForegroundKeepAlive._kSessionToken,
+      ForegroundKeepAlive._kUnitCode,
+    ]) {
+      try {
+        await FlutterForegroundTask.removeData(key: key);
+      } catch (_) {}
+    }
+    if (generation != _contextGeneration) return;
+    await _refreshForContext(generation);
+  }
+
+  Future<void> _stopForStaleContext() async {
     try {
-      final res = await http
+      await ForegroundKeepAlive.stop();
+    } catch (_) {
+      // 服务可能已经被系统回收；主 isolate 下次同步仍会再次清理。
+    }
+  }
+
+  Future<void> _refreshForContext(int generation) async {
+    if (generation != _contextGeneration || _incidentId.isEmpty) return;
+    final existing = _refreshFuture;
+    if (existing != null) {
+      await existing;
+      if (generation != _contextGeneration) {
+        await _refreshForContext(_contextGeneration);
+      }
+      return;
+    }
+    final future = _refresh(generation);
+    _refreshFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_refreshFuture, future)) _refreshFuture = null;
+    }
+  }
+
+  Future<void> _refresh(int generation) async {
+    if (generation != _contextGeneration ||
+        _serverUrl.isEmpty ||
+        _incidentId.isEmpty) {
+      return;
+    }
+    if (!_isSafeServerUrl(_serverUrl)) return;
+    final incidentId = _incidentId;
+    try {
+      final res = await _httpClient
           .get(
             Uri.parse('$_serverUrl/api/entries?active=1'),
             headers: {
-              'X-Incident-Id': _incidentId,
+              'X-Incident-Id': incidentId,
               'X-Api-Token': _token,
+              if (_sessionToken.isNotEmpty)
+                'Authorization': 'Bearer $_sessionToken',
               if (_unitId.isNotEmpty) 'X-Unit-Id': _unitId,
               if (_unitCode.isNotEmpty) 'X-Unit-Code': _unitCode,
             },
           )
           .timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return;
+      if (generation != _contextGeneration || incidentId != _incidentId) return;
       final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
       final now = DateTime.now().millisecondsSinceEpoch;
       final active = <Map<String, dynamic>>[];
@@ -275,8 +501,6 @@ class WatchdogTaskHandler extends TaskHandler {
       );
     } catch (_) {
       // 网络波动静默，下个周期重试
-    } finally {
-      _refreshing = false;
     }
   }
 

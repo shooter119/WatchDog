@@ -51,6 +51,29 @@ test('markExited 后 activeOnly 不再返回', () => {
   assert.ok(db.listEntries({ scene: 's' })[0].exited_at);
 });
 
+test('并发出场只允许第一次改变状态', () => {
+  const now = Date.now();
+  db.createEntry({ id: 'exit-once', scene: 'exit-scene', name: '只出场一次', pressureMpa: 20, entryAtMs: now, exitAtMs: now + 60000, durationMin: 1 });
+  const first = db.markExitedIfActive('exit-once', now + 1000);
+  const second = db.markExitedIfActive('exit-once', now + 2000);
+  assert.equal(first.changed, true);
+  assert.equal(second.changed, false);
+  assert.equal(second.entry.exited_at, now + 1000);
+});
+
+test('进场与事件写入失败时整体回滚', () => {
+  const now = Date.now();
+  const incident = db.createIncident({ id: 'atomic-entry-incident', createdAt: now });
+  db.appendIncidentEvent({ id: 'atomic-event-conflict', incidentId: incident.id, type: 'note' });
+  assert.throws(() => db.createEntryWithEvent({
+    entry: { id: 'atomic-entry', scene: incident.id, name: '回滚测试', pressureMpa: 20, durationMin: 10, entryAtMs: now, exitAtMs: now + 600000 },
+    event: { id: 'atomic-event-conflict', incidentId: incident.id, type: 'entry', payload: { entry_id: 'atomic-entry' } },
+    activityAt: now,
+  }));
+  assert.equal(db.getEntry('atomic-entry'), undefined);
+  assert.equal(db.listPressureSamples('atomic-entry').length, 0);
+});
+
 test('消防员：装机自带名单/新增/查重/删除（全局不区分场景）', () => {
   const names = db.listFirefighters().map((f) => f.name);
   assert.ok(names.includes('李翔'));
@@ -136,6 +159,24 @@ test('警情列表按状态和档案时间排序', () => {
   assert.ok(db.getIncident(first.id));
 });
 
+test('警情列表分页保持单位过滤和稳定切片', () => {
+  const unitId = 'incident-page-unit';
+  for (let i = 0; i < 3; i++) {
+    db.createIncident({
+      id: `incident-page-${i}`,
+      unitId,
+      createdAt: 2000000 + i,
+    });
+  }
+  db.createIncident({ id: 'incident-page-other-unit', unitId: 'other-unit', createdAt: 2000001 });
+  const first = db.listIncidents('active', { unitId, limit: 2, offset: 0 });
+  const second = db.listIncidents('active', { unitId, limit: 2, offset: 2 });
+  assert.equal(first.length, 2);
+  assert.equal(second.length, 1);
+  assert.equal(new Set([...first, ...second].map((item) => item.id)).size, 3);
+  assert.ok([...first, ...second].every((item) => item.unit_id === unitId));
+});
+
 test('警情归档记录方式和未确认离场人数', () => {
   const now = Date.now();
   const incident = db.createIncident({ id: 'incident-archive', createdAt: now });
@@ -192,4 +233,111 @@ test('参战力量同站点只保留一条汇总记录', () => {
   assert.equal(second.id, first.id);
   assert.equal(second.version, 2);
   assert.equal(db.listIncidentForces(incident.id).length, 1);
+  assert.equal(db.listIncidentForcesBatch([incident.id, 'missing']).length, 1);
+});
+
+test('管理写入与时间线事件在 SQLite 事务中成组提交', () => {
+  const now = Date.now();
+  const incident = db.createIncident({ id: 'atomic-management-incident', createdAt: now });
+  const renamed = db.updateIncidentTitleWithEvent({
+    id: incident.id,
+    title: '事务警情',
+    expectedVersion: incident.version,
+    event: { incidentId: incident.id, type: 'incident_renamed', payload: { before: null, after: '事务警情' } },
+  });
+  assert.equal(renamed.incident.title, '事务警情');
+  assert.equal(renamed.event.type, 'incident_renamed');
+
+  const force = db.upsertIncidentForceWithEvent({
+    force: { id: 'atomic-force', incidentId: incident.id, stationName: '事务站', vehicleCount: 1, personnelCount: 4 },
+    event: { incidentId: incident.id, type: 'force_added', payload: { force_id: 'atomic-force' } },
+    activityAt: now + 1,
+  });
+  assert.equal(force.force.id, 'atomic-force');
+  assert.equal(force.event.type, 'force_added');
+
+  const note = db.createNote({ id: 'atomic-note', scene: incident.id, text: '原始记录' });
+  const revised = db.updateNoteWithEvent({
+    id: note.id,
+    text: '修订记录',
+    category: '其他',
+    incidentId: incident.id,
+    event: { incidentId: incident.id, type: 'note_updated', payload: { note_id: note.id } },
+    activityAt: now + 2,
+  });
+  assert.equal(revised.note.text, '修订记录');
+  assert.equal(revised.event.type, 'note_updated');
+  const removed = db.deleteNoteWithEvent({
+    id: note.id,
+    incidentId: incident.id,
+    event: { incidentId: incident.id, type: 'note_voided', payload: { note_id: note.id } },
+    activityAt: now + 3,
+  });
+  assert.equal(removed.changed, true);
+  assert.equal(db.getNote(note.id), undefined);
+
+  const deletedForce = db.deleteIncidentForceWithEvent({
+    id: force.force.id,
+    incidentId: incident.id,
+    event: { incidentId: incident.id, type: 'force_removed', payload: { force_id: force.force.id } },
+    activityAt: now + 4,
+  });
+  assert.equal(deletedForce.changed, true);
+  const archived = db.archiveIncidentWithEvent({
+    id: incident.id,
+    archivedBy: '事务测试',
+    now: now + 5,
+    event: { incidentId: incident.id, type: 'incident_archived', payload: { auto: false } },
+  });
+  assert.equal(archived.changed, true);
+  assert.equal(archived.event.payload.unresolved_active_count, 0);
+});
+
+test('操作日志批量写入在同一事务中完成', () => {
+  const createdAt = Date.now();
+  const count = db.addLogs([
+    { scene: 'bulk-log', device: 'device-a', opId: 'bulk-1', stage: 'one', msg: '一', createdAt },
+    { scene: 'bulk-log', device: 'device-a', opId: 'bulk-2', stage: 'two', msg: '二', createdAt: createdAt + 1 },
+  ]);
+  assert.equal(count, 2);
+  assert.deepEqual(db.listLogs({ scene: 'bulk-log' }).map((log) => log.stage), ['two', 'one']);
+});
+
+test('操作账本按单位和操作号幂等，并拒绝摘要不一致的完成', () => {
+  const first = db.beginOperation({
+    unitId: 'unit-ledger-a', clientOpId: 'ledger-1', incidentId: 'incident-ledger',
+    operationType: 'entry', requestHash: 'hash-a', actorName: '甲',
+  });
+  assert.equal(first.status, 'pending');
+  assert.equal(first.created, true);
+  const duplicate = db.beginOperation({
+    unitId: 'unit-ledger-a', clientOpId: 'ledger-1', incidentId: 'incident-ledger',
+    operationType: 'entry', requestHash: 'hash-b', actorName: '乙',
+  });
+  assert.equal(duplicate.request_hash, 'hash-a');
+  assert.equal(db.completeOperation({ unitId: 'unit-ledger-a', clientOpId: 'ledger-1', requestHash: 'hash-b', result: { id: 'wrong' } }), 0);
+  assert.equal(db.completeOperation({ unitId: 'unit-ledger-a', clientOpId: 'ledger-1', requestHash: 'hash-a', result: { id: 'entry-1' }, responseStatus: 201, eventId: 'event-1' }), 1);
+  const completed = db.getOperation('unit-ledger-a', 'ledger-1');
+  assert.equal(completed.status, 'succeeded');
+  assert.equal(JSON.parse(completed.result_json).id, 'entry-1');
+  assert.equal(completed.response_status, 201);
+
+  // 不同单位可以使用各自的本地操作号，不能互相读取或覆盖账本。
+  const otherUnit = db.beginOperation({
+    unitId: 'unit-ledger-b', clientOpId: 'ledger-1', incidentId: 'incident-ledger-b',
+    operationType: 'entry', requestHash: 'hash-b',
+  });
+  assert.equal(otherUnit.unit_id, 'unit-ledger-b');
+  assert.equal(db.getOperation('unit-ledger-a', 'ledger-1').unit_id, 'unit-ledger-a');
+  assert.equal(db.releaseOperation({ unitId: 'unit-ledger-b', clientOpId: 'ledger-1', requestHash: 'hash-b' }), 1);
+});
+
+test('操作账本租约到期后允许同摘要接管，未到期仍保持处理中', () => {
+  const first = db.beginOperation({ unitId: 'unit-lease', clientOpId: 'lease-1', operationType: 'entry', requestHash: 'lease-hash', now: 1000 });
+  assert.equal(first.created, true);
+  const pending = db.beginOperation({ unitId: 'unit-lease', clientOpId: 'lease-1', operationType: 'entry', requestHash: 'lease-hash', now: 2000 });
+  assert.equal(pending.created, false);
+  const reclaimed = db.beginOperation({ unitId: 'unit-lease', clientOpId: 'lease-1', operationType: 'entry', requestHash: 'lease-hash', now: 31_001 });
+  assert.equal(reclaimed.created, true);
+  assert.equal(reclaimed.reclaimed, true);
 });

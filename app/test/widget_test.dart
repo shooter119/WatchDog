@@ -141,7 +141,8 @@ class _FakeController extends AppController {
 
 class _EmptyTranscriptionController extends _FakeController {
   @override
-  Future<String> transcribeAudio(Uint8List bytes, {String? opId}) async => '   ';
+  Future<String> transcribeAudio(Uint8List bytes, {String? opId}) async =>
+      '   ';
 }
 
 Entry _entry({
@@ -336,6 +337,8 @@ class _EmptyEntryApi extends _FakeApi {
 
 /// 测试专用 AudioService：无真实录音
 class _FakeAudio extends AudioService {
+  int stops = 0;
+
   @override
   Future<bool> hasPermission() async => true;
 
@@ -346,7 +349,10 @@ class _FakeAudio extends AudioService {
   Stream<double> amplitudeStream() => const Stream.empty();
 
   @override
-  Future<Uint8List> stop() async => Uint8List(0);
+  Future<Uint8List> stop() async {
+    stops++;
+    return Uint8List(0);
+  }
 
   @override
   Future<void> dispose() async {}
@@ -1138,6 +1144,32 @@ void main() {
   });
 
   group('HomePage 多人一次性确认', () {
+    testWidgets('首页录音 50 秒提示并在 60 秒自动结束', (tester) async {
+      final audio = _FakeAudio();
+      final controller = _FakeController()..api = _FakeApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: controller, audioService: audio),
+          ),
+        ),
+      );
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await tester.pump();
+      expect(find.byKey(const Key('home-recording-limit')), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 50));
+      expect(find.textContaining('还剩 10 秒'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
+      expect(audio.stops, 1);
+      expect(find.byKey(const Key('home-recording-limit')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('权限响应慢时重复长按只允许一个录音启动请求', (tester) async {
       final audio = _DelayedPermissionAudio();
       final controller = _FakeController()..api = _FakeApi();
@@ -2189,6 +2221,34 @@ void main() {
       expect(find.text('回答：三楼发现明火，请问下一步怎么处置？'), findsOneWidget);
       expect(c.notes, isEmpty);
       expect(api.parseCalls, 0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页录音 50 秒提示并在 60 秒自动结束', (tester) async {
+      final audio = _FakeAudio();
+      final controller = _FakeController()..api = _FakeApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: controller, audioService: audio),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      await state.beginRecording();
+      await tester.pump();
+      expect(find.byKey(const Key('chat-recording-limit')), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 50));
+      expect(find.textContaining('还剩 10 秒'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(audio.stops, 1);
+      expect(find.byKey(const Key('chat-recording-limit')), findsNothing);
       expect(tester.takeException(), isNull);
     });
 

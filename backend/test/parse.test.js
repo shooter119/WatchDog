@@ -1,7 +1,14 @@
 const { test, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { parseTextWithDeepSeek, reviseTextWithDeepSeek, guardrailAction, guardrailIntent } = require('../src/parse');
+const {
+  parseTextWithDeepSeek,
+  reviseTextWithDeepSeek,
+  chatWithDeepSeek,
+  chatWithWebSearch,
+  guardrailAction,
+  guardrailIntent,
+} = require('../src/parse');
 
 afterEach(() => {
   delete globalThis.fetch;
@@ -63,6 +70,7 @@ test('reviseTextWithDeepSeek 请求体包含名单与热词', async () => {
   assert.match(body.messages[1].content, /名单：张伟/);
   assert.match(body.messages[1].content, /专业术语：空气呼吸器/);
   assert.ok(init.signal instanceof AbortSignal);
+  assert.equal(init.redirect, 'error');
 });
 
 test('parseTextWithDeepSeek 修正后文本仍可正常解析', async () => {
@@ -225,4 +233,81 @@ test('guardrailIntent：入场词+压力但 people 空 → 强制 entry（进场
     guardrailIntent('有人进入火场压力十五兆帕', { intent: 'entry', action: 'enter', people: [] }),
     'entry'
   );
+});
+
+test('parseTextWithDeepSeek 上游非 2xx 时返回结构化错误', async () => {
+  globalThis.fetch = () => Promise.resolve({
+    ok: false,
+    status: 429,
+    async text() { return 'rate limited'; },
+  });
+  await assert.rejects(
+    parseTextWithDeepSeek({ apiKey: 'k', text: '张伟，20兆帕' }),
+    /DeepSeek API 429/,
+  );
+});
+
+test('parseTextWithDeepSeek 上游响应缺少 choices 时拒绝而不伪造结果', async () => {
+  globalThis.fetch = () => Promise.resolve({
+    ok: true,
+    async json() { return { choices: [] }; },
+  });
+  await assert.rejects(
+    parseTextWithDeepSeek({ apiKey: 'k', text: '张伟，20兆帕' }),
+    /LLM 返回无法解析/,
+  );
+});
+
+test('chatWithDeepSeek 验证请求参数并返回非空回复', async () => {
+  let captured = null;
+  globalThis.fetch = (url, opts) => {
+    captured = { url: String(url), opts };
+    return Promise.resolve({
+      ok: true,
+      async json() { return { choices: [{ message: { content: '先确认现场风险' } }] }; },
+    });
+  };
+  const reply = await chatWithDeepSeek({
+    apiKey: 'k',
+    model: 'deepseek-chat',
+    messages: [{ role: 'user', content: '现场有浓烟怎么办' }],
+  });
+  assert.equal(reply, '先确认现场风险');
+  assert.match(captured.url, /chat\/completions$/);
+  assert.equal(JSON.parse(captured.opts.body).model, 'deepseek-chat');
+  assert.equal(captured.opts.redirect, 'error');
+  assert.ok(captured.opts.signal instanceof AbortSignal);
+});
+
+test('chatWithDeepSeek 上游空回复时拒绝', async () => {
+  globalThis.fetch = () => Promise.resolve({
+    ok: true,
+    async json() { return { choices: [{ message: { content: '' } }] }; },
+  });
+  await assert.rejects(
+    chatWithDeepSeek({ apiKey: 'k', messages: [{ role: 'user', content: '问题' }] }),
+    /DeepSeek 返回空内容/,
+  );
+});
+
+test('chatWithWebSearch 解析 Responses API output_text 并禁止重定向', async () => {
+  let captured = null;
+  globalThis.fetch = (url, opts) => {
+    captured = { url: String(url), opts };
+    return Promise.resolve({
+      ok: true,
+      async json() { return { output_text: '结论：先撤离并请求支援' }; },
+    });
+  };
+  const reply = await chatWithWebSearch({
+    apiKey: 'k',
+    messages: [
+      { role: 'system', content: '系统规则' },
+      { role: 'user', content: '现场简报' },
+    ],
+  });
+  assert.equal(reply, '结论：先撤离并请求支援');
+  assert.match(captured.url, /\/responses$/);
+  assert.equal(captured.opts.redirect, 'error');
+  assert.ok(captured.opts.signal instanceof AbortSignal);
 });

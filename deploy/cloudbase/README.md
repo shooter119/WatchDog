@@ -16,7 +16,7 @@ CLOUDBASE_SECRET_KEY=<secret-key> \
 npm run db:migrate
 ```
 
-迁移脚本只执行 `backend/migrations/` 中的 DDL，不读取、不导入历史 SQLite 数据。默认消防员、热词和消防站由服务首次启动时幂等初始化。`002_units.sql` 只新增单位表和可空归属字段，不再写入固定验证码；测试环境可通过 `WATCHDOG_SEED_UNIT_*` 显式预置单位，生产环境必须配置实际单位参数，不会把既有警情改归属到该单位。
+迁移脚本只执行 `backend/migrations/` 中的 DDL，不读取、不导入历史 SQLite 数据。迁移脚本会在 PostgreSQL 中记录文件版本与 SHA-256，重复执行时校验和不一致会中止。默认消防员、热词和消防站由服务首次启动时幂等初始化。`002_units.sql` 只新增单位表和可空归属字段，不再写入固定验证码；测试环境可通过 `WATCHDOG_SEED_UNIT_*` 显式预置单位，生产环境必须配置实际单位参数，不会把既有警情改归属到该单位。
 
 ## 2. 创建云托管服务
 
@@ -50,6 +50,17 @@ CLOUDBASE_REST_TIMEOUT_MS=10000
 CLOUDBASE_REST_MAX_RETRIES=2
 API_TOKEN=<random-api-token>
 
+# 认证升级：完成 004 迁移、成员名单配置并发布支持会话的 App 后才启用
+WATCHDOG_SESSION_AUTH_REQUIRED=0
+WATCHDOG_MEMBER_AUTH_REQUIRED=0
+WATCHDOG_SESSION_TTL_MS=28800000
+WATCHDOG_SEED_UNIT_MEMBERS='[{"real_name":"管理员","role":"manager"}]'
+
+# 完成 005_operation_ledger.sql 与 006_integrity_constraints.sql 迁移并验证后启用
+WATCHDOG_OPERATION_LEDGER_ENABLED=0
+# 完成 007_atomic_write_functions.sql 与 008_atomic_rpc_conflict_index.sql（关键写入/事件复合 RPC 及其冲突目标索引）迁移并通过真实数据库故障注入验证后启用
+WATCHDOG_ATOMIC_OPS_ENABLED=0
+
 # 测试/演示阶段预置单位（可选；生产环境必须替换为实际单位参数）
 WATCHDOG_SEED_UNIT_ID=longyou-county-fire-rescue
 WATCHDOG_SEED_UNIT_NAME=龙游县消防救援大队
@@ -61,14 +72,41 @@ VOLC_RESOURCE_ID=volc.bigasr.sauc.duration
 
 DEEPSEEK_API_KEY=<deepseek-api-key>
 DEEPSEEK_BASE_URL=https://api.deepseek.com
+WATCHDOG_LLM_ALLOWED_HOSTS=api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_CHAT_MODEL=deepseek-v4-flash
 CHAT_SEARCH_ENABLED=1
 ```
 
+若设置 `WATCHDOG_ATOMIC_OPS_ENABLED=1` 却未同时设置
+`WATCHDOG_OPERATION_LEDGER_ENABLED=1`，后端会直接拒绝启动，避免原子 RPC 在没有操作账本保护时被重试造成重复业务写入。
+
 计算参数按 `backend/.env.example` 配置。不要把 `CLOUDBASE_SECRET_ID`、`CLOUDBASE_SECRET_KEY` 或 `CLOUDBASE_API_KEY` 写入仓库或 APK。
 
-## 3. 验证
+## 3. 国内 OTA 发布 Secrets
+
+`.github/workflows/release.yml` 还需要配置以下四个 GitHub Actions Repository Secrets，专门用于国内 OTA 存储发布：
+
+```text
+CLOUDBASE_OTA_ENV_ID
+CLOUDBASE_OTA_BUCKET_ID
+CLOUDBASE_OTA_API_KEY_ID
+CLOUDBASE_OTA_API_KEY
+```
+
+这些凭据只授予专用 OTA bucket 的最小写权限，不得复用后端 `service_role` API Key，也不得写入仓库、构建产物或日志。发布工作流会先检查凭据、版本递增、APK 大小与 SHA-256，并回读 OTA APK 和 `latest.json` 完成远端校验；全部通过后才创建 GitHub Release。缺少配置或校验失败时不会创建新的 Release。
+
+OTA 使用 CloudBase PG Storage，约定公开 bucket ID 为 `watchdog-ota`。首次启用前，必须在备份/预生产条件具备后执行
+`backend/migrations/009_ota_public_bucket.sql`，确认 bucket 为公开读并已创建 `anon`/`authenticated` 的对象读取策略。
+App 和 Release workflow 使用以下公开对象入口：
+
+```text
+https://<env-id>.api.tcloudbasegateway.com/v1/storages/object/public/<bucket-id>/<object-path>
+```
+
+其中清单为 `latest.json`，APK 位于 `releases/<tag>-arm64-v8a.apk`。云托管服务的旧 `/ota/*` 路径只作为旧版 App 的兼容重定向，不能替代 PG Storage bucket，也不应作为新版本默认地址。
+
+## 4. 验证
 
 先访问 CloudBase HTTP 网关地址：
 
@@ -77,9 +115,11 @@ GET /api/health
 GET /api/config
 ```
 
-再验证新建警情、进场、出场、压力复核、随手记、操作日志、名单热词、辅助问答和语音转写。重启云托管实例后确认数据仍存在。
+再验证新建警情、进场、出场、压力复核、随手记、操作日志、名单热词、辅助问答和语音转写。启用操作账本前先完成迁移前数据扫描；`006` 的约束暂以 `NOT VALID` 方式兼容历史异常，扫描无误后再单独执行 `VALIDATE CONSTRAINT`；`007` 的 RPC 覆盖建档、进场、出场、压力、随手记、归档和参战力量复合写入，`008` 为其 `client_op_id` 冲突目标补齐完整唯一索引。重启云托管实例后确认数据仍存在。
 
-验证完成后，将该 HTTPS 网关地址配置为 App 的默认服务器地址。当前 App 已内置上述地址；也可以通过 `WATCHDOG_API_BASE_URL` 覆盖。首次安装时，启动认证浮层还需输入与运行时 `API_TOKEN` 一致的访问令牌；令牌不再硬编码进 APK。端侧 ASR 模型通过同一网关的 `/models/` 路径下载，也可以用 `WATCHDOG_MODEL_BASE_URL` 单独覆盖。
+验证完成后，将该 HTTPS 网关地址配置为 App 的默认服务器地址。当前 App 已内置上述地址；也可以通过 `WATCHDOG_API_BASE_URL` 覆盖。首次安装时，启动认证浮层还需输入与运行时 `API_TOKEN` 一致的访问令牌；令牌不再硬编码进 APK。端侧 ASR 模型通过同一网关的 `/models/` 路径下载，也可以用 `WATCHDOG_MODEL_BASE_URL` 单独覆盖；该目录必须同时提供 `manifest.json`，App 会在下载和启用缓存前校验清单中的文件大小与 SHA-256，清单缺失或校验失败不会激活新模型。
+
+生产后端会校验所有出站服务地址：DeepSeek 默认只允许 `api.deepseek.com`；如使用自建代理或兼容服务，必须同时把其主机写入 `WATCHDOG_LLM_ALLOWED_HOSTS`。CloudBase REST 默认必须匹配 `${CLOUDBASE_ENV_ID}.api.tcloudbasegateway.com`；如设置 `CLOUDBASE_REST_BASE_URL` 指向自定义地址，必须同时配置 `CLOUDBASE_REST_ALLOWED_HOSTS`。请求不跟随重定向，避免服务令牌被转发到未登记主机。
 
 正式构建 APK 时注入 CloudBase 服务地址：
 
@@ -87,3 +127,6 @@ GET /api/config
 cd app
 flutter build apk --release --dart-define=WATCHDOG_API_BASE_URL=https://<cloudbase-service-url>
 ```
+
+正式包会把 `WATCHDOG_API_BASE_URL` 编译值作为唯一可信服务地址；不要在生产构建中设置
+`WATCHDOG_ALLOW_CUSTOM_SERVER=true`。开发或测试确需切换服务时，再显式开启该开关，且地址仍必须使用 HTTPS（本机调试地址除外）。

@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { CloudBasePostgrestClient } = require('../src/cloudbase-postgrest');
+const { CloudBasePostgrestClient, assertProductionHost } = require('../src/cloudbase-postgrest');
 
 test('CloudBase PostgREST 客户端发送 service_role 鉴权和查询参数', async () => {
   const calls = [];
@@ -107,4 +107,37 @@ test('CloudBase PostgREST 拒绝带用户信息或查询参数的服务地址', 
       /不得包含用户信息、查询参数或片段/,
     );
   }
+});
+
+test('CloudBase 生产出站地址必须匹配环境或显式主机白名单', () => {
+  assert.doesNotThrow(() => assertProductionHost({
+    url: 'https://pg-env.api.tcloudbasegateway.com/v1/rdb/rest',
+    envId: 'pg-env',
+    hasExplicitBaseUrl: false,
+    allowedHostsValue: '',
+  }));
+  assert.throws(
+    () => assertProductionHost({
+      url: 'https://evil.example/v1/rdb/rest',
+      envId: 'pg-env',
+      hasExplicitBaseUrl: false,
+      allowedHostsValue: '',
+    }),
+    /与 CLOUDBASE_ENV_ID 不匹配/,
+  );
+  assert.throws(
+    () => assertProductionHost({
+      url: 'https://custom.example/v1/rdb/rest',
+      envId: 'pg-env',
+      hasExplicitBaseUrl: true,
+      allowedHostsValue: '',
+    }),
+    /必须配置 CLOUDBASE_REST_ALLOWED_HOSTS/,
+  );
+  assert.doesNotThrow(() => assertProductionHost({
+    url: 'https://custom.example/v1/rdb/rest',
+    envId: 'pg-env',
+    hasExplicitBaseUrl: true,
+    allowedHostsValue: 'custom.example',
+  }));
 });

@@ -177,69 +177,74 @@ class _RosterPageState extends State<RosterPage>
           ),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            AnimatedBuilder(
-              animation: _tab,
-              builder: (context, _) => Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _input,
-                        onSubmitted: (_) => _add(),
-                        decoration: InputDecoration(
-                          hintText: _tab.index == 0 ? '输入消防员姓名…' : '输入专业术语…',
-                          prefixIcon: Icon(
-                            _tab.index == 0 ? Icons.person_add_alt : Icons.tag,
+      body: AnimatedBuilder(
+        animation: widget.controller,
+        builder: (context, _) => SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              AnimatedBuilder(
+                animation: _tab,
+                builder: (context, _) => Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _input,
+                          onSubmitted: (_) => _add(),
+                          decoration: InputDecoration(
+                            hintText: _tab.index == 0 ? '输入消防员姓名…' : '输入专业术语…',
+                            prefixIcon: Icon(
+                              _tab.index == 0
+                                  ? Icons.person_add_alt
+                                  : Icons.tag,
+                            ),
                           ),
+                          textInputAction: TextInputAction.done,
                         ),
-                        textInputAction: TextInputAction.done,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      height: 50,
-                      child: FilledButton.icon(
-                        onPressed: _add,
-                        icon: const Icon(Icons.add),
-                        label: const Text('添加'),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 50,
+                        child: FilledButton.icon(
+                          onPressed: _add,
+                          icon: const Icon(Icons.add),
+                          label: const Text('添加'),
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+              ),
+              TabBar(
+                controller: _tab,
+                tabs: [
+                  Tab(
+                    child: _TabLabel(
+                      text: '消防员',
+                      count: widget.controller.firefighters.length,
                     ),
+                  ),
+                  Tab(
+                    child: _TabLabel(
+                      text: '专业术语',
+                      count: widget.controller.hotwords.length,
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tab,
+                  children: [
+                    _buildList(isFirefighter: true),
+                    _buildList(isFirefighter: false),
                   ],
                 ),
               ),
-            ),
-            TabBar(
-              controller: _tab,
-              tabs: [
-                Tab(
-                  child: _TabLabel(
-                    text: '消防员',
-                    count: widget.controller.firefighters.length,
-                  ),
-                ),
-                Tab(
-                  child: _TabLabel(
-                    text: '专业术语',
-                    count: widget.controller.hotwords.length,
-                  ),
-                ),
-              ],
-            ),
-            Expanded(
-              child: TabBarView(
-                controller: _tab,
-                children: [
-                  _buildList(isFirefighter: true),
-                  _buildList(isFirefighter: false),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

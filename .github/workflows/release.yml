@@ -1,5 +1,5 @@
 # WatchDog 发布流水线：push tag v* → 构建 arm64 正式签名 APK → 发布 GitHub Release
-# App 端「检查更新」查 releases/latest，从 release body 读取 versionCode 与 SHA256 后下载安装。
+# 并将同一 APK 发布到 CloudBase OTA 存储；App 端只访问国内 latest.json。
 name: Build & Release APK
 
 on:
@@ -8,6 +8,12 @@ on:
 
 permissions:
   contents: write
+
+# 同一时间只允许一个版本推进 Release 与国内 OTA；脚本还会校验 versionCode
+# 单调递增，防止排队中的旧 tag 覆盖 latest.json。
+concurrency:
+  group: watchdog-release-publish
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -18,6 +24,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # changelog 需要完整历史
+          persist-credentials: false
 
       - name: Setup Java 17
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
@@ -42,7 +49,7 @@ jobs:
         working-directory: backend
         env:
           # 通过 npm test 运行时摘要校验；新增测试后只允许提高此基线。
-          MIN_BACKEND_TESTS: '117'
+          MIN_BACKEND_TESTS: '161'
         shell: bash
         run: |
           npm ci
@@ -95,7 +102,7 @@ jobs:
         working-directory: app
         env:
           # Flutter JSON reporter 的可见 testDone 事件是运行时计数；新增测试后只允许提高此基线。
-          MIN_APP_TESTS: '196'
+          MIN_APP_TESTS: '223'
         shell: bash
         run: |
           flutter pub get
@@ -195,11 +202,38 @@ jobs:
           EOF
           ls -la app/android/app/watchdog-release.keystore
 
+      # OTA bucket 是 PG Storage 的公开对象入口；缺少配置时尽早失败，避免
+      # 先构建大包再在发布末尾才发现无法完成 OTA。
+      - name: Validate OTA configuration
+        env:
+          CLOUDBASE_OTA_ENV_ID: ${{ secrets.CLOUDBASE_OTA_ENV_ID }}
+          CLOUDBASE_OTA_BUCKET_ID: ${{ secrets.CLOUDBASE_OTA_BUCKET_ID }}
+          CLOUDBASE_OTA_API_KEY_ID: ${{ secrets.CLOUDBASE_OTA_API_KEY_ID }}
+          CLOUDBASE_OTA_API_KEY: ${{ secrets.CLOUDBASE_OTA_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDBASE_OTA_ENV_ID"
+          test -n "$CLOUDBASE_OTA_BUCKET_ID"
+          test -n "$CLOUDBASE_OTA_API_KEY_ID"
+          test -n "$CLOUDBASE_OTA_API_KEY"
+          [[ "$CLOUDBASE_OTA_ENV_ID" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,62}$ ]]
+          [[ "$CLOUDBASE_OTA_BUCKET_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]]
+          echo '国内 OTA 配置格式检查通过'
+
       - name: Build release APK
         working-directory: app
+        env:
+          CLOUDBASE_OTA_ENV_ID: ${{ secrets.CLOUDBASE_OTA_ENV_ID }}
+          CLOUDBASE_OTA_BUCKET_ID: ${{ secrets.CLOUDBASE_OTA_BUCKET_ID }}
         run: |
+          set -euo pipefail
           flutter pub get
-          flutter build apk --release --target-platform android-arm64 --split-per-abi
+          OTA_MANIFEST_URL="https://${CLOUDBASE_OTA_ENV_ID}.api.tcloudbasegateway.com/v1/storages/object/public/${CLOUDBASE_OTA_BUCKET_ID}/latest.json"
+          # 只发布 arm64 split APK；Prepare release assets 从包内读取最终
+          # versionCode，确保 Flutter 的 ABI 偏移与 OTA 清单保持一致。
+          flutter build apk --release --target-platform android-arm64 --split-per-abi \
+            "--dart-define=WATCHDOG_UPDATE_MANIFEST_URL=${OTA_MANIFEST_URL}"
           ls -lh build/app/outputs/flutter-apk/
 
       # 文件名标记为 arm64 前先确认包内没有误带其他 ABI，避免发布体积和兼容性
@@ -241,7 +275,28 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"          # v0.8.5+22
           VERSION="${TAG#v}"                       # 0.8.5+22
+          TAG_BUILD_NUMBER="${VERSION##*+}"
+          if ! [[ "$TAG_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::tag 必须包含正整数构建号（如 v1.2.3+50）"
+            exit 1
+          fi
           APK="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          AAPT2=$(find "$ANDROID_HOME/build-tools" -name aapt2 2>/dev/null | sort -V | tail -1)
+          test -n "$AAPT2"
+          APK_METADATA=$("$AAPT2" dump badging "$APK" | sed -n '1p')
+          APK_VERSION=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$APK_METADATA")
+          VERSION_CODE=$(sed -n "s/.*versionCode='\([0-9][0-9]*\)'.*/\1/p" <<<"$APK_METADATA")
+          test "$APK_VERSION" = "$VERSION"
+          if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::无法从 arm64 APK 读取有效 Android versionCode"
+            exit 1
+          fi
+          EXPECTED_VERSION_CODE=$((2000 + TAG_BUILD_NUMBER))
+          if [ "$VERSION_CODE" -ne "$EXPECTED_VERSION_CODE" ]; then
+            echo "::error::arm64 APK versionCode 与 tag 的 Flutter ABI 偏移不一致"
+            exit 1
+          fi
+          echo "APK versionName/versionCode：$APK_VERSION/$VERSION_CODE（tag build number：$TAG_BUILD_NUMBER）"
           cp "$APK" "build/app/outputs/flutter-apk/watchdog-${VERSION}-arm64-v8a.apk"
           SHA256=$(sha256sum "$APK" | awk '{print $1}')
           PREV=$(git -C .. describe --tags --abbrev=0 "${TAG}~1" 2>/dev/null || true)
@@ -253,14 +308,152 @@ jobs:
           {
             echo "## ${TAG}"
             echo ""
-            echo "versionCode: ${VERSION##*+}"
+            echo "versionCode: ${VERSION_CODE}"
             echo "SHA256: ${SHA256}"
             echo ""
             echo "### 更新内容"
             echo "${CHANGELOG}"
           } > release-body.md
+          printf '%s\n' "${CHANGELOG}" > ota-changelog.txt
+          SIZE_BYTES=$(wc -c < "$APK" | tr -d ' ')
+          echo "apk_file=build/app/outputs/flutter-apk/watchdog-${VERSION}-arm64-v8a.apk" >> "$GITHUB_OUTPUT"
+          echo "apk_path=releases/${TAG}/watchdog-${VERSION}-arm64-v8a.apk" >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA256}" >> "$GITHUB_OUTPUT"
+          echo "size_bytes=${SIZE_BYTES}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           cat release-body.md
+
+      # 先完成国内 OTA 上传并校验，再创建 GitHub Release；这样 OTA 配置缺失或
+      # 上传校验失败时不会留下已创建但不可用的半成品 Release。
+      # 国内 OTA：上传与 GitHub Release 完全相同的 APK，最后才更新 latest.json。
+      # CloudBase API Key 仅授予专用 OTA bucket 的写权限，不复用后端 service_role 密钥。
+      - name: Publish domestic OTA
+        working-directory: app
+        env:
+          CLOUDBASE_OTA_ENV_ID: ${{ secrets.CLOUDBASE_OTA_ENV_ID }}
+          CLOUDBASE_OTA_BUCKET_ID: ${{ secrets.CLOUDBASE_OTA_BUCKET_ID }}
+          CLOUDBASE_OTA_API_KEY_ID: ${{ secrets.CLOUDBASE_OTA_API_KEY_ID }}
+          CLOUDBASE_OTA_API_KEY: ${{ secrets.CLOUDBASE_OTA_API_KEY }}
+          TAG_NAME: ${{ github.ref_name }}
+          APK_FILE: ${{ steps.release.outputs.apk_file }}
+          APK_PATH: ${{ steps.release.outputs.apk_path }}
+          SHA256: ${{ steps.release.outputs.sha256 }}
+          SIZE_BYTES: ${{ steps.release.outputs.size_bytes }}
+          VERSION_CODE: ${{ steps.release.outputs.version_code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDBASE_OTA_ENV_ID"
+          test -n "$CLOUDBASE_OTA_BUCKET_ID"
+          test -n "$CLOUDBASE_OTA_API_KEY_ID"
+          test -n "$CLOUDBASE_OTA_API_KEY"
+          test -f "$APK_FILE"
+          test "$(sha256sum "$APK_FILE" | awk '{print $1}')" = "$SHA256"
+          test "$(wc -c < "$APK_FILE" | tr -d ' ')" = "$SIZE_BYTES"
+          OTA_PUBLIC_BASE_URL="https://${CLOUDBASE_OTA_ENV_ID}.api.tcloudbasegateway.com/v1/storages/object/public/${CLOUDBASE_OTA_BUCKET_ID}"
+
+          verify_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/watchdog-ota-verify.XXXXXX")"
+          trap 'rm -rf "$verify_dir"' EXIT
+          existing_latest_status="$(curl --silent --show-error --location --retry 3 --retry-delay 2 \
+            -o "$verify_dir/existing-latest.json" -w '%{http_code}' \
+            "$OTA_PUBLIC_BASE_URL/latest.json" || true)"
+          case "$existing_latest_status" in
+            200)
+              node - "$verify_dir/existing-latest.json" <<'NODE'
+          const fs = require('node:fs');
+          const path = process.argv[2];
+          const current = Number(process.env.VERSION_CODE);
+          const previous = JSON.parse(fs.readFileSync(path, 'utf8'));
+          if (!Number.isSafeInteger(current) || current < 1 ||
+              !Number.isSafeInteger(previous.versionCode) || previous.versionCode < 1) {
+            throw new Error('OTA versionCode 无效');
+          }
+          if (current <= previous.versionCode) {
+            throw new Error(`OTA versionCode 必须递增：当前 ${current} <= 已发布 ${previous.versionCode}`);
+          }
+          NODE
+              ;;
+            404)
+              echo '国内 OTA 尚无历史清单，允许首次发布'
+              ;;
+            *)
+              echo "::error::无法安全读取现有国内 OTA 清单（HTTP $existing_latest_status）"
+              exit 1
+              ;;
+          esac
+
+          cloudbase_cli=(npx --yes --package @cloudbase/cli@3.8.1 tcb)
+          "${cloudbase_cli[@]}" login \
+            --apiKeyId "$CLOUDBASE_OTA_API_KEY_ID" \
+            --apiKey "$CLOUDBASE_OTA_API_KEY"
+          "${cloudbase_cli[@]}" env use "$CLOUDBASE_OTA_ENV_ID"
+
+          "${cloudbase_cli[@]}" storage objects upload \
+            "$APK_FILE" \
+            "$APK_PATH" \
+            --bucket "$CLOUDBASE_OTA_BUCKET_ID" \
+            --content-type 'application/vnd.android.package-archive' \
+            --cache-control 'public,max-age=31536000,immutable' \
+            --use-put
+
+          public_apk_url="$OTA_PUBLIC_BASE_URL/$APK_PATH"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            "$public_apk_url" -o "$verify_dir/remote.apk"
+          test "$(sha256sum "$verify_dir/remote.apk" | awk '{print $1}')" = "$SHA256"
+          test "$(wc -c < "$verify_dir/remote.apk" | tr -d ' ')" = "$SIZE_BYTES"
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const manifest = {
+            schemaVersion: 1,
+            tagName: process.env.TAG_NAME,
+            versionCode: Number(process.env.VERSION_CODE),
+            apkPath: process.env.APK_PATH,
+            sizeBytes: Number(process.env.SIZE_BYTES),
+            sha256: process.env.SHA256.toLowerCase(),
+            changelog: fs.readFileSync('ota-changelog.txt', 'utf8').trim(),
+          };
+          if (!Number.isInteger(manifest.versionCode) || manifest.versionCode < 1) {
+            throw new Error('invalid versionCode');
+          }
+          if (!Number.isInteger(manifest.sizeBytes) || manifest.sizeBytes < 1) {
+            throw new Error('invalid sizeBytes');
+          }
+          if (!/^[0-9a-f]{64}$/.test(manifest.sha256)) {
+            throw new Error('invalid sha256');
+          }
+          fs.writeFileSync('latest.json', `${JSON.stringify(manifest)}\n`);
+          NODE
+
+          "${cloudbase_cli[@]}" storage objects upload \
+            latest.json \
+            latest.json \
+            --bucket "$CLOUDBASE_OTA_BUCKET_ID" \
+            --content-type 'application/json; charset=utf-8' \
+            --cache-control 'no-cache,max-age=0,must-revalidate' \
+            --use-put
+
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+            -H 'Cache-Control: no-cache' \
+            "$OTA_PUBLIC_BASE_URL/latest.json" -o "$verify_dir/latest.json"
+          node - "$verify_dir/latest.json" <<'NODE'
+          const fs = require('node:fs');
+          const path = process.argv[2];
+          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+          for (const key of ['schemaVersion', 'tagName', 'versionCode', 'apkPath', 'sizeBytes', 'sha256']) {
+            if (!(key in manifest)) throw new Error(`manifest missing ${key}`);
+          }
+          if (manifest.schemaVersion !== 1 || manifest.tagName !== process.env.TAG_NAME) {
+            throw new Error('manifest metadata mismatch');
+          }
+          if (manifest.versionCode !== Number(process.env.VERSION_CODE) ||
+              manifest.apkPath !== process.env.APK_PATH ||
+              manifest.sizeBytes !== Number(process.env.SIZE_BYTES) ||
+              manifest.sha256 !== process.env.SHA256.toLowerCase()) {
+            throw new Error('manifest release values mismatch');
+          }
+          NODE
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

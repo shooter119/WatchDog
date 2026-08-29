@@ -57,6 +57,11 @@ class HomePageState extends State<HomePage> {
   bool _recordingRequested = false;
   int _recordingGeneration = 0;
   bool _recordingStarting = false;
+  static const _maxRecordingDuration = Duration(seconds: 60);
+  static const _recordingWarningDuration = Duration(seconds: 50);
+  Timer? _recordingTimer;
+  DateTime? _recordingStartedAt;
+  int _recordingSeconds = 0;
 
   // 本次语音操作 ID：贯穿 录音→转写→解析→确认/出场，客户端与服务端日志以此对齐
   String? _opId;
@@ -102,6 +107,7 @@ class HomePageState extends State<HomePage> {
     _recordingRequested = false;
     _recordingGeneration++;
     _recordingStarting = false;
+    _stopRecordingTimer();
     _ampSub?.cancel();
     _clearEditors();
     _audio.dispose();
@@ -143,6 +149,38 @@ class HomePageState extends State<HomePage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.dispose();
     });
+  }
+
+  void _startRecordingTimer() {
+    _recordingTimer?.cancel();
+    _recordingStartedAt = DateTime.now();
+    _recordingSeconds = 0;
+    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || !_recording) {
+        _stopRecordingTimer();
+        return;
+      }
+      final wallClockSeconds = _recordingStartedAt == null
+          ? 0
+          : DateTime.now().difference(_recordingStartedAt!).inSeconds;
+      final seconds = min(
+        max(timer.tick, wallClockSeconds),
+        _maxRecordingDuration.inSeconds,
+      );
+      if (seconds != _recordingSeconds) {
+        setState(() => _recordingSeconds = seconds);
+      }
+      if (seconds >= _maxRecordingDuration.inSeconds) {
+        _stopRecordingTimer();
+        unawaited(finishRecording());
+      }
+    });
+  }
+
+  void _stopRecordingTimer() {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    _recordingStartedAt = null;
   }
 
   /// 开始录音（长按触发）
@@ -211,8 +249,12 @@ class HomePageState extends State<HomePage> {
         _endOp('cancelled');
         return;
       }
-      setState(() => _recording = true);
+      setState(() {
+        _recording = true;
+        _recordingSeconds = 0;
+      });
       _recordingStarting = false;
+      _startRecordingTimer();
       widget.onRecordingChanged?.call(true);
       _ampSub = _audio.amplitudeStream().listen((a) {
         if (mounted) setState(() => _amp = a);
@@ -237,14 +279,17 @@ class HomePageState extends State<HomePage> {
       // 防止手势结束后异步回调又偷偷启动录音。
       _recordingRequested = false;
       _recordingGeneration++;
+      _stopRecordingTimer();
       return;
     }
     _recordingRequested = false;
     _recordingGeneration++;
+    _stopRecordingTimer();
     setState(() {
       _recording = false;
       _processing = true;
       _amp = 0.15;
+      _recordingSeconds = 0;
     });
     widget.onRecordingChanged?.call(false);
     widget.onProcessingChanged?.call(true);
@@ -1021,6 +1066,13 @@ class HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.controller.clockTick,
+      builder: (context, _) => _buildContent(context),
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     final cfg = widget.controller.calcConfig;
     final incident = widget.controller.currentIncident;
     // 录入确认时把警情卡收起，确认区只保留人员和压力信息，避免重复占用屏幕。
@@ -1464,6 +1516,21 @@ class HomePageState extends State<HomePage> {
             const Text(
               '或：出火场人员姓名',
               style: TextStyle(color: AppColors.textTertiary, fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _recordingSeconds >= _recordingWarningDuration.inSeconds
+                  ? '还剩 ${max(0, _maxRecordingDuration.inSeconds - _recordingSeconds)} 秒，时间到将自动结束'
+                  : '最长录音 60 秒 · 已录 $_recordingSeconds 秒',
+              key: const Key('home-recording-limit'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _recordingSeconds >= _recordingWarningDuration.inSeconds
+                    ? AppColors.caution
+                    : AppColors.textTertiary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             if (_peopleEditors.isNotEmpty) ...[
               const SizedBox(height: 10),

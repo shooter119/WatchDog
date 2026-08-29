@@ -278,3 +278,27 @@ test('12 小时自动归档和离线补传幂等', async () => {
   assert.equal(duplicate.results[0].duplicate, true);
   assert.equal(db.listIncidentEvents(incident.id).filter((event) => event.client_op_id === 'offline-note-1').length, 1);
 });
+
+test('离线补传同一操作 ID 的内容变化会冲突且不重复写入', async () => {
+  const incident = await createIncident();
+  const offlineHeaders = headers({ 'X-Incident-Id': incident.id });
+  const operation = {
+    type: 'note',
+    occurred_at: Date.now(),
+    client_op_id: 'offline-note-conflict-1',
+    payload: { note_id: 'offline-note-conflict-1', text: '第一次记录', category: '其他' },
+  };
+  const first = await json(await fetch(`${base}/api/incidents/${incident.id}/offline-operations`, {
+    method: 'POST', headers: offlineHeaders, body: JSON.stringify({ operations: [operation] }),
+  }));
+  assert.equal(first.results[0].accepted, true);
+
+  const changed = await json(await fetch(`${base}/api/incidents/${incident.id}/offline-operations`, {
+    method: 'POST', headers: offlineHeaders,
+    body: JSON.stringify({ operations: [{ ...operation, payload: { ...operation.payload, text: '篡改后的记录' } }] }),
+  }));
+  assert.equal(changed.results[0].accepted, false);
+  assert.equal(changed.results[0].code, 'OPERATION_REQUEST_CONFLICT');
+  assert.equal(db.listIncidentEvents(incident.id).filter((event) => event.client_op_id === operation.client_op_id).length, 1);
+  assert.equal(db.listNotes({ scene: incident.id }).find((note) => note.id === operation.payload.note_id).text, '第一次记录');
+});

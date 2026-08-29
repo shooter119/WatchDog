@@ -11,13 +11,23 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 远端更新信息（来自 GitHub Releases）
+int? _arm64VersionCodeFromTag(String tagName) {
+  final idx = tagName.lastIndexOf('+');
+  if (idx < 1 || idx == tagName.length - 1) return null;
+  final buildNumber = int.tryParse(tagName.substring(idx + 1));
+  if (buildNumber == null || buildNumber < 1) return null;
+  // Release workflow publishes the arm64 split APK. Keep this offset in sync
+  // with Flutter's split-per-abi versionCode convention.
+  return 2000 + buildNumber;
+}
+
+/// 远端更新信息（来自国内 CloudBase OTA 清单）
 class UpdateInfo {
   final String tagName; // 如 v0.8.5+22
   final String apkUrl;
   final int? sizeBytes;
   final String? sha256;
-  final String? changelog; // release body
+  final String? changelog; // 国内 OTA 清单中的更新说明
 
   const UpdateInfo({
     required this.tagName,
@@ -27,31 +37,53 @@ class UpdateInfo {
     this.changelog,
   });
 
-  /// 从 tag 尾部 `+N` 解析 versionCode（历史 tag 无 +N 视为 0，永远低于正式版）
+  /// 从 tag 尾部 `+N` 解析 arm64 split APK 的 Android versionCode。
+  /// Flutter 的 split-per-abi 会给 arm64 增加 2000 的 ABI 偏移；OTA 清单必须
+  /// 与 APK 内部 versionCode 一致，原生安装校验和本地版本比较也使用该值。
   int get versionCode {
-    final idx = tagName.lastIndexOf('+');
-    if (idx < 0) return 0;
-    return int.tryParse(tagName.substring(idx + 1)) ?? 0;
+    return _arm64VersionCodeFromTag(tagName) ?? 0;
   }
 }
 
-/// OTA 更新服务：查询 GitHub Releases 最新版（公开仓库免 token），
+typedef UpdateEventLogger =
+    void Function(String stage, String message, String level);
+
+/// OTA 更新服务：从国内 CloudBase PG Storage 公开对象清单获取版本，
 /// 由 App 自己下载并校验 APK，再交给原生 FileProvider 拉起系统安装。
 ///
-/// 版本查询优先走 GitHub Releases API（响应小，避免下载整张发布页），
-/// API 限流或不可达时回退到 github.com 发布页解析。两条路径都从发布
-/// 信息中读取 SHA256，下载后仍必须校验，不能只凭版本号安装。
+/// 清单和 APK 均只走国内更新入口；GitHub Release 仍由发布流水线保留，
+/// 供旧版本迁移、人工下载和历史归档使用，但新版本 App 不在运行时访问 GitHub。
 class UpdateService {
-  static const repoHome = 'https://github.com/shooter119/WatchDog';
-  static const releaseApiUrl =
-      'https://api.github.com/repos/shooter119/WatchDog/releases/latest';
-  static const latestUrl = '$repoHome/releases/latest';
-  static const userAgent = 'watchdog-app-updater/1.0';
+  static const updateManifestUrl = String.fromEnvironment(
+    'WATCHDOG_UPDATE_MANIFEST_URL',
+    defaultValue:
+        'https://watchdog-prod-d6gch930m378d9a16.api.tcloudbasegateway.com/v1/storages/object/public/watchdog-ota/latest.json',
+  );
+  static const userAgent = 'watchdog-app-updater/2.0';
   static const _metadataTimeout = Duration(seconds: 15);
+  static const _metadataAttempts = 2;
+  static const _downloadAttempts = 2;
+  static const _retryDelay = Duration(milliseconds: 500);
+  // 当前正式 arm64 APK 约 47 MB；给压缩/未来依赖增长留出空间，同时避免
+  // 清单被篡改或服务异常时把无界响应写入应用存储。
+  static const maxApkSizeBytes = 160 * 1024 * 1024;
 
   static const MethodChannel _installChannel = MethodChannel('watchdog/screen');
   static const _cachedTagKey = 'ota_cached_tag';
   static const _cachedShaKey = 'ota_cached_sha256';
+
+  final http.Client Function() _httpClientFactory;
+  final UpdateEventLogger? _logger;
+
+  UpdateService({
+    http.Client Function()? httpClientFactory,
+    UpdateEventLogger? logger,
+  }) : _httpClientFactory = httpClientFactory ?? http.Client.new,
+       _logger = logger;
+
+  void _log(String stage, String message, {String level = 'info'}) {
+    _logger?.call(stage, message, level);
+  }
 
   /// 使用版本化文件名，避免不同版本之间复用同一个残留 APK。
   static String filenameFor(UpdateInfo update) {
@@ -131,131 +163,186 @@ class UpdateService {
   /// 检查更新。返回 (更新信息, 错误信息)：
   /// - 更新信息非空 → 有新版可下载
   /// - 两者皆空 → 已是最新
-  /// - 错误信息非空 → 检查失败（GitHub 不可达/网络异常）
+  /// - 错误信息非空 → 检查失败（国内更新服务不可达/网络异常）
   Future<(UpdateInfo?, String?)> checkForUpdate() async {
     final info = await PackageInfo.fromPlatform();
     final localBuild = int.tryParse(info.buildNumber) ?? 0;
-    final (remote, error) = await _fetchLatestRelease();
+    final (remote, error) = await _fetchLatestManifest();
     if (error != null) return (null, error);
     if (remote == null || remote.versionCode <= localBuild) return (null, null);
     return (remote, null);
   }
 
-  Future<(UpdateInfo?, String?)> _fetchLatestRelease() async {
-    Object? apiError;
-    try {
-      final res = await http
-          .get(
-            Uri.parse(releaseApiUrl),
-            headers: {
-              'Accept': 'application/vnd.github+json',
-              'User-Agent': userAgent,
-            },
-          )
-          .timeout(_metadataTimeout);
-      if (res.statusCode == 200) {
-        final parsed = parseReleaseJson(utf8.decode(res.bodyBytes));
-        if (parsed != null) return (parsed, null);
-        apiError = const FormatException('GitHub API 返回的更新清单不完整');
-      } else {
-        apiError = HttpException('GitHub API HTTP ${res.statusCode}');
-      }
-    } catch (e) {
-      apiError = e;
+  Future<(UpdateInfo?, String?)> _fetchLatestManifest() async {
+    final manifestUri = Uri.tryParse(updateManifestUrl);
+    if (manifestUri == null || !_isHttpsUri(manifestUri)) {
+      const error = '国内更新服务地址无效';
+      _log('ota_manifest_fail', error, level: 'error');
+      return (null, error);
     }
 
-    // API 可能因匿名限流或特定网络环境不可用，保留网页路径作为兜底。
+    _log('ota_manifest_start', '开始请求国内更新清单');
+    final client = _httpClientFactory();
+    Object? lastError;
     try {
-      final res = await http
-          .get(Uri.parse(latestUrl), headers: {'User-Agent': userAgent})
-          .timeout(_metadataTimeout);
-      if (res.statusCode != 200) {
-        return (null, '更新服务不可达（HTTP ${res.statusCode}）');
+      for (var attempt = 1; attempt <= _metadataAttempts; attempt++) {
+        try {
+          final res = await client
+              .get(
+                manifestUri,
+                headers: {
+                  'Accept': 'application/json',
+                  'Cache-Control': 'no-cache',
+                  'User-Agent': userAgent,
+                },
+              )
+              .timeout(_metadataTimeout);
+          if (res.statusCode == 200) {
+            final parsed = parseManifestJson(
+              utf8.decode(res.bodyBytes),
+              manifestUrl: manifestUri,
+            );
+            if (parsed != null) {
+              _log(
+                'ota_manifest_ready',
+                '国内更新清单读取成功：${parsed.tagName}',
+                level: 'info',
+              );
+              return (parsed, null);
+            }
+            const error = '国内更新清单格式无效';
+            _log('ota_manifest_fail', error, level: 'error');
+            return (null, error);
+          }
+
+          lastError = _HttpStatusException(res.statusCode);
+          if (!_isRetryableMetadataStatus(res.statusCode) ||
+              attempt == _metadataAttempts) {
+            final error = '国内更新服务不可达（HTTP ${res.statusCode}）';
+            _log('ota_manifest_fail', error, level: 'error');
+            return (null, error);
+          }
+        } catch (e) {
+          lastError = e;
+          if (attempt == _metadataAttempts) {
+            final error = _friendlyNetworkError(e);
+            _log('ota_manifest_fail', error, level: 'error');
+            return (null, error);
+          }
+        }
+        await Future<void>.delayed(_retryDelay);
       }
-      final parsed = parseReleaseHtml(utf8.decode(res.bodyBytes));
-      if (parsed != null) return (parsed, null);
-      return (null, '更新清单解析失败');
-    } catch (e) {
-      // 优先展示最后一次（网页兜底）错误；API 错误仅作为诊断信息保留，
-      // 避免用户看到两个重复的异常堆叠。
-      if (apiError is TimeoutException && e is TimeoutException) {
-        return (null, 'GitHub 响应超时，请稍后重试');
-      }
-      return (null, _friendlyNetworkError(e));
+      final error = _friendlyNetworkError(
+        lastError ?? const SocketException('请求失败'),
+      );
+      _log('ota_manifest_fail', error, level: 'error');
+      return (null, error);
+    } finally {
+      client.close();
     }
   }
 
-  /// 解析 GitHub Releases API 返回的 JSON。公开保留便于单测覆盖发布格式。
-  static UpdateInfo? parseReleaseJson(String body) {
+  /// 解析国内 CloudBase OTA 清单，并将相对 APK 路径解析为同一入口下的 HTTPS 地址。
+  static UpdateInfo? parseManifestJson(String body, {Uri? manifestUrl}) {
     try {
+      final baseUri = manifestUrl ?? Uri.tryParse(updateManifestUrl);
+      if (baseUri == null || !_isHttpsUri(baseUri)) return null;
       final decoded = jsonDecode(body);
       if (decoded is! Map) return null;
-      final tagName = decoded['tag_name'];
-      if (tagName is! String || tagName.isEmpty) return null;
+      if (decoded['schemaVersion'] != 1) return null;
 
-      final rawAssets = decoded['assets'];
-      if (rawAssets is! List) return null;
-      Map<String, dynamic>? apkAsset;
-      for (final rawAsset in rawAssets) {
-        if (rawAsset is! Map) continue;
-        final name = rawAsset['name'];
-        if (name is String &&
-            name.startsWith('watchdog-') &&
-            name.endsWith('-arm64-v8a.apk')) {
-          apkAsset = Map<String, dynamic>.from(rawAsset);
-          break;
-        }
+      final tagName = decoded['tagName'];
+      final versionCode = decoded['versionCode'];
+      final apkPath = decoded['apkPath'];
+      final sha256 = decoded['sha256'];
+      final sizeBytes = decoded['sizeBytes'];
+      final changelog = decoded['changelog'];
+      if (tagName is! String || tagName.trim().isEmpty) return null;
+      if (versionCode is! num ||
+          !versionCode.isFinite ||
+          versionCode != versionCode.roundToDouble() ||
+          versionCode < 1) {
+        return null;
       }
-      if (apkAsset == null) return null;
+      if (apkPath is! String || !_isSafeApkPath(apkPath)) return null;
+      if (sha256 is! String || !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(sha256)) {
+        return null;
+      }
+      if (sizeBytes is! num ||
+          !sizeBytes.isFinite ||
+          sizeBytes != sizeBytes.roundToDouble() ||
+          sizeBytes < 1 ||
+          sizeBytes > maxApkSizeBytes) {
+        return null;
+      }
+      if (changelog is! String) return null;
 
-      final assetName = apkAsset['name'] as String;
-      final assetUrl =
-          apkAsset['browser_download_url'] as String? ??
-          '$repoHome/releases/download/${Uri.encodeComponent(tagName)}/$assetName';
-      final rawSize = apkAsset['size'];
-      final bodyText = decoded['body'] as String? ?? '';
+      final parsedTagVersionCode = _arm64VersionCodeFromTag(tagName);
+      if (parsedTagVersionCode == null ||
+          parsedTagVersionCode != versionCode.toInt()) {
+        return null;
+      }
+      final apkUrl = baseUri.resolve(apkPath).toString();
       return UpdateInfo(
         tagName: tagName,
-        apkUrl: assetUrl,
-        sizeBytes: rawSize is num ? rawSize.toInt() : null,
-        sha256: _extractSha256(bodyText),
-        changelog: bodyText,
+        apkUrl: apkUrl,
+        sizeBytes: sizeBytes.toInt(),
+        sha256: sha256.toLowerCase(),
+        changelog: changelog,
       );
     } catch (_) {
       return null;
     }
   }
 
-  /// 兼容旧版本发布页格式，作为 API 不可用时的兜底解析器。
-  static UpdateInfo? parseReleaseHtml(String html) {
-    final ogMatch = RegExp(r'og:url"\s+content="([^"]+)"').firstMatch(html);
-    final tagMatch = RegExp(
-      r'/releases/tag/[^/?]+',
-    ).firstMatch(ogMatch?.group(1) ?? '');
-    if (tagMatch == null) return null;
-    final encodedTag = tagMatch.group(0)!.split('/').last;
-    final tagName = Uri.decodeComponent(encodedTag);
-    if (tagName.isEmpty) return null;
-
-    final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
-    final assetName = 'watchdog-$version-arm64-v8a.apk';
-    return UpdateInfo(
-      tagName: tagName,
-      apkUrl:
-          '$repoHome/releases/download/${Uri.encodeComponent(tagName)}/$assetName',
-      sha256: _extractSha256(html),
-    );
-  }
-
-  static String? _extractSha256(String source) {
-    return RegExp(r'SHA256:\s*([0-9a-fA-F]{64})').firstMatch(source)?.group(1);
-  }
-
   static String _friendlyNetworkError(Object error) {
-    if (error is TimeoutException) return 'GitHub 响应超时，请稍后重试';
-    if (error is SocketException) return '无法连接 GitHub，请检查网络后重试';
-    return '检查更新失败：$error';
+    if (error is TimeoutException) return '国内更新服务响应超时，请稍后重试';
+    if (error is SocketException || error is http.ClientException) {
+      return '无法连接国内更新服务，请检查网络后重试';
+    }
+    return '检查国内更新服务失败：$error';
   }
+
+  static bool _isHttpsUri(Uri uri) =>
+      uri.scheme.toLowerCase() == 'https' &&
+      uri.host.isNotEmpty &&
+      uri.userInfo.isEmpty &&
+      uri.query.isEmpty &&
+      uri.fragment.isEmpty;
+
+  static bool _isSafeApkPath(String value) {
+    if (value.isEmpty || value.startsWith('/') || value.contains('\\')) {
+      return false;
+    }
+    // 只允许 CI 生成的普通对象路径，拒绝 %2e、%2f 等编码后的路径穿越变体。
+    if (RegExp(r'[^A-Za-z0-9._+/-]').hasMatch(value)) return false;
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        uri.hasScheme ||
+        uri.host.isNotEmpty ||
+        uri.hasQuery ||
+        uri.hasFragment) {
+      return false;
+    }
+    final segments = value.split('/');
+    return segments.isNotEmpty &&
+        segments.first == 'releases' &&
+        !segments.contains('') &&
+        !segments.contains('.') &&
+        !segments.contains('..') &&
+        value.endsWith('-arm64-v8a.apk');
+  }
+
+  static bool _isRetryableMetadataStatus(int statusCode) =>
+      statusCode >= 500 && statusCode <= 599;
+
+  static bool _isRetryableDownloadError(Object error) =>
+      error is TimeoutException ||
+      error is SocketException ||
+      error is http.ClientException ||
+      (error is _HttpStatusException &&
+          error.statusCode >= 500 &&
+          error.statusCode <= 599);
 
   /// 下载并安装（下载进度 0-100 通过回调上报；错误通过回调 message 返回）。
   ///
@@ -273,10 +360,12 @@ class UpdateService {
       }
       if (await hasReadyPackage(update)) {
         await installReadyPackage(update);
+        _log('ota_installing', '已校验的安装包就绪，进入系统安装阶段');
         onInstalling?.call();
         onProgress?.call(100);
         return;
       }
+      _log('ota_download_start', '开始下载更新包');
       await _downloadAndVerify(
         update,
         onProgress: onProgress,
@@ -284,9 +373,11 @@ class UpdateService {
       // 只在本地文件已通过校验后记录待安装版本；系统安装器取消时可安全重试。
       await _rememberReadyPackage(update);
       await installReadyPackage(update);
+      _log('ota_installing', '下载完成，进入系统安装阶段');
       onInstalling?.call();
       onProgress?.call(100);
     } catch (e) {
+      _log('ota_fail', e.toString(), level: 'error');
       onError?.call(e.toString());
     }
   }
@@ -295,14 +386,43 @@ class UpdateService {
     UpdateInfo update, {
     void Function(int percent)? onProgress,
   }) async {
-    final client = http.Client();
+    Object? lastError;
+    for (var attempt = 1; attempt <= _downloadAttempts; attempt++) {
+      try {
+        await _downloadAndVerifyOnce(update, onProgress: onProgress);
+        return;
+      } catch (e) {
+        lastError = e;
+        if (!_isRetryableDownloadError(e) || attempt == _downloadAttempts) {
+          if (e is _HttpStatusException) {
+            throw StateError('下载失败（HTTP ${e.statusCode}）');
+          }
+          rethrow;
+        }
+        await Future<void>.delayed(_retryDelay);
+      }
+    }
+    throw lastError ?? StateError('下载失败');
+  }
+
+  Future<void> _downloadAndVerifyOnce(
+    UpdateInfo update, {
+    void Function(int percent)? onProgress,
+  }) async {
+    final client = _httpClientFactory();
     IOSink? sink;
+    File? apk;
     try {
       final supportDir = await getApplicationSupportDirectory();
       final otaDir = Directory(path.join(supportDir.path, 'ota_update'));
       await otaDir.create(recursive: true);
-      final apk = File(path.join(otaDir.path, filenameFor(update)));
+      apk = File(path.join(otaDir.path, filenameFor(update)));
       if (await apk.exists()) await apk.delete();
+
+      final expectedSize = update.sizeBytes;
+      if (expectedSize != null && expectedSize > maxApkSizeBytes) {
+        throw StateError('安装包大小超出安全限制，已阻止安装');
+      }
 
       final request = http.Request('GET', Uri.parse(update.apkUrl))
         ..headers['User-Agent'] = userAgent;
@@ -310,10 +430,21 @@ class UpdateService {
           .send(request)
           .timeout(const Duration(seconds: 30));
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError('下载失败（HTTP ${response.statusCode}）');
+        throw _HttpStatusException(response.statusCode);
       }
 
-      final total = response.contentLength ?? update.sizeBytes ?? 0;
+      final declaredSize = response.contentLength;
+      if (declaredSize != null && declaredSize >= 0) {
+        if (declaredSize > maxApkSizeBytes) {
+          throw StateError('安装包大小超出安全限制，已阻止安装');
+        }
+        if (expectedSize != null && declaredSize != expectedSize) {
+          throw StateError('安装包大小校验失败，请重试');
+        }
+      }
+      final total = declaredSize != null && declaredSize >= 0
+          ? declaredSize
+          : expectedSize ?? 0;
       var received = 0;
       final digestSink = AccumulatorSink<Digest>();
       final digestInput = sha256.startChunkedConversion(digestSink);
@@ -321,9 +452,12 @@ class UpdateService {
       sink = fileSink;
       onProgress?.call(0);
       await for (final chunk in response.stream) {
+        received += chunk.length;
+        if (received > maxApkSizeBytes) {
+          throw StateError('安装包大小超出安全限制，已阻止安装');
+        }
         fileSink.add(chunk);
         digestInput.add(chunk);
-        received += chunk.length;
         if (total > 0) {
           onProgress?.call((received * 100 / total).clamp(0, 99).round());
         }
@@ -333,14 +467,32 @@ class UpdateService {
       sink = null;
       digestInput.close();
 
+      if (expectedSize != null && received != expectedSize) {
+        _log('ota_size_fail', '安装包大小校验失败', level: 'error');
+        await apk.delete();
+        throw StateError('安装包大小校验失败，请重试');
+      }
+
       final actualSha = digestSink.events.single.toString();
       if (actualSha.toLowerCase() != update.sha256!.trim().toLowerCase()) {
+        _log('ota_checksum_fail', '安装包校验失败', level: 'error');
         await apk.delete();
         throw StateError('安装包校验失败，请重试');
       }
+    } catch (e) {
+      if (apk != null && await apk.exists()) {
+        await apk.delete();
+      }
+      rethrow;
     } finally {
       await sink?.close();
       client.close();
     }
   }
+}
+
+class _HttpStatusException implements Exception {
+  final int statusCode;
+
+  const _HttpStatusException(this.statusCode);
 }

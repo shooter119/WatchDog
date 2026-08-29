@@ -6,6 +6,8 @@ const path = require('path');
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-api-'));
 process.env.WATCHDOG_DATA_DIR = tmpDir;
+process.env.CLOUDBASE_ENV_ID = 'watchdog-test-env';
+process.env.WATCHDOG_OTA_BUCKET_ID = 'watchdog-ota';
 
 const app = require('../src/server');
 const db = require('../src/db');
@@ -43,6 +45,20 @@ test('GET /api/health 免认证返回 ok', async () => {
   assert.equal(typeof body.ready, 'boolean');
   assert.equal(typeof body.databaseReady, 'boolean');
   assert.equal(typeof body.asrConfigured, 'boolean');
+  assert.match(res.headers.get('x-request-id'), /^[0-9a-f-]{36}$/);
+});
+
+test('旧版 /ota 路径只重定向到 CloudBase PG 公开对象入口', async () => {
+  const res = await fetch(`${base}/ota/latest.json`, { redirect: 'manual' });
+  assert.equal(res.status, 302);
+  assert.equal(
+    res.headers.get('location'),
+    'https://watchdog-test-env.api.tcloudbasegateway.com/v1/storages/object/public/watchdog-ota/latest.json',
+  );
+
+  const invalid = await fetch(`${base}/ota/private.txt`);
+  assert.equal(invalid.status, 404);
+  assert.equal((await invalid.json()).code, 'OTA_OBJECT_NOT_FOUND');
 });
 
 test('GET /api/config 返回计算参数', async () => {
@@ -346,6 +362,18 @@ test('GET /api/incidents 列出活跃警情并返回汇总字段', async () => {
   assert.ok(Array.isArray(current.forces));
 });
 
+test('GET /api/incidents 使用有限分页并拒绝非法分页参数', async () => {
+  const page = await fetch(`${base}/api/incidents?status=active&limit=1&offset=0`, { headers: H });
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get('x-page-limit'), '1');
+  assert.equal(page.headers.get('x-page-offset'), '0');
+  assert.equal((await page.json()).length, 1);
+
+  const invalid = await fetch(`${base}/api/incidents?limit=-1`, { headers: H });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).error, '分页参数无效');
+});
+
 test('POST /api/incidents/archive 归档并幂等返回同一档案', async () => {
   const created = await (await fetch(`${base}/api/incidents`, {
     method: 'POST',
@@ -405,3 +433,58 @@ test('警情编号只读且同一分钟通过后缀区分', async () => {
   assert.equal(rename.status, 200);
   assert.notEqual((await rename.json()).number, '不允许覆盖');
 });;
+
+test('同一操作 ID 重试返回原结果并拒绝跨类型复用', async () => {
+  const opId = 'api-entry-idempotent-1';
+  const first = await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': opId },
+    body: JSON.stringify({ name: '幂等测试员', pressure_mpa: 20 }),
+  });
+  assert.equal(first.status, 201);
+  const firstEntry = await first.json();
+
+  const retry = await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': opId },
+    body: JSON.stringify({ name: '幂等测试员', pressure_mpa: 20 }),
+  });
+  assert.equal(retry.status, 200);
+  assert.equal((await retry.json()).id, firstEntry.id);
+
+  const changed = await fetch(`${base}/api/entries`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': opId },
+    body: JSON.stringify({ name: '不应被静默忽略', pressure_mpa: 10 }),
+  });
+  assert.equal(changed.status, 409);
+  assert.equal((await changed.json()).code, 'OPERATION_REQUEST_CONFLICT');
+
+  const conflict = await fetch(`${base}/api/notes`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': opId },
+    body: JSON.stringify({ text: '不应使用同一操作号写随手记' }),
+  });
+  assert.equal(conflict.status, 409);
+  assert.equal((await conflict.json()).code, 'CLIENT_OP_ID_CONFLICT');
+
+  await fetch(`${base}/api/entries/${firstEntry.id}/exit`, { method: 'POST', headers: H });
+});
+
+test('新建警情操作在响应丢失后可从账本恢复，不被冷却规则误拦截', async () => {
+  const opId = 'api-incident-idempotent-1';
+  const first = await fetch(`${base}/api/incidents`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': opId },
+    body: JSON.stringify({}),
+  });
+  assert.equal(first.status, 201);
+  const created = await first.json();
+  const retry = await fetch(`${base}/api/incidents`, {
+    method: 'POST',
+    headers: { ...H, 'X-Op-Id': opId },
+    body: JSON.stringify({}),
+  });
+  assert.equal(retry.status, 200);
+  assert.equal((await retry.json()).id, created.id);
+});
