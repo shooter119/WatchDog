@@ -68,8 +68,8 @@
 | DEPLOY-002 | 严重 | CloudBase 服务曾显示“已暂停”、实例数为 0，应用网关和服务默认域名均返回 HTTP 503。 | 通过项目既定部署脚本重新部署当前已验证代码，生成部署 031；恢复后连续验证服务状态、健康接口、模型清单和关键鉴权边界。 | 服务可用性阻断已解除：CLI 状态为 `normal`，部署 031 为正常/100% 流量，健康与模型清单连续检查通过；转入持续观察，详见 `round10-deploy-status-review.md`。 |
 | ASR-CACHE-001 | 优化 | `/models` 对 `manifest.json` 也使用一年 `immutable` 缓存，清单更新后可能被中间缓存长期保留。 | `backend/src/server.js` 对 manifest 覆盖为 `Cache-Control: no-cache, must-revalidate`，模型二进制继续长期缓存。 | 已修复；后端静态语法/回归通过，线上清单回读正常。 |
 | CI-SEC-001 | 优化 | Release workflow 的 checkout 默认持久化 GitHub 凭据，构建链路被依赖污染时写权限暴露面扩大。 | `.github/workflows/release.yml` 设置 `persist-credentials: false`；发布仍仅由显式 Release/OTA 步骤使用受控令牌。 | 已修复；Actions YAML 解析和静态复核通过，下一次新 tag 实跑仍纳入定期验收。 |
-| CI-OTA-001 | 严重 | 国内 OTA 所需四个 GitHub Secrets 缺失时会阻断发布；原 workflow 先创建 GitHub Release、后执行 OTA，可能形成半完成版本。 | `.github/workflows/release.yml` 已改为先完成 OTA 上传/远端校验，再创建 GitHub Release；已配置独立、有期限的四项 OTA Secrets，不复用后端运行时凭据。 | 配置前置已闭合；待新的递增 tag 实跑，确认上传与校验成功后才创建 Release。 |
-| CI-OTA-002 | 严重 | App 与发布工作流曾把 OTA 地址误指向云托管网关 `/ota`；正确 PG Storage 入口在首次清单上传前返回 404。 | 将 App/Release 统一改为 CloudBase PG Storage `.../v1/storages/object/public/{bucket}/{object}`；后端保留严格白名单的 `/ota/*` 兼容重定向；`009_ota_public_bucket.sql` 创建 `watchdog-ota` 公开读 bucket 和 RLS；发布前动态注入同一公开对象 URL。 | bucket/策略已落地，Secrets 已配置；当前 404 仅表示尚无首个 `latest.json`，待新 tag 实跑完成 APK、清单和公开回读。 |
+| CI-OTA-001 | 严重 | 国内 OTA 所需四个 GitHub Secrets 已配置，但 CloudBase 上传阶段失败会阻断既定“OTA 先行、Release 后建”链路。 | `.github/workflows/release.yml` 保留 OTA 先行、版本/哈希回读和失败即停；不复用后端运行时凭据。 | 配置与质量门禁已闭合；`v1.2.2+58` 自动发布停在 OTA，已按用户授权人工创建同 tag GitHub Release 交付 APK；自动链路仍待 OTA 恢复。 |
+| CI-OTA-002 | 严重 | App 无法通过 `latest.json` 发现新版本；`v1.2.2+55`～`+58` 的预签名 PUT、二进制 PUT、控制台上传和 multipart POST 均未形成对象，公开入口仍为 404。 | App/Release 使用 CloudBase PG Storage `.../v1/storages/object/public/{bucket}/{object}`；后端保留严格白名单兼容重定向；bucket/公开读策略已落地。当前需 CloudBase 平台核对上传网关、写权限和大文件限制，不能用伪造清单或放宽客户端校验替代。 | 外部阻塞；GitHub Release `v1.2.2+58` 已完成但国内 OTA 未完成。证据见 `round19-release-gate.md`。 |
 
 ### 第六轮数据库交叉复核新增项
 
@@ -169,8 +169,8 @@
 
 | 编号 | 级别 | 影响/证据 | 当前状态与验证 |
 |---|---|---|---|
-| TQ-001 | 一般 | `AGENTS.md` 与 CI 测试数量基线曾滞后于实际用例；若基线不随新增用例提高，后续误删新增测试仍可能通过。 | 已修复；`.github/workflows/quality.yml` 与 `.github/workflows/release.yml` 的最低基线已同步为后端 161、App 223，并继续拒绝 skipped/todo；YAML 解析和本机后端 161/161、App 223/223 门禁验证通过。 |
-| TQ-002 | 严重 | 发布前曾不运行质量门禁；已新增 quality workflow，并在 release 中重复 backend/npm 与 Flutter analyze/test。 | 已修复；最新 Quality Checks 与 Build & Release APK Actions 均成功，仓库保护已按 SEC-014 完成。 |
+| TQ-001 | 一般 | `AGENTS.md` 与 CI 测试数量基线曾滞后于实际用例；若基线不随新增用例提高，后续误删新增测试仍可能通过。 | 已修复；`.github/workflows/quality.yml` 与 `.github/workflows/release.yml` 的最低基线已同步为后端 162、App 223，并继续拒绝 skipped/todo；YAML 解析和本机门禁验证通过。 |
+| TQ-002 | 严重 | 发布前曾不运行质量门禁；已新增 quality workflow，并在 release 中重复 backend/npm 与 Flutter analyze/test。 | 已修复；`v1.2.2+58` 的 Quality Checks 及发布 Job 的构建、版本、ABI、签名门禁通过，失败仅发生在 CloudBase OTA 上传；仓库保护已按 SEC-014 完成，GitHub Release 已人工兜底交付。 |
 | TQ-003 | 一般 | ASR/parse HTTP 边界覆盖不足。 | 已补充 ASR WebSocket 帧生命周期、服务端错误/超时/空结果、DeepSeek/Responses API 非 2xx/空响应/响应形状/重定向和超时信号边界回归。 | 本地代码级缺口已闭合；后端 160/160 通过。真实供应商联调仍待外部凭据和运行时环境。 |
 | TQ-004 | 严重 | App 真同步/离线队列被替身绕开。 | 逻辑已修复，真实网络/断网集成仍待设备与环境。 |
 | TQ-005 | 严重 | 真实录音、权限、本地 ASR 模型未覆盖。 | 待外部 Android 设备集成验证。 |
@@ -297,7 +297,7 @@
 
 | 验证项 | 结果 | 证据 |
 |---|---|---|
-| 后端测试 | 通过：161/161，0 失败 | `cd backend && npm test` |
+| 后端测试 | 通过：162/162，0 失败 | `cd backend && npm test` |
 | Flutter 静态分析 | 通过：0 issues | `cd app && flutter analyze` |
 | Flutter 测试 | 通过：223/223，0 失败，skipped=0 | `cd app && flutter test` |
 | Android release 构建 | 通过 | `flutter build apk --release --target-platform android-arm64 --split-per-abi --no-pub`；最终构建成功 |
@@ -308,20 +308,26 @@
 | 生产网关共享限频 | 部分通过 | CloudBase `DescribeHTTPServiceRoute` 回读默认 `/` 路由 `QPSPolicy.QPSTotal=100`，配置后健康接口连续通过；客户端维度因套餐能力未启用，多实例突发流量/429 校准仍待隔离环境。 |
 | 线上模型清单与资源 | 通过 | 公开 `/models/manifest.json` 回读与仓库清单字节级一致；6 个模型资源逐个下载并与清单大小/SHA-256 全部匹配；manifest 响应为 `Cache-Control: no-cache, must-revalidate`。 |
 | 生产未授权边界 | 通过 | 未带 `X-Api-Token` 请求 `/api/config` 返回 HTTP 401、`API_TOKEN_INVALID`；未使用真实令牌做业务写操作。 |
-| GitHub Actions | 通过 | 最新 Quality Checks 与 Build & Release APK 均为 success；正式 Release `v1.2.1+49` 已上传 arm64 APK，tag 与 `main` 指向同一提交。 |
+| GitHub Actions | 部分通过 | `v1.2.2+58` 的 Quality Checks、构建、版本、ABI 和签名阶段通过；Build & Release APK 在 CloudBase OTA 上传阶段失败。已按授权创建同 tag GitHub Release 并上传经本地核验的 arm64 APK；自动 OTA 链路仍阻塞。 |
 | GitHub 仓库保护 | 通过 | `main` 已启用保护：必须 Pull Request、至少 1 名评审、`backend`/`app` 检查通过，禁止强推和删除；Ruleset 已保护 `v*` tag 的删除与强制更新。 |
 | Actions SHA 固定 | 通过 | GitHub 仓库 API `sha_pinning_required=true`；当前 workflow 中所有第三方 Action 均使用提交 SHA。 |
 | Android 设备验证 | 部分通过 | 实体设备 `PKX110`（Android 16/API 36）已完成隔离真机认证、通知权限、警情创建/命名、默认进入语音页、麦克风授权与实际录音、ASR 不可用提示、权限拒绝和系统设置跳转；未向生产数据库写入。前台服务/进程恢复/低存储/TalkBack/TTS/耗电和厂商后台策略因设备再次锁屏仍待外部，详见 `round17-android-device-review.md`。 |
 | README/关于我们 | 已同步 | 认证、单位种子、生产不默认 0570、端侧模型完整性校验及低存储保护的描述已同步；版本未发版未改。 |
 | 密钥/临时文件 | 通过（仓库级） | `git diff --check` 通过；tracked 文件未发现 `.env`、`key.properties`、keystore 或调试脚本匹配项；release 构建产物位于 ignored build 目录；本机 `.env`、`key.properties`、keystore 均为 `0600`。主机上未验证的生产文件权限仍属运维边界。 |
-| 本轮继续施工门禁 | 通过 | 后端 `node --check` 通过，`npm test` 为 161/161；App `flutter analyze` 为 0 issues，`flutter test` 为 223/223；新增录音 60 秒上限/50 秒提示/自动停止、低存储模型保护、平台存储能力降级、前台值守警情切换/旧请求防回写/无警情停止/自恢复旧警情拦截、ASR WebSocket 帧生命周期、DeepSeek/Responses API 错误边界、模型 manifest/哈希校验、缓存复核、清单格式/路径/重定向边界、OTA 大小上限、出站主机/IP 白名单、重定向禁止、App 正式包地址锁定、令牌安全存储/前台服务隔离、Android 备份禁用、日志微任务合并、认证重试并发和双轮询摘要协调、ApiClient 错误响应、名单管理页面状态更新、日志敏感字段和高基数限流、SQLite 旧库幂等/事务和原子 RPC 冲突目标、原子 RPC 开关依赖保护、OTA 公开对象重定向与迁移契约回归均通过。 |
+| 本轮继续施工门禁 | 通过 | 后端 `node --check` 通过，`npm test` 为 162/162；App `flutter analyze` 为 0 issues，`flutter test` 为 223/223；新增录音 60 秒上限/50 秒提示/自动停止、低存储模型保护、平台存储能力降级、前台值守警情切换/旧请求防回写/无警情停止/自恢复旧警情拦截、ASR WebSocket 帧生命周期、DeepSeek/Responses API 错误边界、模型 manifest/哈希校验、缓存复核、清单格式/路径/重定向边界、OTA 大小上限、出站主机/IP 白名单、重定向禁止、App 正式包地址锁定、令牌安全存储/前台服务隔离、Android 备份禁用、日志微任务合并、认证重试并发和双轮询摘要协调、ApiClient 错误响应、名单管理页面状态更新、日志敏感字段和高基数限流、SQLite 旧库幂等/事务和原子 RPC 冲突目标、原子 RPC 开关依赖保护、OTA 公开对象重定向与迁移契约回归均通过。 |
 | 第十四轮门禁与卫生复核 | 通过 | `opendesign/audit/round14-local-gate-review.md`：后端 161/161、Flutter analyze 0 issues、Flutter 223/223；workflow YAML、`git diff --check`、审计目录敏感值扫描和线上健康/模型清单回读通过；GitHub 授权有效，OTA 专用 Secrets 仍缺失。 |
 | 第十六/十七轮 Android 复核 | 部分通过 | 第十六轮完成 arm64 release 包级核对；第十七轮使用独立本地 Debug 包完成认证、警情创建/命名、默认语音页、通知/麦克风权限、实际录音、ASR 降级和拒绝权限设置跳转。未向生产写入；前台服务、进程恢复、低存储、TalkBack、TTS、耗电及厂商后台策略仍待解锁后的场景验证。 |
 | 依赖安全扫描 | 通过/待维护 | 后端生产依赖无高风险 audit 报告；Flutter 依赖存在可升级项，但未发现本扫描可直接证明的安全漏洞，升级留待维护窗口。 |
 
+### 第十九轮发布收口补充
+
+- GitHub Actions 运行 `33248992374` 的质量门禁通过；发布 Job `99091280705` 在构建、版本、ABI 和正式签名阶段通过，仅在 CloudBase OTA 对象上传阶段失败。
+- `v1.2.2+58` 已按用户授权完成 GitHub Release 兜底，arm64 APK 资产已上传，Release 资产 digest 与正文 `SHA256:` 一致；这不等于国内 OTA 已完成。
+- `CI-OTA-002` 的新证据是：递增 tag `+55`～`+58`、预签名/二进制/显式长度/控制台/multipart 多路径均未形成对象，公开 `latest.json` 和本版本对象仍 HTTP 404。问题升级为 CloudBase 上传网关/平台侧外部阻塞，详见 [`round19-release-gate.md`](round19-release-gate.md)。
+
 ## I. 当前验收判定
 
-代码级回归验收通过：核心后端/App 测试、分析、构建、UI 边界和已复现缺陷修复均有证据，当前运行时测试为后端 161、App 223，未减少；第十轮发现的生产服务暂停已通过部署 030 恢复，健康与模型清单连续检查通过。
+代码级回归验收通过：核心后端/App 测试、分析、构建、UI 边界和已复现缺陷修复均有证据，当前运行时测试基线为后端 162、App 223，未减少；第十轮发现的生产服务暂停已通过部署 030 恢复，健康与模型清单连续检查通过。
 
 整轮项目验收尚未宣告完成，原因是以下项目不是主 Agent 可以安全猜测或本机完成的外部阻塞；本轮发布操作已获用户明确授权，且不改变这些未闭合的项目级验收边界：
 
@@ -330,8 +336,8 @@
 3. SEC-009/SEC-010 的生产 allowlist 与正式签名包运行时边界还需部署配置和真实 APK 验证；代码级回归已通过。
 4. SEC-011/SEC-012、模型完整性和性能项仍需 Android 真机验证，包括安全存储、备份恢复、卸载重装、低存储、录音插件、本地 ASR、通知/前台服务、TalkBack 和弱网；本轮已完成隔离认证、警情创建/命名、默认语音页、通知/麦克风权限、实际录音、ASR 降级及拒绝权限设置跳转，模型签名清单与发布私钥链路仍需外部发布环境接入。
 5. `FLT-026` 的前台保活警情切换/退出行为已确认使用规则：切换立即刷新，退出/归档停止，无警情不启动并保留开关偏好；代码级时序回归已通过，仍待 Android 生命周期验收。
-6. `CI-OTA-001` 的四个国内 OTA GitHub Secrets 已配置为独立、有期限密钥；仍需用新的递增 tag 实跑，确认 OTA 与 Release 资产一致。
-7. `CI-OTA-002` 的 CloudBase PG Storage `watchdog-ota` bucket、公开读策略已落地；当前 `latest.json` HTTP 404 仅表示尚未进行首次上传，旧 `/ota/*` 兼容入口已部署复验，详见 `round8-ota-public-url-review.md`。
+6. `CI-OTA-001` 的四个国内 OTA GitHub Secrets 已配置为独立、有期限密钥；`v1.2.2+58` 的质量、版本、ABI、签名和 GitHub Release 兜底已完成，但自动链路仍因 OTA 上传失败未闭合。
+7. `CI-OTA-002` 的 CloudBase PG Storage `watchdog-ota` bucket、公开读策略已落地，但 `v1.2.2+55`～`+58` 多路径上传均未形成对象，`latest.json` 仍 HTTP 404；该项现在是已证实的 CloudBase 上传网关外部阻塞，详见 `round19-release-gate.md`。
 8. `DB-EXT-003`：当前共享集群没有备份能力，生产备份/恢复点和重启扩容连续性仍需升级到支持备份的集群或提供隔离快照后演练；不以生产破坏性操作代替。
 9. `DEPLOY-002` 已通过部署 031 和连续 HTTPS 检查恢复：服务状态为 `normal`，100% 流量，健康与模型清单均通过；转入持续观察，不再阻断后续发布验收，详见 `round10-deploy-status-review.md`。
 

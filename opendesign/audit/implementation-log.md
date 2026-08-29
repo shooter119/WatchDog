@@ -509,3 +509,14 @@
 - 已创建独立的、有期限的 OTA 发布 API Key，并写入 GitHub Actions 的四项 OTA Secrets；密钥值未落盘、未输出、未写入仓库。CloudBase 当前 API Key 权限粒度不能证明为 bucket 级最小权限，已列为发布后安全维护项，不复用后端运行时密钥。
 - `watchdog-ota` 公开对象入口已可访问但尚无 `latest.json`，HTTP 404 符合首次 OTA 发布前状态；下一步由新的递增版本 tag 触发工作流，先上传 APK/清单并回读校验，再创建 GitHub Release。
 - 验证结果：生产烟测成功；生产临时数据清理成功；生产服务和成员开关回读成功；OTA Secrets 名称齐全。双实例并发压力、备份恢复和锁屏设备的系统级耗电/无障碍/进程恢复仍不能由本轮证据关闭。
+
+## 2026-08-29 第十九轮：正式发布收口与 CloudBase OTA 外部阻塞
+
+- 台账编号：`CI-OTA-001`、`CI-OTA-002`、`TQ-002`；证据文件：`round19-release-gate.md`。
+- `v1.2.2+58` 的 Quality Checks 通过；Build & Release APK 在构建、版本、ABI 和正式签名阶段通过，运行 `33248992374` / job `99091280705` 仅在 CloudBase OTA 对象上传阶段失败。
+- 本轮重新执行 `cd backend && npm test`：162/162 通过；`cd app && flutter analyze`：0 issues；`cd app && flutter test`：223/223 通过，0 failed、0 skipped、0 todo。
+- `v1.2.2+55`～`+58` 已覆盖预签名 PUT、二进制 PUT、显式内容长度、控制台上传和 multipart POST 等路径；仍分别出现 502、无响应超时、401 重试耗尽或 400。公开 `latest.json` 和本版本 APK 对象均为 HTTP 404，bucket 没有形成可读对象。
+- 本地重建当前 `1.2.2+58` arm64 正式包并核验包名、versionCode 2058、versionName 1.2.2、单一 arm64 ABI、v2 签名；按用户授权创建 GitHub Release `v1.2.2+58`，上传 `watchdog-1.2.2+58-arm64-v8a.apk`，Release digest 与正文 `SHA256:` 一致。
+- `CI-OTA-001`：专用配置、版本/哈希门禁和失败即停策略保留；自动 OTA 链路未闭合，但 GitHub Release 已完成人工兜底交付。
+- `CI-OTA-002`：确认是 CloudBase 上传网关/平台侧外部阻塞，不再重复无新证据的上传尝试；后续需平台侧核对 bucket 写权限、对象 API、网关错误日志和大文件限制，再以探针对象、APK、`latest.json` 的顺序恢复验收。
+- 本轮未读取、输出、落盘或写入仓库任何密钥；未删除 tag、Release、用户数据或生产对象。

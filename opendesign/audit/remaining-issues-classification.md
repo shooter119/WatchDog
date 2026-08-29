@@ -54,6 +54,8 @@
 
 统一方案：生产部署健康检查绑定实际目标；容器非 root、HEALTHCHECK 和最小权限；Action 固定提交 SHA；main、workflow、tag、Release 和签名 secrets 受保护；质量门禁检查 backend/App 数量、skipped/todo、analyze、测试、版本、ABI、签名和 SHA256；缺签名不产出正式包。国内 OTA 必须先完成专用 PG Storage bucket/RLS/API key 配置与 APK/清单远端校验，再创建 GitHub Release，避免半完成发布；App 和 workflow 统一使用 `...api.tcloudbasegateway.com/v1/storages/object/public/{bucket}/{object}`，旧 `/ota/*` 仅保留严格白名单兼容重定向；CloudBase 服务详情只允许字段过滤输出，敏感环境变量不进入终端记录；必要的密钥轮换由运维按影响评估执行。
 
+第十九轮已按该方案完成质量、版本、ABI、签名和 GitHub Release 兜底；CloudBase 对象上传仍在多个递增 tag 和多种请求路径上失败，已登记为 `CI-OTA-002` 外部阻塞，未把人工 Release 误记为 OTA 验收通过。
+
 ### A7. 测试和外部环境验证
 
 问题：`TQ-003`、`TQ-004`、`TQ-005`、`TQ-006`、`TQ-010`、`TQ-011`，以及 `FLT-004`、`FLT-006`、`FLT-009`、`FLT-013`、`FLT-015`、`PE-003`、`PE-014`、`PE-015`、`UI-UX-004`、`UI-UX-005` 的真实环境验证部分；`TQ-007`、`TQ-009` 已由 ApiClient 与管理页面回归闭合。
