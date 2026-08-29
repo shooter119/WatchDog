@@ -287,6 +287,7 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"          # v0.8.5+22
           VERSION="${TAG#v}"                       # 0.8.5+22
+          VERSION_NAME="${VERSION%%+*}"             # 0.8.5
           TAG_BUILD_NUMBER="${VERSION##*+}"
           if ! [[ "$TAG_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::tag 必须包含正整数构建号（如 v1.2.3+50）"
@@ -298,7 +299,7 @@ jobs:
           APK_METADATA=$("$AAPT2" dump badging "$APK" | sed -n '1p')
           APK_VERSION=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$APK_METADATA")
           VERSION_CODE=$(sed -n "s/.*versionCode='\([0-9][0-9]*\)'.*/\1/p" <<<"$APK_METADATA")
-          test "$APK_VERSION" = "$VERSION"
+          test "$APK_VERSION" = "$VERSION_NAME"
           if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::无法从 arm64 APK 读取有效 Android versionCode"
             exit 1
