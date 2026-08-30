@@ -9,14 +9,30 @@ class Settings {
   static const maxConsumptionLpm = 300.0;
   static const maxThresholdMin = 1440;
 
-  /// 正式 APK 可通过 --dart-define=WATCHDOG_API_BASE_URL 覆盖 CloudBase HTTP 网关地址。
+  /// 正式 APK 可通过 --dart-define=WATCHDOG_API_BASE_URL 覆盖后端地址。
+  /// 移动网络下 CloudBase HTTP 网关可能出现 DNS 失败；生产默认使用已验证
+  /// 可达的云托管服务直连域名，REST 与 WebSocket 保持同一网络入口。
   static const defaultServerUrl = String.fromEnvironment(
     'WATCHDOG_API_BASE_URL',
     defaultValue:
-        'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com',
+        'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com',
   );
 
-  /// 端侧 ASR 模型与后端通过同一 CloudBase 网关分发，也可独立覆盖。
+  /// WebSocket 不经过 CloudBase HTTP 网关；默认连接云托管服务直连域名。
+  /// 正式环境可通过 --dart-define=WATCHDOG_ASR_WS_BASE_URL 覆盖。
+  static const realtimeAsrBaseUrl = String.fromEnvironment(
+    'WATCHDOG_ASR_WS_BASE_URL',
+    defaultValue:
+        'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com',
+  );
+
+  /// 直连域名在部分 Android DNS 代理上可能短暂超时；历史 HTTP 网关同样
+  /// 支持 WebSocket Upgrade，作为同一后端的连接级备用入口。它不是离线识别，
+  /// 只在 WebSocket 建连阶段直连失败时使用。
+  static const realtimeAsrFallbackBaseUrl =
+      'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com';
+
+  /// 端侧 ASR 模型与后端通过同一云托管服务分发，也可独立覆盖。
   static const defaultModelBaseUrl = String.fromEnvironment(
     'WATCHDOG_MODEL_BASE_URL',
     defaultValue: '$defaultServerUrl/models',
@@ -35,6 +51,8 @@ class Settings {
     'WATCHDOG_ALLOW_CUSTOM_SERVER',
     defaultValue: false,
   );
+  static const _deprecatedGatewayUrl =
+      'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com';
   static const _deprecatedCloudRunServiceUrl =
       'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com';
   static const _deprecatedCanaryServiceUrl =
@@ -115,6 +133,24 @@ class Settings {
   /// 允许使用受限的本地 host。URL 不允许携带 query/fragment，避免拼接路径时
   /// 请求落到错误地址或把临时凭据带入后续请求。
   static bool isSafeHttpUrl(String value) => _isSafeServerUrl(value.trim());
+
+  /// WebSocket 地址允许使用编译时登记的云托管直连域名，
+  /// 与 REST API 共用同一生产入口。
+  static bool isSafeRealtimeUrl(String value) {
+    final normalized = _normalizeBaseUrl(value);
+    if (!_isSafeServerUrl(normalized)) {
+      if (!kReleaseMode || allowCustomServer) return false;
+      final uri = Uri.tryParse(normalized);
+      final registered = Uri.tryParse(_normalizeBaseUrl(realtimeAsrBaseUrl));
+      final fallback = Uri.tryParse(
+        _normalizeBaseUrl(realtimeAsrFallbackBaseUrl),
+      );
+      return uri != null &&
+          ((registered != null && _sameEndpoint(uri, registered)) ||
+              (fallback != null && _sameEndpoint(uri, fallback)));
+    }
+    return true;
+  }
 
   static String _normalizeBaseUrl(String value) =>
       value.trim().replaceFirst(RegExp(r'/+$'), '');
@@ -222,8 +258,9 @@ class Settings {
   static Future<String> get serverUrl async {
     final sp = await SharedPreferences.getInstance();
     final saved = sp.getString(_kServer);
-    // 迁移之前版本自动写入的 CloudBase 云托管直连地址（包括 canary）。
-    if (saved == _deprecatedCloudRunServiceUrl ||
+    // 迁移之前版本自动写入的 CloudBase 网关/云托管地址（包括 canary）。
+    if (saved == _deprecatedGatewayUrl ||
+        saved == _deprecatedCloudRunServiceUrl ||
         saved == _deprecatedCanaryServiceUrl) {
       await sp.setString(_kServer, defaultServerUrl);
       return defaultServerUrl;

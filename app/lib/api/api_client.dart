@@ -88,14 +88,33 @@ class ApiClient {
     return uri;
   }
 
-  /// 实时 ASR 代理使用同一网关和认证头，但通过 WebSocket 协议连接。
+  /// 实时 ASR 代理使用同一认证头，但通过 WebSocket 协议连接。
   Uri realtimeAsrUri() {
-    final httpUri = _uri('/api/asr/stream');
-    return httpUri.replace(scheme: httpUri.scheme == 'https' ? 'wss' : 'ws');
+    return realtimeAsrUris().first;
   }
 
-  Map<String, String> realtimeAsrHeaders({String? opId}) =>
-      _opHeaders(opId);
+  /// 返回实时连接入口，首选云托管直连，直连 DNS/建连失败时再尝试同一
+  /// 后端的历史 HTTP 网关。两个入口都是真实 WebSocket，不改变识别协议。
+  List<Uri> realtimeAsrUris() {
+    final bases = <String>[
+      Settings.realtimeAsrBaseUrl,
+      Settings.realtimeAsrFallbackBaseUrl,
+    ];
+    final result = <Uri>[];
+    for (final base in bases) {
+      if (!Settings.isSafeRealtimeUrl(base)) continue;
+      final normalized = base.trim().replaceFirst(RegExp(r'/+$'), '');
+      final httpUri = Uri.parse('$normalized/api/asr/stream');
+      final uri = httpUri.replace(
+        scheme: httpUri.scheme == 'https' ? 'wss' : 'ws',
+      );
+      if (!result.contains(uri)) result.add(uri);
+    }
+    if (result.isEmpty) throw StateError('实时识别服务器地址不安全');
+    return result;
+  }
+
+  Map<String, String> realtimeAsrHeaders({String? opId}) => _opHeaders(opId);
 
   /// 创建带底层连接/空闲超时的移动端 HTTP 客户端。
   ///

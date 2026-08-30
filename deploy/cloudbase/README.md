@@ -26,11 +26,13 @@ npm run db:migrate
 https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com
 ```
 
-为避免 App 直接依赖云托管实例域名，在 CloudBase「HTTP 网关」中为默认网关域名配置根路径 `/`，关联资源选择 `watchdog-api-prod`，关闭路径透传。当前 App 使用的网关地址为：
+如需给浏览器或外部系统提供统一入口，可在 CloudBase「HTTP 网关」中为默认网关域名配置根路径 `/`，关联资源选择 `watchdog-api-prod`，关闭路径透传。历史网关地址为：
 
 ```text
 https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com
 ```
+
+当前 App 默认使用上面的云托管服务直连地址，同时承载 REST、实时语音 WebSocket 和 `/models/`；这样移动网络不依赖 HTTP 网关的 DNS 解析。
 
 创建或更新服务时：
 

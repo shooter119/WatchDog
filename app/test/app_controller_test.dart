@@ -62,10 +62,20 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('旧 canary 服务地址自动迁移到生产网关', (tester) async {
+  testWidgets('旧 canary 服务地址自动迁移到生产直连', (tester) async {
     SharedPreferences.setMockInitialValues({
       'server_url':
           'https://watchdog-api-canary-294307-10-1351750301.sh.run.tcloudbase.com',
+    });
+    expect(await Settings.serverUrl, Settings.defaultServerUrl);
+    final sp = await SharedPreferences.getInstance();
+    expect(sp.getString('server_url'), Settings.defaultServerUrl);
+  });
+
+  testWidgets('旧 CloudBase 网关地址自动迁移到生产直连', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'server_url':
+          'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com',
     });
     expect(await Settings.serverUrl, Settings.defaultServerUrl);
     final sp = await SharedPreferences.getInstance();

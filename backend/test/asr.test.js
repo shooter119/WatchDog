@@ -14,16 +14,17 @@ function serverFrame(messageType, body, flags = 2) {
   const json = Buffer.from(JSON.stringify(body), 'utf8');
   const size = Buffer.alloc(4);
   size.writeUInt32BE(json.length, 0);
-  let payload = Buffer.concat([size, json]);
-  if (messageType === MT_ERROR) {
-    const code = Buffer.alloc(4);
-    code.writeUInt32BE(401, 0);
-    payload = Buffer.concat([code, payload]);
-  }
-  return __test.buildFrame(
+  const sequence = Buffer.alloc(4);
+  sequence.writeInt32BE(1, 0);
+  const payload = Buffer.concat([
+    flags & 0x01 ? sequence : Buffer.alloc(0),
+    size,
+    json,
+  ]);
+  return Buffer.concat([
     __test.buildHeader(messageType, flags, JSON_SER, NO_COMPRESSION),
     payload,
-  );
+  ]);
 }
 
 class FakeWebSocket extends EventEmitter {
@@ -83,14 +84,30 @@ test('ASR 成功链路发送初始化帧、音频帧和最终结束帧', async (
   assert.equal(instances.length, 1);
   const socket = instances[0];
   assert.equal(socket.url, 'wss://fake.example.test/asr');
-  assert.equal(socket.options.headers['X-Api-Key'], 'app-id');
+  assert.equal(socket.options.headers['X-Api-App-Key'], 'app-id');
   assert.equal(socket.options.headers['X-Api-Access-Key'], 'access-token');
+  assert.equal(socket.options.headers['X-Api-Key'], undefined);
   assert.equal(__test.parseFrame(socket.sent[0]).messageType, 1);
   assert.ok(socket.sent.length >= 3, '应至少包含初始化帧、音频帧和结束帧');
   const last = __test.parseFrame(socket.sent.at(-1));
   assert.equal(last.messageType, 2);
   assert.equal(last.isLast, true);
   assert.equal(socket.closed, true);
+});
+
+test('ASR 新版控制台无 Access Token 时使用 X-Api-Key', async () => {
+  const instances = [];
+  const response = serverFrame(MT_SERVER_RESPONSE, { code: 1000, result: { text: '测试' } });
+  await transcribe({
+    appId: 'app-key',
+    audioBuffer: Buffer.alloc(100),
+    timeoutMs: 1000,
+    wsFactory: socketFactory({ response }, instances),
+  });
+  const headers = instances[0].options.headers;
+  assert.equal(headers['X-Api-Key'], 'app-key');
+  assert.equal(headers['X-Api-App-Key'], undefined);
+  assert.equal(headers['X-Api-Access-Key'], undefined);
 });
 
 test('ASR 服务端错误帧转换为可识别错误', async () => {
@@ -165,7 +182,7 @@ test('ASR 双向流式会话转发初始化、PCM，并交付 partial/final', as
   const final = serverFrame(MT_SERVER_RESPONSE, {
     code: 1000,
     result: { text: '张伟进场', utterances: [{ text: '张伟进场', definite: true }] },
-  }, 2);
+  }, 3);
   const events = [];
   const wsFactory = (url, options) => {
     const socket = new FakeWebSocket(url, options, {});
@@ -189,6 +206,10 @@ test('ASR 双向流式会话转发初始化、PCM，并交付 partial/final', as
   const init = __test.parseFrame(instances[0].sent[0]);
   assert.equal(init.messageType, 1);
   const initJson = JSON.parse(zlib.gunzipSync(instances[0].sent[0].subarray(8)).toString('utf8'));
-  assert.equal(initJson.request.enable_nostream, false);
+  assert.equal(initJson.request.enable_nostream, undefined);
+  assert.equal(initJson.request.enable_nonstream, true);
   assert.equal(initJson.request.corpus.context.includes('张伟'), true);
+  // 音频是二进制序列，serialization 必须为 0；只对音频内容做 gzip。
+  assert.equal(instances[0].sent[1][2], 0x01);
+  assert.equal(instances[0].sent[1][1], 0x20);
 });

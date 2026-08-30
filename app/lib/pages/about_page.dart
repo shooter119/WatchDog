@@ -63,7 +63,7 @@ class AboutPage extends StatelessWidget {
           SectionTitle(text: '后端部署'),
           _SectionCard(
             body:
-                '生产后端已部署在 CloudBase 云托管，业务数据使用 CloudBase PostgreSQL，App 通过 HTTP 网关访问，AI 仍使用 DeepSeek 直连。'
+                '生产后端已部署在 CloudBase 云托管，业务数据使用 CloudBase PostgreSQL，App 通过云托管直连服务访问 REST 与实时语音 WebSocket，AI 仍使用 DeepSeek 直连。'
                 '详细说明见项目仓库中的 CloudBase PG 模式部署文档。',
           ),
         ],

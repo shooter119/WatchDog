@@ -306,6 +306,10 @@ realtimeWss.on('connection', (ws, req, auth) => {
     opId: realtimeHeader(req, 'x-op-id') || null,
     chunks: [],
     bufferedBytes: 0,
+    receivedBytes: 0,
+    receivedChunks: 0,
+    resultCount: 0,
+    finalResultCount: 0,
     upstream: null,
     deviceId: auth.deviceId,
     sessionTimer: null,
@@ -316,6 +320,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
   };
   realtimeSessions.add(state);
   if (state.deviceId) realtimeDevices.add(state.deviceId);
+  logger.info(`实时 ASR WebSocket 已接入 op_id=${state.opId || '-'} device_id=${state.deviceId || '-'}`);
   state.startTimer = setTimeout(() => fail(Object.assign(new Error('实时会话未开始'), { code: 'ASR_START_TIMEOUT' })), 8000);
   state.sessionTimer = setTimeout(() => fail(Object.assign(new Error('实时会话超时'), { code: 'ASR_STREAM_TIMEOUT' })), 70000);
 
@@ -344,18 +349,27 @@ realtimeWss.on('connection', (ws, req, auth) => {
         channel: 1,
         hotwords,
         onReady: () => {
+          logger.info(`实时 ASR 上游已就绪 op_id=${state.opId || '-'}`);
           sendJson({ type: 'ready', hotwordCount: hotwords.length });
           for (const chunk of state.chunks) state.upstream?.sendAudio(chunk);
           state.chunks = [];
           state.bufferedBytes = 0;
         },
-        onResult: (result) => sendJson({
-          type: result.final ? 'final' : 'partial',
-          text: result.text,
-          sequence: result.sequence ?? null,
-        }),
+        onResult: (result) => {
+          state.resultCount += 1;
+          if (result.final) state.finalResultCount += 1;
+          logger.info(`实时 ASR 结果 op_id=${state.opId || '-'} type=${result.final ? 'final' : 'partial'} chars=${String(result.text || '').length} count=${state.resultCount}`);
+          sendJson({
+            type: result.final ? 'final' : 'partial',
+            text: result.text,
+            sequence: result.sequence ?? null,
+          });
+        },
         onDone: () => sendJson({ type: 'done' }),
-        onError: fail,
+        onError: (error) => {
+          logger.error(`实时 ASR 上游失败 op_id=${state.opId || '-'} error=${errorSummary(error)}`);
+          fail(error);
+        },
         onClose: () => {
           if (!state.stopping) fail(Object.assign(new Error('ASR 连接已断开'), { code: 'ASR_UPSTREAM_CLOSED' }));
         },
@@ -368,6 +382,8 @@ realtimeWss.on('connection', (ws, req, auth) => {
       if (isBinary) {
         const chunk = Buffer.from(data);
         if (chunk.length === 0 || chunk.length > 256 * 1024) return;
+        state.receivedBytes += chunk.length;
+        state.receivedChunks += 1;
         if (state.bufferedBytes + chunk.length > 2 * 1024 * 1024) {
           throw Object.assign(new Error('实时音频缓冲过大'), { code: 'ASR_AUDIO_TOO_LARGE' });
         }
@@ -385,6 +401,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
         clearTimeout(state.startTimer);
         state.startTimer = null;
         state.opId = String(message.opId || state.opId || '').slice(0, 64) || null;
+        logger.info(`实时 ASR 会话开始 op_id=${state.opId || '-'}`);
         start();
       } else if (message.type === 'stop') {
         if (!state.started || state.stopping) return;
@@ -401,6 +418,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
     clearTimeout(state.sessionTimer);
     state.stopping = true;
     state.upstream?.close();
+    logger.info(`实时 ASR 会话结束 op_id=${state.opId || '-'} chunks=${state.receivedChunks} bytes=${state.receivedBytes} results=${state.resultCount} finals=${state.finalResultCount}`);
     realtimeSessions.delete(state);
     if (state.deviceId) realtimeDevices.delete(state.deviceId);
   });
@@ -558,10 +576,15 @@ function errorSummary(error) {
   const name = String(error?.name || '').trim();
   const code = String(error?.code || '').trim();
   const status = Number(error?.status);
-  if (name && /^[A-Za-z][A-Za-z0-9_]*$/.test(name)) parts.push(name);
+  if (name && name !== 'Error' && /^[A-Za-z][A-Za-z0-9_]*$/.test(name)) parts.push(name);
   if (code && /^[A-Z][A-Z0-9_]{1,48}$/.test(code)) parts.push(`code=${code}`);
   if (Number.isInteger(status) && status >= 400 && status <= 599) parts.push(`status=${status}`);
-  return parts.join(' ') || 'internal_error';
+  const messageStatus = String(error?.message || '').match(/\b(?:response|status(?:\s+code)?)\s*:?\s*(4\d{2}|5\d{2})\b/i);
+  if (!Number.isInteger(status) && messageStatus) parts.push(`status=${messageStatus[1]}`);
+  const summary = parts.join(' ');
+  if (summary) return summary;
+  const message = sanitizeErrorLogText(error?.message || error);
+  return message === '[error details redacted]' ? 'internal_error' : message;
 }
 
 function sanitizeLogData(value, key = '', depth = 0) {
@@ -2855,6 +2878,7 @@ if (require.main === module) {
       return;
     }
     authenticateRealtimeRequest(req).then((auth) => {
+      logger.info(`实时 ASR WebSocket 鉴权通过 op_id=${realtimeHeader(req, 'x-op-id') || '-'} device_id=${auth.deviceId || '-'}`);
       realtimeWss.handleUpgrade(req, socket, head, (ws) => {
         realtimeWss.emit('connection', ws, req, auth);
       });

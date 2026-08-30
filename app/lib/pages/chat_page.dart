@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter/services.dart';
 
 import '../models/models.dart';
 import '../services/audio_service.dart';
@@ -240,6 +241,14 @@ class ChatPageState extends State<ChatPage> {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
     });
+  }
+
+  Future<void> _copyMessage(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)),
+    );
   }
 
   /// 就地语音提问（底部语音按钮在问答页长按时调用）
@@ -626,6 +635,7 @@ class ChatPageState extends State<ChatPage> {
               return _MessageBubble(
                 message: m,
                 onFollowUpTap: m.isUser ? null : (q) => submitQuestion(q),
+                onCopy: _copyMessage,
               );
             },
           ),
@@ -685,7 +695,12 @@ class ChatPageState extends State<ChatPage> {
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final ValueChanged<String>? onFollowUpTap; // 点击「追问」直接发送该问题
-  const _MessageBubble({required this.message, this.onFollowUpTap});
+  final ValueChanged<String>? onCopy;
+  const _MessageBubble({
+    required this.message,
+    this.onFollowUpTap,
+    this.onCopy,
+  });
 
   /// 从 AI 回复中解析「追问：xxx」段：返回 (正文, 追问问题)
   /// 回复固定三段（结论/立即行动/注意事项），注意事项尾部常带一句追问
@@ -881,12 +896,37 @@ class _MessageBubble extends StatelessWidget {
                   ),
                 ],
                 Padding(
-                  padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
-                  child: Text(
-                    timeText,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      color: AppColors.textTertiary,
+                  padding: const EdgeInsets.only(top: 2, left: 2, right: 2),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          key: ValueKey('chat-copy-${message.id}'),
+                          onPressed: onCopy == null || body.trim().isEmpty
+                              ? null
+                              : () => onCopy!(body),
+                          icon: const Icon(Icons.copy_rounded),
+                          tooltip: '复制',
+                          iconSize: 16,
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                          padding: const EdgeInsets.all(5),
+                          color: AppColors.textTertiary,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          timeText,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

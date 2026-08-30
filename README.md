@@ -54,4 +54,4 @@
 
 ## 后端部署
 
-生产后端部署在 CloudBase 云托管服务 `watchdog-api-prod`，业务数据使用 CloudBase PG 模式 PostgreSQL，运行时通过 PostgREST + `service_role` API Key 访问；AI 仍使用 DeepSeek 直连。App 默认通过 CloudBase HTTP 网关地址 `https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com` 访问，网关根路径转发到该云托管服务，`/models/` 同时分发端侧 ASR 模型及其完整性清单。统一使用 `deploy/deploy.sh` 部署 CloudBase 云托管服务。详见 [CloudBase PG 模式部署说明](deploy/cloudbase/README.md)。
+生产后端部署在 CloudBase 云托管服务 `watchdog-api-prod`，业务数据使用 CloudBase PG 模式 PostgreSQL，运行时通过 PostgREST + `service_role` API Key 访问；AI 仍使用 DeepSeek 直连。App 默认通过云托管服务直连地址 `https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com` 访问，REST、WebSocket 实时语音识别和 `/models/` 端侧 ASR 模型分发共用该入口。统一使用 `deploy/deploy.sh` 部署 CloudBase 云托管服务。详见 [CloudBase PG 模式部署说明](deploy/cloudbase/README.md)。

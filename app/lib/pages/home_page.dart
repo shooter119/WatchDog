@@ -264,8 +264,8 @@ class HomePageState extends State<HomePage> {
           await _realtime!.cancel();
           await _realtime!.dispose();
           _realtime = null;
-          // WebSocket 冷启动/网关暂时不可用时，仍允许用户完成本次录音，
-          // 松手后沿用旧的云端批量识别与本地兜底链路。
+          // WebSocket 冷启动/入口暂时不可用时，仍允许用户完成本次录音，
+          // 松手后沿用云端批量识别；不切换到离线识别。
           OpLogService.instance.record(
             _opId!,
             'stream_connect_err',
@@ -297,9 +297,10 @@ class HomePageState extends State<HomePage> {
       _recordingStarting = false;
       _startRecordingTimer();
       widget.onRecordingChanged?.call(true);
-      _ampSub = (_realtime?.amplitudeStream() ?? _audio.amplitudeStream()).listen((a) {
-        if (mounted) setState(() => _amp = a);
-      });
+      _ampSub = (_realtime?.amplitudeStream() ?? _audio.amplitudeStream())
+          .listen((a) {
+            if (mounted) setState(() => _amp = a);
+          });
     } catch (e) {
       _recordingStarting = false;
       OpLogService.instance.record(
@@ -351,7 +352,7 @@ class HomePageState extends State<HomePage> {
           OpLogService.instance.record(
             opId,
             'transcribe_fallback',
-            '实时云端识别失败，切换本地识别',
+            '实时云端识别失败，切换批量云端识别',
             level: 'warn',
           );
           realtimeText = null;
@@ -372,9 +373,7 @@ class HomePageState extends State<HomePage> {
       try {
         text = realtimeText?.trim().isNotEmpty == true
             ? realtimeText!.trim()
-            : realtime != null
-                ? await widget.controller.transcribeAudioLocal(bytes, opId: opId)
-                : await widget.controller.transcribeAudio(bytes, opId: opId);
+            : await widget.controller.transcribeAudio(bytes, opId: opId);
         OpLogService.instance.record(
           opId,
           'transcribe_ok',
@@ -700,20 +699,144 @@ class HomePageState extends State<HomePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('全员离场确认'),
-        content: Text(
-          '识别到全员离场指令，当前在场 ${active.length} 人：${active.map((e) => e.name).join('、')}\n\n语音原文：「$voiceText」\n\n确认全部登记离场？',
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        contentPadding: EdgeInsets.zero,
+        titlePadding: EdgeInsets.zero,
+        actionsPadding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.caution.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.exit_to_app_rounded,
+                        color: AppColors.caution,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('全员离场确认', style: AppTextStyles.h2),
+                          SizedBox(height: 4),
+                          Text('请核对在场人员后再提交', style: AppTextStyles.bodyMd),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.caution.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(
+                      color: AppColors.caution.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.groups_rounded,
+                        color: AppColors.textPrimary,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        '当前在场 ${active.length} 人',
+                        style: AppTextStyles.bodyLg,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  '在场人员',
+                  style: AppTextStyles.label.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: active
+                      .map(
+                        (entry) => Chip(
+                          avatar: const Icon(Icons.person_rounded, size: 17),
+                          label: Text(entry.name),
+                          backgroundColor: AppColors.surfaceSubtle,
+                          side: BorderSide.none,
+                          visualDensity: VisualDensity.compact,
+                          labelStyle: AppTextStyles.label,
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '语音原文',
+                  style: AppTextStyles.label.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceSubtle.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Text(
+                    '“$voiceText”',
+                    style: AppTextStyles.bodyMd.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text('确认后将为以上人员统一登记离场。', style: AppTextStyles.bodyMd),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 10),
+                    FilledButton.icon(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      icon: const Icon(Icons.check_rounded, size: 19),
+                      label: const Text('确认离场'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认全员离场'),
-          ),
-        ],
       ),
     );
     if (confirmed != true) {
@@ -1153,7 +1276,7 @@ class HomePageState extends State<HomePage> {
       child: LayoutBuilder(
         builder: (context, viewport) {
           final compactHeader =
-              viewport.maxWidth < 400 ||
+              viewport.maxWidth < 300 ||
               MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
           final connectionStatus = ConnectionStatus(
             connected: !widget.controller.connectionLost,
@@ -1169,6 +1292,8 @@ class HomePageState extends State<HomePage> {
                     const SizedBox(height: 6),
                     Align(
                       alignment: Alignment.centerRight,
+                      widthFactor: 1,
+                      heightFactor: 1,
                       child: connectionStatus,
                     ),
                   ],
@@ -1589,7 +1714,10 @@ class HomePageState extends State<HomePage> {
               const SizedBox(height: 22),
               Container(
                 constraints: const BoxConstraints(maxWidth: 360),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.voice.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(AppRadius.md),
