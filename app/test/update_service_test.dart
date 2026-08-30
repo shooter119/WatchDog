@@ -28,130 +28,133 @@ void main() {
     });
   });
 
-  group('国内 OTA 清单解析', () {
+  group('GitHub Release 解析', () {
     const sha =
         '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    const manifestUrl = 'https://download.example.test/ota/latest.json';
 
     test('提取版本、APK 地址、大小、SHA256 和更新说明', () {
-      final info = UpdateService.parseManifestJson('''
+      final info = UpdateService.parseReleaseJson('''
 {
-  "schemaVersion": 1,
-  "tagName": "v0.14.0+43",
-  "versionCode": 2043,
-  "apkPath": "releases/v0.14.0+43/watchdog-0.14.0+43-arm64-v8a.apk",
-  "sizeBytes": 12345678,
-  "sha256": "$sha",
-  "changelog": "修复现场日志显示问题"
+  "tag_name": "v0.14.0+43",
+  "body": "修复现场日志显示问题\\nSHA256: $sha",
+  "assets": [{
+    "name": "watchdog-0.14.0+43-arm64-v8a.apk",
+    "browser_download_url": "https://github.com/shooter119/WatchDog/releases/download/v0.14.0%2B43/watchdog-0.14.0%2B43-arm64-v8a.apk",
+    "size": 12345678
+  }]
 }
-''', manifestUrl: Uri.parse(manifestUrl));
+''');
 
       expect(info?.tagName, 'v0.14.0+43');
       expect(info?.versionCode, 2043);
       expect(
         info?.apkUrl,
-        'https://download.example.test/ota/releases/'
-        'v0.14.0+43/watchdog-0.14.0+43-arm64-v8a.apk',
+        'https://github.com/shooter119/WatchDog/releases/download/v0.14.0%2B43/'
+        'watchdog-0.14.0%2B43-arm64-v8a.apk',
       );
       expect(info?.sizeBytes, 12345678);
       expect(info?.sha256, sha);
-      expect(info?.changelog, '修复现场日志显示问题');
+      expect(info?.changelog, contains('修复现场日志显示问题'));
     });
 
-    test('schema、字段、版本号或 SHA256 无效时拒绝清单', () {
+    test('tag、assets、APK 名称或下载地址无效时拒绝 release', () {
       const valid = {
-        'schemaVersion': 1,
-        'tagName': 'v0.14.0+43',
-        'versionCode': 2043,
-        'apkPath': 'releases/v0.14.0+43/watchdog-0.14.0+43-arm64-v8a.apk',
-        'sizeBytes': 12345678,
-        'sha256': sha,
-        'changelog': '测试更新',
+        'tag_name': 'v0.14.0+43',
+        'body': '测试更新',
+        'assets': [
+          {
+            'name': 'watchdog-0.14.0+43-arm64-v8a.apk',
+            'browser_download_url':
+                'https://github.com/shooter119/WatchDog/releases/download/v0.14.0%2B43/watchdog-0.14.0%2B43-arm64-v8a.apk',
+            'size': 12345678,
+          },
+        ],
       };
       for (final replacement in [
-        {'schemaVersion': 2},
-        {'versionCode': 2044},
-        {'sha256': 'not-a-sha256'},
-        {'sizeBytes': 0},
-        {'apkPath': 'releases/v0.14.0+43/not-an-apk.zip'},
+        {'tag_name': ''},
+        {'assets': []},
+        {
+          'assets': [
+            {
+              'name': 'watchdog-0.14.0+43-not-an-apk.zip',
+              'browser_download_url':
+                  'https://github.com/shooter119/WatchDog/releases/download/x/x.zip',
+              'size': 12345678,
+            },
+          ],
+        },
+        {
+          'assets': [
+            {
+              'name': 'watchdog-0.14.0+43-arm64-v8a.apk',
+              'browser_download_url': 'http://evil.example/update.apk',
+              'size': 12345678,
+            },
+          ],
+        },
       ]) {
         final body = jsonEncode({...valid, ...replacement});
         expect(
-          UpdateService.parseManifestJson(
-            body,
-            manifestUrl: Uri.parse(manifestUrl),
-          ),
+          UpdateService.parseReleaseJson(body),
           isNull,
           reason: 'replacement=$replacement',
         );
       }
     });
 
-    test('APK 路径拒绝绝对地址、查询参数和路径穿越', () {
-      const paths = [
-        '/releases/v0.14.0+43/watchdog-0.14.0+43-arm64-v8a.apk',
-        'https://evil.example/update.apk',
-        'releases/../watchdog-0.14.0+43-arm64-v8a.apk',
-        'releases/%2e%2e/watchdog-0.14.0+43-arm64-v8a.apk',
-        'releases/v0.14.0+43/watchdog-0.14.0+43-arm64-v8a.apk?x=1',
+    test('拒绝非 arm64 或不受信任主机的 APK 资产', () {
+      const names = [
+        'watchdog-0.14.0+43-armeabi-v7a.apk',
+        'watchdog-0.14.0+43-arm64-v8a.zip',
       ];
-      for (final apkPath in paths) {
+      for (final name in names) {
         final body = jsonEncode({
-          'schemaVersion': 1,
-          'tagName': 'v0.14.0+43',
-          'versionCode': 2043,
-          'apkPath': apkPath,
-          'sizeBytes': 12345678,
-          'sha256': sha,
-          'changelog': '测试更新',
+          'tag_name': 'v0.14.0+43',
+          'assets': [
+            {
+              'name': name,
+              'browser_download_url':
+                  'https://github.com/shooter119/WatchDog/releases/download/x/$name',
+            },
+          ],
         });
         expect(
-          UpdateService.parseManifestJson(
-            body,
-            manifestUrl: Uri.parse(manifestUrl),
-          ),
+          UpdateService.parseReleaseJson(body),
           isNull,
-          reason: 'apkPath=$apkPath',
+          reason: 'asset=$name',
         );
       }
     });
 
-    test('清单入口必须使用 HTTPS', () {
-      const body =
-          '''
-{
-  "schemaVersion": 1,
-  "tagName": "v0.14.0+43",
-  "versionCode": 2043,
-  "apkPath": "releases/v0.14.0+43/watchdog-0.14.0+43-arm64-v8a.apk",
-  "sizeBytes": 12345678,
-  "sha256": "$sha",
-  "changelog": "测试更新"
-}
-''';
-      expect(
-        UpdateService.parseManifestJson(
-          body,
-          manifestUrl: Uri.parse(
-            'http://download.example.test/ota/latest.json',
-          ),
-        ),
-        isNull,
-      );
+    test('缺少 SHA256 时保留版本信息但安装阶段不能跳过校验', () {
+      final body = jsonEncode({
+        'tag_name': 'v0.14.0+43',
+        'assets': [
+          {
+            'name': 'watchdog-0.14.0+43-arm64-v8a.apk',
+            'browser_download_url':
+                'https://github.com/shooter119/WatchDog/releases/download/x/watchdog.apk',
+          },
+        ],
+      });
+      expect(UpdateService.parseReleaseJson(body)?.sha256, isNull);
     });
   });
 
-  group('国内 OTA 清单请求', () {
+  group('GitHub Release 请求', () {
     const sha =
         '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    final manifest = jsonEncode({
-      'schemaVersion': 1,
-      'tagName': 'v9.9.9+99',
-      'versionCode': 2099,
-      'apkPath': 'releases/v9.9.9+99/watchdog-9.9.9+99-arm64-v8a.apk',
-      'sizeBytes': 123,
-      'sha256': sha,
-      'changelog': '测试更新',
+    final release = jsonEncode({
+      'tag_name': 'v9.9.9+99',
+      'body': '测试更新\\nSHA256: $sha',
+      'assets': [
+        {
+          'name': 'watchdog-9.9.9+99-arm64-v8a.apk',
+          'browser_download_url':
+              'https://github.com/shooter119/WatchDog/releases/download/x/watchdog.apk',
+          'size': 123,
+        },
+      ],
     });
 
     setUp(() {
@@ -167,7 +170,7 @@ void main() {
     test('5xx 重试后成功，并发送禁止缓存请求头', () async {
       final client = _QueueClient([
         _response('', 503),
-        _response(manifest, 200),
+        _response(release, 200),
       ]);
       final (info, error) = await UpdateService(
         httpClientFactory: () => client,
@@ -176,22 +179,25 @@ void main() {
       expect(error, isNull);
       expect(info?.tagName, 'v9.9.9+99');
       expect(client.requests, hasLength(2));
-      expect(client.requests.first.headers['cache-control'], 'no-cache');
+      expect(
+        client.requests.first.headers['accept'],
+        'application/vnd.github+json',
+      );
       expect(client.requests.first.headers['user-agent'], contains('watchdog'));
     });
 
-    test('4xx 不重试，并返回国内更新服务错误', () async {
+    test('4xx 不重试，并返回 GitHub Releases 错误', () async {
       final client = _QueueClient([_response('', 404)]);
       final (info, error) = await UpdateService(
         httpClientFactory: () => client,
       ).checkForUpdate();
 
       expect(info, isNull);
-      expect(error, '国内更新服务不可达（HTTP 404）');
+      expect(error, 'GitHub Releases 不可达（HTTP 404）');
       expect(client.requests, hasLength(1));
     });
 
-    test('网络异常重试后仍失败时返回国内网络错误', () async {
+    test('网络异常重试后仍失败时返回 GitHub 网络错误', () async {
       final client = _QueueClient([
         const SocketException('offline'),
         const SocketException('offline'),
@@ -201,11 +207,11 @@ void main() {
       ).checkForUpdate();
 
       expect(info, isNull);
-      expect(error, '无法连接国内更新服务，请检查网络后重试');
+      expect(error, '无法连接 GitHub Releases，请检查网络后重试');
       expect(client.requests, hasLength(2));
     });
 
-    test('请求超时重试后仍失败时返回超时提示', () async {
+    test('请求超时重试后仍失败时返回 GitHub 超时提示', () async {
       final client = _QueueClient([
         TimeoutException('slow'),
         TimeoutException('slow'),
@@ -215,7 +221,7 @@ void main() {
       ).checkForUpdate();
 
       expect(info, isNull);
-      expect(error, '国内更新服务响应超时，请稍后重试');
+      expect(error, 'GitHub Releases 响应超时，请稍后重试');
       expect(client.requests, hasLength(2));
     });
   });

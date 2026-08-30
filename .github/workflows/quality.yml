@@ -22,8 +22,6 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: backend/package-lock.json
-      - name: Release automation tests
-        run: node --test .github/scripts/*.test.cjs
       - name: Backend tests and runtime count gate
         working-directory: backend
         shell: bash

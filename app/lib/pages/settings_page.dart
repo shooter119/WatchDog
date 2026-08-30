@@ -168,20 +168,20 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// 检查更新：国内 OTA 清单最新版 → 提示/下载/安装
+  /// 检查更新：GitHub Releases 最新版 → 提示/下载/安装
   Future<void> _checkUpdate() async {
     if (_checkingUpdate) return;
     setState(() => _checkingUpdate = true);
     String? error;
     UpdateInfo? info;
-    final opId = 'ota-check-${DateTime.now().millisecondsSinceEpoch}';
+    final opId = 'release-check-${DateTime.now().millisecondsSinceEpoch}';
     void trace(String stage, String message, String level) {
       OpLogService.instance.record(
         opId,
         stage,
         message,
         level: level,
-        data: {'source': '国内更新服务'},
+        data: {'source': 'GitHub Releases'},
       );
     }
 
@@ -1360,7 +1360,7 @@ class _SettingsPageState extends State<SettingsPage> {
       subtitle = '已是最新版本';
       subtitleColor = AppColors.textTertiary;
     } else {
-      subtitle = '从国内更新服务获取最新版本';
+      subtitle = '从 GitHub Releases 获取最新版本';
       subtitleColor = AppColors.textTertiary;
     }
     return AppCard(

@@ -7,7 +7,6 @@ const path = require('path');
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-api-'));
 process.env.WATCHDOG_DATA_DIR = tmpDir;
 process.env.CLOUDBASE_ENV_ID = 'watchdog-test-env';
-process.env.WATCHDOG_OTA_BUCKET_ID = 'watchdog-ota';
 
 const app = require('../src/server');
 const db = require('../src/db');
@@ -48,17 +47,9 @@ test('GET /api/health 免认证返回 ok', async () => {
   assert.match(res.headers.get('x-request-id'), /^[0-9a-f-]{36}$/);
 });
 
-test('旧版 /ota 路径只重定向到 CloudBase PG 公开对象入口', async () => {
-  const res = await fetch(`${base}/ota/latest.json`, { redirect: 'manual' });
-  assert.equal(res.status, 302);
-  assert.equal(
-    res.headers.get('location'),
-    'https://watchdog-test-env.api.tcloudbasegateway.com/v1/storages/object/public/watchdog-ota/latest.json',
-  );
-
-  const invalid = await fetch(`${base}/ota/private.txt`);
-  assert.equal(invalid.status, 404);
-  assert.equal((await invalid.json()).code, 'OTA_OBJECT_NOT_FOUND');
+test('已停用的旧 /ota 路径不会成为文件代理或开放重定向', async () => {
+  const res = await fetch(`${base}/ota/latest.json`);
+  assert.equal(res.status, 404);
 });
 
 test('GET /api/config 返回计算参数', async () => {

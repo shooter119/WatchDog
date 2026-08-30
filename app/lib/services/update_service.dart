@@ -21,13 +21,13 @@ int? _arm64VersionCodeFromTag(String tagName) {
   return 2000 + buildNumber;
 }
 
-/// 远端更新信息（来自国内 CloudBase OTA 清单）
+/// 远端更新信息（来自 GitHub Releases）
 class UpdateInfo {
   final String tagName; // 如 v0.8.5+22
   final String apkUrl;
   final int? sizeBytes;
   final String? sha256;
-  final String? changelog; // 国内 OTA 清单中的更新说明
+  final String? changelog; // GitHub Release 正文
 
   const UpdateInfo({
     required this.tagName,
@@ -48,17 +48,11 @@ class UpdateInfo {
 typedef UpdateEventLogger =
     void Function(String stage, String message, String level);
 
-/// OTA 更新服务：从国内 CloudBase PG Storage 公开对象清单获取版本，
-/// 由 App 自己下载并校验 APK，再交给原生 FileProvider 拉起系统安装。
-///
-/// 清单和 APK 均只走国内更新入口；GitHub Release 仍由发布流水线保留，
-/// 供旧版本迁移、人工下载和历史归档使用，但新版本 App 不在运行时访问 GitHub。
+/// 更新服务：查询 GitHub Releases 最新版，下载并校验 APK，
+/// 再交给原生 FileProvider 拉起系统安装。
 class UpdateService {
-  static const updateManifestUrl = String.fromEnvironment(
-    'WATCHDOG_UPDATE_MANIFEST_URL',
-    defaultValue:
-        'https://watchdog-prod-d6gch930m378d9a16.api.tcloudbasegateway.com/v1/storages/object/public/watchdog-ota/latest.json',
-  );
+  static const releaseApiUrl =
+      'https://api.github.com/repos/shooter119/WatchDog/releases/latest';
   static const userAgent = 'watchdog-app-updater/2.0';
   static const _metadataTimeout = Duration(seconds: 15);
   static const _metadataAttempts = 2;
@@ -163,25 +157,19 @@ class UpdateService {
   /// 检查更新。返回 (更新信息, 错误信息)：
   /// - 更新信息非空 → 有新版可下载
   /// - 两者皆空 → 已是最新
-  /// - 错误信息非空 → 检查失败（国内更新服务不可达/网络异常）
+  /// - 错误信息非空 → 检查失败（GitHub Releases 不可达/网络异常）
   Future<(UpdateInfo?, String?)> checkForUpdate() async {
     final info = await PackageInfo.fromPlatform();
     final localBuild = int.tryParse(info.buildNumber) ?? 0;
-    final (remote, error) = await _fetchLatestManifest();
+    final (remote, error) = await _fetchLatestRelease();
     if (error != null) return (null, error);
     if (remote == null || remote.versionCode <= localBuild) return (null, null);
     return (remote, null);
   }
 
-  Future<(UpdateInfo?, String?)> _fetchLatestManifest() async {
-    final manifestUri = Uri.tryParse(updateManifestUrl);
-    if (manifestUri == null || !_isHttpsUri(manifestUri)) {
-      const error = '国内更新服务地址无效';
-      _log('ota_manifest_fail', error, level: 'error');
-      return (null, error);
-    }
-
-    _log('ota_manifest_start', '开始请求国内更新清单');
+  Future<(UpdateInfo?, String?)> _fetchLatestRelease() async {
+    final releaseUri = Uri.parse(releaseApiUrl);
+    _log('release_check_start', '开始请求 GitHub Release');
     final client = _httpClientFactory();
     Object? lastError;
     try {
@@ -189,44 +177,40 @@ class UpdateService {
         try {
           final res = await client
               .get(
-                manifestUri,
+                releaseUri,
                 headers: {
-                  'Accept': 'application/json',
-                  'Cache-Control': 'no-cache',
+                  'Accept': 'application/vnd.github+json',
                   'User-Agent': userAgent,
                 },
               )
               .timeout(_metadataTimeout);
           if (res.statusCode == 200) {
-            final parsed = parseManifestJson(
-              utf8.decode(res.bodyBytes),
-              manifestUrl: manifestUri,
-            );
+            final parsed = parseReleaseJson(utf8.decode(res.bodyBytes));
             if (parsed != null) {
               _log(
-                'ota_manifest_ready',
-                '国内更新清单读取成功：${parsed.tagName}',
+                'release_ready',
+                'GitHub Release 读取成功：${parsed.tagName}',
                 level: 'info',
               );
               return (parsed, null);
             }
-            const error = '国内更新清单格式无效';
-            _log('ota_manifest_fail', error, level: 'error');
+            const error = 'GitHub Release 格式无效';
+            _log('release_check_fail', error, level: 'error');
             return (null, error);
           }
 
           lastError = _HttpStatusException(res.statusCode);
           if (!_isRetryableMetadataStatus(res.statusCode) ||
               attempt == _metadataAttempts) {
-            final error = '国内更新服务不可达（HTTP ${res.statusCode}）';
-            _log('ota_manifest_fail', error, level: 'error');
+            final error = 'GitHub Releases 不可达（HTTP ${res.statusCode}）';
+            _log('release_check_fail', error, level: 'error');
             return (null, error);
           }
         } catch (e) {
           lastError = e;
           if (attempt == _metadataAttempts) {
             final error = _friendlyNetworkError(e);
-            _log('ota_manifest_fail', error, level: 'error');
+            _log('release_check_fail', error, level: 'error');
             return (null, error);
           }
         }
@@ -235,60 +219,53 @@ class UpdateService {
       final error = _friendlyNetworkError(
         lastError ?? const SocketException('请求失败'),
       );
-      _log('ota_manifest_fail', error, level: 'error');
+      _log('release_check_fail', error, level: 'error');
       return (null, error);
     } finally {
       client.close();
     }
   }
 
-  /// 解析国内 CloudBase OTA 清单，并将相对 APK 路径解析为同一入口下的 HTTPS 地址。
-  static UpdateInfo? parseManifestJson(String body, {Uri? manifestUrl}) {
+  /// 解析 GitHub Releases API JSON，严格限制为本项目 arm64 正式 APK。
+  static UpdateInfo? parseReleaseJson(String body) {
     try {
-      final baseUri = manifestUrl ?? Uri.tryParse(updateManifestUrl);
-      if (baseUri == null || !_isHttpsUri(baseUri)) return null;
       final decoded = jsonDecode(body);
       if (decoded is! Map) return null;
-      if (decoded['schemaVersion'] != 1) return null;
-
-      final tagName = decoded['tagName'];
-      final versionCode = decoded['versionCode'];
-      final apkPath = decoded['apkPath'];
-      final sha256 = decoded['sha256'];
-      final sizeBytes = decoded['sizeBytes'];
-      final changelog = decoded['changelog'];
+      final tagName = decoded['tag_name'];
+      final rawAssets = decoded['assets'];
       if (tagName is! String || tagName.trim().isEmpty) return null;
-      if (versionCode is! num ||
-          !versionCode.isFinite ||
-          versionCode != versionCode.roundToDouble() ||
-          versionCode < 1) {
+      if (rawAssets is! List) return null;
+      Map<String, dynamic>? apkAsset;
+      for (final rawAsset in rawAssets) {
+        if (rawAsset is! Map) continue;
+        final name = rawAsset['name'];
+        if (name is String &&
+            name.startsWith('watchdog-') &&
+            name.endsWith('-arm64-v8a.apk')) {
+          apkAsset = Map<String, dynamic>.from(rawAsset);
+          break;
+        }
+      }
+      if (apkAsset == null) return null;
+      final apkUrl = apkAsset['browser_download_url'];
+      if (apkUrl is! String || !_isHttpsUri(Uri.tryParse(apkUrl) ?? Uri())) {
         return null;
       }
-      if (apkPath is! String || !_isSafeApkPath(apkPath)) return null;
-      if (sha256 is! String || !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(sha256)) {
+      final rawSize = apkAsset['size'];
+      final sizeBytes = rawSize is num ? rawSize.toInt() : null;
+      if (sizeBytes != null && (sizeBytes < 1 || sizeBytes > maxApkSizeBytes)) {
         return null;
       }
-      if (sizeBytes is! num ||
-          !sizeBytes.isFinite ||
-          sizeBytes != sizeBytes.roundToDouble() ||
-          sizeBytes < 1 ||
-          sizeBytes > maxApkSizeBytes) {
-        return null;
-      }
-      if (changelog is! String) return null;
-
-      final parsedTagVersionCode = _arm64VersionCodeFromTag(tagName);
-      if (parsedTagVersionCode == null ||
-          parsedTagVersionCode != versionCode.toInt()) {
-        return null;
-      }
-      final apkUrl = baseUri.resolve(apkPath).toString();
+      final releaseBody = decoded['body']?.toString() ?? '';
+      final shaMatch = RegExp(
+        r'SHA256:\s*([0-9a-fA-F]{64})',
+      ).firstMatch(releaseBody);
       return UpdateInfo(
         tagName: tagName,
         apkUrl: apkUrl,
-        sizeBytes: sizeBytes.toInt(),
-        sha256: sha256.toLowerCase(),
-        changelog: changelog,
+        sizeBytes: sizeBytes,
+        sha256: shaMatch?.group(1)?.toLowerCase(),
+        changelog: releaseBody,
       );
     } catch (_) {
       return null;
@@ -296,11 +273,11 @@ class UpdateService {
   }
 
   static String _friendlyNetworkError(Object error) {
-    if (error is TimeoutException) return '国内更新服务响应超时，请稍后重试';
+    if (error is TimeoutException) return 'GitHub Releases 响应超时，请稍后重试';
     if (error is SocketException || error is http.ClientException) {
-      return '无法连接国内更新服务，请检查网络后重试';
+      return '无法连接 GitHub Releases，请检查网络后重试';
     }
-    return '检查国内更新服务失败：$error';
+    return '检查 GitHub Releases 失败：$error';
   }
 
   static bool _isHttpsUri(Uri uri) =>
@@ -309,29 +286,6 @@ class UpdateService {
       uri.userInfo.isEmpty &&
       uri.query.isEmpty &&
       uri.fragment.isEmpty;
-
-  static bool _isSafeApkPath(String value) {
-    if (value.isEmpty || value.startsWith('/') || value.contains('\\')) {
-      return false;
-    }
-    // 只允许 CI 生成的普通对象路径，拒绝 %2e、%2f 等编码后的路径穿越变体。
-    if (RegExp(r'[^A-Za-z0-9._+/-]').hasMatch(value)) return false;
-    final uri = Uri.tryParse(value);
-    if (uri == null ||
-        uri.hasScheme ||
-        uri.host.isNotEmpty ||
-        uri.hasQuery ||
-        uri.hasFragment) {
-      return false;
-    }
-    final segments = value.split('/');
-    return segments.isNotEmpty &&
-        segments.first == 'releases' &&
-        !segments.contains('') &&
-        !segments.contains('.') &&
-        !segments.contains('..') &&
-        value.endsWith('-arm64-v8a.apk');
-  }
 
   static bool _isRetryableMetadataStatus(int statusCode) =>
       statusCode >= 500 && statusCode <= 599;

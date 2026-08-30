@@ -135,7 +135,11 @@ class _FeaturesCard extends StatelessWidget {
   const _FeaturesCard();
 
   static const _items = [
-    (Icons.mic_rounded, '语音录入', '进场、退场、压力值，一句话搞定；文字边说边出现，松手后再解析；云端失败保留录音并回退本机识别；单次最长 60 秒'),
+    (
+      Icons.mic_rounded,
+      '语音录入',
+      '进场、退场、压力值，一句话搞定；文字边说边出现，松手后再解析；云端失败保留录音并回退本机识别；单次最长 60 秒',
+    ),
     (
       Icons.smart_toy_outlined,
       '辅助问答',
@@ -155,8 +159,8 @@ class _FeaturesCard extends StatelessWidget {
     ),
     (
       Icons.system_update_alt_rounded,
-      '国内 OTA 更新',
-      '版本清单与 APK 通过腾讯云 CloudBase 云存储国内分发，GitHub Release 继续保留为归档和旧版本迁移入口',
+      '版本更新',
+      '通过 GitHub Releases 检查正式版本，下载后校验 SHA-256，再交由系统安装器完成更新',
     ),
     (
       Icons.folder_copy_outlined,
@@ -168,7 +172,11 @@ class _FeaturesCard extends StatelessWidget {
       '离线补传与复盘',
       '现场操作断网持久化暂存，恢复网络后幂等补传；归档后按晚到早查看完整事件时间线',
     ),
-    (Icons.group_outlined, '名单与热词', '首次安装自带消防员名单和专业热词，也可按班组实际情况增删；实时识别每次会话统一注入'),
+    (
+      Icons.group_outlined,
+      '名单与热词',
+      '首次安装自带消防员名单和专业热词，也可按班组实际情况增删；实时识别每次会话统一注入',
+    ),
     (Icons.bar_chart_rounded, '数据统计', '每人的进出场次数、时长一清二楚，训练复盘心里有数'),
     (Icons.touch_app_outlined, '火场友好', '屏幕常亮、后台保活、按键式录音，戴着手套、满场嘈杂也能用'),
   ];

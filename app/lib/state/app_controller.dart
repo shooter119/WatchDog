@@ -123,7 +123,7 @@ class AppController extends ChangeNotifier {
   /// 争用。问答结束后下一轮 5 秒轮询会自动恢复。
   bool get assistantBusy => _assistantBusy;
 
-  /// 启动时自动检查到的新版本（非空 = 有新版本可更新，设置页据此显示提示）
+  /// 启动时从 GitHub Releases 检查到的新版本（非空 = 有新版本可更新）
   UpdateInfo? pendingUpdate;
 
   /// 是否已完成一次版本检查（区分「未检查」与「已是最新」）
@@ -134,14 +134,14 @@ class AppController extends ChangeNotifier {
 
   /// 启动静默检查更新：失败不打扰用户，只更新状态供设置页展示
   Future<void> checkUpdateSilently() async {
-    final opId = 'ota-check-${DateTime.now().millisecondsSinceEpoch}';
+    final opId = 'release-check-${DateTime.now().millisecondsSinceEpoch}';
     void trace(String stage, String message, String level) {
       OpLogService.instance.record(
         opId,
         stage,
         message,
         level: level,
-        data: {'source': '国内更新服务'},
+        data: {'source': 'GitHub Releases'},
       );
     }
 
@@ -154,7 +154,7 @@ class AppController extends ChangeNotifier {
     } catch (e) {
       // 网络/解析失败静默，用户可在设置页手动检查
       updateCheckError = '$e';
-      trace('ota_manifest_fail', '$e', 'error');
+      trace('release_check_fail', '$e', 'error');
     }
     updateCheckDone = true;
     _notify();

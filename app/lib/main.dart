@@ -96,7 +96,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
       }),
     );
     controller.init();
-    // 启动即静默检查更新：有新版本时设置页「检查更新」卡片显示提示（失败静默）
+    // 启动即静默检查 GitHub Releases：有新版本时设置页显示提示（失败静默）
     controller.checkUpdateSilently();
   }
 

@@ -34,8 +34,5 @@ test('原子 RPC 的 client_op_id 冲突目标具备可匹配的完整唯一索�
   assert.match(indexMigration, /CREATE UNIQUE INDEX IF NOT EXISTS[\s\S]+ON public\.incident_events\(client_op_id\)/);
   assert.doesNotMatch(indexMigration, /WHERE\s+client_op_id\s+IS\s+NOT\s+NULL/i);
 
-  const otaMigration = fs.readFileSync(path.join(__dirname, '..', 'migrations', '009_ota_public_bucket.sql'), 'utf8');
-  assert.match(otaMigration, /watchdog-ota/);
-  assert.match(otaMigration, /CREATE POLICY watchdog_ota_public_read/);
-  assert.match(otaMigration, /TO anon, authenticated/);
+  assert.equal(fs.existsSync(path.join(__dirname, '..', 'migrations', '009_ota_public_bucket.sql')), false);
 });

@@ -83,29 +83,9 @@ CHAT_SEARCH_ENABLED=1
 
 计算参数按 `backend/.env.example` 配置。不要把 `CLOUDBASE_SECRET_ID`、`CLOUDBASE_SECRET_KEY` 或 `CLOUDBASE_API_KEY` 写入仓库或 APK。
 
-## 3. 国内 OTA 发布 Secrets
+## 3. 版本发布与验证
 
-`.github/workflows/release.yml` 还需要配置以下三个 GitHub Actions Repository Secrets，专门用于国内 OTA 存储发布：
-
-```text
-CLOUDBASE_OTA_ENV_ID
-CLOUDBASE_OTA_BUCKET_ID
-CLOUDBASE_OTA_API_KEY
-```
-
-这些凭据只授予专用 OTA bucket 的最小写权限，不得复用后端 `service_role` API Key，也不得写入仓库、构建产物或日志。发布工作流会先检查凭据、版本递增、APK 大小与 SHA-256，并回读 OTA APK 和 `latest.json` 完成远端校验；全部通过后才创建 GitHub Release。缺少配置或校验失败时不会创建新的 Release。
-
-OTA 使用 CloudBase PG Storage，约定公开 bucket ID 为 `watchdog-ota`。首次启用前，必须在备份/预生产条件具备后执行
-`backend/migrations/009_ota_public_bucket.sql`，确认 bucket 为公开读并已创建 `anon`/`authenticated` 的对象读取策略。
-App 和 Release workflow 使用以下公开对象入口：
-
-```text
-https://<env-id>.api.tcloudbasegateway.com/v1/storages/object/public/<bucket-id>/<object-path>
-```
-
-其中清单为 `latest.json`，APK 位于 `releases/<tag>-arm64-v8a.apk`。云托管服务的旧 `/ota/*` 路径只作为旧版 App 的兼容重定向，不能替代 PG Storage bucket，也不应作为新版本默认地址。
-
-## 4. 验证
+国内 CloudBase OTA 暂不启用。正式 APK 由 GitHub Actions 在推送 `v*` tag 后构建，执行 arm64 ABI、版本号、正式签名和 SHA-256 校验，再创建 GitHub Release；App 的版本检查直接读取公开 GitHub Releases。发布只需要配置签名相关的四项 GitHub Actions Secrets，不需要国内 OTA 专用凭据。
 
 先访问 CloudBase HTTP 网关地址：
 

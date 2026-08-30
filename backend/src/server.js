@@ -78,26 +78,6 @@ const CFG = {
   },
 };
 
-// PG Storage 的公开对象入口不等同于云托管服务的网关路径。保留 /ota 作为
-// 旧版 App 的兼容入口，但只允许重定向到固定公开 bucket 中的已知 OTA 对象。
-const OTA_ENV_ID = String(
-  process.env.WATCHDOG_OTA_ENV_ID || process.env.CLOUDBASE_ENV_ID || process.env.CLOUDBASE_ENV || '',
-).trim();
-const OTA_BUCKET_ID = String(process.env.WATCHDOG_OTA_BUCKET_ID || 'watchdog-ota').trim();
-const SAFE_OTA_ENV_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,62}$/.test(OTA_ENV_ID);
-const SAFE_OTA_BUCKET_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(OTA_BUCKET_ID);
-
-function isSafeOtaObjectPath(value) {
-  const objectPath = String(value || '');
-  if (objectPath === 'latest.json') return true;
-  return /^releases\/[A-Za-z0-9._+\-]+-arm64-v8a\.apk$/.test(objectPath);
-}
-
-function publicOtaObjectUrl(objectPath) {
-  const encodedObjectPath = objectPath.split('/').map((segment) => encodeURIComponent(segment)).join('/');
-  return `https://${OTA_ENV_ID}.api.tcloudbasegateway.com/v1/storages/object/public/${encodeURIComponent(OTA_BUCKET_ID)}/${encodedObjectPath}`;
-}
-
 const LLM_ALLOWED_HOSTS = parseAllowedHosts(
   process.env.WATCHDOG_LLM_ALLOWED_HOSTS || 'api.deepseek.com',
 );
@@ -162,19 +142,6 @@ app.use('/models', express.static(path.join(__dirname, '..', 'models'), {
     }
   },
 }));
-
-// CloudBase PG Storage 的公开 URL 由 Storage API 提供；/ota 仅为已发布旧版
-// App 保留兼容重定向，不代理文件、不接受任意目标，避免形成开放重定向。
-app.get('/ota/*', (req, res) => {
-  const objectPath = String(req.params[0] || '');
-  if (!SAFE_OTA_ENV_ID || !SAFE_OTA_BUCKET_ID) {
-    return res.status(503).json({ error: '国内更新服务未配置', code: 'OTA_NOT_CONFIGURED' });
-  }
-  if (!isSafeOtaObjectPath(objectPath)) {
-    return res.status(404).json({ error: '更新文件不存在', code: 'OTA_OBJECT_NOT_FOUND' });
-  }
-  return res.redirect(302, publicOtaObjectUrl(objectPath));
-});
 
 // 请求日志（health 探活不刷屏）
 app.use((req, res, next) => {

@@ -16,7 +16,7 @@
 - **CI 触发注意**：GitHub 对**已存在 tag 的 force push 不触发 workflow**。若需用新提交更新已发布版本，必须先删远端 tag（`git push origin :refs/tags/<tag>`）再重新创建并 push。
 - 发布后确认 Actions 状态，失败（如签名校验）先修 workflow 再重打 tag，不能带着失败发布。
   - **CI 触发注意**：GitHub 对**已存在 tag 的 force push 不触发 workflow**。若需用新提交更新已发布版本，必须先删远端 tag（`git push origin :refs/tags/<tag>`）再重新创建并 push；tag 打错位置同理。发布后确认 Actions 状态，失败（如签名校验）先修 workflow 再重打 tag，不能带着失败发布。
-- **OTA 分发链路**：GitHub Releases 直连（公开仓库免 token）；release body 必须含 `SHA256: <64位hex>` 行（CI 自动写入，App 下载后校验）；App 端 `app/lib/services/update_service.dart` 负责查询/比较/下载。
+- **版本发布链路**：GitHub Releases 直连（公开仓库免 token）；release body 必须含 `SHA256: <64位hex>` 行（CI 自动写入，App 下载后校验）；国内 CloudBase OTA 暂不启用；App 端 `app/lib/services/update_service.dart` 负责查询/比较/下载。
 
 ## 验证命令
 
