@@ -22,7 +22,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.4.0+62';
+const appVersion = '1.5.0+63';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;

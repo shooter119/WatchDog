@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../models/models.dart';
 import '../services/audio_service.dart';
 import '../services/op_log_service.dart';
+import '../services/realtime_asr_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import '../theme/assistant_avatar.dart';
@@ -48,6 +49,8 @@ class ChatPageState extends State<ChatPage> {
   bool _sending = false;
   bool _recording = false;
   bool _processing = false;
+  String? _transcript;
+  RealtimeAsrService? _realtime;
   String? _error;
   String? _opId;
   int _requestGeneration = 0;
@@ -79,6 +82,7 @@ class ChatPageState extends State<ChatPage> {
     _stopRecordingTimer();
     _endOp('page_disposed');
     widget.controller.cancelAssistantRequest();
+    unawaited(_realtime?.dispose() ?? Future<void>.value());
     _scroll.dispose();
     _audio.dispose();
     super.dispose();
@@ -163,6 +167,7 @@ class ChatPageState extends State<ChatPage> {
       ];
       _sending = true;
       _error = null;
+      _transcript = null;
     });
     widget.onSendingChanged?.call(true);
     _scrollToBottom();
@@ -298,6 +303,7 @@ class ChatPageState extends State<ChatPage> {
     _opId =
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     OpLogService.instance.record(_opId!, 'record_start', '开始录音', sync: false);
+    if (mounted) setState(() => _transcript = null);
     late final bool ok;
     try {
       ok = await _audio.hasPermission();
@@ -339,7 +345,36 @@ class ChatPageState extends State<ChatPage> {
       return;
     }
     try {
-      await _audio.start();
+      final realtimeEnabled =
+          widget.audioService == null &&
+          widget.controller.asrCloudEnabled &&
+          widget.controller.api != null;
+      if (realtimeEnabled) {
+        _realtime = RealtimeAsrService(
+          api: widget.controller.api!,
+          onText: (text, {required finalText}) {
+            if (!mounted || (!_recording && !_recordingRequested)) return;
+            setState(() => _transcript = text);
+          },
+        );
+        try {
+          await _realtime!.start(opId: _opId);
+        } catch (error) {
+          await _realtime!.cancel();
+          await _realtime!.dispose();
+          _realtime = null;
+          OpLogService.instance.record(
+            _opId!,
+            'stream_connect_err',
+            '实时识别连接失败，改用兼容录音模式: $error',
+            level: 'warn',
+            sync: false,
+          );
+          await _audio.start();
+        }
+      } else {
+        await _audio.start();
+      }
       if (!_recordingRequested ||
           generation != _recordingGeneration ||
           !mounted) {
@@ -396,10 +431,37 @@ class ChatPageState extends State<ChatPage> {
     widget.onProcessingChanged?.call(true);
     final opId = _opId ?? '';
     try {
-      final bytes = await _audio.stop();
+      late final Uint8List bytes;
+      String? realtimeText;
+      final realtime = _realtime;
+      if (realtime != null) {
+        try {
+          final result = await realtime.stop();
+          bytes = result.wavBytes;
+          realtimeText = result.text;
+        } on RealtimeAsrException catch (error) {
+          bytes = error.result.wavBytes;
+          realtimeText = null;
+          OpLogService.instance.record(
+            opId,
+            'transcribe_fallback',
+            '实时识别失败，切换批量云端识别',
+            level: 'warn',
+            sync: false,
+          );
+        } finally {
+          await realtime.dispose();
+          _realtime = null;
+        }
+      } else {
+        bytes = await _audio.stop();
+      }
       String text;
       try {
-        text = await widget.controller.transcribeAudio(bytes, opId: opId);
+        text = realtimeText?.trim().isNotEmpty == true
+            ? realtimeText!.trim()
+            : await widget.controller.transcribeAudio(bytes, opId: opId);
+        if (mounted) setState(() => _transcript = text);
         OpLogService.instance.record(
           opId,
           'transcribe_ok',
@@ -605,7 +667,13 @@ class ChatPageState extends State<ChatPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_messages.isEmpty) {
-      return _buildWelcome();
+      return Column(
+        children: [
+          Expanded(child: _buildWelcome()),
+          if (_recording || (_processing && _transcript != null))
+            _buildTranscriptPreview(),
+        ],
+      );
     }
     return Column(
       children: [
@@ -619,6 +687,8 @@ class ChatPageState extends State<ChatPage> {
               style: const TextStyle(fontSize: 12, color: AppColors.alarm),
             ),
           ),
+        if (_recording || (_processing && _transcript != null))
+          _buildTranscriptPreview(),
         Expanded(
           child: ListView.builder(
             controller: _scroll,
@@ -641,6 +711,42 @@ class ChatPageState extends State<ChatPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildTranscriptPreview() {
+    final text = _transcript?.trim();
+    final hasText = text != null && text.isNotEmpty;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.voice.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppColors.voice.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            hasText ? Icons.graphic_eq_rounded : Icons.mic_none_rounded,
+            size: 18,
+            color: AppColors.voice,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              hasText ? text : '正在识别语音…',
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.45,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

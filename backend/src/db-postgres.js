@@ -3,7 +3,7 @@ const { CloudBasePostgrestClient } = require('./cloudbase-postgrest');
 
 const db = new CloudBasePostgrestClient();
 
-const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救'];
+const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救', '初战'];
 const DEFAULT_FIREFIGHTERS = [
   '李翔', '盛承华', '楼松超', '徐向相', '柯峰', '祝彪',
   '陆河圣', '洪辰', '沈松鹏', '金志明', '陈俊鹏', '叶华杰', '杨熙豪', '施豪杰', '袁超', '马李臣',
@@ -104,6 +104,10 @@ async function initialize() {
       onConflict: 'word', ignoreDuplicates: true,
     });
   }
+  // 新增内置术语需要补入已有安装，避免只能在新库初始化时生效。
+  await db.insert('hotwords', [{ id: randomUUID(), word: '初战', created_at: now }], {
+    onConflict: 'word', ignoreDuplicates: true,
+  });
   if (firefighters.length === 0) {
     await db.insert('firefighters', DEFAULT_FIREFIGHTERS.map((name, index) => ({ id: randomUUID(), name, created_at: now + index })), {
       onConflict: 'name', ignoreDuplicates: true,

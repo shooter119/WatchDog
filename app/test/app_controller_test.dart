@@ -88,7 +88,7 @@ void main() {
       final c = AppController();
       await c.loadRoster();
       expect(c.firefighters.length, 95);
-      expect(c.hotwords.length, 11);
+      expect(c.hotwords.length, 12);
     });
 
     testWidgets('服务器不可达时回退本地缓存，名单热词仍可用', (tester) async {
@@ -123,7 +123,7 @@ void main() {
       final c = AppController()..api = _OfflineApi();
       await c.loadRoster();
       expect(c.firefighters.length, 95);
-      expect(c.hotwords.length, 11);
+      expect(c.hotwords.length, 12);
     });
   });
 

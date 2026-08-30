@@ -453,13 +453,16 @@ if (seedUnit.id && process.env.WATCHDOG_SEED_UNIT_MEMBERS) {
 }
 
 // 装机自带专业热词（全局生效）：仅当表为空时写入，避免覆盖用户已删除的词条
-const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救'];
+const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救', '初战'];
 const existingHotwords = db.prepare('SELECT COUNT(*) AS n FROM hotwords').get().n;
 if (existingHotwords === 0) {
   const seedStmt = db.prepare('INSERT INTO hotwords (id, word, created_at) VALUES (?, ?, ?)');
   const seedAt = Date.now();
   DEFAULT_HOTWORDS.forEach((word, i) => seedStmt.run(randomUUID(), word, seedAt + i));
 }
+// 新增内置术语需要补入已有安装，避免只能在新库初始化时生效。
+const newDefaultHotwordsStmt = db.prepare('INSERT OR IGNORE INTO hotwords (id, word, created_at) VALUES (?, ?, ?)');
+newDefaultHotwordsStmt.run(randomUUID(), '初战', Date.now());
 
 // 装机自带消防员名单（全局生效，龙游大队花名册 95 人：大队部+龙翔路+永安路+兴园）
 // 仅当表为空时写入，避免覆盖用户已删除的姓名

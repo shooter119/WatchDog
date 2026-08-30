@@ -1703,6 +1703,7 @@ class AppController extends ChangeNotifier {
     '四车',
     '内攻',
     '搜救',
+    '初战',
   ];
 
   List<String> get _rosterNames => firefighters.map((f) => f.name).toList();
