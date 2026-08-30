@@ -2465,7 +2465,6 @@ void main() {
       String? submittedUnitName;
       String? submittedName;
       String? submittedCode;
-      String? submittedToken;
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(),
@@ -2475,11 +2474,10 @@ void main() {
             loading: false,
             onSelect: (_) async {},
             onCreate: () async {},
-            onAuthenticate: (unitName, name, code, token) async {
+            onAuthenticate: (unitName, name, code) async {
               submittedUnitName = unitName;
               submittedName = name;
               submittedCode = code;
-              submittedToken = token;
             },
           ),
         ),
@@ -2490,17 +2488,12 @@ void main() {
       );
       await tester.enterText(find.byKey(const Key('auth-real-name')), '李娜');
       await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
-      await tester.enterText(
-        find.byKey(const Key('auth-api-token')),
-        'test-token',
-      );
       await tester.tap(find.byKey(const Key('auth-submit')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(submittedUnitName, '龙游县消防救援大队');
       expect(submittedName, '李娜');
       expect(submittedCode, '0570');
-      expect(submittedToken, 'test-token');
       expect(find.text('认证并继续'), findsOneWidget);
     });
 
@@ -2514,7 +2507,7 @@ void main() {
             loading: false,
             onSelect: (_) async {},
             onCreate: () async {},
-            onAuthenticate: (_, __, ___, ____) async {
+            onAuthenticate: (_, __, ___) async {
               throw ApiException('单位名称或验证码错误');
             },
           ),
@@ -2526,10 +2519,6 @@ void main() {
       );
       await tester.enterText(find.byKey(const Key('auth-real-name')), '李娜');
       await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
-      await tester.enterText(
-        find.byKey(const Key('auth-api-token')),
-        'test-token',
-      );
       await tester.tap(find.byKey(const Key('auth-submit')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));

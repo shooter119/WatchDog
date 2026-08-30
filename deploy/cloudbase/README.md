@@ -48,7 +48,8 @@ CLOUDBASE_ENV_ID=<pg-env-id>
 CLOUDBASE_API_KEY=<service-role-api-key>
 CLOUDBASE_REST_TIMEOUT_MS=10000
 CLOUDBASE_REST_MAX_RETRIES=2
-API_TOKEN=<random-api-token>
+# App 使用单位名称 + 单位验证码完成单位级认证；不要求一线人员填写 API_TOKEN。
+# API_TOKEN 如仍配置，仅作为旧环境兼容变量，不参与 App 认证。
 
 # 认证升级：完成 004 迁移、成员名单配置并发布支持会话的 App 后才启用
 WATCHDOG_SESSION_AUTH_REQUIRED=0
@@ -116,7 +117,7 @@ GET /api/config
 
 再验证新建警情、进场、出场、压力复核、随手记、操作日志、名单热词、辅助问答和语音转写。启用操作账本前先完成迁移前数据扫描；`006` 的约束暂以 `NOT VALID` 方式兼容历史异常，扫描无误后再单独执行 `VALIDATE CONSTRAINT`；`007` 的 RPC 覆盖建档、进场、出场、压力、随手记、归档和参战力量复合写入，`008` 为其 `client_op_id` 冲突目标补齐完整唯一索引。重启云托管实例后确认数据仍存在。
 
-验证完成后，将该 HTTPS 网关地址配置为 App 的默认服务器地址。当前 App 已内置上述地址；也可以通过 `WATCHDOG_API_BASE_URL` 覆盖。首次安装时，启动认证浮层还需输入与运行时 `API_TOKEN` 一致的访问令牌；令牌不再硬编码进 APK。端侧 ASR 模型通过同一网关的 `/models/` 路径下载，也可以用 `WATCHDOG_MODEL_BASE_URL` 单独覆盖；该目录必须同时提供 `manifest.json`，App 会在下载和启用缓存前校验清单中的文件大小与 SHA-256，清单缺失或校验失败不会激活新模型。
+验证完成后，将该 HTTPS 网关地址配置为 App 的默认服务器地址。当前 App 已内置上述地址；也可以通过 `WATCHDOG_API_BASE_URL` 覆盖。首次安装时，启动认证浮层只需填写单位名称、姓名和单位验证码；认证成功后由服务器签发设备会话（启用会话认证时）并保存到系统安全存储。端侧 ASR 模型通过同一网关的 `/models/` 路径下载，也可以用 `WATCHDOG_MODEL_BASE_URL` 单独覆盖；该目录必须同时提供 `manifest.json`，App 会在下载和启用缓存前校验清单中的文件大小与 SHA-256，清单缺失或校验失败不会激活新模型。
 
 生产后端会校验所有出站服务地址：DeepSeek 默认只允许 `api.deepseek.com`；如使用自建代理或兼容服务，必须同时把其主机写入 `WATCHDOG_LLM_ALLOWED_HOSTS`。CloudBase REST 默认必须匹配 `${CLOUDBASE_ENV_ID}.api.tcloudbasegateway.com`；如设置 `CLOUDBASE_REST_BASE_URL` 指向自定义地址，必须同时配置 `CLOUDBASE_REST_ALLOWED_HOSTS`。请求不跟随重定向，避免服务令牌被转发到未登记主机。
 

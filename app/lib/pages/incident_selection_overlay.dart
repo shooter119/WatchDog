@@ -21,7 +21,6 @@ class IncidentSelectionOverlay extends StatefulWidget {
     String unitName,
     String realName,
     String unitCode,
-    String apiToken,
   )?
   onAuthenticate;
 
@@ -46,14 +45,12 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
   final TextEditingController _unitName = TextEditingController();
   final TextEditingController _realName = TextEditingController();
   final TextEditingController _unitCode = TextEditingController();
-  final TextEditingController _apiToken = TextEditingController();
 
   @override
   void dispose() {
     _unitName.dispose();
     _realName.dispose();
     _unitCode.dispose();
-    _apiToken.dispose();
     super.dispose();
   }
 
@@ -86,7 +83,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
     final unitName = _unitName.text.trim();
     final name = _realName.text.trim();
     final code = _unitCode.text.trim();
-    final token = _apiToken.text.trim();
     if (unitName.isEmpty) {
       await _showAuthenticationError('请输入单位名称');
       return;
@@ -99,10 +95,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
       await _showAuthenticationError('请输入单位验证码');
       return;
     }
-    if (token.isEmpty) {
-      await _showAuthenticationError('请输入管理员提供的访问令牌');
-      return;
-    }
     final callback = widget.onAuthenticate;
     if (callback == null) {
       await _showAuthenticationError('认证服务未就绪，请稍后重试');
@@ -113,9 +105,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
       _error = null;
     });
     try {
-      // 令牌是本次认证事务的一部分；认证失败时不落盘，避免错误令牌把
-      // 用户带入“已认证但所有业务请求均 401”的不可恢复状态。
-      await callback(unitName, name, code, token);
+      await callback(unitName, name, code);
     } catch (error) {
       if (mounted) await _showAuthenticationError('$error');
     } finally {
@@ -237,20 +227,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
                     hintText: '请输入 4 位验证码',
                     prefixIcon: Icon(Icons.password_outlined),
                     counterText: '',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  key: const Key('auth-api-token'),
-                  controller: _apiToken,
-                  enabled: !_busy,
-                  obscureText: true,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _authenticate(),
-                  decoration: const InputDecoration(
-                    labelText: '访问令牌',
-                    hintText: '请输入管理员提供的 API_TOKEN',
-                    prefixIcon: Icon(Icons.key_outlined),
                   ),
                 ),
                 if (_error != null) ...[

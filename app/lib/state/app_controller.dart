@@ -193,8 +193,7 @@ class AppController extends ChangeNotifier {
         (await Settings.realName).isNotEmpty &&
         (await Settings.unitId).isNotEmpty &&
         (await Settings.unitName).isNotEmpty &&
-        (await Settings.unitCode).isNotEmpty &&
-        (await Settings.apiToken).isNotEmpty;
+        (await Settings.unitCode).isNotEmpty;
     // 认证前只恢复本地名单，不向服务端发送未认证请求；认证成功后由
     // _startAuthenticatedServices 统一发起一次远端刷新。
     await _ensureLocalRoster();
@@ -224,7 +223,6 @@ class AppController extends ChangeNotifier {
     required String unitName,
     required String realName,
     required String unitCode,
-    required String apiToken,
   }) {
     final existing = _authenticateFuture;
     if (existing != null) return existing;
@@ -232,7 +230,6 @@ class AppController extends ChangeNotifier {
       unitName: unitName,
       realName: realName,
       unitCode: unitCode,
-      apiToken: apiToken,
     );
     _authenticateFuture = future;
     future.then<void>(
@@ -250,22 +247,18 @@ class AppController extends ChangeNotifier {
     required String unitName,
     required String realName,
     required String unitCode,
-    required String apiToken,
   }) async {
     final unit = unitName.trim();
     final name = realName.trim();
     final code = unitCode.trim();
-    final token = apiToken.trim();
     if (unit.isEmpty) throw StateError('请输入单位名称');
     if (name.isEmpty) throw StateError('请输入真实姓名');
     if (code.isEmpty) throw StateError('请输入单位验证码');
-    if (token.isEmpty) throw StateError('请输入管理员提供的访问令牌');
     await _ensureApiReady();
     if (_disposed) throw StateError('应用控制器已释放');
     final bootstrap = ApiClient(
       baseUrl: await Settings.serverUrl,
       incidentId: '',
-      apiToken: token,
       deviceId: await OpLogService.instance.deviceId,
       actorName: name,
     );
@@ -292,7 +285,6 @@ class AppController extends ChangeNotifier {
     final protectedProbe = ApiClient(
       baseUrl: await Settings.serverUrl,
       incidentId: '',
-      apiToken: token,
       deviceId: await OpLogService.instance.deviceId,
       actorName: name,
       unitId: unitId,
@@ -305,7 +297,7 @@ class AppController extends ChangeNotifier {
       protectedProbe.dispose();
     }
 
-    await Settings.setApiToken(token);
+    // 单位验证码是当前部署的唯一人工认证凭据；认证成功后保存设备会话。
     await Settings.setSessionToken(sessionToken);
     await Settings.setRealName(name);
     await Settings.setUnitId(unitId);
@@ -458,7 +450,6 @@ class AppController extends ChangeNotifier {
     }
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
-    final token = await Settings.apiToken;
     final sessionToken = await Settings.sessionToken;
     final unitId = await Settings.unitId;
     final unitCode = await Settings.unitCode;
@@ -476,7 +467,7 @@ class AppController extends ChangeNotifier {
     await ForegroundKeepAlive.start(
       serverUrl: serverUrl,
       incidentId: incidentId,
-      token: token,
+      token: '',
       sessionToken: sessionToken,
       unitId: unitId,
       unitCode: unitCode,
@@ -566,14 +557,12 @@ class AppController extends ChangeNotifier {
     final previousApi = api;
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
-    final token = await Settings.apiToken;
     final sessionToken = await Settings.sessionToken;
     final unitId = await Settings.unitId;
     final unitCode = await Settings.unitCode;
     final nextApi = ApiClient(
       baseUrl: serverUrl,
       incidentId: incidentId,
-      apiToken: token,
       sessionToken: sessionToken,
       deviceId: await OpLogService.instance.deviceId,
       actorName: await Settings.realName,
@@ -589,7 +578,6 @@ class AppController extends ChangeNotifier {
     debugPrint(
       'WatchDog config ready: url=$serverUrl, '
       'incident=${incidentId.isEmpty ? 'none' : 'selected'}, '
-      'token=${token.isNotEmpty ? 'configured' : 'empty'}, '
       'actor=${(await Settings.realName).isEmpty ? 'empty' : 'configured'}',
     );
     // 有当前警情时顺手补传上次启动/异常遗留的诊断日志；没有警情时
@@ -742,7 +730,6 @@ class AppController extends ChangeNotifier {
       if (e is ApiException &&
           (e.code == 'UNIT_INVALID' ||
               e.code == 'UNIT_AUTH_REQUIRED' ||
-              e.code == 'API_TOKEN_INVALID' ||
               e.code == 'SESSION_REQUIRED' ||
               e.code == 'SESSION_INVALID' ||
               e.code == 'SESSION_EXPIRED')) {
@@ -1289,7 +1276,6 @@ class AppController extends ChangeNotifier {
     final a = api ??= ApiClient(
       baseUrl: await Settings.serverUrl,
       incidentId: await Settings.currentIncidentId,
-      apiToken: await Settings.apiToken,
       sessionToken: await Settings.sessionToken,
       deviceId: await OpLogService.instance.deviceId,
       actorName: name,
