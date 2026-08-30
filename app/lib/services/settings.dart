@@ -97,7 +97,9 @@ class Settings {
     final trimmed = _normalizeBaseUrl(value.trim());
     final uri = Uri.tryParse(trimmed);
     if (uri == null || uri.host.isEmpty) return false;
-    if (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) return false;
+    if (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) {
+      return false;
+    }
     final scheme = uri.scheme.toLowerCase();
     if (scheme != 'https' && !(scheme == 'http' && _isLocalHost(uri.host))) {
       return false;
@@ -259,9 +261,7 @@ class Settings {
   }
 
   static Future<String> get apiToken async {
-    // 不能把任何可用的生产/开发令牌编进 APK；首次安装由运维或设备配置
-    // 注入访问令牌，优先保存在系统安全存储；空值会让受保护业务请求
-    // 明确返回 401。
+    // 兼容旧版本留下的本地值；当前 App 认证不再要求 API_TOKEN。
     return (await SecureStore.read(_kToken) ?? '').trim();
   }
 

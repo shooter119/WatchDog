@@ -34,7 +34,6 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _server = TextEditingController();
-  final TextEditingController _token = TextEditingController();
   final TextEditingController _volume = TextEditingController();
   final TextEditingController _full = TextEditingController();
   final TextEditingController _consumption = TextEditingController();
@@ -42,14 +41,12 @@ class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _alarm = TextEditingController();
   final TextEditingController _realName = TextEditingController();
   final FocusNode _serverFocus = FocusNode();
-  final FocusNode _tokenFocus = FocusNode();
   final FocusNode _volumeFocus = FocusNode();
   final FocusNode _fullFocus = FocusNode();
   final FocusNode _consumptionFocus = FocusNode();
   final FocusNode _warnFocus = FocusNode();
   final FocusNode _alarmFocus = FocusNode();
   final FocusNode _realNameFocus = FocusNode();
-  bool _tokenVisible = false;
   bool _tts = true;
   bool _sound = true;
   bool _keepScreenOn = true;
@@ -78,7 +75,6 @@ class _SettingsPageState extends State<SettingsPage> {
     // 任一输入框失焦且全部输入框均无焦点（点空白处/收起键盘）→ 自动保存
     for (final n in [
       _serverFocus,
-      _tokenFocus,
       _volumeFocus,
       _fullFocus,
       _consumptionFocus,
@@ -119,7 +115,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _allInputsUnfocused() {
     return [
       _serverFocus,
-      _tokenFocus,
       _volumeFocus,
       _fullFocus,
       _consumptionFocus,
@@ -131,7 +126,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _load() async {
     _server.text = await Settings.serverUrl;
-    _token.text = await Settings.apiToken;
     _volume.text = (await Settings.cylinderVolL).toString();
     _full.text = (await Settings.fullPressureMpa).toString();
     _consumption.text = (await Settings.consumptionLpm).toString();
@@ -583,7 +577,6 @@ class _SettingsPageState extends State<SettingsPage> {
         throw ArgumentError('提醒阈值必须满足 0 ≤ 报警阈值 ≤ 提醒阈值 ≤ 1440');
       }
       await Settings.setServerUrl(_server.text.trim());
-      await Settings.setApiToken(_token.text.trim());
       await Settings.setCylinderVolL(volume);
       await Settings.setFullPressureMpa(fullPressure);
       await Settings.setConsumptionLpm(consumption);
@@ -634,7 +627,6 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
     _server.dispose();
-    _token.dispose();
     _volume.dispose();
     _full.dispose();
     _consumption.dispose();
@@ -642,7 +634,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _alarm.dispose();
     _realName.dispose();
     _serverFocus.dispose();
-    _tokenFocus.dispose();
     _volumeFocus.dispose();
     _fullFocus.dispose();
     _consumptionFocus.dispose();
@@ -1324,22 +1315,6 @@ class _SettingsPageState extends State<SettingsPage> {
           '默认使用 CloudBase 生产网关',
           keyboard: TextInputType.url,
           focusNode: _serverFocus,
-        ),
-        _field(
-          _token,
-          '访问令牌',
-          '与服务器 API_TOKEN 一致',
-          obscure: !_tokenVisible,
-          focusNode: _tokenFocus,
-          suffix: IconButton(
-            tooltip: _tokenVisible ? '隐藏令牌' : '显示令牌',
-            icon: Icon(
-              _tokenVisible
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
-            ),
-            onPressed: () => setState(() => _tokenVisible = !_tokenVisible),
-          ),
         ),
         const _SyncNotice(),
       ],

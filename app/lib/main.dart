@@ -309,12 +309,11 @@ class _WatchDogAppState extends State<WatchDogApp> {
                     loading:
                         !controller.needsAuthentication &&
                         (controller.syncing || controller.api == null),
-                    onAuthenticate: (unitName, name, code, token) =>
+                    onAuthenticate: (unitName, name, code) =>
                         controller.authenticate(
                           unitName: unitName,
                           realName: name,
                           unitCode: code,
-                          apiToken: token,
                         ),
                     onSelect: (incident) =>
                         _homeKey.currentState?.selectIncidentFromGate(

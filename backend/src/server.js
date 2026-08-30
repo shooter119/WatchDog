@@ -25,7 +25,6 @@ const realtimeWss = new WebSocketServer({ noServer: true });
 const realtimeSessions = new Set();
 const realtimeDevices = new Set();
 const PORT = process.env.PORT || 3000;
-const API_TOKEN = process.env.API_TOKEN || '';
 const UNIT_AUTH_REQUIRED = String(
   process.env.WATCHDOG_UNIT_AUTH_REQUIRED ?? (process.env.NODE_ENV === 'test' ? '0' : '1'),
 ) !== '0';
@@ -42,9 +41,6 @@ const configuredSessionTtl = Number(process.env.WATCHDOG_SESSION_TTL_MS || 8 * 6
 const SESSION_TTL_MS = Number.isFinite(configuredSessionTtl)
   ? Math.min(Math.max(configuredSessionTtl, 15 * 60 * 1000), 7 * 24 * 60 * 60 * 1000)
   : 8 * 60 * 60 * 1000;
-if (process.env.NODE_ENV === 'production' && !API_TOKEN) {
-  throw new Error('生产环境必须配置 API_TOKEN（拒绝未认证启动）');
-}
 if (process.env.NODE_ENV === 'production' && !UNIT_AUTH_REQUIRED) {
   throw new Error('生产环境必须启用 WATCHDOG_UNIT_AUTH_REQUIRED');
 }
@@ -150,16 +146,6 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     logger.info(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms request_id=${req.requestId}`);
   });
-  next();
-});
-
-// 业务 API 使用共享 Token；健康检查免认证，单位认证也必须先通过同一访问令牌，
-// 防止把单位验证码入口意外暴露成公共注册接口。
-app.use((req, res, next) => {
-  if (req.path === '/api/health' || !API_TOKEN) return next();
-  if (req.headers['x-api-token'] !== API_TOKEN) {
-    return res.status(401).json({ error: '未授权，请检查设置的访问令牌', code: 'API_TOKEN_INVALID' });
-  }
   next();
 });
 
@@ -270,9 +256,6 @@ function realtimeHeader(req, name) {
 }
 
 async function authenticateRealtimeRequest(req) {
-  if (API_TOKEN && realtimeHeader(req, 'x-api-token') !== API_TOKEN) {
-    throw Object.assign(new Error('未授权'), { code: 'API_TOKEN_INVALID' });
-  }
   let unit = null;
   if (SESSION_AUTH_REQUIRED) {
     const raw = sessionTokenFromRequest(req);
