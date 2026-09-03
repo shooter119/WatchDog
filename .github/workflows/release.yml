@@ -76,7 +76,6 @@ jobs:
           # 通过 npm test 运行时摘要校验；新增测试后只允许提高此基线。
           MIN_BACKEND_TESTS: '162'
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/watchdog_test
-          WATCHDOG_DB_DRIVER: postgres
         shell: bash
         run: |
           npm ci

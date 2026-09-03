@@ -28,7 +28,6 @@ jobs:
       # 通过 npm test 运行时摘要校验；新增测试后只允许提高此基线。
       MIN_BACKEND_TESTS: '162'
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/watchdog_test
-      WATCHDOG_DB_DRIVER: postgres
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
