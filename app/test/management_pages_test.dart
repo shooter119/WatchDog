@@ -17,7 +17,11 @@ class _ManagementApi extends ApiClient {
   }) : firefighters = [...firefighters],
        hotwords = [...hotwords],
        archived = [...archived],
-       super(baseUrl: 'http://test', incidentId: 'incident-for-test');
+       super(
+         baseUrl: 'http://test',
+         incidentId: 'incident-for-test',
+         unitId: 'test-unit',
+       );
 
   final List<Firefighter> firefighters;
   final List<Hotword> hotwords;

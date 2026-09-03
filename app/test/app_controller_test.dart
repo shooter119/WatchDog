@@ -9,7 +9,8 @@ import 'package:watchdog/state/app_controller.dart';
 
 /// 模拟服务器不可达的 ApiClient（拉名单/热词必然失败）
 class _OfflineApi extends ApiClient {
-  _OfflineApi() : super(baseUrl: 'http://offline', incidentId: 'test');
+  _OfflineApi()
+    : super(baseUrl: 'http://offline', incidentId: 'test', unitId: 'test-unit');
 
   @override
   Future<List<Firefighter>> fetchFirefighters() async =>
@@ -62,20 +63,18 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('旧 canary 服务地址自动迁移到生产直连', (tester) async {
+  testWidgets('不安全的外部服务地址回退到本地开发后端', (tester) async {
     SharedPreferences.setMockInitialValues({
-      'server_url':
-          'https://watchdog-api-canary-294307-10-1351750301.sh.run.tcloudbase.com',
+      'server_url': 'http://untrusted.example.test',
     });
     expect(await Settings.serverUrl, Settings.defaultServerUrl);
     final sp = await SharedPreferences.getInstance();
     expect(sp.getString('server_url'), Settings.defaultServerUrl);
   });
 
-  testWidgets('旧 CloudBase 网关地址自动迁移到生产直连', (tester) async {
+  testWidgets('带查询参数的服务地址回退到本地开发后端', (tester) async {
     SharedPreferences.setMockInitialValues({
-      'server_url':
-          'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com',
+      'server_url': 'https://localhost:3000?token=unsafe',
     });
     expect(await Settings.serverUrl, Settings.defaultServerUrl);
     final sp = await SharedPreferences.getInstance();
@@ -83,16 +82,17 @@ void main() {
   });
 
   group('AppController 名单热词离线缓存', () {
-    testWidgets('首次安装即有内置名单和热词，不依赖警情或服务器', (tester) async {
+    testWidgets('首次安装未认证时不加载单位姓名和热词', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = AppController();
       await c.loadRoster();
-      expect(c.firefighters.length, 95);
-      expect(c.hotwords.length, 12);
+      expect(c.firefighters, isEmpty);
+      expect(c.hotwords, isEmpty);
     });
 
     testWidgets('服务器不可达时回退本地缓存，名单热词仍可用', (tester) async {
       SharedPreferences.setMockInitialValues({
+        'cached_roster_unit_id': 'test-unit',
         'cached_firefighters': '["张三","李四"]',
         'cached_hotwords': '["火情","破拆"]',
       });
@@ -118,12 +118,12 @@ void main() {
       expect(api2.lastAuthor, isEmpty);
     });
 
-    testWidgets('无缓存且服务器不可达：回退内置默认名单和热词', (tester) async {
+    testWidgets('无缓存且服务器不可达：不回退未绑定的内置名单和热词', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = AppController()..api = _OfflineApi();
       await c.loadRoster();
-      expect(c.firefighters.length, 95);
-      expect(c.hotwords.length, 12);
+      expect(c.firefighters, isEmpty);
+      expect(c.hotwords, isEmpty);
     });
   });
 

@@ -1,7 +1,6 @@
 const { randomUUID } = require('node:crypto');
-const { CloudBasePostgrestClient } = require('./cloudbase-postgrest');
+const db = require('./postgres-store');
 
-const db = new CloudBasePostgrestClient();
 
 const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救', '初战'];
 const DEFAULT_FIREFIGHTERS = [
@@ -77,10 +76,8 @@ async function insertOne(table, row, options = {}) {
 }
 
 async function initialize() {
-  if (process.env.CLOUDBASE_SKIP_SEED === '1') return;
-  const [hotwords, firefighters, stations] = await Promise.all([
-    db.select('hotwords', { select: 'id', limit: 1 }),
-    db.select('firefighters', { select: 'id', limit: 1 }),
+  if (process.env.WATCHDOG_SKIP_SEED === '1') return;
+  const [stations] = await Promise.all([
     db.select('stations', { select: 'id', limit: 1 }),
   ]);
   const now = Date.now();
@@ -99,19 +96,25 @@ async function initialize() {
       status: 'active', created_at: now, updated_at: now,
     }], { onConflict: 'unit_id,real_name', ignoreDuplicates: true })));
   }
-  if (hotwords.length === 0) {
-    await db.insert('hotwords', DEFAULT_HOTWORDS.map((word, index) => ({ id: randomUUID(), word, created_at: now + index })), {
-      onConflict: 'word', ignoreDuplicates: true,
-    });
-  }
-  // 新增内置术语需要补入已有安装，避免只能在新库初始化时生效。
-  await db.insert('hotwords', [{ id: randomUUID(), word: '初战', created_at: now }], {
-    onConflict: 'word', ignoreDuplicates: true,
-  });
-  if (firefighters.length === 0) {
-    await db.insert('firefighters', DEFAULT_FIREFIGHTERS.map((name, index) => ({ id: randomUUID(), name, created_at: now + index })), {
-      onConflict: 'name', ignoreDuplicates: true,
-    });
+  if (SEED_UNIT.id) {
+    const [unitHotwords, unitFirefighters] = await Promise.all([
+      db.select('hotwords', { select: 'id', filters: { unit_id: SEED_UNIT.id }, limit: 1 }),
+      db.select('firefighters', { select: 'id', filters: { unit_id: SEED_UNIT.id }, limit: 1 }),
+    ]);
+    if (unitHotwords.length === 0) {
+      await db.insert('hotwords', DEFAULT_HOTWORDS.map((word, index) => ({
+        id: randomUUID(), unit_id: SEED_UNIT.id, word, source: 'builtin', created_at: now + index, updated_at: now + index,
+      })), { onConflict: 'unit_id,word', ignoreDuplicates: true });
+    }
+    // 新增内置术语需要补入已有安装，避免只能在新库初始化时生效。
+    await db.insert('hotwords', [{
+      id: randomUUID(), unit_id: SEED_UNIT.id, word: '初战', source: 'builtin', created_at: now, updated_at: now,
+    }], { onConflict: 'unit_id,word', ignoreDuplicates: true });
+    if (unitFirefighters.length === 0) {
+      await db.insert('firefighters', DEFAULT_FIREFIGHTERS.map((name, index) => ({
+        id: randomUUID(), unit_id: SEED_UNIT.id, name, source: 'builtin', created_at: now + index, updated_at: now + index,
+      })), { onConflict: 'unit_id,name', ignoreDuplicates: true });
+    }
   }
   if (stations.length === 0) {
     await db.insert('stations', ['龙翔路站', '永安路站', '兴园站'].map((name) => ({
@@ -120,7 +123,7 @@ async function initialize() {
   }
 }
 
-const ready = initialize();
+const ready = db.ready.then(initialize);
 
 async function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}) {
   const filters = { scene };
@@ -284,17 +287,12 @@ async function createEntry({ id, scene = 'default', name, pressureMpa, durationM
 }
 
 async function createEntryWithEvent({ entry, event, activityAt = null } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_create_entry_with_event', {
-      p_entry: entry,
-      p_event: event,
-      p_activity_at: activityAt,
-    }, { get: true });
-  }
-  const created = await createEntry(entry);
-  if (activityAt != null) await touchIncidentActivity(event.incidentId, activityAt);
-  const recorded = await appendIncidentEvent(event);
-  return { entry: created, event: recorded };
+  return db.transaction(async () => {
+    const created = await createEntry(entry);
+    if (activityAt != null) await touchIncidentActivity(event.incidentId, activityAt);
+    const recorded = await appendIncidentEvent(event);
+    return { entry: created, event: recorded };
+  });
 }
 
 async function markExited(id, exitedAtMs) {
@@ -308,43 +306,23 @@ async function markExitedIfActive(id, exitedAtMs) {
 }
 
 async function exitEntryWithEvent({ entryId, exitedAtMs, incidentId, activityAt = null, event } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_exit_entry_with_event', {
-      p_entry_id: entryId,
-      p_exited_at: exitedAtMs,
-      p_incident_id: incidentId,
-      p_activity_at: activityAt,
-      p_event: event,
-    }, { get: true });
-  }
-  const transition = await markExitedIfActive(entryId, exitedAtMs);
-  if (!transition.changed) return { entry: transition.entry, event: null, changed: false };
-  if (activityAt != null) await touchIncidentActivity(incidentId, activityAt);
-  const recorded = await appendIncidentEvent(event);
-  return { entry: transition.entry, event: recorded, changed: true };
+  return db.transaction(async () => {
+    const transition = await markExitedIfActive(entryId, exitedAtMs);
+    if (!transition.changed) return { entry: transition.entry, event: null, changed: false };
+    if (activityAt != null) await touchIncidentActivity(incidentId, activityAt);
+    const recorded = await appendIncidentEvent(event);
+    return { entry: transition.entry, event: recorded, changed: true };
+  });
 }
 
 async function updatePressureWithEvent({ entryId, scene, name, pressureMpa, reportedAtMs, durationMin, exitAtMs, consumptionActualLpm = null, incidentId, activityAt = null, event } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_update_pressure_with_event', {
-      p_entry_id: entryId,
-      p_scene: scene,
-      p_name: name,
-      p_pressure_mpa: pressureMpa,
-      p_reported_at: reportedAtMs,
-      p_duration_min: durationMin,
-      p_exit_at: exitAtMs,
-      p_consumption_actual_lpm: consumptionActualLpm,
-      p_incident_id: incidentId,
-      p_activity_at: activityAt,
-      p_event: event,
-    }, { get: true });
-  }
-  await addPressureSample({ entryId, scene, name, pressureMpa, reportedAtMs });
-  const updated = await updateEntry(entryId, { pressureMpa, durationMin, exitAtMs, consumptionActualLpm });
-  if (activityAt != null) await touchIncidentActivity(incidentId, activityAt);
-  const recorded = await appendIncidentEvent(event);
-  return { entry: updated, event: recorded };
+  return db.transaction(async () => {
+    await addPressureSample({ entryId, scene, name, pressureMpa, reportedAtMs });
+    const updated = await updateEntry(entryId, { pressureMpa, durationMin, exitAtMs, consumptionActualLpm });
+    if (activityAt != null) await touchIncidentActivity(incidentId, activityAt);
+    const recorded = await appendIncidentEvent(event);
+    return { entry: updated, event: recorded };
+  });
 }
 
 async function findActiveByName(scene, name) {
@@ -380,28 +358,88 @@ async function listPressureSamples(entryId, { limit = 20 } = {}) {
   return db.select('pressure_samples', { filters: { entry_id: entryId }, order: 'reported_at.desc', limit: limitOf(limit, 20, 500) });
 }
 
-async function listFirefighters() {
-  return db.select('firefighters', { select: 'id,name', order: 'created_at.asc' });
+function rosterUnitId(unitId) {
+  return String(unitId || 'legacy');
 }
 
-async function addFirefighter(id, name) {
-  return insertOne('firefighters', { id, name, created_at: Date.now() });
+async function listFirefighters(unitId = null) {
+  const filters = unitId == null ? {} : { unit_id: rosterUnitId(unitId) };
+  return db.select('firefighters', {
+    select: 'id,name,source,created_by_member_id,created_by_name', filters, order: 'created_at.asc',
+  });
 }
 
-async function removeFirefighter(id) {
-  return (await db.remove('firefighters', { id })).changes;
+async function addFirefighter(id, name, unitId = null, { source = 'user', createdByMemberId = null, createdByName = null, clientOpId = null } = {}) {
+  return db.transaction(async () => {
+    const unit = rosterUnitId(unitId);
+    const row = await insertOne('firefighters', {
+      id, unit_id: unit, name, source: source === 'builtin' ? 'builtin' : 'user',
+      created_by_member_id: createdByMemberId, created_by_name: createdByName,
+      created_at: Date.now(), updated_at: Date.now(),
+    });
+    if (row && unitId) {
+      await db.query('UPDATE units SET roster_version = roster_version + 1, updated_at = $1 WHERE id = $2', [Date.now(), unit]);
+      const event = await appendRosterSyncEvent({ unitId: unit, eventType: 'roster.firefighter_added', aggregateId: row.id, payload: row, clientOpId });
+      if (event) return { ...row, event_id: event.event_id, stream_sequence: event.sequence };
+    }
+    return row;
+  });
 }
 
-async function listHotwords() {
-  return db.select('hotwords', { select: 'id,word', order: 'created_at.asc' });
+async function removeFirefighter(id, unitId = null, { memberId = null, isManager = false, clientOpId = null } = {}) {
+  const row = await db.select('firefighters', {
+    select: 'id,name,source,created_by_member_id', filters: { id, unit_id: rosterUnitId(unitId) }, single: true,
+  });
+  if (!row || row.source === 'builtin') return 0;
+  if (!isManager && !(unitId == null && memberId == null) && (!memberId || row.created_by_member_id !== memberId)) return 0;
+  return db.transaction(async () => {
+    const removed = (await db.remove('firefighters', { id, unit_id: rosterUnitId(unitId) })).changes;
+    if (removed > 0 && unitId) {
+      await db.query('UPDATE units SET roster_version = roster_version + 1, updated_at = $1 WHERE id = $2', [Date.now(), rosterUnitId(unitId)]);
+      await appendRosterSyncEvent({ unitId: rosterUnitId(unitId), eventType: 'roster.firefighter_removed', aggregateId: row.id, clientOpId, payload: { id: row.id, name: row.name, deleted: true } });
+    }
+    return removed;
+  });
 }
 
-async function addHotword(id, word) {
-  return insertOne('hotwords', { id, word, created_at: Date.now() });
+async function listHotwords(unitId = null) {
+  const filters = unitId == null ? {} : { unit_id: rosterUnitId(unitId) };
+  return db.select('hotwords', {
+    select: 'id,word,source,created_by_member_id,created_by_name', filters, order: 'created_at.asc',
+  });
 }
 
-async function removeHotword(id) {
-  return (await db.remove('hotwords', { id })).changes;
+async function addHotword(id, word, unitId = null, { source = 'user', createdByMemberId = null, createdByName = null, clientOpId = null } = {}) {
+  return db.transaction(async () => {
+    const unit = rosterUnitId(unitId);
+    const row = await insertOne('hotwords', {
+      id, unit_id: unit, word, source: source === 'builtin' ? 'builtin' : 'user',
+      created_by_member_id: createdByMemberId, created_by_name: createdByName,
+      created_at: Date.now(), updated_at: Date.now(),
+    });
+    if (row && unitId) {
+      await db.query('UPDATE units SET roster_version = roster_version + 1, updated_at = $1 WHERE id = $2', [Date.now(), unit]);
+      const event = await appendRosterSyncEvent({ unitId: unit, eventType: 'roster.hotword_added', aggregateId: row.id, payload: row, clientOpId });
+      if (event) return { ...row, event_id: event.event_id, stream_sequence: event.sequence };
+    }
+    return row;
+  });
+}
+
+async function removeHotword(id, unitId = null, { memberId = null, isManager = false, clientOpId = null } = {}) {
+  const row = await db.select('hotwords', {
+    select: 'id,word,source,created_by_member_id', filters: { id, unit_id: rosterUnitId(unitId) }, single: true,
+  });
+  if (!row || row.source === 'builtin') return 0;
+  if (!isManager && !(unitId == null && memberId == null) && (!memberId || row.created_by_member_id !== memberId)) return 0;
+  return db.transaction(async () => {
+    const removed = (await db.remove('hotwords', { id, unit_id: rosterUnitId(unitId) })).changes;
+    if (removed > 0 && unitId) {
+      await db.query('UPDATE units SET roster_version = roster_version + 1, updated_at = $1 WHERE id = $2', [Date.now(), rosterUnitId(unitId)]);
+      await appendRosterSyncEvent({ unitId: rosterUnitId(unitId), eventType: 'roster.hotword_removed', aggregateId: row.id, clientOpId, payload: { id: row.id, word: row.word, deleted: true } });
+    }
+    return removed;
+  });
 }
 
 async function purgeOldExited(days = 7) {
@@ -421,7 +459,7 @@ async function addLog({ scene = 'default', device = null, opId = null, level = '
   });
 }
 
-/** PostgREST 接受数组插入；批量上报只发一个请求，保持一次提交语义。 */
+/** 批量上报只发一个数据库请求，保持一次提交语义。 */
 async function addLogs(logs = []) {
   if (!Array.isArray(logs) || logs.length === 0) return 0;
   await db.insert('logs', logs.map((item) => ({
@@ -457,6 +495,12 @@ async function purgeOldLogs(days = 30) {
   return (await db.remove('logs', { created_at: { op: 'lt', value: Date.now() - days * 24 * 3600 * 1000 } })).changes;
 }
 
+async function purgeOldSyncEvents(days = 7) {
+  return (await db.remove('sync_events', {
+    created_at: { op: 'lt', value: Date.now() - days * 24 * 3600 * 1000 },
+  })).changes;
+}
+
 async function listNotes({ scene = 'default', limit = 500 } = {}) {
   return db.select('notes', { filters: { scene }, order: 'created_at.desc', limit: limitOf(limit, 500, 2000) });
 }
@@ -471,17 +515,12 @@ async function createNote({ id, scene = 'default', text, category = '其他', au
 }
 
 async function createNoteWithEvent({ note, event, activityAt = null } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_create_note_with_event', {
-      p_note: note,
-      p_event: event,
-      p_activity_at: activityAt,
-    }, { get: true });
-  }
-  const created = await createNote(note);
-  if (activityAt != null) await touchIncidentActivity(event.incidentId, activityAt);
-  const recorded = await appendIncidentEvent(event);
-  return { note: created, event: recorded };
+  return db.transaction(async () => {
+    const created = await createNote(note);
+    if (activityAt != null) await touchIncidentActivity(event.incidentId, activityAt);
+    const recorded = await appendIncidentEvent(event);
+    return { note: created, event: recorded };
+  });
 }
 
 async function updateNote(id, { text, category }) {
@@ -495,16 +534,12 @@ async function updateNote(id, { text, category }) {
 }
 
 async function updateNoteWithEvent({ id, text, category, incidentId, event, activityAt = null } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_update_note_with_event', {
-      p_id: id, p_text: text, p_category: category, p_incident_id: incidentId,
-      p_activity_at: activityAt, p_event: event,
-    }, { get: true });
-  }
-  const updated = await updateNote(id, { text, category });
-  if (!updated) return { note: null, event: null, changed: false };
-  if (activityAt != null) await touchIncidentActivity(incidentId, activityAt);
-  return { note: updated, event: event ? await appendIncidentEvent(event) : null, changed: true };
+  return db.transaction(async () => {
+    const updated = await updateNote(id, { text, category });
+    if (!updated) return { note: null, event: null, changed: false };
+    if (activityAt != null) await touchIncidentActivity(incidentId, activityAt);
+    return { note: updated, event: event ? await appendIncidentEvent(event) : null, changed: true };
+  });
 }
 
 async function deleteNote(id) {
@@ -512,15 +547,12 @@ async function deleteNote(id) {
 }
 
 async function deleteNoteWithEvent({ id, incidentId, event, activityAt = null } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_delete_note_with_event', {
-      p_id: id, p_incident_id: incidentId, p_activity_at: activityAt, p_event: event,
-    }, { get: true });
-  }
-  const changed = await deleteNote(id);
-  if (changed > 0 && activityAt != null) await touchIncidentActivity(incidentId, activityAt);
-  const recorded = changed > 0 && event ? await appendIncidentEvent(event) : null;
-  return { changed: changed > 0, event: recorded };
+  return db.transaction(async () => {
+    const changed = await deleteNote(id);
+    if (changed > 0 && activityAt != null) await touchIncidentActivity(incidentId, activityAt);
+    const recorded = changed > 0 && event ? await appendIncidentEvent(event) : null;
+    return { changed: changed > 0, event: recorded };
+  });
 }
 
 async function purgeOldNotes(days = 30) {
@@ -589,25 +621,18 @@ async function createIncident({ id = randomUUID(), unitId = null, createdAt = Da
 }
 
 async function createIncidentWithEvent({ id = randomUUID(), unitId = null, createdAt = Date.now(), createdBy = null, event = {} } = {}) {
-  const createdAtValue = Number(createdAt) || Date.now();
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_create_incident_with_event', {
-      p_id: id,
-      p_unit_id: unitId,
-      p_created_at: createdAtValue,
-      p_created_by: createdBy,
-      p_event: event,
-    }, { get: true });
-  }
-  const recent = await findRecentActiveIncident(createdAtValue - 60 * 1000, { unitId });
-  if (recent) return { cooldown: true, recent };
-  const incident = await createIncident({ id, unitId, createdAt: createdAtValue, createdBy });
-  const recorded = await appendIncidentEvent({
-    ...event,
-    incidentId: incident.id,
-    payload: { ...(event.payload || {}), number: incident.number },
+  return db.transaction(async () => {
+    const createdAtValue = Number(createdAt) || Date.now();
+    const recent = await findRecentActiveIncident(createdAtValue - 60 * 1000, { unitId });
+    if (recent) return { cooldown: true, recent };
+    const incident = await createIncident({ id, unitId, createdAt: createdAtValue, createdBy });
+    const recorded = await appendIncidentEvent({
+      ...event,
+      incidentId: incident.id,
+      payload: { ...(event.payload || {}), number: incident.number },
+    });
+    return { incident, event: recorded, cooldown: false };
   });
-  return { incident, event: recorded, cooldown: false };
 }
 
 async function ensureIncidentId(value) {
@@ -691,14 +716,11 @@ async function updateIncidentTitle(id, title, { expectedVersion = null } = {}) {
 }
 
 async function updateIncidentTitleWithEvent({ id, title, expectedVersion = null, event } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_rename_incident_with_event', {
-      p_id: id, p_title: title, p_expected_version: expectedVersion, p_event: event,
-    }, { get: true });
-  }
-  const incident = await updateIncidentTitle(id, title, { expectedVersion });
-  if (!incident || !event) return { incident, event: null, changed: Boolean(incident) };
-  return { incident, event: await appendIncidentEvent(event), changed: true };
+  return db.transaction(async () => {
+    const incident = await updateIncidentTitle(id, title, { expectedVersion });
+    if (!incident || !event) return { incident, event: null, changed: Boolean(incident) };
+    return { incident, event: await appendIncidentEvent(event), changed: true };
+  });
 }
 
 async function setIncidentSuggestedTitle(id, title) {
@@ -735,20 +757,17 @@ async function archiveIncident(id, { archivedBy = null, now = Date.now(), auto =
 }
 
 async function archiveIncidentWithEvent({ id, archivedBy = null, now = Date.now(), auto = false, event } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_archive_incident_with_event', {
-      p_id: id, p_archived_by: archivedBy, p_now: now, p_auto: auto, p_event: event,
-    }, { get: true });
-  }
-  const result = await archiveIncident(id, { archivedBy, now, auto, returnMeta: true });
-  if (!result.incident || !result.changed || !event) return { ...result, event: null };
-  return {
-    ...result,
-    event: await appendIncidentEvent({
-      ...event,
-      payload: { ...(event.payload || {}), unresolved_active_count: result.incident.unresolved_active_count },
-    }),
-  };
+  return db.transaction(async () => {
+    const result = await archiveIncident(id, { archivedBy, now, auto, returnMeta: true });
+    if (!result.incident || !result.changed || !event) return { ...result, event: null };
+    return {
+      ...result,
+      event: await appendIncidentEvent({
+        ...event,
+        payload: { ...(event.payload || {}), unresolved_active_count: result.incident.unresolved_active_count },
+      }),
+    };
+  });
 }
 
 async function archiveStaleIncidents({ now = Date.now(), inactivityMs = 12 * 3600 * 1000, unitId = null } = {}) {
@@ -783,10 +802,188 @@ async function getIncidentEvent(id) {
 
 async function getIncidentEventByClientOp(clientOpId) {
   if (!clientOpId) return undefined;
-  return eventWithPayload(await db.select('incident_events', { filters: { client_op_id: clientOpId }, single: true }));
+  const event = eventWithPayload(await db.select('incident_events', { filters: { client_op_id: clientOpId }, single: true }));
+  if (!event) return undefined;
+  const sync = await db.select('sync_events', { filters: { client_op_id: clientOpId }, single: true });
+  return sync ? { ...event, sync: {
+    event_id: sync.event_id,
+    sequence: String(sync.sequence),
+  } } : event;
 }
 
-async function appendIncidentEvent({
+function syncEventType(type) {
+  return {
+    incident_created: 'incident.created',
+    incident_renamed: 'incident.updated',
+    incident_archived: 'incident.archived',
+    entry: 'entry.created',
+    pressure: 'entry.pressure_updated',
+    exit: 'entry.exited',
+    note: 'note.created',
+    note_updated: 'note.updated',
+    note_voided: 'note.deleted',
+    force_added: 'force.upserted',
+    force_updated: 'force.upserted',
+    force_removed: 'force.deleted',
+  }[type] || null;
+}
+
+async function syncPayloadFor(eventType, payload, incidentId) {
+  const id = payload?.entry_id || payload?.note_id || payload?.force_id;
+  if (eventType.startsWith('entry.') && id) return getEntry(id);
+  if (eventType.startsWith('note.') && id) {
+    const note = await getNote(id);
+    return note || { id, deleted: true };
+  }
+  if (eventType.startsWith('force.') && id) {
+    const force = await getIncidentForce(id);
+    return force || { id, incident_id: incidentId, deleted: true };
+  }
+  if (eventType.startsWith('incident.')) return getIncident(incidentId);
+  return payload || {};
+}
+
+async function appendSyncEvent({ unitId, incidentId = null, eventType, aggregateId = null, clientOpId = null, payload = {}, occurredAt = Date.now() } = {}) {
+  if (!unitId || !eventType) return null;
+  const streamKey = incidentId ? `incident:${incidentId}` : `unit:${unitId}`;
+  await db.insert('sync_streams', [{ stream_key: streamKey, last_sequence: 0 }], {
+    onConflict: 'stream_key', ignoreDuplicates: true,
+  });
+  const sequenceResult = await db.query(
+    'UPDATE sync_streams SET last_sequence = last_sequence + 1 WHERE stream_key = $1 RETURNING last_sequence',
+    [streamKey],
+  );
+  const sequence = sequenceResult.rows[0].last_sequence;
+  const eventId = randomUUID();
+  const inserted = await db.insert('sync_events', [{
+    stream_key: streamKey,
+    sequence,
+    event_id: eventId,
+    unit_id: String(unitId),
+    incident_id: incidentId ? String(incidentId) : null,
+    event_type: String(eventType),
+    aggregate_id: aggregateId ? String(aggregateId) : null,
+    client_op_id: clientOpId ? String(clientOpId) : null,
+    payload,
+    occurred_at: Number(occurredAt) || Date.now(),
+    created_at: Date.now(),
+  }]);
+  return inserted[0] ? {
+    type: 'event',
+    stream: incidentId ? 'incident' : 'unit',
+    stream_key: streamKey,
+    sequence: String(inserted[0].sequence),
+    event_id: inserted[0].event_id,
+    event_type: inserted[0].event_type,
+    incident_id: inserted[0].incident_id,
+    aggregate_id: inserted[0].aggregate_id,
+    client_op_id: inserted[0].client_op_id,
+    occurred_at: Number(inserted[0].occurred_at),
+    payload: inserted[0].payload || {},
+  } : null;
+}
+
+async function appendRosterSyncEvent({ unitId, eventType, aggregateId, payload, clientOpId = null } = {}) {
+  const unit = await getUnit(unitId);
+  if (!unit) return null;
+  return appendSyncEvent({ unitId, eventType, aggregateId, payload, clientOpId });
+}
+
+async function listSyncEvents({ unitId, incidentId = null, unitSequence = 0, incidentSequence = 0, limit = 200 } = {}) {
+  const rows = [];
+  const max = limitOf(limit, 200, 500);
+  const unitKey = `unit:${unitId}`;
+  const unitRows = await db.select('sync_events', {
+    filters: { stream_key: unitKey, sequence: { op: 'gt', value: Number(unitSequence) || 0 } },
+    order: 'sequence.asc', limit: max,
+  });
+  rows.push(...unitRows);
+  if (incidentId && rows.length < max) {
+    const incidentRows = await db.select('sync_events', {
+      filters: { stream_key: `incident:${incidentId}`, sequence: { op: 'gt', value: Number(incidentSequence) || 0 } },
+      order: 'sequence.asc', limit: max - rows.length,
+    });
+    rows.push(...incidentRows);
+  }
+  return rows.map((row) => ({
+    type: 'event',
+    stream: row.incident_id ? 'incident' : 'unit',
+    stream_key: row.stream_key,
+    unit_id: row.unit_id,
+    sequence: String(row.sequence),
+    event_id: row.event_id,
+    event_type: row.event_type,
+    incident_id: row.incident_id,
+    aggregate_id: row.aggregate_id,
+    client_op_id: row.client_op_id,
+    occurred_at: Number(row.occurred_at),
+    payload: parseJson(row.payload) || {},
+  }));
+}
+
+async function getSyncEvent(streamKey, sequence) {
+  const row = await db.select('sync_events', {
+    filters: { stream_key: String(streamKey || ''), sequence: Number(sequence) || 0 },
+    single: true,
+  });
+  if (!row) return undefined;
+  return {
+    type: 'event',
+    stream: row.incident_id ? 'incident' : 'unit',
+    stream_key: row.stream_key,
+    unit_id: row.unit_id,
+    sequence: String(row.sequence),
+    event_id: row.event_id,
+    event_type: row.event_type,
+    incident_id: row.incident_id,
+    aggregate_id: row.aggregate_id,
+    client_op_id: row.client_op_id,
+    occurred_at: Number(row.occurred_at),
+    payload: parseJson(row.payload) || {},
+  };
+}
+
+async function getSyncEventByClientOp(clientOpId) {
+  if (!clientOpId) return undefined;
+  const row = await db.select('sync_events', {
+    filters: { client_op_id: String(clientOpId) }, single: true,
+  });
+  return row ? {
+    type: 'event',
+    stream: row.incident_id ? 'incident' : 'unit',
+    sequence: String(row.sequence),
+    event_id: row.event_id,
+    event_type: row.event_type,
+    incident_id: row.incident_id,
+    aggregate_id: row.aggregate_id,
+    client_op_id: row.client_op_id,
+  } : undefined;
+}
+
+async function getSyncCheckpoint(unitId, incidentId = null) {
+  const keys = [`unit:${unitId}`];
+  if (incidentId) keys.push(`incident:${incidentId}`);
+  const result = await db.select('sync_streams', {
+    filters: { stream_key: { op: 'in', value: keys } },
+  });
+  const cursors = { unit: '0', incident: '0' };
+  for (const row of result) {
+    if (row.stream_key === keys[0]) cursors.unit = String(row.last_sequence || 0);
+    if (incidentId && row.stream_key === keys[1]) cursors.incident = String(row.last_sequence || 0);
+  }
+  return cursors;
+}
+
+async function oldestSyncSequence(streamKey) {
+  const row = await db.select('sync_events', { filters: { stream_key: streamKey }, order: 'sequence.asc', limit: 1, single: true });
+  return row ? String(row.sequence) : null;
+}
+
+async function appendIncidentEvent(options = {}) {
+  return db.transaction(() => appendIncidentEventInTransaction(options));
+}
+
+async function appendIncidentEventInTransaction({
   id = randomUUID(), incidentId, type, occurredAt = Date.now(), recordedAt = Date.now(),
   actorDeviceId = null, actorName = null, source = 'online', clientOpId = null,
   payload = null, revisionOf = null, voidedAt = null,
@@ -802,7 +999,24 @@ async function appendIncidentEvent({
       source, client_op_id: clientOpId, payload: payload == null ? null : JSON.stringify(payload),
       revision_of: revisionOf, voided_at: voidedAt,
     });
-    return eventWithPayload(row || await getIncidentEvent(id));
+    const event = eventWithPayload(row || await getIncidentEvent(id));
+    if (!event) return event;
+    const syncType = syncEventType(type);
+    const incident = await getIncident(incidentId);
+    const canonical = syncType ? await syncPayloadFor(syncType, event.payload, incidentId) : event.payload;
+    const streamIncidentId = syncType?.startsWith('incident.') ? null : incidentId;
+    const sync = syncType && incident?.unit_id
+      ? await appendSyncEvent({
+        unitId: incident.unit_id,
+        incidentId: streamIncidentId,
+        eventType: syncType,
+        aggregateId: event.payload?.entry_id || event.payload?.note_id || event.payload?.force_id || incidentId,
+        clientOpId,
+        payload: canonical || {},
+        occurredAt,
+      })
+      : null;
+    return { ...event, sync };
   } catch (error) {
     if (clientOpId && error.status === 409) return getIncidentEventByClientOp(clientOpId);
     throw error;
@@ -886,26 +1100,20 @@ async function deleteIncidentForce(id) {
 }
 
 async function upsertIncidentForceWithEvent({ force, event, activityAt = null } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_upsert_force_with_event', {
-      p_force: force, p_event: event, p_activity_at: activityAt,
-    }, { get: true });
-  }
-  const updated = await upsertIncidentForce(force);
-  if (activityAt != null) await touchIncidentActivity(event.incidentId, activityAt);
-  return { force: updated, event: await appendIncidentEvent(event) };
+  return db.transaction(async () => {
+    const updated = await upsertIncidentForce(force);
+    if (activityAt != null) await touchIncidentActivity(event.incidentId, activityAt);
+    return { force: updated, event: await appendIncidentEvent(event) };
+  });
 }
 
 async function deleteIncidentForceWithEvent({ id, incidentId, event, activityAt = null } = {}) {
-  if (process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1' && typeof db.rpc === 'function') {
-    return db.rpc('watchdog_delete_force_with_event', {
-      p_id: id, p_incident_id: incidentId, p_activity_at: activityAt, p_event: event,
-    }, { get: true });
-  }
-  const changed = await deleteIncidentForce(id);
-  if (changed > 0 && activityAt != null) await touchIncidentActivity(incidentId, activityAt);
-  const recorded = changed > 0 && event ? await appendIncidentEvent(event) : null;
-  return { changed: changed > 0, event: recorded };
+  return db.transaction(async () => {
+    const changed = await deleteIncidentForce(id);
+    if (changed > 0 && activityAt != null) await touchIncidentActivity(incidentId, activityAt);
+    const recorded = changed > 0 && event ? await appendIncidentEvent(event) : null;
+    return { changed: changed > 0, event: recorded };
+  });
 }
 
 async function getDeviceProfile(deviceId) {
@@ -924,7 +1132,7 @@ async function saveDeviceProfile(deviceId, realName, unitId = null) {
 }
 
 async function dedupeLegacyIncidentEvents() {
-  // 新 CloudBase 数据库不导入旧 SQLite 事件；保留此接口以兼容现有维护调用。
+  // 标准 PostgreSQL 从空库开始，不导入旧 SQLite 事件。
   return 0;
 }
 
@@ -936,12 +1144,14 @@ module.exports = {
   getIncident, createIncident, createIncidentWithEvent, listIncidents, findRecentActiveIncident, updateIncidentTitle, updateIncidentTitleWithEvent,
   setIncidentSuggestedTitle, touchIncidentActivity, archiveIncident, archiveIncidentWithEvent, archiveStaleIncidents,
   appendIncidentEvent, getIncidentEvent, getIncidentEventByClientOp, listIncidentEvents,
+  appendSyncEvent, appendRosterSyncEvent, listSyncEvents, getSyncEvent, getSyncEventByClientOp, getSyncCheckpoint, oldestSyncSequence,
+  listenSync: db.listenSync,
   dedupeLegacyIncidentEvents, listStations, addStation, listIncidentForces, getIncidentForce,
   upsertIncidentForce, upsertIncidentForceWithEvent, deleteIncidentForce, deleteIncidentForceWithEvent, listIncidentForcesBatch, getDeviceProfile, saveDeviceProfile, listEntries,
   getEntry, createEntry, createEntryWithEvent, markExited, markExitedIfActive, exitEntryWithEvent, updatePressureWithEvent, findActiveByName, updateEntry, addPressureSample,
   lastPressureSample, listPressureSamples, listFirefighters, addFirefighter, removeFirefighter,
   listHotwords, addHotword, removeHotword, purgeOldExited, addLog, addLogs, listLogs, clearLogs,
-  purgeOldLogs, listNotes, getNote, createNote, createNoteWithEvent, updateNote, updateNoteWithEvent, deleteNote, deleteNoteWithEvent, purgeOldNotes,
+  purgeOldLogs, purgeOldSyncEvents, listNotes, getNote, createNote, createNoteWithEvent, updateNote, updateNoteWithEvent, deleteNote, deleteNoteWithEvent, purgeOldNotes,
   listChatMessages, createChatMessage, clearChatMessages, purgeOldChatMessages, getUserSettings,
   saveUserSettings, ready,
 };

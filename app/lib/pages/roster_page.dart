@@ -301,6 +301,7 @@ class _RosterPageState extends State<RosterPage>
         final String label = isFirefighter
             ? (item as dynamic).name
             : (item as dynamic).word;
+        final String source = (item as dynamic).source;
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
@@ -336,15 +337,16 @@ class _RosterPageState extends State<RosterPage>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              IconButton(
-                icon: const Icon(
-                  Icons.delete_outline,
-                  color: AppColors.alarm,
-                  size: 21,
+              if (source != 'builtin')
+                IconButton(
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.alarm,
+                    size: 21,
+                  ),
+                  onPressed: () => _remove(id, isFirefighter, label),
+                  tooltip: '删除',
                 ),
-                onPressed: () => _remove(id, isFirefighter, label),
-                tooltip: '删除',
-              ),
             ],
           ),
         );
