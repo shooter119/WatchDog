@@ -8,16 +8,15 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "NODE_ENV=test node --test \"test/*.test.js\"",
-    "db:migrate": "node scripts/migrate-cloudbase.js"
+    "db:migrate": "node src/postgres-migrator.js"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
     "express": "^4.19.2",
+    "pg": "^8.16.3",
     "ws": "^8.18.0"
   },
-  "devDependencies": {
-    "@cloudbase/manager-node": "^5.6.5"
-  }
+  "devDependencies": {}
 }

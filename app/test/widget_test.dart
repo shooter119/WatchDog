@@ -967,8 +967,8 @@ void main() {
       final list = find.byType(ListView).first;
       expect(find.text('我的身份'), findsOneWidget);
       expect(find.text('未选择单位'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('语音热词'));
-      expect(find.text('语音热词'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('添加语音热词'));
+      expect(find.text('添加语音热词'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('归档警情'));
       expect(find.text('归档警情'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('数据统计'));
@@ -1014,8 +1014,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
-      await _scrollToVisible(tester, list, find.text('语音热词'));
-      final subtitle = find.text('12 名 · 12 个热词');
+      await _scrollToVisible(tester, list, find.text('添加语音热词'));
+      final subtitle = find.text('补充本单位的姓名或专业词汇');
       expect(subtitle, findsOneWidget);
       expect(tester.getSize(subtitle).height, greaterThan(40));
       expect(tester.takeException(), isNull);

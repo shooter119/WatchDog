@@ -11,6 +11,7 @@ import 'pages/incident_selection_overlay.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
 import 'services/foreground_keep_alive.dart';
+import 'services/app_data_epoch.dart';
 import 'services/local_asr_service.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/op_log_service.dart';
@@ -47,7 +48,17 @@ void main() {
         return previousPlatformError?.call(error, stack) ?? false;
       };
 
-      runApp(const WatchDogApp());
+      // 新协议首次启动必须先停止旧保活、清理旧会话/离线队列/模型缓存，
+      // 再创建控制器，避免旧状态在新 WebSocket 会话建立前短暂泄漏。
+      unawaited(
+        ensureAppDataEpoch().then<void>((_) {
+          runApp(const WatchDogApp());
+        }).catchError((error, stack) {
+          diagnostics.recordUncaught(error, stack, source: 'data_epoch_reset');
+          // 清理失败不把用户卡在黑屏；控制器仍会要求重新认证。
+          runApp(const WatchDogApp());
+        }),
+      );
     },
     (error, stack) {
       // 兜住 runApp/Zone 内未处理的同步和异步异常。

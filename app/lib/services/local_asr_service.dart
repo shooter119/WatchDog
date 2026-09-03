@@ -15,7 +15,7 @@ import 'storage_service.dart';
 /// 多方言（普通话/粤语/上海话等）大模型，识别精度显著高于 14M 小模型；
 /// 热词走 bbpe 字节编码（名单/术语写入 hotwords 文件，modified_beam_search 上下文加权），
 /// 字节级词表对任意姓名无 OOV，生僻字人名同样生效。
-/// 模型文件由 CloudBase 后端的 /models/ 路径分发，国内直连下载。
+/// 模型文件由后端的 /models/ 路径分发，支持本地和自托管部署。
 /// 注：streaming 系列模型 + bbpe 热词在 sherpa-onnx 1.13.4 存在 CreateOnlineRecognizer 崩溃，暂用离线版。
 class LocalAsrService {
   static const modelName = 'multi-zh-hans-2023-9-2';
@@ -48,6 +48,15 @@ class LocalAsrService {
   /// 与 ASR 模型同目录下载（denoiser/），缺失时自动跳过降噪（不影响识别主流程）。
   static const _denoiserName = 'denoiser';
   static const _denoiserFile = 'dpdfnet2.onnx';
+
+  /// 删除安装包外下载的 ASR/降噪模型；安装包内置资源不受影响。
+  static Future<void> clearDownloadedModelCache() async {
+    try {
+      final base = await getApplicationSupportDirectory();
+      final dir = Directory('${base.path}/asr_models');
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (_) {}
+  }
 
   /// 旧模型目录（streaming 系列含崩溃 bug / 14M 小模型精度差 / Paraformer 不支持热词 / x-asr 词表稀疏），下载新模型后清理
   static const _legacyModelDirs = [
@@ -836,6 +845,26 @@ class LocalAsrService {
     _recognizerGenerationId = generationId;
     previousRecognizer?.free();
     await _ensureDenoiser();
+  }
+
+  /// 清除当前识别器持有的热词上下文，但保留已下载的语音模型。
+  /// 单位退出或认证失效时调用，避免 native recognizer 继续保留上一单位词库。
+  Future<void> resetHotwords() async {
+    if (_disposed) return;
+    await _transcriptionQueue;
+    final pending = _pendingInit;
+    if (pending != null) await pending;
+    _recognizer?.free();
+    _recognizer = null;
+    _recognizerHotwordsSignature = null;
+    _recognizerGenerationId = null;
+  }
+
+  /// 单位名单/热词发生变化时串行重建识别器；模型文件本身不会重复下载。
+  Future<void> updateHotwords(List<String> hotwords) async {
+    if (_disposed) return;
+    await _transcriptionQueue;
+    await _ensureInitialized(hotwords: hotwords);
   }
 
   /// 释放 native 识别器；等待当前串行识别完成，避免释放仍在使用的 stream。

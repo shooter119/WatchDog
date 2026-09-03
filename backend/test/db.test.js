@@ -74,7 +74,7 @@ test('进场与事件写入失败时整体回滚', () => {
   assert.equal(db.listPressureSamples('atomic-entry').length, 0);
 });
 
-test('消防员：装机自带名单/新增/查重/删除（全局不区分场景）', () => {
+test('消防员：单位词库中的内置名单/新增/查重/删除', () => {
   const names = db.listFirefighters().map((f) => f.name);
   assert.ok(names.includes('李翔'));
   assert.ok(names.includes('游方远'));
@@ -87,7 +87,7 @@ test('消防员：装机自带名单/新增/查重/删除（全局不区分场�
   assert.equal(db.listFirefighters().length, before);
 });
 
-test('热词：装机自带种子/新增/查重/删除（全局不区分场景）', () => {
+test('热词：单位词库中的内置词/新增/查重/删除', () => {
   const words = db.listHotwords().map((h) => h.word);
   assert.ok(words.includes('龙游大队'));
   assert.ok(words.includes('内攻'));
@@ -95,10 +95,28 @@ test('热词：装机自带种子/新增/查重/删除（全局不区分场景�
   const before = words.length;
   db.addHotword('h1', '进入火场');
   assert.throws(() => db.addHotword('h2', '进入火场'), /UNIQUE/);
-  // 全局共享：任意场景读到同一列表
+  // 无参数调用保留本地仓储兼容行为；HTTP 接口始终传入单位。
   assert.equal(db.listHotwords().length, before + 1);
   db.removeHotword('h1');
   assert.equal(db.listHotwords().length, before);
+});
+
+test('单位词库隔离：相同词条可存在于不同单位，不能跨单位删除', () => {
+  const unitA = 'roster-unit-a';
+  const unitB = 'roster-unit-b';
+  db.addFirefighter('roster-fa', '共同姓名', unitA, { createdByMemberId: 'member-a' });
+  db.addFirefighter('roster-fb', '共同姓名', unitB, { createdByMemberId: 'member-b' });
+  db.addHotword('roster-ha', '共同术语', unitA, { createdByMemberId: 'member-a' });
+  db.addHotword('roster-hb', '共同术语', unitB, { createdByMemberId: 'member-b' });
+
+  assert.deepEqual(db.listFirefighters(unitA).map((item) => item.name), ['共同姓名']);
+  assert.deepEqual(db.listFirefighters(unitB).map((item) => item.name), ['共同姓名']);
+  assert.deepEqual(db.listHotwords(unitA).map((item) => item.word), ['共同术语']);
+  assert.deepEqual(db.listHotwords(unitB).map((item) => item.word), ['共同术语']);
+  assert.equal(db.removeHotword('roster-hb', unitA, { memberId: 'member-a' }), 0);
+  assert.equal(db.removeHotword('roster-hb', unitB, { memberId: 'member-b' }), 1);
+  assert.equal(db.removeFirefighter('roster-fb', unitA, { memberId: 'member-a' }), 0);
+  assert.equal(db.removeFirefighter('roster-fb', unitB, { memberId: 'member-b' }), 1);
 });
 
 test('purgeOldExited 只清理超过期限的出场记录', () => {

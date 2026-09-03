@@ -7,7 +7,7 @@ const DATA_DIR = process.env.WATCHDOG_DATA_DIR || path.join(__dirname, '..', 'da
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(path.join(DATA_DIR, 'watchdog.db'));
-// SQLite 仅用于本地开发和测试；CloudBase 生产环境使用 PostgREST 数据库驱动。
+// SQLite 仅作为旧数据格式的同步测试适配器；业务运行时使用标准 PostgreSQL。
 // 通过环境变量保留 journal mode 配置，便于本地测试不同的锁策略。
 const journalMode = String(process.env.WATCHDOG_SQLITE_JOURNAL_MODE || 'WAL').toUpperCase();
 const allowedJournalModes = new Set(['DELETE', 'TRUNCATE', 'PERSIST', 'MEMORY', 'WAL', 'OFF']);
@@ -117,14 +117,26 @@ CREATE INDEX IF NOT EXISTS idx_entries_entry_at ON entries(entry_at);
 
 CREATE TABLE IF NOT EXISTS firefighters (
   id TEXT PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  created_at INTEGER NOT NULL
+  unit_id TEXT NOT NULL DEFAULT 'legacy',
+  name TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('builtin', 'user')),
+  created_by_member_id TEXT,
+  created_by_name TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(unit_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS hotwords (
   id TEXT PRIMARY KEY,
-  word TEXT NOT NULL UNIQUE,
-  created_at INTEGER NOT NULL
+  unit_id TEXT NOT NULL DEFAULT 'legacy',
+  word TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('builtin', 'user')),
+  created_by_member_id TEXT,
+  created_by_name TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(unit_id, word)
 );
 
 CREATE TABLE IF NOT EXISTS logs (
@@ -369,42 +381,56 @@ for (const t of ['entries']) {
   }
   db.exec(`DROP TABLE ${t}_old;`);
 }
-// 消防员全局化迁移：旧版按场景隔离，重建为全局唯一（按名去重，保留最早一条）
-if (hasColumn('firefighters', 'scene')) {
+// 旧版名单/热词先统一迁移到带单位归属的新结构。legacy 表示尚未被明确
+// 分配到单位的历史数据，认证请求永远不会读取它，避免跨单位泄露。
+function migrateRosterTable(table, valueColumn) {
+  const hasUnit = hasColumn(table, 'unit_id');
+  const hasSource = hasColumn(table, 'source');
+  const hasUpdatedAt = hasColumn(table, 'updated_at');
+  const hasCreatedByMember = hasColumn(table, 'created_by_member_id');
+  const hasCreatedByName = hasColumn(table, 'created_by_name');
+  if (hasUnit && hasSource && hasUpdatedAt && hasCreatedByMember && hasCreatedByName) return;
+  db.exec(`ALTER TABLE ${table} RENAME TO ${table}_old;`);
   db.exec(`
-    CREATE TABLE firefighters_new (
+    CREATE TABLE ${table} (
       id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      created_at INTEGER NOT NULL
+      unit_id TEXT NOT NULL DEFAULT 'legacy',
+      ${valueColumn} TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('builtin', 'user')),
+      created_by_member_id TEXT,
+      created_by_name TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(unit_id, ${valueColumn})
     );
-    INSERT INTO firefighters_new (id, name, created_at)
-      SELECT MIN(id), name, MIN(created_at) FROM firefighters GROUP BY name;
-    DROP TABLE firefighters;
-    ALTER TABLE firefighters_new RENAME TO firefighters;
   `);
-}
-// 热词全局化迁移：旧版热词按场景隔离，重建为全局唯一（按词去重，保留最早一条）
-if (hasColumn('hotwords', 'scene')) {
+  const columns = db.prepare(`PRAGMA table_info(${table}_old)`).all().map((column) => column.name);
+  const unitExpr = columns.includes('unit_id') ? "COALESCE(unit_id, 'legacy')" : "'legacy'";
+  const sourceExpr = columns.includes('source') ? 'source' : "'user'";
+  const memberExpr = columns.includes('created_by_member_id') ? 'created_by_member_id' : 'NULL';
+  const nameExpr = columns.includes('created_by_name') ? 'created_by_name' : 'NULL';
+  const updatedExpr = columns.includes('updated_at') ? 'updated_at' : 'created_at';
+  // 场景版旧热词/名单已经在前面的兼容迁移中处理；若历史数据有重复，
+  // 保留最早一条，避免启动时因新联合唯一约束失败。
   db.exec(`
-    CREATE TABLE hotwords_new (
-      id TEXT PRIMARY KEY,
-      word TEXT NOT NULL UNIQUE,
-      created_at INTEGER NOT NULL
-    );
-    INSERT INTO hotwords_new (id, word, created_at)
-      SELECT MIN(id), word, MIN(created_at) FROM hotwords GROUP BY word;
-    DROP TABLE hotwords;
-    ALTER TABLE hotwords_new RENAME TO hotwords;
+    INSERT INTO ${table} (id, unit_id, ${valueColumn}, source, created_by_member_id, created_by_name, created_at, updated_at)
+    SELECT MIN(id), ${unitExpr}, ${valueColumn}, MIN(${sourceExpr}), MIN(${memberExpr}), MIN(${nameExpr}), MIN(created_at), MIN(${updatedExpr})
+    FROM ${table}_old
+    GROUP BY ${unitExpr}, ${valueColumn};
   `);
+  db.exec(`DROP TABLE ${table}_old;`);
 }
+
+migrateRosterTable('firefighters', 'name');
+migrateRosterTable('hotwords', 'word');
 // 迁移后确保唯一约束与索引
 if (hasColumn('entries', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_entries_scene ON entries(scene, entry_at)');
 if (hasColumn('logs', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_logs_scene ON logs(scene, created_at)');
 if (hasColumn('user_settings', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_user_settings_scene ON user_settings(scene, user_id)');
 if (hasColumn('notes', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_notes_scene ON notes(scene, created_at)');
 if (hasColumn('chat_messages', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx_chat_scene ON chat_messages(scene, created_at)');
-db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_firefighters_name ON firefighters(name)');
-db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_hotwords_word ON hotwords(word)');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_firefighters_unit_name ON firefighters(unit_id, name)');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_hotwords_unit_word ON hotwords(unit_id, word)');
 
 // 单位种子仅允许测试环境或显式配置；生产环境绝不默认创建公开验证码。
 const seedUnit = {
@@ -416,6 +442,19 @@ if (seedUnit.id && seedUnit.name && seedUnit.code) {
   db.prepare(
     'INSERT OR IGNORE INTO units (id, name, verification_code, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
   ).run(seedUnit.id, seedUnit.name, seedUnit.code, 1780000000000, 1780000000000);
+  // 旧版全局词库只能在明确配置的种子单位存在时迁入；否则保持 legacy
+  // 隔离，等待管理员执行一次明确的数据归属迁移。
+  for (const [table, valueColumn] of [['firefighters', 'name'], ['hotwords', 'word']]) {
+    const legacyRows = db.prepare(`SELECT id, ${valueColumn} FROM ${table} WHERE unit_id = 'legacy'`).all();
+    for (const row of legacyRows) {
+      const existing = db.prepare(`SELECT id FROM ${table} WHERE unit_id = ? AND ${valueColumn} = ?`).get(seedUnit.id, row[valueColumn]);
+      if (existing) {
+        db.prepare(`DELETE FROM ${table} WHERE id = ? AND unit_id = 'legacy'`).run(row.id);
+      } else {
+        db.prepare(`UPDATE ${table} SET unit_id = ? WHERE id = ? AND unit_id = 'legacy'`).run(seedUnit.id, row.id);
+      }
+    }
+  }
 }
 
 // 成员白名单由部署环境显式提供，格式支持 JSON 数组或“姓名[:角色],姓名[:角色]”。
@@ -452,16 +491,22 @@ if (seedUnit.id && process.env.WATCHDOG_SEED_UNIT_MEMBERS) {
   }
 }
 
-// 装机自带专业热词（全局生效）：仅当表为空时写入，避免覆盖用户已删除的词条
-const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救'];
-const existingHotwords = db.prepare('SELECT COUNT(*) AS n FROM hotwords').get().n;
-if (existingHotwords === 0) {
-  const seedStmt = db.prepare('INSERT INTO hotwords (id, word, created_at) VALUES (?, ?, ?)');
+// 装机自带专业热词只写入明确配置的种子单位；没有单位配置时不创建全局词条。
+const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救', '初战'];
+const existingHotwords = seedUnit.id ? db.prepare('SELECT COUNT(*) AS n FROM hotwords WHERE unit_id = ?').get(seedUnit.id).n : 0;
+if (seedUnit.id && existingHotwords === 0) {
+  const seedStmt = db.prepare('INSERT INTO hotwords (id, unit_id, word, source, created_at, updated_at) VALUES (?, ?, ?, \'builtin\', ?, ?)');
   const seedAt = Date.now();
-  DEFAULT_HOTWORDS.forEach((word, i) => seedStmt.run(randomUUID(), word, seedAt + i));
+  DEFAULT_HOTWORDS.forEach((word, i) => seedStmt.run(randomUUID(), seedUnit.id, word, seedAt + i, seedAt + i));
+}
+// 新增内置术语需要补入已有安装，避免只能在新库初始化时生效。
+if (seedUnit.id) {
+  const newDefaultHotwordsStmt = db.prepare('INSERT OR IGNORE INTO hotwords (id, unit_id, word, source, created_at, updated_at) VALUES (?, ?, ?, \'builtin\', ?, ?)');
+  const now = Date.now();
+  newDefaultHotwordsStmt.run(randomUUID(), seedUnit.id, '初战', now, now);
 }
 
-// 装机自带消防员名单（全局生效，龙游大队花名册 95 人：大队部+龙翔路+永安路+兴园）
+// 装机自带消防员名单只写入明确配置的种子单位（龙游大队花名册 95 人）。
 // 仅当表为空时写入，避免覆盖用户已删除的姓名
 const DEFAULT_FIREFIGHTERS = [
   // 大队部
@@ -480,11 +525,11 @@ const DEFAULT_FIREFIGHTERS = [
   '贺官', '孙国彬', '吴志云', '陈子俊', '何金伟', '周子俊', '何哲锴', '徐刚', '姜俊翰', '文闻',
   '张文浩', '宋博韬',
 ];
-const existingFirefighters = db.prepare('SELECT COUNT(*) AS n FROM firefighters').get().n;
-if (existingFirefighters === 0) {
-  const seedStmt = db.prepare('INSERT INTO firefighters (id, name, created_at) VALUES (?, ?, ?)');
+const existingFirefighters = seedUnit.id ? db.prepare('SELECT COUNT(*) AS n FROM firefighters WHERE unit_id = ?').get(seedUnit.id).n : 0;
+if (seedUnit.id && existingFirefighters === 0) {
+  const seedStmt = db.prepare('INSERT INTO firefighters (id, unit_id, name, source, created_at, updated_at) VALUES (?, ?, ?, \'builtin\', ?, ?)');
   const seedAt = Date.now();
-  DEFAULT_FIREFIGHTERS.forEach((name, i) => seedStmt.run(randomUUID(), name, seedAt + i));
+  DEFAULT_FIREFIGHTERS.forEach((name, i) => seedStmt.run(randomUUID(), seedUnit.id, name, seedAt + i, seedAt + i));
 }
 
 function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}) {
@@ -708,32 +753,48 @@ function listPressureSamples(entryId, { limit = 20 } = {}) {
     .all(entryId, limitOf(limit, 20, 500));
 }
 
-/** 消防员名单全局共享，不区分场景 */
-function listFirefighters() {
-  return db.prepare('SELECT id, name FROM firefighters ORDER BY created_at ASC').all();
+function rosterUnitId(unitId) {
+  return String(unitId || seedUnit.id || 'legacy');
 }
 
-function addFirefighter(id, name) {
-  db.prepare('INSERT INTO firefighters (id, name, created_at) VALUES (?, ?, ?)').run(id, name, Date.now());
+function listFirefighters(unitId = null) {
+  if (unitId == null) return db.prepare('SELECT id, name, source, created_by_member_id, created_by_name FROM firefighters ORDER BY created_at ASC').all();
+  return db.prepare('SELECT id, name, source, created_by_member_id, created_by_name FROM firefighters WHERE unit_id = ? ORDER BY created_at ASC').all(rosterUnitId(unitId));
+}
+
+function addFirefighter(id, name, unitId = null, { source = 'user', createdByMemberId = null, createdByName = null } = {}) {
+  const now = Date.now();
+  db.prepare('INSERT INTO firefighters (id, unit_id, name, source, created_by_member_id, created_by_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, rosterUnitId(unitId), name, source === 'builtin' ? 'builtin' : 'user', createdByMemberId, createdByName, now, now);
   return db.prepare('SELECT id, name FROM firefighters WHERE id = ?').get(id);
 }
 
-function removeFirefighter(id) {
-  db.prepare('DELETE FROM firefighters WHERE id = ?').run(id);
+function removeFirefighter(id, unitId = null, { memberId = null, isManager = false } = {}) {
+  const row = db.prepare('SELECT source, created_by_member_id FROM firefighters WHERE id = ? AND unit_id = ?').get(id, rosterUnitId(unitId));
+  if (!row || row.source === 'builtin') return 0;
+  // 仅供旧版本地仓储调用兼容；HTTP 严格认证路径总是传入 unitId，
+  // 不会走这个无身份删除分支。
+  if (!isManager && !(unitId == null && memberId == null) && (!memberId || row.created_by_member_id !== memberId)) return 0;
+  return db.prepare('DELETE FROM firefighters WHERE id = ? AND unit_id = ?').run(id, rosterUnitId(unitId)).changes;
 }
 
-/** 热词全局共享，不区分场景 */
-function listHotwords() {
-  return db.prepare('SELECT id, word FROM hotwords ORDER BY created_at ASC').all();
+function listHotwords(unitId = null) {
+  if (unitId == null) return db.prepare('SELECT id, word, source, created_by_member_id, created_by_name FROM hotwords ORDER BY created_at ASC').all();
+  return db.prepare('SELECT id, word, source, created_by_member_id, created_by_name FROM hotwords WHERE unit_id = ? ORDER BY created_at ASC').all(rosterUnitId(unitId));
 }
 
-function addHotword(id, word) {
-  db.prepare('INSERT INTO hotwords (id, word, created_at) VALUES (?, ?, ?)').run(id, word, Date.now());
+function addHotword(id, word, unitId = null, { source = 'user', createdByMemberId = null, createdByName = null } = {}) {
+  const now = Date.now();
+  db.prepare('INSERT INTO hotwords (id, unit_id, word, source, created_by_member_id, created_by_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, rosterUnitId(unitId), word, source === 'builtin' ? 'builtin' : 'user', createdByMemberId, createdByName, now, now);
   return db.prepare('SELECT id, word FROM hotwords WHERE id = ?').get(id);
 }
 
-function removeHotword(id) {
-  db.prepare('DELETE FROM hotwords WHERE id = ?').run(id);
+function removeHotword(id, unitId = null, { memberId = null, isManager = false } = {}) {
+  const row = db.prepare('SELECT source, created_by_member_id FROM hotwords WHERE id = ? AND unit_id = ?').get(id, rosterUnitId(unitId));
+  if (!row || row.source === 'builtin') return 0;
+  if (!isManager && !(unitId == null && memberId == null) && (!memberId || row.created_by_member_id !== memberId)) return 0;
+  return db.prepare('DELETE FROM hotwords WHERE id = ? AND unit_id = ?').run(id, rosterUnitId(unitId)).changes;
 }
 
 /** 清理已出火场超过 days 天的记录（含全部场景），返回删除条数 */

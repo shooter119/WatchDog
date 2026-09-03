@@ -9,30 +9,25 @@ class Settings {
   static const maxConsumptionLpm = 300.0;
   static const maxThresholdMin = 1440;
 
-  /// 正式 APK 可通过 --dart-define=WATCHDOG_API_BASE_URL 覆盖后端地址。
-  /// 移动网络下 CloudBase HTTP 网关可能出现 DNS 失败；生产默认使用已验证
-  /// 可达的云托管服务直连域名，REST 与 WebSocket 保持同一网络入口。
+  /// 可通过 --dart-define=WATCHDOG_API_BASE_URL 覆盖后端地址。
+  /// 本地 Android 模拟器默认访问宿主机 PostgreSQL 后端；正式部署到其他平台
+  /// 时只需提供同一 REST/WebSocket 入口。
   static const defaultServerUrl = String.fromEnvironment(
     'WATCHDOG_API_BASE_URL',
     defaultValue:
-        'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com',
+        'http://10.0.2.2:3000',
   );
 
-  /// WebSocket 不经过 CloudBase HTTP 网关；默认连接云托管服务直连域名。
-  /// 正式环境可通过 --dart-define=WATCHDOG_ASR_WS_BASE_URL 覆盖。
+  /// ASR 与业务实时同步共用同一后端入口；正式环境可通过 dart-define 覆盖。
   static const realtimeAsrBaseUrl = String.fromEnvironment(
     'WATCHDOG_ASR_WS_BASE_URL',
     defaultValue:
-        'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com',
+        'http://10.0.2.2:3000',
   );
 
-  /// 直连域名在部分 Android DNS 代理上可能短暂超时；历史 HTTP 网关同样
-  /// 支持 WebSocket Upgrade，作为同一后端的连接级备用入口。它不是离线识别，
-  /// 只在 WebSocket 建连阶段直连失败时使用。
-  static const realtimeAsrFallbackBaseUrl =
-      'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com';
+  static const realtimeAsrFallbackBaseUrl = realtimeAsrBaseUrl;
 
-  /// 端侧 ASR 模型与后端通过同一云托管服务分发，也可独立覆盖。
+  /// 端侧 ASR 模型与后端通过同一服务分发，也可独立覆盖。
   static const defaultModelBaseUrl = String.fromEnvironment(
     'WATCHDOG_MODEL_BASE_URL',
     defaultValue: '$defaultServerUrl/models',
@@ -51,12 +46,6 @@ class Settings {
     'WATCHDOG_ALLOW_CUSTOM_SERVER',
     defaultValue: false,
   );
-  static const _deprecatedGatewayUrl =
-      'https://watchdog-prod-d6gch930m378d9a16-1351750301.ap-shanghai.app.tcloudbase.com';
-  static const _deprecatedCloudRunServiceUrl =
-      'https://watchdog-api-prod-294307-10-1351750301.sh.run.tcloudbase.com';
-  static const _deprecatedCanaryServiceUrl =
-      'https://watchdog-api-canary-294307-10-1351750301.sh.run.tcloudbase.com';
   static const _kServer = 'server_url';
   static const _kIncident = 'current_incident_id';
   static const _kToken = 'api_token';
@@ -258,13 +247,6 @@ class Settings {
   static Future<String> get serverUrl async {
     final sp = await SharedPreferences.getInstance();
     final saved = sp.getString(_kServer);
-    // 迁移之前版本自动写入的 CloudBase 网关/云托管地址（包括 canary）。
-    if (saved == _deprecatedGatewayUrl ||
-        saved == _deprecatedCloudRunServiceUrl ||
-        saved == _deprecatedCanaryServiceUrl) {
-      await sp.setString(_kServer, defaultServerUrl);
-      return defaultServerUrl;
-    }
     final candidate = _normalizeBaseUrl(saved ?? defaultServerUrl);
     if (!_isSafeServerUrl(candidate)) {
       await sp.setString(_kServer, defaultServerUrl);

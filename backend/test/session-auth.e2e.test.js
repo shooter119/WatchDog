@@ -120,10 +120,16 @@ test('严格认证：成员白名单、会话绑定、注销和管理角色门�
   response = await fetch(`${base}/api/firefighters`, {
     method: 'POST',
     headers: sessionHeaders,
-    body: JSON.stringify({ name: '成员不应修改名单' }),
+    body: JSON.stringify({ name: '成员可新增名单' }),
   });
-  assert.equal(response.status, 403);
-  assert.equal((await json(response)).code, 'MANAGEMENT_REQUIRED');
+  assert.equal(response.status, 201);
+
+  response = await fetch(`${base}/api/hotwords`, {
+    method: 'POST',
+    headers: sessionHeaders,
+    body: JSON.stringify({ word: '成员可新增词' }),
+  });
+  assert.equal(response.status, 201);
 
   response = await fetch(`${base}/api/unit-members`, { headers: sessionHeaders });
   assert.equal(response.status, 403);

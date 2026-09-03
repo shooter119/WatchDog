@@ -51,12 +51,9 @@ void main() {
       addTearDown(api.dispose);
 
       final uris = api.realtimeAsrUris();
-      expect(uris.first.scheme, 'wss');
+      expect(uris.first.scheme, Settings.realtimeAsrBaseUrl.startsWith('https') ? 'wss' : 'ws');
       expect(uris.first.path, '/api/asr/stream');
-      final fallbackHost = Settings.realtimeAsrFallbackBaseUrl
-          .replaceFirst('https://', '')
-          .split('/')
-          .first;
+      final fallbackHost = Uri.parse(Settings.realtimeAsrFallbackBaseUrl).host;
       expect(uris.map((uri) => uri.host), contains(fallbackHost));
     },
   );

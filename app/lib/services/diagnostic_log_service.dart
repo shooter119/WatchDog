@@ -229,6 +229,22 @@ class DiagnosticLogService {
     }
   }
 
+  /// 新版数据纪元迁移：诊断文件可能包含旧会话上下文，随本地状态一并清理。
+  Future<void> clearLocal() async {
+    await init();
+    await _writeQueue;
+    for (final file in [_logFile, _pendingFile]) {
+      try {
+        if (file != null && await file.exists()) await file.delete();
+        if (file != null) {
+          final rotated = File('${file.path}.1');
+          if (await rotated.exists()) await rotated.delete();
+        }
+      } catch (_) {}
+    }
+    await _clearFallback();
+  }
+
   File? get _logFile => _directory == null
       ? null
       : File('${_directory!.path}/watchdog_diagnostics.jsonl');

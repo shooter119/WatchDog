@@ -63,8 +63,9 @@ class AboutPage extends StatelessWidget {
           SectionTitle(text: '后端部署'),
           _SectionCard(
             body:
-                '生产后端已部署在 CloudBase 云托管，业务数据使用 CloudBase PostgreSQL，App 通过云托管直连服务访问 REST 与实时语音 WebSocket，AI 仍使用 DeepSeek 直连。'
-                '详细说明见项目仓库中的 CloudBase PG 模式部署文档。',
+                '后端使用标准 PostgreSQL 17。业务数据、审计事件和实时 Outbox 在同一事务中提交，'
+                '通过 PostgreSQL LISTEN/NOTIFY 唤醒多实例，再由 WebSocket 推送给同单位在线 App。'
+                '模型由后端 /models/ 目录分发，部署平台不作限定；AI 仍使用 DeepSeek 直连。',
           ),
         ],
       ),
@@ -174,8 +175,8 @@ class _FeaturesCard extends StatelessWidget {
     ),
     (
       Icons.group_outlined,
-      '名单与热词',
-      '首次安装自带消防员名单和专业热词，也可按班组实际情况增删；实时识别每次会话统一注入',
+      '单位语音词库',
+      '完成单位认证后自动加载本单位预置词和成员新增词条；所有已认证用户都可补充，退出单位后本机自动清空',
     ),
     (Icons.bar_chart_rounded, '数据统计', '每人的进出场次数、时长一清二楚，训练复盘心里有数'),
     (Icons.touch_app_outlined, '火场友好', '屏幕常亮、后台保活、按键式录音，戴着手套、满场嘈杂也能用'),
