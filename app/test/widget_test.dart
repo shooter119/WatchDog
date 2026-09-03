@@ -588,6 +588,35 @@ void main() {
       expect(find.text('更新压力'), findsOneWidget);
     });
 
+    testWidgets('320dp 真机宽度下连接状态保持在标题右侧', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 800 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await _pumpBoard(tester, const []);
+
+      final status = tester.getRect(find.byType(ConnectionStatus));
+      expect(status.right, closeTo(304, 1));
+      expect(status.left, greaterThan(190));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('320dp 真机宽度下安全状态与更新压力保持同排', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 800 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await _pumpBoard(tester, [_entry(name: '洪辰', remainingMin: 20)]);
+
+      final badge = tester.getRect(find.byType(StatusBadge));
+      final button = tester.getRect(
+        find
+            .ancestor(of: find.text('更新压力'), matching: find.byType(Material))
+            .first,
+      );
+      expect(badge.top, closeTo(button.top, 1));
+      expect(badge.right, lessThan(button.left));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('危险等级排序：报警在前、注意在后、同等级按剩余时间升序', (tester) async {
       await _pumpBoard(tester, [
         _entry(name: '安全甲', remainingMin: 40),
@@ -938,8 +967,8 @@ void main() {
       final list = find.byType(ListView).first;
       expect(find.text('我的身份'), findsOneWidget);
       expect(find.text('未选择单位'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('语音热词'));
-      expect(find.text('语音热词'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('添加语音热词'));
+      expect(find.text('添加语音热词'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('归档警情'));
       expect(find.text('归档警情'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('数据统计'));
@@ -985,8 +1014,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
-      await _scrollToVisible(tester, list, find.text('语音热词'));
-      final subtitle = find.text('12 名 · 12 个热词');
+      await _scrollToVisible(tester, list, find.text('添加语音热词'));
+      final subtitle = find.text('补充本单位的姓名或专业词汇');
       expect(subtitle, findsOneWidget);
       expect(tester.getSize(subtitle).height, greaterThan(40));
       expect(tester.takeException(), isNull);
@@ -1144,6 +1173,31 @@ void main() {
   });
 
   group('HomePage 多人一次性确认', () {
+    testWidgets('320dp 真机宽度下警情处置连接状态保持在标题右上角', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 800 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(
+              controller: _FakeController(),
+              audioService: _FakeAudio(),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final title = tester.getRect(find.text('警情处置'));
+      final status = tester.getRect(find.byType(ConnectionStatus));
+      expect(status.right, closeTo(304, 1));
+      expect(status.top, lessThan(title.bottom));
+      expect(status.left, greaterThan(title.right));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('首页录音 50 秒提示并在 60 秒自动结束', (tester) async {
       final audio = _FakeAudio();
       final controller = _FakeController()..api = _FakeApi();
@@ -1551,7 +1605,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('全员离场确认'), findsOneWidget);
       expect(find.textContaining('当前在场 2 人'), findsOneWidget);
-      await tester.tap(find.text('确认全员离场'));
+      await tester.tap(find.text('确认离场'));
       await tester.pumpAndSettle();
       expect(c.exited, ['e-张伟', 'e-李娜']);
       expect(c.notes.single.text, '张伟撤离救援现场、李娜撤离救援现场');
@@ -1717,7 +1771,32 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
       expect(find.text('火场日志'), findsOneWidget);
-      expect(find.text('写日志'), findsOneWidget);
+      expect(find.byKey(const Key('notes-manual-log-fab')), findsOneWidget);
+    });
+
+    testWidgets('320dp 真机宽度下日志连接状态保持在标题右上角', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: NotesPage(controller: _FakeController())),
+        ),
+      );
+      await tester.pump();
+
+      final title = tester.getRect(find.text('火场日志'));
+      final status = tester.getRect(find.byType(ConnectionStatus));
+      expect(status.right, closeTo(304, 1));
+      expect(status.top, lessThan(title.bottom));
+      expect(status.left, greaterThan(title.right));
+      final fab = tester.getRect(find.byKey(const Key('notes-manual-log-fab')));
+      expect(fab.width, closeTo(56, 1));
+      expect(fab.height, closeTo(56, 1));
+      expect(fab.right, closeTo(304, 1));
+      expect(fab.top, greaterThan(title.bottom));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('日志编辑弹窗窄屏大字号键盘下保存按钮可滚动到', (tester) async {
@@ -1736,9 +1815,9 @@ void main() {
         ),
       );
       await tester.pump();
-      final writeButton = find.widgetWithText(OutlinedButton, '写日志');
+      final writeButton = find.byKey(const Key('notes-manual-log-fab'));
       expect(tester.getSize(writeButton).height, greaterThanOrEqualTo(48));
-      await tester.tap(find.text('写日志'));
+      await tester.tap(writeButton);
       await tester.pumpAndSettle();
       expect(find.byType(SingleChildScrollView), findsOneWidget);
 
@@ -1801,7 +1880,7 @@ void main() {
         ),
       );
       await tester.pump();
-      await tester.tap(find.text('写日志'));
+      await tester.tap(find.byKey(const Key('notes-manual-log-fab')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '水带铺设完成');
       await tester.tap(find.widgetWithText(ChoiceChip, '出水'));

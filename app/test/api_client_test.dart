@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watchdog/api/api_client.dart';
+import 'package:watchdog/services/settings.dart';
 
 class _JsonFixture {
   final ApiClient api;
@@ -40,6 +41,23 @@ Future<_JsonFixture> _jsonFixture({
 }
 
 void main() {
+  test(
+    'realtime ASR exposes a direct endpoint and a WebSocket gateway fallback',
+    () {
+      final api = ApiClient(
+        baseUrl: 'https://api.example.test',
+        incidentId: 'incident-for-test',
+      );
+      addTearDown(api.dispose);
+
+      final uris = api.realtimeAsrUris();
+      expect(uris.first.scheme, Settings.realtimeAsrBaseUrl.startsWith('https') ? 'wss' : 'ws');
+      expect(uris.first.path, '/api/asr/stream');
+      final fallbackHost = Uri.parse(Settings.realtimeAsrFallbackBaseUrl).host;
+      expect(uris.map((uri) => uri.host), contains(fallbackHost));
+    },
+  );
+
   test(
     'incident list and object methods accept their expected top-level shapes',
     () async {

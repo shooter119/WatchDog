@@ -22,7 +22,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.3.0+61';
+const appVersion = '1.5.0+63';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -688,9 +688,8 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildFieldGrid(
             _SettingsShortcut(
               icon: Icons.group_outlined,
-              title: '语音热词',
-              subtitle:
-                  '${widget.controller.firefighters.length} 名 · ${widget.controller.hotwords.length} 个热词',
+              title: '添加语音热词',
+              subtitle: '补充本单位的姓名或专业词汇',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -762,7 +761,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _SettingsAccordion(
             icon: Icons.dns_outlined,
             title: '服务连接',
-            summary: 'CloudBase 生产网关 · 设置可同步',
+            summary: '标准 PostgreSQL 后端 · 设置可同步',
             child: _buildServerBody(),
           ),
           const SizedBox(height: 9),
@@ -1312,7 +1311,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _field(
           _server,
           '服务器地址',
-          '默认使用 CloudBase 生产网关',
+          '默认使用本地 PostgreSQL 后端（Android 模拟器：10.0.2.2:3000）',
           keyboard: TextInputType.url,
           focusNode: _serverFocus,
         ),

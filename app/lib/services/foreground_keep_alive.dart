@@ -18,14 +18,14 @@ bool isMainSnapshotFresh({
 }) => lastSyncAt > 0 && nowMs >= lastSyncAt && nowMs - lastSyncAt < freshnessMs;
 
 /// 后台值守前台服务（flutter_foreground_task 10.x）：
-/// - 前台服务保住进程 + CPU 唤醒锁，App 切后台/锁屏后 5 秒轮询与 1 秒阈值检查照常运行
-///   （主 isolate 的 Timer 逻辑不变，服务 isolate 独立拉数据只负责刷新常驻通知栏）。
-/// - 常驻通知栏显示"火场指挥中 · 在场 N 人 · 最早剩余 M:SS"，每 5 秒自刷新。
+/// - 前台服务保住进程 + CPU 唤醒锁；主 isolate 在线时交接快照，后台优先
+///   持有一条业务 WebSocket，连接不可用时才按 30 秒 bootstrap 校准。
+/// - 常驻通知栏显示"火场指挥中 · 在场 N 人 · 最早剩余 M:SS"。
 /// - specialUse 类型：Android 15 无 dataSync 的 6 小时时长限制，可开机自启。
 class ForegroundKeepAlive {
   static const channelId = 'watchdog_keepalive';
   static const channelName = '后台值守';
-  static const channelDesc = '火场指挥持续值守，保持后台轮询与报警';
+  static const channelDesc = '火场指挥持续值守，保持后台实时同步与报警';
 
   static const _kServerUrl = 'keepalive_server_url';
   static const _kIncidentId = 'keepalive_incident_id';
@@ -91,8 +91,7 @@ class ForegroundKeepAlive {
         ),
         iosNotificationOptions: const IOSNotificationOptions(),
         foregroundTaskOptions: ForegroundTaskOptions(
-          // 服务内用 5s 周期回调拉数据刷通知栏（同步主 isolate 轮询节奏）
-          eventAction: ForegroundTaskEventAction.repeat(5000),
+          eventAction: ForegroundTaskEventAction.repeat(30000),
           autoRunOnBoot: true,
           autoRunOnMyPackageReplaced: true,
           allowWakeLock: true,
@@ -121,7 +120,7 @@ class ForegroundKeepAlive {
     return future;
   }
 
-  /// 启动保活服务：先把轮询所需配置写入服务数据，再启动（服务内独立拉看板数据）
+  /// 启动保活服务：先把实时连接所需配置写入服务数据，再启动。
   static Future<void> start({
     required String serverUrl,
     required String incidentId,
@@ -166,7 +165,7 @@ class ForegroundKeepAlive {
       await FlutterForegroundTask.startService(
         serviceTypes: const [ForegroundServiceTypes.specialUse],
         notificationTitle: '火场指挥中',
-        notificationText: '后台轮询与报警保护已开启',
+        notificationText: '后台实时同步与报警保护已开启',
         callback: watchdogStartCallback,
       );
     });
@@ -250,12 +249,13 @@ void watchdogStartCallback() {
   FlutterForegroundTask.setTaskHandler(WatchdogTaskHandler());
 }
 
-/// 服务 isolate 内的任务处理器：每 5 秒拉一次看板数据，刷新常驻通知栏
+/// 服务 isolate 内的任务处理器：优先保持业务 WebSocket，断线时每 30 秒快照校准。
 class WatchdogTaskHandler extends TaskHandler {
   WatchdogTaskHandler({http.Client? httpClient})
     : _httpClient = httpClient ?? http.Client();
 
   final http.Client _httpClient;
+  WebSocket? _socket;
   String _serverUrl = '';
   String _incidentId = '';
   String _token = '';
@@ -269,6 +269,9 @@ class WatchdogTaskHandler extends TaskHandler {
   int _lastMainSyncAt = 0;
   int _mainActiveCount = 0;
   int _mainEarliestExitAt = 0;
+  String _unitCursor = '0';
+  String _incidentCursor = '0';
+  final Map<String, Map<String, Object>> _backgroundEntries = {};
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -285,7 +288,11 @@ class WatchdogTaskHandler extends TaskHandler {
     )) {
       return;
     }
-    // fire-and-forget：拉数据刷通知栏，失败静默（下次周期重试）
+    if (_socket?.readyState == WebSocket.open) {
+      unawaited(_updateNotificationFromEntries());
+      return;
+    }
+    // fire-and-forget：连接不可用时拉快照刷通知栏，失败静默（下次周期重试）
     unawaited(_refreshForContext(_contextGeneration));
   }
 
@@ -334,6 +341,8 @@ class WatchdogTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    await _socket?.close(WebSocketStatus.normalClosure);
+    _socket = null;
     _httpClient.close();
   }
 
@@ -349,6 +358,11 @@ class WatchdogTaskHandler extends TaskHandler {
     _lastMainSyncAt = 0;
     _mainActiveCount = 0;
     _mainEarliestExitAt = 0;
+    _unitCursor = '0';
+    _incidentCursor = '0';
+    _backgroundEntries.clear();
+    await _socket?.close(WebSocketStatus.normalClosure);
+    _socket = null;
 
     final serverUrl =
         await FlutterForegroundTask.getData<String>(
@@ -453,7 +467,7 @@ class WatchdogTaskHandler extends TaskHandler {
     try {
       final res = await _httpClient
           .get(
-            Uri.parse('$_serverUrl/api/entries?active=1'),
+            Uri.parse('$_serverUrl/api/sync/bootstrap?incident_id=${Uri.encodeQueryComponent(incidentId)}'),
             headers: {
               'X-Incident-Id': incidentId,
               'X-Api-Token': _token,
@@ -466,19 +480,29 @@ class WatchdogTaskHandler extends TaskHandler {
           .timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return;
       if (generation != _contextGeneration || incidentId != _incidentId) return;
-      final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+      final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+      final cursors = body['cursors'] as Map<String, dynamic>?;
+      _unitCursor = cursors?['unit']?.toString() ?? _unitCursor;
+      _incidentCursor = cursors?['incident']?.toString() ?? _incidentCursor;
+      final snapshot = body['incident_snapshot'] as Map<String, dynamic>?;
+      final list = (snapshot?['entries'] as List?) ?? const [];
       final now = DateTime.now().millisecondsSinceEpoch;
       final active = <Map<String, dynamic>>[];
+      _backgroundEntries.clear();
       for (final raw in list) {
         final m = raw as Map<String, dynamic>;
         if (m['exited_at'] != null) continue;
         final exitAt = (m['exit_at'] as num?)?.toInt() ?? 0;
         active.add({'name': m['name'] ?? '?', 'exitAt': exitAt});
+        final id = m['id']?.toString();
+        if (id != null && id.isNotEmpty) {
+          _backgroundEntries[id] = {'name': m['name'] ?? '?', 'exitAt': exitAt};
+        }
       }
       active.sort((a, b) => (a['exitAt'] as int).compareTo(b['exitAt'] as int));
 
       String title = '火场指挥中';
-      String text = '后台轮询与报警保护已开启';
+      String text = '后台实时同步与报警保护已开启';
       if (active.isNotEmpty) {
         final earliest = active.first;
         final name = earliest['name'];
@@ -499,9 +523,118 @@ class WatchdogTaskHandler extends TaskHandler {
         notificationTitle: title,
         notificationText: text,
       );
+      await _connectRealtime(generation);
     } catch (_) {
       // 网络波动静默，下个周期重试
     }
+  }
+
+  Future<void> _connectRealtime(int generation) async {
+    if (generation != _contextGeneration || _incidentId.isEmpty || _serverUrl.isEmpty) return;
+    if (_socket?.readyState == WebSocket.open) return;
+    final base = Uri.tryParse(_serverUrl);
+    if (base == null || base.host.isEmpty) return;
+    final uri = base.replace(
+      scheme: base.scheme == 'https' ? 'wss' : 'ws',
+      path: '${base.path.replaceFirst(RegExp(r'/+$'), '')}/api/realtime',
+      query: '',
+    );
+    try {
+      final socket = await WebSocket.connect(uri.toString(), headers: {
+        'X-Incident-Id': _incidentId,
+        if (_token.isNotEmpty) 'X-Api-Token': _token,
+        if (_sessionToken.isNotEmpty) 'Authorization': 'Bearer $_sessionToken',
+        if (_unitId.isNotEmpty) 'X-Unit-Id': _unitId,
+        if (_unitCode.isNotEmpty) 'X-Unit-Code': _unitCode,
+      });
+      if (generation != _contextGeneration || _incidentId.isEmpty) {
+        await socket.close(WebSocketStatus.normalClosure);
+        return;
+      }
+      _socket = socket;
+      socket.listen(
+        (data) => _handleRealtimeMessage(generation, data),
+        onError: (_, __) {
+          if (identical(_socket, socket)) _socket = null;
+        },
+        onDone: () {
+          if (identical(_socket, socket)) _socket = null;
+        },
+        cancelOnError: false,
+      );
+      socket.add(jsonEncode({
+        'type': 'subscribe',
+        'incident_id': _incidentId,
+        'unit_cursor': _unitCursor,
+        'incident_cursor': _incidentCursor,
+      }));
+    } catch (_) {
+      _socket = null;
+    }
+  }
+
+  void _handleRealtimeMessage(int generation, Object data) {
+    if (generation != _contextGeneration || _incidentId.isEmpty) return;
+    try {
+      final message = jsonDecode(data.toString());
+      if (message is! Map<String, dynamic>) return;
+      if (message['type'] == 'resync_required') {
+        final socket = _socket;
+        _socket = null;
+        unawaited(socket?.close(WebSocketStatus.normalClosure) ?? Future<void>.value());
+        return;
+      }
+      if (message['type'] != 'event') return;
+      final stream = message['stream']?.toString();
+      if (stream == 'unit') {
+        _unitCursor = message['sequence']?.toString() ?? _unitCursor;
+        return;
+      }
+      _incidentCursor = message['sequence']?.toString() ?? _incidentCursor;
+      final type = message['event_type']?.toString() ?? '';
+      final payload = message['payload'];
+      if (payload is! Map) return;
+      final id = payload['id']?.toString() ?? payload['entry_id']?.toString();
+      if (id == null || id.isEmpty) return;
+      if (type == 'entry.created' || type == 'entry.pressure_updated') {
+        _backgroundEntries[id] = {
+          'name': payload['name'] ?? '?',
+          'exitAt': (payload['exit_at'] as num?)?.toInt() ?? 0,
+        };
+      } else if (type == 'entry.exited') {
+        _backgroundEntries.remove(id);
+      }
+      unawaited(_updateNotificationFromEntries());
+    } catch (_) {}
+  }
+
+  Future<void> _updateNotificationFromEntries() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final active = _backgroundEntries.values.toList()
+      ..removeWhere((item) => (item['exitAt'] as int? ?? 0) <= 0);
+    active.sort((a, b) => (a['exitAt'] as int).compareTo(b['exitAt'] as int));
+    if (active.isEmpty) {
+      await FlutterForegroundTask.updateService(
+        notificationTitle: '火场指挥中',
+        notificationText: '当前暂无在场人员',
+      );
+      return;
+    }
+    final earliest = active.first;
+    final leftMs = (earliest['exitAt'] as int) - now;
+    final warnMs = _warnMin * 60000;
+    final alarmMs = _alarmMin * 60000;
+    final status = leftMs < 0
+        ? '超时！'
+        : leftMs <= alarmMs
+        ? '报警！'
+        : leftMs <= warnMs
+        ? '注意'
+        : '';
+    await FlutterForegroundTask.updateService(
+      notificationTitle: '火场指挥中 · 在场 ${active.length} 人$status',
+      notificationText: '最早剩余 ${_fmt(leftMs)}（${earliest['name']}）',
+    );
   }
 
   /// 毫秒 → M:SS / H:MM:SS（超时显示 0:00）

@@ -13,6 +13,8 @@ test('单位级认证：不填写 API_TOKEN 也可完成认证', async () => {
     cwd: path.join(__dirname, '..'),
     env: {
       ...process.env,
+      NODE_ENV: 'test',
+      WATCHDOG_DB_DRIVER: 'sqlite',
       PORT: String(port),
       API_TOKEN: 'secret-token',
       WATCHDOG_UNIT_AUTH_REQUIRED: '1',

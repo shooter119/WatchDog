@@ -24,7 +24,9 @@ class AudioService {
 
   bool get isRecording => _path != null;
 
-  Future<bool> hasPermission() => _recorder.hasPermission();
+  /// 检查并主动申请麦克风权限；不能依赖插件的默认参数，避免真机首次安装
+  /// 时只检查不弹系统授权框，导致录音流程无声失败。
+  Future<bool> hasPermission() => _recorder.hasPermission(request: true);
 
   Future<T> _enqueue<T>(Future<T> Function() operation) async {
     final previous = _operationTail;
@@ -52,6 +54,9 @@ class AudioService {
             encoder: AudioEncoder.wav,
             sampleRate: 16000,
             numChannels: 1,
+            androidConfig: AndroidRecordConfig(
+              audioSource: AndroidAudioSource.voiceRecognition,
+            ),
           ),
           path: path,
         );

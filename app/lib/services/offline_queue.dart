@@ -238,4 +238,13 @@ class OfflineQueue {
       ),
     );
   }
+
+  /// 新版数据纪元迁移：旧版本离线业务不能带着旧单位身份进入新协议。
+  Future<void> clearAll() async {
+    final db = await _database;
+    await db.transaction((txn) async {
+      await txn.delete(_offlineOperationsTable);
+      await txn.delete(_offlineQuarantineTable);
+    });
+  }
 }

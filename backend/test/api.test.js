@@ -6,7 +6,6 @@ const path = require('path');
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-api-'));
 process.env.WATCHDOG_DATA_DIR = tmpDir;
-process.env.CLOUDBASE_ENV_ID = 'watchdog-test-env';
 
 const app = require('../src/server');
 const db = require('../src/db');
@@ -336,12 +335,42 @@ test('消防员/热词 CRUD 与 409 查重', async () => {
   const w1 = await (await fetch(`${base}/api/hotwords`, { method: 'POST', headers: H, body: JSON.stringify({ word: '空气呼吸器' }) })).json();
   assert.equal(w1.word, '空气呼吸器');
 
-  // 装机自带名单（95 人）全局可见
+  // 当前单位的装机自带名单可见
   let list = await (await fetch(`${base}/api/firefighters`, { headers: H })).json();
   assert.ok(list.some((f) => f.name === '李翔'));
   await fetch(`${base}/api/firefighters/${f1.id}`, { method: 'DELETE', headers: H });
   list = await (await fetch(`${base}/api/firefighters`, { headers: H })).json();
   assert.ok(!list.some((f) => f.name === '王强'));
+});
+
+test('HTTP 词库按单位隔离：相同词条可分别新增，互不可见/删除', async () => {
+  const otherUnit = { ...H, 'X-Unit-Id': 'api-other-unit' };
+  const name = '单位隔离姓名';
+  const word = '单位隔离术语';
+  const aName = await (await fetch(`${base}/api/firefighters`, {
+    method: 'POST', headers: H, body: JSON.stringify({ name }),
+  })).json();
+  const bName = await (await fetch(`${base}/api/firefighters`, {
+    method: 'POST', headers: otherUnit, body: JSON.stringify({ name }),
+  })).json();
+  const aWord = await (await fetch(`${base}/api/hotwords`, {
+    method: 'POST', headers: H, body: JSON.stringify({ word }),
+  })).json();
+  const bWord = await (await fetch(`${base}/api/hotwords`, {
+    method: 'POST', headers: otherUnit, body: JSON.stringify({ word }),
+  })).json();
+  assert.notEqual(aName.id, bName.id);
+  assert.notEqual(aWord.id, bWord.id);
+  assert.ok((await (await fetch(`${base}/api/firefighters`, { headers: H })).json()).some((item) => item.id === aName.id));
+  assert.ok(!(await (await fetch(`${base}/api/firefighters`, { headers: H })).json()).some((item) => item.id === bName.id));
+  assert.ok((await (await fetch(`${base}/api/hotwords`, { headers: H })).json()).some((item) => item.id === aWord.id));
+  assert.ok(!(await (await fetch(`${base}/api/hotwords`, { headers: H })).json()).some((item) => item.id === bWord.id));
+  assert.equal((await fetch(`${base}/api/firefighters/${bName.id}`, { method: 'DELETE', headers: H })).status, 404);
+  assert.equal((await fetch(`${base}/api/hotwords/${bWord.id}`, { method: 'DELETE', headers: H })).status, 404);
+  await fetch(`${base}/api/firefighters/${aName.id}`, { method: 'DELETE', headers: H });
+  await fetch(`${base}/api/firefighters/${bName.id}`, { method: 'DELETE', headers: otherUnit });
+  await fetch(`${base}/api/hotwords/${aWord.id}`, { method: 'DELETE', headers: H });
+  await fetch(`${base}/api/hotwords/${bWord.id}`, { method: 'DELETE', headers: otherUnit });
 });
 
 test('GET /api/incidents 列出活跃警情并返回汇总字段', async () => {

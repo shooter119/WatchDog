@@ -14,6 +14,7 @@ const MT_ERROR = 15;
 
 const GZIP = 1;
 const NO_COMPRESSION = 0;
+const NO_SERIALIZATION = 0;
 const JSON_SER = 1;
 
 // 请求 flags
@@ -36,12 +37,12 @@ function buildFrame(header, payload) {
 }
 
 /**
- * 服务端响应帧解析（对齐官方 volcengine-asr-sdk 的 parse_response）：
- * payload = [sequence 4B（flags&1 时有）][size 4B][JSON]
- * - FULL_SERVER_RESPONSE(9):   size 在 payload[0:4]，JSON 在 [4:]
- * - SERVER_ACK(11):            sequence[0:4], size[4:8], JSON[8:]
- * - SERVER_ERROR_RESPONSE(15): code[0:4], size[4:8], JSON[8:]
- * 每帧的 JSON 是完整快照（无需跨帧拼接），LAST 帧（flags&2）即最终结果。
+ * 解析豆包 ASR v3 服务端帧。
+ *
+ * 服务端响应的长度字段紧跟在可选 sequence 后面：
+ *   [sequence 4B（flags&1 时有）][payload size 4B][payload]
+ * 请求帧则是 [payload size 4B][payload]。之前把长度字段先读成
+ * 通用外层长度、再额外跳过一层，导致真实 JSON 的首 4 字节被吞掉。
  */
 function parseFrame(buf) {
   const headerSize = buf[0] & 0x0f;
@@ -49,38 +50,26 @@ function parseFrame(buf) {
   const flags = buf[1] & 0x0f;
   const serialization = (buf[2] >> 4) & 0x0f;
   const compression = buf[2] & 0x0f;
-  // 每个协议帧都在消息头后带一个 4 字节的外层 payload 长度。
-  // 服务端响应的 payload 内部还会再带业务 JSON 长度；必须先跳过外层长度，
-  // 否则外层长度会被误当成业务长度，合法响应最终会变成“响应为空”。
-  const payloadOffset = headerSize * 4;
+  let payloadOffset = headerSize * 4;
+  const out = { messageType, flags, isLast: (flags & 2) !== 0 };
   if (buf.length < payloadOffset + 4) {
     return { messageType, flags, isLast: (flags & 2) !== 0 };
   }
-  const framePayloadSize = buf.readUInt32BE(payloadOffset);
-  const payloadStart = payloadOffset + 4;
-  const payloadEnd = payloadStart + framePayloadSize;
-  if (payloadEnd > buf.length) {
-    return { messageType, flags, isLast: (flags & 2) !== 0, truncated: true };
-  }
-  let payload = buf.subarray(payloadStart, payloadEnd);
-  const out = { messageType, flags, isLast: (flags & 2) !== 0 };
   if (flags & 0x01) {
-    out.sequence = payload.length >= 4 ? payload.readInt32BE(0) : undefined;
-    payload = payload.subarray(4);
+    out.sequence = buf.readInt32BE(payloadOffset);
+    payloadOffset += 4;
   }
-  let jsonBytes = null;
-  if (messageType === MT_SERVER_RESPONSE && payload.length >= 4) {
-    out.size = payload.readInt32BE(0);
-    jsonBytes = payload.subarray(4);
-  } else if (messageType === MT_ACK && payload.length >= 8) {
-    out.sequence = payload.readInt32BE(0);
-    out.size = payload.readUInt32BE(4);
-    jsonBytes = payload.subarray(8);
-  } else if (messageType === MT_ERROR && payload.length >= 8) {
-    out.code = payload.readUInt32BE(0);
-    out.size = payload.readUInt32BE(4);
-    jsonBytes = payload.subarray(8);
+  if (buf.length < payloadOffset + 4) {
+    return { ...out, truncated: true };
   }
+  const payloadSize = buf.readUInt32BE(payloadOffset);
+  const payloadStart = payloadOffset + 4;
+  const payloadEnd = payloadStart + payloadSize;
+  if (payloadEnd > buf.length) {
+    return { ...out, truncated: true };
+  }
+  out.size = payloadSize;
+  let jsonBytes = buf.subarray(payloadStart, payloadEnd);
   if (jsonBytes && jsonBytes.length > 0) {
     if (compression === GZIP) {
       try { jsonBytes = zlib.gunzipSync(jsonBytes); } catch (e) { jsonBytes = null; }
@@ -145,7 +134,10 @@ function normalizeHotwords(hotwords = []) {
 function buildStreamingClientRequest({ appId, accessToken, uid, format, rate, bits, channel, hotwords }) {
   const request = buildFullClientRequest({ appId, accessToken, uid, format, rate, bits, channel, hotwords });
   request.audio.format = format || 'pcm';
-  request.request.enable_nostream = false;
+  // bigmodel_async 使用 enable_nonstream 开启停顿后的二遍识别；
+  // enable_nostream 只属于 bigmodel_nostream，不能带到双向流式请求。
+  delete request.request.enable_nostream;
+  request.request.enable_nonstream = true;
   request.request.model_name = 'bigmodel';
   // async 是双向流式优化版本：服务端仅在识别结果变化时返回新快照。
   request.request.result_type = 'full';
@@ -178,7 +170,9 @@ function openStreamingSession({
   const reqid = crypto.randomUUID();
   const connectId = crypto.randomUUID();
   const headers = {
-    'X-Api-Key': appId,
+    // 新版控制台使用 X-Api-Key；旧版控制台在配置 access token 时使用
+    // X-Api-App-Key + X-Api-Access-Key。两种鉴权方式不能混用。
+    ...(accessToken ? { 'X-Api-App-Key': appId } : { 'X-Api-Key': appId }),
     'X-Api-Resource-Id': resourceId || DEFAULT_RESOURCE_ID,
     'X-Api-Request-Id': reqid,
     'X-Api-Sequence': '-1',
@@ -206,6 +200,16 @@ function openStreamingSession({
       fail(error);
       return;
     }
+    ws.on('unexpected-response', (request, response) => {
+      const status = Number(response.statusCode) || 0;
+      const apiStatus = response.headers['x-api-status-code'];
+      const apiMessage = response.headers['x-api-message'];
+      response.resume();
+      fail(Object.assign(
+        new Error(`ASR 上游 HTTP ${status}${apiStatus ? ` status=${apiStatus}` : ''}${apiMessage ? ` message=${apiMessage}` : ''}`),
+        { status, code: 'ASR_UPSTREAM_HTTP' },
+      ));
+    });
     timer = setTimeout(() => fail(new Error('ASR 实时会话超时')), timeoutMs);
     ws.on('open', () => {
       const payload = Buffer.from(JSON.stringify(buildStreamingClientRequest({
@@ -221,7 +225,10 @@ function openStreamingSession({
     ws.on('message', (data) => {
       try {
         const frame = parseFrame(Buffer.from(data));
-        if (frame.messageType === MT_ERROR) throw new Error('ASR 服务端错误');
+        if (frame.messageType === MT_ERROR) {
+          const detail = frame.json ? JSON.stringify(frame.json) : `code=${frame.code}`;
+          throw new Error(`ASR 服务端错误: ${detail}`);
+        }
         if (frame.messageType !== MT_SERVER_RESPONSE || !frame.json) return;
         lastJson = frame.json;
         const code = frame.json.code ?? frame.json.message?.code;
@@ -264,11 +271,11 @@ function openStreamingSession({
       if (ended || !ws || ws.readyState !== 1) throw new Error('ASR 实时会话未连接');
       const bytes = Buffer.from(audio);
       if (bytes.length === 0) return;
-      ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NO_SEQUENCE, JSON_SER, GZIP), zlib.gzipSync(bytes)));
+      ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NO_SEQUENCE, NO_SERIALIZATION, GZIP), zlib.gzipSync(bytes)));
     },
     end() {
       if (ended || !ws || ws.readyState !== 1) return;
-      ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NEG_SEQUENCE, JSON_SER, NO_COMPRESSION), Buffer.alloc(0)));
+      ws.send(buildFrame(buildHeader(MT_AUDIO_ONLY, NEG_SEQUENCE, NO_SERIALIZATION, NO_COMPRESSION), Buffer.alloc(0)));
     },
     close() {
       if (ended) return;
@@ -306,7 +313,9 @@ function transcribe({
     const reqid = crypto.randomUUID();
     const connectId = crypto.randomUUID();
     const headers = {
-      'X-Api-Key': appId,
+      // 新版控制台使用 X-Api-Key；旧版控制台在配置 access token 时使用
+      // X-Api-App-Key + X-Api-Access-Key。两种鉴权方式不能混用。
+      ...(accessToken ? { 'X-Api-App-Key': appId } : { 'X-Api-Key': appId }),
       'X-Api-Resource-Id': resourceId || DEFAULT_RESOURCE_ID,
       'X-Api-Request-Id': reqid,
       'X-Api-Sequence': '-1',
@@ -338,6 +347,16 @@ function transcribe({
     } catch (e) {
       return finish(e);
     }
+    ws.on('unexpected-response', (request, response) => {
+      const status = Number(response.statusCode) || 0;
+      const apiStatus = response.headers['x-api-status-code'];
+      const apiMessage = response.headers['x-api-message'];
+      response.resume();
+      finish(Object.assign(
+        new Error(`ASR 上游 HTTP ${status}${apiStatus ? ` status=${apiStatus}` : ''}${apiMessage ? ` message=${apiMessage}` : ''}`),
+        { status, code: 'ASR_UPSTREAM_HTTP' },
+      ));
+    });
 
     ws.on('open', () => {
       const clientReq = buildFullClientRequest({
@@ -362,9 +381,9 @@ function transcribe({
       const frames = [];
       for (let offset = 0; offset < audioBuffer.length; offset += chunkBytes) {
         const end = Math.min(offset + chunkBytes, audioBuffer.length);
-        frames.push(buildFrame(buildHeader(MT_AUDIO_ONLY, NO_SEQUENCE, JSON_SER, GZIP), zlib.gzipSync(audioBuffer.subarray(offset, end))));
+        frames.push(buildFrame(buildHeader(MT_AUDIO_ONLY, NO_SEQUENCE, NO_SERIALIZATION, GZIP), zlib.gzipSync(audioBuffer.subarray(offset, end))));
       }
-      frames.push(buildFrame(buildHeader(MT_AUDIO_ONLY, NEG_SEQUENCE, JSON_SER, NO_COMPRESSION), Buffer.alloc(0)));
+      frames.push(buildFrame(buildHeader(MT_AUDIO_ONLY, NEG_SEQUENCE, NO_SERIALIZATION, NO_COMPRESSION), Buffer.alloc(0)));
       const sendAll = (i) => {
         if (settled) return;
         if (i >= frames.length) return;

@@ -240,28 +240,39 @@ class StatusBadge extends StatelessWidget {
     final bg = onColorCard
         ? s.fg.withValues(alpha: 0.22)
         : s.color.withValues(alpha: 0.14);
-    return Container(
+    // 保留同行布局高度，缩小实际色块一点，避免状态胶囊视觉上显得臃肿。
+    final visualHeight = height == null
+        ? null
+        : height! > 4
+        ? height! - 4
+        : height;
+    return SizedBox(
       height: height,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(s.icon, size: 14, color: fg),
-          const SizedBox(width: 4),
-          Text(
-            s.label,
-            style: TextStyle(
-              color: fg,
-              fontSize: fontSize,
-              fontWeight: FontWeight.w800,
-            ),
+      child: Center(
+        child: Container(
+          height: visualHeight,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(s.icon, size: 14, color: fg),
+              const SizedBox(width: 4),
+              Text(
+                s.label,
+                style: TextStyle(
+                  color: fg,
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -579,14 +590,17 @@ class ConnectionStatus extends StatelessWidget {
           onTap: canRetry ? onRetry : null,
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-                border: Border.all(color: AppColors.border),
+            child: Center(
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Center(child: inner),
               ),
-              child: Center(child: inner),
             ),
           ),
         ),

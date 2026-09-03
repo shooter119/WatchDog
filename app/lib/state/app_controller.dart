@@ -18,6 +18,8 @@ import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/tts_service.dart';
 import '../services/update_service.dart';
+import '../services/sync_coordinator.dart';
+import '../services/sync_reducer.dart';
 
 typedef OfflineOperationEnqueuer =
     Future<void> Function({
@@ -67,7 +69,6 @@ class AppController extends ChangeNotifier {
   bool syncing = false;
   bool _assistantBusy = false;
   String? syncError;
-  Timer? _pollTimer;
   Timer? _tickTimer;
 
   /// 仅供倒计时页面刷新；不向根页面树广播，避免每秒重建所有 Tab。
@@ -86,6 +87,9 @@ class AppController extends ChangeNotifier {
   int _lastOptionalServicesAttemptAt = 0;
   Future<void>? _loadRosterFuture;
   Future<void>? _keepAliveFuture;
+  SyncCoordinator? _syncCoordinator;
+  Future<void>? _realtimeStartFuture;
+  SyncConnectionState syncConnectionState = SyncConnectionState.stopped;
   bool _refreshConfigAgain = false;
   bool _disposed = false;
   int _sessionGeneration = 0;
@@ -119,8 +123,7 @@ class AppController extends ChangeNotifier {
   bool get needsAuthentication => !_authenticated;
   bool get needsIncidentSelection => currentIncident == null;
 
-  /// 辅助问答占用独立网络通道时，暂停后台同步，避免请求堆积和 DNS/socket
-  /// 争用。问答结束后下一轮 5 秒轮询会自动恢复。
+  /// 辅助问答使用独立请求通道，不阻塞业务实时连接。
   bool get assistantBusy => _assistantBusy;
 
   /// 启动时从 GitHub Releases 检查到的新版本（非空 = 有新版本可更新）
@@ -307,7 +310,7 @@ class AppController extends ChangeNotifier {
     _authenticated = true;
     await refreshConfig();
     _startAuthenticatedServices();
-    await sync();
+    await _realtimeStartFuture;
     _notify();
   }
 
@@ -316,8 +319,9 @@ class AppController extends ChangeNotifier {
     final activeApi = api;
     await OpLogService.instance.flushLocal();
     _sessionGeneration++;
-    _pollTimer?.cancel();
-    _pollTimer = null;
+    await _syncCoordinator?.stop();
+    _syncCoordinator = null;
+    _realtimeStartFuture = null;
     _tickTimer?.cancel();
     _tickTimer = null;
     _syncStarted = false;
@@ -349,6 +353,10 @@ class AppController extends ChangeNotifier {
     entries = [];
     notes = [];
     forces = [];
+    firefighters = [];
+    hotwords = [];
+    await _clearRosterCache();
+    await localAsr?.resetHotwords();
     _authenticated = false;
     _resetSessionHealth();
     await refreshConfig();
@@ -382,7 +390,7 @@ class AppController extends ChangeNotifier {
   }
 
   /// 可选插件初始化失败时允许在用户刷新或下一轮同步时重试，但用短暂
-  /// 闸门避免故障插件导致每 5 秒重复初始化和刷日志。
+  /// 闸门避免故障插件导致重复初始化和刷日志。
   Future<void> _ensureOptionalServices({bool force = false}) {
     if (_disposed || !_authenticated) return Future<void>.value();
     if (_alarmReady) return Future<void>.value();
@@ -555,6 +563,11 @@ class AppController extends ChangeNotifier {
   Future<void> _refreshConfigOnce() async {
     if (_disposed) return;
     final previousApi = api;
+    final restartRealtime = _syncStarted && _syncCoordinator != null;
+    if (restartRealtime) {
+      await _syncCoordinator?.stop();
+      _syncCoordinator = null;
+    }
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
     final sessionToken = await Settings.sessionToken;
@@ -598,32 +611,35 @@ class AppController extends ChangeNotifier {
       warnMin: await Settings.warnMin,
       alarmMin: await Settings.alarmMin,
     );
+    if (restartRealtime && _authenticated) {
+      _realtimeStartFuture = _startRealtimeSync();
+      unawaited(_realtimeStartFuture!);
+    }
     _notify();
   }
 
   void startSync() {
     if (_disposed || needsAuthentication) return;
     if (_syncStarted) {
-      // 看板“重试”入口复用现有定时器，只补发一次合并后的同步请求，
-      // 避免重复创建 5 秒/1 秒计时器而又让手动重试失效。
-      unawaited(sync());
+      unawaited(_syncCoordinator?.checkpointNow() ?? Future<void>.value());
       return;
     }
     _syncStarted = true;
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) => sync());
     _tickTimer?.cancel();
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _checkThresholds();
       clockTick.value++;
     });
-    sync();
+    _realtimeStartFuture = _startRealtimeSync();
+    unawaited(_realtimeStartFuture!);
   }
 
   Future<void> sync() {
     if (_disposed || _assistantBusy || api == null) {
       return Future<void>.value();
     }
+    final realtime = _syncCoordinator;
+    if (realtime != null && realtime.running) return realtime.checkpointNow();
     final existing = _syncFuture;
     if (existing != null) return existing;
     final a = api!;
@@ -639,6 +655,160 @@ class AppController extends ChangeNotifier {
       },
     );
     return future;
+  }
+
+  Future<void> _startRealtimeSync() async {
+    final a = api;
+    if (_disposed || !_authenticated || a == null) return;
+    final incidentId = await Settings.currentIncidentId;
+    if (_disposed || !_authenticated || !identical(api, a)) return;
+    await _syncCoordinator?.stop();
+    final coordinator = SyncCoordinator(
+      api: a,
+      onSnapshot: _applySyncSnapshot,
+      onEvent: _applySyncEvent,
+      onState: _handleSyncState,
+    );
+    _syncCoordinator = coordinator;
+    await coordinator.start(incidentId: incidentId.isEmpty ? null : incidentId);
+  }
+
+  void _handleSyncState(SyncConnectionState state, Object? error) {
+    syncConnectionState = state;
+    if (state == SyncConnectionState.connected) {
+      _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
+      _firstSyncFailureAt = 0;
+      syncError = null;
+    } else if (error != null) {
+      _firstSyncFailureAt = _firstSyncFailureAt == 0
+          ? DateTime.now().millisecondsSinceEpoch
+          : _firstSyncFailureAt;
+      syncError = error is TimeoutException ? '连接服务器超时，请检查网络后重试' : '$error';
+    }
+    syncing = state == SyncConnectionState.bootstrapping ||
+        state == SyncConnectionState.connecting;
+    _notify();
+  }
+
+  void _applySyncSnapshot(Map<String, dynamic> snapshot) {
+    if (_disposed) return;
+    final roster = snapshot['roster'] is Map
+        ? Map<String, dynamic>.from(snapshot['roster'] as Map)
+        : <String, dynamic>{};
+    firefighters = SyncReducer.rosterNames(roster);
+    hotwords = SyncReducer.rosterHotwords(roster);
+    final active = snapshot['active_incidents'] as List? ?? const [];
+    activeIncidents = active
+        .whereType<Map>()
+        .map((item) => Incident.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+    final incidentSnapshot = snapshot['incident_snapshot'];
+    if (incidentSnapshot is Map) {
+      final data = Map<String, dynamic>.from(incidentSnapshot);
+      final incident = data['incident'];
+      currentIncident = incident is Map
+          ? Incident.fromJson(Map<String, dynamic>.from(incident))
+          : currentIncident;
+      entries = (data['entries'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Entry.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+      notes = (data['notes'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => Note.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+      forces = (data['forces'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => IncidentForce.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    } else if ((snapshot['cursors'] as Map?)?['incident'] == '0') {
+      currentIncident = null;
+      entries = [];
+      notes = [];
+      forces = [];
+    }
+    final unitId = (snapshot['unit'] as Map?)?['id']?.toString();
+    if (unitId != null && unitId.isNotEmpty) unawaited(_cacheRoster(unitId));
+    unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+    _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
+    _firstSyncFailureAt = 0;
+    syncError = null;
+    unawaited(_rescheduleNotifications());
+    _notify();
+  }
+
+  void _applySyncEvent(SyncEvent event) {
+    if (_disposed) return;
+    final payload = event.payload;
+    switch (event.eventType) {
+      case 'incident.created':
+      case 'incident.updated':
+      case 'incident.archived':
+        final raw = payload.isNotEmpty ? payload : null;
+        if (raw == null) break;
+        final incident = Incident.fromJson(raw);
+        activeIncidents = [
+          if (incident.isActive) incident,
+          ...activeIncidents.where((item) => item.id != incident.id),
+        ];
+        if (currentIncident?.id == incident.id) {
+          currentIncident = incident.isActive ? incident : null;
+          if (!incident.isActive) {
+            entries = [];
+            notes = [];
+            forces = [];
+          }
+        }
+        break;
+      case 'entry.created':
+      case 'entry.pressure_updated':
+      case 'entry.exited':
+        if (payload.isEmpty) break;
+        final entry = Entry.fromJson(payload);
+        entries = [entry, ...entries.where((item) => item.id != entry.id)];
+        break;
+      case 'note.created':
+      case 'note.updated':
+        if (payload.isEmpty) break;
+        final note = Note.fromJson(payload);
+        notes = [note, ...notes.where((item) => item.id != note.id)];
+        break;
+      case 'note.deleted':
+        final id = event.aggregateId ?? payload['id']?.toString();
+        if (id != null) notes = notes.where((item) => item.id != id).toList();
+        break;
+      case 'force.upserted':
+        if (payload.isEmpty) break;
+        final force = IncidentForce.fromJson(payload);
+        forces = [force, ...forces.where((item) => item.id != force.id)];
+        break;
+      case 'force.deleted':
+        final id = event.aggregateId ?? payload['id']?.toString();
+        if (id != null) forces = forces.where((item) => item.id != id).toList();
+        break;
+      case 'roster.firefighter_added':
+        final firefighter = Firefighter.fromJson(payload);
+        firefighters = [firefighter, ...firefighters.where((item) => item.id != firefighter.id)];
+        unawaited(_cacheRoster(api?.unitId ?? ''));
+        unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+        break;
+      case 'roster.firefighter_removed':
+        firefighters = firefighters.where((item) => item.id != (event.aggregateId ?? payload['id']?.toString())).toList();
+        unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+        break;
+      case 'roster.hotword_added':
+        final hotword = Hotword.fromJson(payload);
+        hotwords = [hotword, ...hotwords.where((item) => item.id != hotword.id)];
+        unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+        break;
+      case 'roster.hotword_removed':
+        hotwords = hotwords.where((item) => item.id != (event.aggregateId ?? payload['id']?.toString())).toList();
+        unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+        break;
+    }
+    _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
+    unawaited(_rescheduleNotifications());
+    _notify();
   }
 
   Future<void> _syncInternal(ApiClient a, int generation) async {
@@ -902,8 +1072,9 @@ class AppController extends ChangeNotifier {
 
   Future<void> _invalidateAuthentication() async {
     _sessionGeneration++;
-    _pollTimer?.cancel();
-    _pollTimer = null;
+    await _syncCoordinator?.stop();
+    _syncCoordinator = null;
+    _realtimeStartFuture = null;
     _tickTimer?.cancel();
     _tickTimer = null;
     _syncStarted = false;
@@ -927,6 +1098,10 @@ class AppController extends ChangeNotifier {
     entries = [];
     notes = [];
     forces = [];
+    firefighters = [];
+    hotwords = [];
+    await _clearRosterCache();
+    await localAsr?.resetHotwords();
     _authenticated = false;
     _resetSessionHealth();
     await refreshConfig();
@@ -1562,10 +1737,10 @@ class AppController extends ChangeNotifier {
     _notify();
   }
 
-  /// 名单/热词本地缓存键（断网/服务器不可达时回退，保证本地识别热词与名单查看离线可用）
+  /// 当前认证单位的名单/热词本地缓存。缓存必须绑定 unitId，不能跨单位复用。
   static const _kCachedFirefighters = 'cached_firefighters';
   static const _kCachedHotwords = 'cached_hotwords';
-  static const _kRosterInitialized = 'builtin_roster_initialized_v1';
+  static const _kCachedRosterUnitId = 'cached_roster_unit_id';
 
   /// 拉取名单与热词：成功写入本地缓存；失败（断网/服务器不可达）回退缓存。
   /// 名单热词是本地识别的热词来源，火场无信号时也必须生效。
@@ -1587,30 +1762,37 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _loadRosterInternal() async {
-    await _ensureLocalRoster();
+    if (_disposed || api == null) return;
+    final configuredUnitId = await Settings.unitId;
+    final unitId = configuredUnitId.isNotEmpty ? configuredUnitId : api!.unitId;
+    if (unitId.isEmpty) return;
+    await _restoreCachedRoster(unitId);
     if (_disposed || api == null) return;
     final a = api!;
+    final generation = _sessionGeneration;
     try {
       final f = await a.fetchFirefighters();
       final h = await a.fetchHotwords();
-      if (_disposed || !identical(api, a)) return;
-      // 服务器尚未完成种子初始化时，不要把装机自带名单和热词清空。
-      if (f.isEmpty && h.isEmpty) {
-        await _restoreCachedRoster();
+      if (_disposed || generation != _sessionGeneration || !identical(api, a)) {
         return;
       }
+      // 空数组是当前单位的合法词库状态，不能恢复其他单位或旧版本缓存。
       firefighters = f;
       hotwords = h;
       _notify();
-      await _cacheRoster();
+      await _cacheRoster(unitId);
     } catch (_) {
-      await _restoreCachedRoster();
+      if (_disposed || generation != _sessionGeneration || !identical(api, a)) {
+        return;
+      }
+      await _restoreCachedRoster(unitId);
     }
   }
 
-  Future<void> _cacheRoster() async {
+  Future<void> _cacheRoster(String unitId) async {
     try {
       final sp = await SharedPreferences.getInstance();
+      await sp.setString(_kCachedRosterUnitId, unitId);
       await sp.setString(
         _kCachedFirefighters,
         jsonEncode(firefighters.map((f) => f.name).toList()),
@@ -1619,15 +1801,20 @@ class AppController extends ChangeNotifier {
         _kCachedHotwords,
         jsonEncode(hotwords.map((h) => h.word).toList()),
       );
-      await sp.setBool(_kRosterInitialized, true);
     } catch (_) {
       // 缓存失败不影响主流程
     }
   }
 
-  Future<void> _restoreCachedRoster() async {
+  Future<void> _restoreCachedRoster(String unitId) async {
     try {
       final sp = await SharedPreferences.getInstance();
+      if (sp.getString(_kCachedRosterUnitId) != unitId) {
+        firefighters = [];
+        hotwords = [];
+        _notify();
+        return;
+      }
       final fNames =
           (jsonDecode(sp.getString(_kCachedFirefighters) ?? '[]') as List)
               .map((e) => e.toString())
@@ -1646,64 +1833,34 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _ensureLocalRoster() async {
-    final sp = await SharedPreferences.getInstance();
-    if (sp.getBool(_kRosterInitialized) != true) {
-      // 兼容旧版本已经写入的本地缓存，不能被首次初始化的默认值覆盖。
-      if (sp.containsKey(_kCachedFirefighters) ||
-          sp.containsKey(_kCachedHotwords)) {
-        await sp.setBool(_kRosterInitialized, true);
-        await _restoreCachedRoster();
-        return;
-      }
-      _loadBuiltinDefaults();
-      await _cacheRoster();
+    if (!_authenticated) {
+      firefighters = [];
+      hotwords = [];
+      await _clearRosterCache();
       return;
     }
-    await _restoreCachedRoster();
+    final unitId = await Settings.unitId;
+    if (unitId.isEmpty) return;
+    await _restoreCachedRoster(unitId);
   }
 
-  /// 内置默认名单与热词（与后端 seed 数据一致，首次安装/离线兜底）
+  /// 未认证状态不加载任何单位姓名或单位词，避免把真实数据打进安装包。
   void _loadBuiltinDefaults() {
-    firefighters = _defaultFirefighterNames
-        .map((n) => Firefighter(id: '', name: n))
-        .toList();
-    hotwords = _defaultHotwordTerms
-        .map((w) => Hotword(id: '', word: w))
-        .toList();
+    firefighters = [];
+    hotwords = [];
     _notify();
   }
 
-  static const _defaultFirefighterNames = [
-    // 大队部
-    '李翔', '盛承华', '楼松超', '徐向相', '柯峰', '祝彪',
-    // 龙翔路消防救援站
-    '陆河圣', '洪辰', '沈松鹏', '金志明', '陈俊鹏', '叶华杰', '杨熙豪', '施豪杰', '袁超', '马李臣',
-    '邢中本', '何家琦', '余贤耀', '徐莘焕', '杨小杰', '祝徐迁', '方文斌', '徐昊扬', '郑丽文', '郑怡',
-    '郑涛', '占鑫涛', '叶健智', '胡海龙', '伊余健', '曹建罡', '马鑫', '徐康', '张烜烨', '李微',
-    '储嘉俊', '毛伟', '陈俊安', '赵建平', '吴拥军', '路康清', '毕灵珂', '刘羽杰', '陈鑫', '廖淑明', '毛泽旭',
-    // 永安路消防救援站
-    '林成成', '程晓波', '郭逸', '蓝程雄', '成帅', '姚肖江', '毕文龙', '周志峰', '吕文建', '刘林辉',
-    '齐征臣', '严仕华', '袁友顺', '劳凯董', '方罗进', '马俊', '刘振坤', '贺智成', '丁以强', '易子云',
-    '李瑞', '宋宇', '宁成鑫', '甲巴有拉', '吉布小夫', '方梦龙',
-    // 兴园消防救援站
-    '游方远', '巫垚东', '万自良', '戴晓明', '李志鹏', '徐小龙', '吴鹏晖', '叶程刚', '陈嘉豪', '姚顺',
-    '贺官', '孙国彬', '吴志云', '陈子俊', '何金伟', '周子俊', '何哲锴', '徐刚', '姜俊翰', '文闻',
-    '张文浩', '宋博韬',
-  ];
-
-  static const _defaultHotwordTerms = [
-    '龙游大队',
-    '龙游',
-    '龙翔路站',
-    '永安路站',
-    '兴园站',
-    '头车',
-    '两车',
-    '三车',
-    '四车',
-    '内攻',
-    '搜救',
-  ];
+  Future<void> _clearRosterCache() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      await sp.remove(_kCachedRosterUnitId);
+      await sp.remove(_kCachedFirefighters);
+      await sp.remove(_kCachedHotwords);
+      // 删除旧版本未绑定单位的缓存，避免认证切换时误用。
+      await sp.remove('builtin_roster_initialized_v1');
+    } catch (_) {}
+  }
 
   List<String> get _rosterNames => firefighters.map((f) => f.name).toList();
 
@@ -1773,7 +1930,7 @@ class AppController extends ChangeNotifier {
     _disposed = true;
     _sessionGeneration++;
     unawaited(OpLogService.instance.flushLocal());
-    _pollTimer?.cancel();
+    unawaited(_syncCoordinator?.stop() ?? Future<void>.value());
     _tickTimer?.cancel();
     _syncFuture = null;
     _keepAliveFuture = null;

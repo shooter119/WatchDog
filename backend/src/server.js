@@ -12,8 +12,8 @@ const { createDatabaseReadiness } = require('./database-readiness');
 const { parseAllowedHosts, isHostAllowed } = require('./network-policy');
 const { MinuteRateLimiter } = require('./rate-limiter');
 
-// CloudBase PostgreSQL 是网络依赖，不能阻塞端口监听等待初始化完成；否则
-// CloudRun 的探活会在数据库初始化期间收到 connection refused，版本直接失败。
+// PostgreSQL 初始化是网络依赖，不能阻塞端口监听等待完成；探活在初始化期间
+// 仍可返回数据库状态，便于任意支持长连接的平台进行编排。
 const databaseReadiness = createDatabaseReadiness(db.ready, {
   waitMs: process.env.WATCHDOG_DB_READY_WAIT_MS || 8000,
   onReady: () => logger.info('数据库初始化完成'),
@@ -22,21 +22,40 @@ const databaseReadiness = createDatabaseReadiness(db.ready, {
 
 const app = express();
 const realtimeWss = new WebSocketServer({ noServer: true });
+const syncWss = new WebSocketServer({ noServer: true });
 const realtimeSessions = new Set();
 const realtimeDevices = new Set();
+const syncSessions = new Set();
+const syncDevices = new Map();
+let syncListenerClose = null;
 const PORT = process.env.PORT || 3000;
+const metrics = {
+  startedAt: Date.now(),
+  requests: 0,
+  errors: 0,
+  requestDurationsMs: 0,
+  websocketConnections: 0,
+  websocketReplacements: 0,
+  eventsPublished: 0,
+  eventsReplayed: 0,
+  resyncRequired: 0,
+  reconnects: 0,
+  databaseErrors: 0,
+};
 const UNIT_AUTH_REQUIRED = String(
   process.env.WATCHDOG_UNIT_AUTH_REQUIRED ?? (process.env.NODE_ENV === 'test' ? '0' : '1'),
 ) !== '0';
-// 会话/成员白名单采用可回滚的分阶段开关：先完成数据库迁移和客户端升级，
-// 再在生产运行时显式设置为 1。关闭时保留旧单位验证码兼容路径，避免新后端先上线导致旧 APK 全部掉线。
-const SESSION_AUTH_REQUIRED = String(process.env.WATCHDOG_SESSION_AUTH_REQUIRED || '0') !== '0';
-const MEMBER_AUTH_REQUIRED = String(process.env.WATCHDOG_MEMBER_AUTH_REQUIRED || '0') !== '0';
-// 操作账本随数据库迁移分阶段启用；测试环境默认打开，生产需在 005 迁移完成后显式打开。
-const OPERATION_LEDGER_ENABLED = String(
-  process.env.WATCHDOG_OPERATION_LEDGER_ENABLED || (process.env.NODE_ENV === 'test' ? '1' : '0'),
+// 新版 App 统一使用短期会话、单位成员白名单和操作账本；测试环境可显式
+// 关闭认证以运行纯路由单测，但生产不存在旧版验证码兼容路径。
+const SESSION_AUTH_REQUIRED = String(
+  process.env.WATCHDOG_SESSION_AUTH_REQUIRED ?? (process.env.NODE_ENV === 'test' ? '0' : '1'),
 ) !== '0';
-const ATOMIC_OPS_ENABLED = process.env.WATCHDOG_ATOMIC_OPS_ENABLED === '1';
+const MEMBER_AUTH_REQUIRED = String(
+  process.env.WATCHDOG_MEMBER_AUTH_REQUIRED ?? (process.env.NODE_ENV === 'test' ? '0' : '1'),
+) !== '0';
+const OPERATION_LEDGER_ENABLED = String(
+  process.env.WATCHDOG_OPERATION_LEDGER_ENABLED ?? '1',
+) !== '0';
 const configuredSessionTtl = Number(process.env.WATCHDOG_SESSION_TTL_MS || 8 * 60 * 60 * 1000);
 const SESSION_TTL_MS = Number.isFinite(configuredSessionTtl)
   ? Math.min(Math.max(configuredSessionTtl, 15 * 60 * 1000), 7 * 24 * 60 * 60 * 1000)
@@ -46,9 +65,6 @@ if (process.env.NODE_ENV === 'production' && !UNIT_AUTH_REQUIRED) {
 }
 if (process.env.NODE_ENV === 'production' && SESSION_AUTH_REQUIRED && !MEMBER_AUTH_REQUIRED) {
   throw new Error('启用 WATCHDOG_SESSION_AUTH_REQUIRED 时必须同时启用 WATCHDOG_MEMBER_AUTH_REQUIRED');
-}
-if (ATOMIC_OPS_ENABLED && !OPERATION_LEDGER_ENABLED) {
-  throw new Error('启用 WATCHDOG_ATOMIC_OPS_ENABLED 时必须同时启用 WATCHDOG_OPERATION_LEDGER_ENABLED');
 }
 
 const CFG = {
@@ -108,6 +124,25 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/api/metrics', (req, res) => {
+  const expected = String(process.env.WATCHDOG_METRICS_TOKEN || '').trim();
+  const supplied = String(req.headers['x-metrics-token'] || '').trim();
+  if (!expected || supplied !== expected) return res.status(404).end();
+  res.json({
+    uptime_ms: Date.now() - metrics.startedAt,
+    requests: metrics.requests,
+    errors: metrics.errors,
+    average_request_ms: metrics.requests ? Math.round(metrics.requestDurationsMs / metrics.requests) : 0,
+    websocket_connections: metrics.websocketConnections,
+    websocket_replacements: metrics.websocketReplacements,
+    events_published: metrics.eventsPublished,
+    events_replayed: metrics.eventsReplayed,
+    resync_required: metrics.resyncRequired,
+    reconnects: metrics.reconnects,
+    database_errors: metrics.databaseErrors,
+  });
+});
+
 // 为每个请求建立可安全回传的链路 ID。只接受有限字符集的调用方 ID，
 // 避免把任意请求头内容直接写入日志；没有合法 ID 时由服务端生成。
 app.use((req, res, next) => {
@@ -126,8 +161,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// CloudBase 云托管同时提供端侧 ASR 模型下载；模型不需要业务 Token，便于新装设备初始化。
-app.use('/models', express.static(path.join(__dirname, '..', 'models'), {
+// 端侧 ASR 模型从通用模型目录分发，不绑定特定云平台。
+const modelDirectory = process.env.WATCHDOG_MODEL_DIR || path.join(__dirname, '..', 'models');
+app.use('/models', express.static(modelDirectory, {
   maxAge: '1y',
   immutable: true,
   setHeaders: (res, filePath) => {
@@ -144,13 +180,27 @@ app.use((req, res, next) => {
   if (req.path === '/api/health') return next();
   const start = Date.now();
   res.on('finish', () => {
-    logger.info(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms request_id=${req.requestId}`);
+    const duration = Date.now() - start;
+    metrics.requests += 1;
+    metrics.requestDurationsMs += duration;
+    if (res.statusCode >= 400) metrics.errors += 1;
+    const write = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+    const sampledRead = !write && res.statusCode < 400 && Math.random() < 0.1;
+    if (write || res.statusCode >= 400 || sampledRead) {
+      logger.info(JSON.stringify({
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        duration_ms: duration,
+        request_id: req.requestId,
+        sampled: !write && res.statusCode < 400,
+      }));
+    }
   });
   next();
 });
 
-// 探活接口始终可用；业务请求在远程数据库初始化期间等待有限时间，
-// 避免 CloudBase 冷启动时把正常的初始化窗口直接暴露成 503。
+// 探活接口始终可用；业务请求在数据库初始化期间等待有限时间。
 app.use(async (req, res, next) => {
   if (req.path === '/api/health' || databaseReadiness.ready) return next();
   await databaseReadiness.wait();
@@ -287,6 +337,37 @@ async function authenticateRealtimeRequest(req) {
   return { unit, incident, deviceId: req.auth?.deviceId || realtimeHeader(req, 'x-device-id') || null };
 }
 
+async function authenticateSyncRequest(req) {
+  let unit = null;
+  let auth = {};
+  if (SESSION_AUTH_REQUIRED) {
+    const raw = sessionTokenFromRequest(req);
+    const session = raw && raw.length <= 256
+      ? await db.getAuthSession(hashSessionToken(raw))
+      : null;
+    if (!session) throw Object.assign(new Error('认证会话已失效'), { code: 'SESSION_INVALID' });
+    unit = await db.getUnit(session.unit_id);
+    if (!unit) throw Object.assign(new Error('认证单位不存在'), { code: 'SESSION_INVALID' });
+    auth = {
+      sessionId: session.id,
+      memberId: session.member_id || null,
+      deviceId: session.device_id || realtimeHeader(req, 'x-device-id') || null,
+      realName: String(session.real_name || '').trim(),
+      role: session.role || 'member',
+    };
+  } else if (UNIT_AUTH_REQUIRED) {
+    const unitId = realtimeHeader(req, 'x-unit-id');
+    const code = realtimeHeader(req, 'x-unit-code');
+    unit = unitId && code ? await db.getUnit(unitId) : null;
+    if (!unit || String(unit.verification_code || '') !== code) {
+      throw Object.assign(new Error('单位认证失败'), { code: 'UNIT_INVALID' });
+    }
+    auth.deviceId = realtimeHeader(req, 'x-device-id') || null;
+  }
+  if (!unit) throw Object.assign(new Error('请先完成单位认证'), { code: 'UNIT_AUTH_REQUIRED' });
+  return { unit, auth };
+}
+
 function closeRealtimeSocket(ws, code = 1000, reason = 'closed') {
   try { ws.close(code, reason); } catch (_) {}
 }
@@ -306,6 +387,10 @@ realtimeWss.on('connection', (ws, req, auth) => {
     opId: realtimeHeader(req, 'x-op-id') || null,
     chunks: [],
     bufferedBytes: 0,
+    receivedBytes: 0,
+    receivedChunks: 0,
+    resultCount: 0,
+    finalResultCount: 0,
     upstream: null,
     deviceId: auth.deviceId,
     sessionTimer: null,
@@ -316,6 +401,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
   };
   realtimeSessions.add(state);
   if (state.deviceId) realtimeDevices.add(state.deviceId);
+  logger.info(`实时 ASR WebSocket 已接入 op_id=${state.opId || '-'} device_id=${state.deviceId || '-'}`);
   state.startTimer = setTimeout(() => fail(Object.assign(new Error('实时会话未开始'), { code: 'ASR_START_TIMEOUT' })), 8000);
   state.sessionTimer = setTimeout(() => fail(Object.assign(new Error('实时会话超时'), { code: 'ASR_STREAM_TIMEOUT' })), 70000);
 
@@ -327,7 +413,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
     closeRealtimeSocket(ws, 1011, 'asr error');
   };
   const start = () => {
-    const hotwordsPromise = hotwordList(auth.incident.id);
+    const hotwordsPromise = hotwordList(auth.unit?.id);
     hotwordsPromise.then((hotwords) => {
       if (state.stopping || ws.readyState !== 1) {
         sendJson({ type: 'done' });
@@ -344,18 +430,27 @@ realtimeWss.on('connection', (ws, req, auth) => {
         channel: 1,
         hotwords,
         onReady: () => {
+          logger.info(`实时 ASR 上游已就绪 op_id=${state.opId || '-'}`);
           sendJson({ type: 'ready', hotwordCount: hotwords.length });
           for (const chunk of state.chunks) state.upstream?.sendAudio(chunk);
           state.chunks = [];
           state.bufferedBytes = 0;
         },
-        onResult: (result) => sendJson({
-          type: result.final ? 'final' : 'partial',
-          text: result.text,
-          sequence: result.sequence ?? null,
-        }),
+        onResult: (result) => {
+          state.resultCount += 1;
+          if (result.final) state.finalResultCount += 1;
+          logger.info(`实时 ASR 结果 op_id=${state.opId || '-'} type=${result.final ? 'final' : 'partial'} chars=${String(result.text || '').length} count=${state.resultCount}`);
+          sendJson({
+            type: result.final ? 'final' : 'partial',
+            text: result.text,
+            sequence: result.sequence ?? null,
+          });
+        },
         onDone: () => sendJson({ type: 'done' }),
-        onError: fail,
+        onError: (error) => {
+          logger.error(`实时 ASR 上游失败 op_id=${state.opId || '-'} error=${errorSummary(error)}`);
+          fail(error);
+        },
         onClose: () => {
           if (!state.stopping) fail(Object.assign(new Error('ASR 连接已断开'), { code: 'ASR_UPSTREAM_CLOSED' }));
         },
@@ -368,6 +463,8 @@ realtimeWss.on('connection', (ws, req, auth) => {
       if (isBinary) {
         const chunk = Buffer.from(data);
         if (chunk.length === 0 || chunk.length > 256 * 1024) return;
+        state.receivedBytes += chunk.length;
+        state.receivedChunks += 1;
         if (state.bufferedBytes + chunk.length > 2 * 1024 * 1024) {
           throw Object.assign(new Error('实时音频缓冲过大'), { code: 'ASR_AUDIO_TOO_LARGE' });
         }
@@ -385,6 +482,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
         clearTimeout(state.startTimer);
         state.startTimer = null;
         state.opId = String(message.opId || state.opId || '').slice(0, 64) || null;
+        logger.info(`实时 ASR 会话开始 op_id=${state.opId || '-'}`);
         start();
       } else if (message.type === 'stop') {
         if (!state.started || state.stopping) return;
@@ -401,6 +499,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
     clearTimeout(state.sessionTimer);
     state.stopping = true;
     state.upstream?.close();
+    logger.info(`实时 ASR 会话结束 op_id=${state.opId || '-'} chunks=${state.receivedChunks} bytes=${state.receivedBytes} results=${state.resultCount} finals=${state.finalResultCount}`);
     realtimeSessions.delete(state);
     if (state.deviceId) realtimeDevices.delete(state.deviceId);
   });
@@ -409,6 +508,188 @@ realtimeWss.on('connection', (ws, req, auth) => {
     state.upstream?.close();
   });
 });
+
+function parseSyncCursor(value) {
+  const raw = String(value ?? '0').trim();
+  if (!/^\d+$/.test(raw)) throw Object.assign(new Error('同步游标无效'), { code: 'SYNC_CURSOR_INVALID' });
+  const number = Number(raw);
+  if (!Number.isSafeInteger(number) || number < 0) throw Object.assign(new Error('同步游标超出范围'), { code: 'SYNC_CURSOR_INVALID' });
+  return raw;
+}
+
+function syncStreamMatches(state, event) {
+  if (event.unit_id !== state.unitId) return false;
+  if (event.stream === 'unit') return true;
+  return Boolean(state.incidentId && event.incident_id === state.incidentId);
+}
+
+function sendSyncMessage(state, message) {
+  if (state.ws.readyState !== 1) return false;
+  if (state.ws.bufferedAmount > 1024 * 1024) {
+    try { state.ws.close(1013, 'sync backlog'); } catch (_) {}
+    return false;
+  }
+  state.ws.send(JSON.stringify(message));
+  return true;
+}
+
+function updateSyncCursor(state, event) {
+  if (event.stream === 'unit') state.unitCursor = String(event.sequence);
+  else state.incidentCursor = String(event.sequence);
+}
+
+async function replaySyncSession(state) {
+  if (state.replaying || state.ws.readyState !== 1 || !state.subscribed) return;
+  state.replaying = true;
+  try {
+    if (await syncCursorExpired(`unit:${state.unitId}`, state.unitCursor) ||
+        (state.incidentId && await syncCursorExpired(`incident:${state.incidentId}`, state.incidentCursor))) {
+      metrics.resyncRequired += 1;
+      sendSyncMessage(state, { type: 'resync_required', reason: 'cursor_expired' });
+      return;
+    }
+    const events = await db.listSyncEvents({
+      unitId: state.unitId,
+      incidentId: state.incidentId,
+      unitSequence: state.unitCursor,
+      incidentSequence: state.incidentCursor,
+      limit: 500,
+    });
+    for (const event of events) {
+      if (!syncStreamMatches(state, event)) continue;
+      if (sendSyncMessage(state, event)) {
+        metrics.eventsReplayed += 1;
+        updateSyncCursor(state, event);
+      }
+    }
+    sendSyncMessage(state, {
+      type: 'ready',
+      unit_cursor: state.unitCursor,
+      incident_cursor: state.incidentCursor,
+      server_time_ms: Date.now(),
+    });
+    const pending = [...state.pendingNotifications];
+    state.pendingNotifications.clear();
+    for (const key of pending) {
+      const separator = key.lastIndexOf('|');
+      const streamKey = key.slice(0, separator);
+      const sequence = key.slice(separator + 1);
+      await dispatchSyncNotification({ stream_key: streamKey, sequence });
+    }
+  } catch (error) {
+    sendSyncMessage(state, { type: 'resync_required', reason: 'replay_failed' });
+    logger.warn(`实时同步重放失败: ${errorSummary(error)}`);
+  } finally {
+    state.replaying = false;
+  }
+}
+
+async function dispatchSyncNotification(notification) {
+  if (!syncSupported()) return;
+  const event = await db.getSyncEvent(notification.stream_key, notification.sequence);
+  if (!event) return;
+  metrics.eventsPublished += 1;
+  for (const state of syncSessions) {
+    if (!syncStreamMatches(state, event)) continue;
+    if (state.replaying) {
+      state.pendingNotifications.add(`${event.stream_key}|${event.sequence}`);
+      continue;
+    }
+    const cursor = Number(event.sequence);
+    const current = event.stream === 'unit' ? Number(state.unitCursor) : Number(state.incidentCursor);
+    if (cursor <= current) continue;
+    if (cursor !== current + 1) {
+      await replaySyncSession(state);
+      continue;
+    }
+    if (sendSyncMessage(state, event)) updateSyncCursor(state, event);
+  }
+}
+
+let syncBroadcastTail = Promise.resolve();
+function queueSyncNotification(notification) {
+  syncBroadcastTail = syncBroadcastTail
+    .then(() => dispatchSyncNotification(notification))
+    .catch((error) => logger.warn(`实时同步广播失败: ${errorSummary(error)}`));
+}
+
+syncWss.on('connection', (ws, req, auth) => {
+  const deviceId = auth.auth.deviceId || null;
+  const previous = deviceId ? syncDevices.get(deviceId) : null;
+  if (previous) {
+    metrics.websocketReplacements += 1;
+    try {
+      previous.ws.close(4001, 'replaced by newer connection');
+      setTimeout(() => {
+        if (previous.ws.readyState === 1) previous.ws.terminate();
+      }, 250);
+    } catch (_) {}
+  }
+  const state = {
+    ws,
+    unitId: auth.unit.id,
+    deviceId,
+    incidentId: null,
+    unitCursor: '0',
+    incidentCursor: '0',
+    subscribed: false,
+    replaying: false,
+    pendingNotifications: new Set(),
+    lastPongAt: Date.now(),
+    heartbeat: null,
+  };
+  syncSessions.add(state);
+  metrics.websocketConnections += 1;
+  if (deviceId) syncDevices.set(deviceId, state);
+  ws.on('pong', () => { state.lastPongAt = Date.now(); });
+  state.heartbeat = setInterval(() => {
+    if (Date.now() - state.lastPongAt > 45000) {
+      try { ws.terminate(); } catch (_) {}
+      return;
+    }
+    try { ws.ping(); } catch (_) {}
+  }, 20000);
+  sendSyncMessage(state, { type: 'hello', protocol_version: 1, server_time_ms: Date.now() });
+  ws.on('message', (data, isBinary) => {
+    if (isBinary) return;
+    let message;
+    try { message = JSON.parse(Buffer.from(data).toString('utf8')); } catch (_) {
+      sendSyncMessage(state, { type: 'error', code: 'SYNC_MESSAGE_INVALID' });
+      return;
+    }
+    if (message?.type !== 'subscribe') return;
+    Promise.resolve().then(async () => {
+      const incidentId = String(message.incident_id || '').trim();
+      if (incidentId && !(await db.getIncident(incidentId, { unitId: state.unitId }))) {
+        sendSyncMessage(state, { type: 'error', code: 'INCIDENT_NOT_FOUND' });
+        return;
+      }
+      state.incidentId = incidentId || null;
+      state.unitCursor = parseSyncCursor(message.unit_cursor);
+      state.incidentCursor = parseSyncCursor(message.incident_cursor);
+      state.subscribed = true;
+      await replaySyncSession(state);
+    }).catch((error) => {
+      sendSyncMessage(state, { type: 'error', code: error.code || 'SYNC_SUBSCRIBE_FAILED' });
+    });
+  });
+  ws.on('close', () => {
+    clearInterval(state.heartbeat);
+    syncSessions.delete(state);
+    if (deviceId && syncDevices.get(deviceId) === state) syncDevices.delete(deviceId);
+  });
+  ws.on('error', () => {});
+});
+
+async function startSyncListener() {
+  if (syncListenerClose || typeof db.listenSync !== 'function') return;
+  try {
+    syncListenerClose = await db.listenSync(queueSyncNotification);
+    logger.info('实时同步 PostgreSQL 通知监听已启动');
+  } catch (error) {
+    logger.error(`实时同步通知监听启动失败: ${errorSummary(error)}`);
+  }
+}
 
 function contentDigest(value) {
   return crypto.createHash('sha256').update(String(value || '')).digest('hex');
@@ -558,10 +839,15 @@ function errorSummary(error) {
   const name = String(error?.name || '').trim();
   const code = String(error?.code || '').trim();
   const status = Number(error?.status);
-  if (name && /^[A-Za-z][A-Za-z0-9_]*$/.test(name)) parts.push(name);
+  if (name && name !== 'Error' && /^[A-Za-z][A-Za-z0-9_]*$/.test(name)) parts.push(name);
   if (code && /^[A-Z][A-Z0-9_]{1,48}$/.test(code)) parts.push(`code=${code}`);
   if (Number.isInteger(status) && status >= 400 && status <= 599) parts.push(`status=${status}`);
-  return parts.join(' ') || 'internal_error';
+  const messageStatus = String(error?.message || '').match(/\b(?:response|status(?:\s+code)?)\s*:?\s*(4\d{2}|5\d{2})\b/i);
+  if (!Number.isInteger(status) && messageStatus) parts.push(`status=${messageStatus[1]}`);
+  const summary = parts.join(' ');
+  if (summary) return summary;
+  const message = sanitizeErrorLogText(error?.message || error);
+  return message === '[error details redacted]' ? 'internal_error' : message;
 }
 
 function sanitizeLogData(value, key = '', depth = 0) {
@@ -707,9 +993,16 @@ async function logOp(req, level, stage, msg, data = null) {
   }
 }
 
-async function hotwordList(scene) {
-  const firefighters = (await db.listFirefighters()).map((f) => f.name);
-  const terms = (await db.listHotwords()).map((h) => h.word);
+function rosterUnitIdForRequest(req) {
+  if (req.unit?.id) return req.unit.id;
+  // 仅兼容关闭单位认证的旧测试/开发模式；生产环境 req.unit 必须来自认证中间件。
+  if (!UNIT_AUTH_REQUIRED) return String(req.headers['x-unit-id'] || '').trim() || null;
+  return null;
+}
+
+async function hotwordList(unitId = null) {
+  const firefighters = (await db.listFirefighters(unitId)).map((f) => f.name);
+  const terms = (await db.listHotwords(unitId)).map((h) => h.word);
   const defaults = ['兆帕', '个压', '气瓶', '空气呼吸器', '余量', '进入火场', '出来了', '已出火场', '收到'];
   return [...new Set([...firefighters, ...terms, ...defaults])].filter(Boolean);
 }
@@ -855,6 +1148,121 @@ async function incidentView(incident, { forces = null, generateSuggestedTitle = 
   };
 }
 
+function syncSupported() {
+  return typeof db.getSyncCheckpoint === 'function' &&
+    typeof db.listSyncEvents === 'function' &&
+    typeof db.getSyncEvent === 'function';
+}
+
+function publicSyncIncident(incident) {
+  if (!incident) return null;
+  return {
+    ...incident,
+    display_name: incident.title || incident.number,
+  };
+}
+
+function withWriteMetadata(result, event) {
+  const sync = event?.sync;
+  if (!sync) return result;
+  return {
+    ...result,
+    event_id: sync.event_id || event.id,
+    stream_sequence: String(sync.sequence),
+  };
+}
+
+async function syncCursorExpired(streamKey, cursor) {
+  if (!cursor || Number(cursor) <= 0 || typeof db.oldestSyncSequence !== 'function') return false;
+  const oldest = await db.oldestSyncSequence(streamKey);
+  return oldest != null && Number(cursor) < Number(oldest) - 1;
+}
+
+app.get('/api/sync/bootstrap', async (req, res, next) => {
+  try {
+    if (!syncSupported()) return res.status(503).json({ error: '实时同步仅支持 PostgreSQL', code: 'SYNC_UNAVAILABLE' });
+    const unitId = req.unit?.id;
+    if (!unitId) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+    const requestedIncidentId = String(req.query.incident_id || '').trim();
+    const unit = await db.getUnit(unitId);
+    const [firefighters, hotwords, activeRows, cursors] = await Promise.all([
+      db.listFirefighters(unitId),
+      db.listHotwords(unitId),
+      db.listIncidents('active', { unitId, limit: 500, offset: 0 }),
+      db.getSyncCheckpoint(unitId, requestedIncidentId || null),
+    ]);
+    let snapshot = null;
+    if (requestedIncidentId) {
+      const incident = await db.getIncident(requestedIncidentId, { unitId });
+      if (!incident) return res.status(404).json({ error: '警情不存在，请重新选择', code: 'INCIDENT_NOT_FOUND' });
+      const [entries, notes, forces] = await Promise.all([
+        db.listEntries({ scene: incident.id }),
+        db.listNotes({ scene: incident.id }),
+        db.listIncidentForces(incident.id),
+      ]);
+      snapshot = { incident: publicSyncIncident(incident), entries, notes, forces };
+    }
+    res.json({
+      protocol_version: 1,
+      server_time_ms: Date.now(),
+      unit: { id: unit.id, name: unit.name, roster_version: String(unit.roster_version || 1) },
+      cursors,
+      roster: { firefighters, hotwords },
+      active_incidents: activeRows.map(publicSyncIncident),
+      incident_snapshot: snapshot,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/sync/checkpoint', async (req, res, next) => {
+  try {
+    if (!syncSupported()) return res.status(503).json({ error: '实时同步仅支持 PostgreSQL', code: 'SYNC_UNAVAILABLE' });
+    const unitId = req.unit?.id;
+    const incidentId = String(req.query.incident_id || '').trim();
+    const unit = await db.getUnit(unitId);
+    if (incidentId && !(await db.getIncident(incidentId, { unitId }))) {
+      return res.status(404).json({ error: '警情不存在，请重新选择', code: 'INCIDENT_NOT_FOUND' });
+    }
+    res.json({
+      protocol_version: 1,
+      server_time_ms: Date.now(),
+      cursors: await db.getSyncCheckpoint(unitId, incidentId || null),
+      roster_version: String(unit?.roster_version || 1),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/sync/events', async (req, res, next) => {
+  try {
+    if (!syncSupported()) return res.status(503).json({ error: '实时同步仅支持 PostgreSQL', code: 'SYNC_UNAVAILABLE' });
+    const unitId = req.unit?.id;
+    const incidentId = String(req.query.incident_id || '').trim();
+    if (incidentId && !(await db.getIncident(incidentId, { unitId }))) {
+      return res.status(404).json({ error: '警情不存在，请重新选择', code: 'INCIDENT_NOT_FOUND' });
+    }
+    const unitCursor = parseSyncCursor(req.query.unit_cursor);
+    const incidentCursor = parseSyncCursor(req.query.incident_cursor);
+    if (await syncCursorExpired(`unit:${unitId}`, unitCursor) ||
+        (incidentId && await syncCursorExpired(`incident:${incidentId}`, incidentCursor))) {
+      return res.status(410).json({ error: '实时游标已过期，请重新获取快照', code: 'SYNC_CURSOR_EXPIRED' });
+    }
+    const events = await db.listSyncEvents({
+      unitId,
+      incidentId: incidentId || null,
+      unitSequence: unitCursor,
+      incidentSequence: incidentCursor,
+      limit: Math.min(Math.max(Number(req.query.limit) || 200, 1), 500),
+    });
+    res.json({ protocol_version: 1, server_time_ms: Date.now(), events });
+  } catch (error) {
+    next(error);
+  }
+});
+
 async function suggestIncidentTitle(incidentId) {
   const events = await db.listIncidentEvents(incidentId, { limit: 100 });
   const note = events.find((e) => e.type === 'note' && e.payload?.text);
@@ -998,7 +1406,7 @@ app.post('/api/incidents', async (req, res, next) => {
     });
     const view = await incidentView(created);
     await completeTrackedOperation(tracked, view, 201, event?.id);
-    res.status(201).json(view);
+    res.status(201).json(withWriteMetadata(view, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
@@ -1070,7 +1478,7 @@ app.patch('/api/incidents/:id', async (req, res, next) => {
     const event = atomicResult?.event || (atomicResult ? null : await db.appendIncidentEvent(eventArgs));
     const view = await incidentView(updated);
     await completeTrackedOperation(tracked, view, 200, event?.id);
-    res.json(view);
+    res.json(withWriteMetadata(view, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
@@ -1144,7 +1552,7 @@ app.post('/api/incidents/:id/archive', async (req, res, next) => {
     }
     const view = await incidentView({ ...await db.getIncident(req.params.id), suggested_title: suggested });
     await completeTrackedOperation(tracked, view, 200, event?.id);
-    res.json(view);
+    res.json(withWriteMetadata(view, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
@@ -1410,7 +1818,7 @@ app.post('/api/incidents/:id/forces', async (req, res, next) => {
     if (!atomicResult) await db.touchIncidentActivity(req.params.id);
     const event = atomicResult ? atomicResult.event : await db.appendIncidentEvent(forceEventArgs);
     await completeTrackedOperation(tracked, force, 201, event?.id);
-    res.status(201).json(force);
+    res.status(201).json(withWriteMetadata(force, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
@@ -1482,7 +1890,7 @@ app.patch('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) =
     if (!atomicResult) await db.touchIncidentActivity(incident.id);
     const event = atomicResult ? atomicResult.event : await db.appendIncidentEvent(forceEventArgs);
     await completeTrackedOperation(tracked, force, 200, event?.id);
-    res.json(force);
+    res.json(withWriteMetadata(force, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     if (e.code === 'VERSION_CONFLICT') return res.status(409).json({ error: e.message, code: e.code });
@@ -1516,7 +1924,7 @@ app.delete('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) 
           return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
         }
         await completeTrackedOperation(tracked, { ok: true }, 200, previous.id);
-        return res.json({ ok: true, duplicate: true });
+        return res.json({ ok: true, duplicate: true, event_id: previous.sync?.event_id || previous.id, stream_sequence: previous.sync?.sequence ? String(previous.sync.sequence) : undefined });
       }
     }
     const forceEventArgs = {
@@ -1536,7 +1944,7 @@ app.delete('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) 
     }
     const event = atomicResult ? atomicResult.event : await db.appendIncidentEvent(forceEventArgs);
     await completeTrackedOperation(tracked, { ok: true }, 200, event?.id);
-    res.json({ ok: true });
+    res.json({ ok: true, event_id: event?.sync?.event_id || event?.id, stream_sequence: event?.sync?.sequence ? String(event.sync.sequence) : undefined });
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
@@ -1633,7 +2041,7 @@ app.post('/api/transcribe', async (req, res, next) => {
     try {
       const audio = Buffer.concat(chunks);
       if (audio.length < 44) return res.status(400).json({ error: '音频数据过短' });
-      const hotwords = await hotwordList(scene);
+      const hotwords = await hotwordList(rosterUnitIdForRequest(req));
       // 解析 Content-Type（去掉 charset 等参数），支持 wav/pcm/mp3/ogg，未知一律按 wav 处理
       const ct = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
       const fmt = ct.replace(/^audio\//, '');
@@ -1674,8 +2082,9 @@ app.post('/api/parse', async (req, res, next) => {
     if (upstreamRateLimited(req, 'parse', 30)) {
       return res.status(429).json({ error: '语义解析请求过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
     }
-    const firefighters = (await db.listFirefighters()).map((f) => f.name);
-    const hotwords = (await db.listHotwords()).map((h) => h.word);
+    const rosterUnitId = rosterUnitIdForRequest(req);
+    const firefighters = (await db.listFirefighters(rosterUnitId)).map((f) => f.name);
+    const hotwords = (await db.listHotwords(rosterUnitId)).map((h) => h.word);
     const t0 = Date.now();
     const cleanText = String(text).trim();
     await logOp(req, 'info', 'parse_req', '收到语义解析请求', { textLength: cleanText.length, textSha256: contentDigest(cleanText), firefighterCount: firefighters.length, hotwordCount: hotwords.length });
@@ -2144,7 +2553,7 @@ app.post('/api/entries', async (req, res, next) => {
       });
     }
     await completeTrackedOperation(tracked, entry, 201, event?.id);
-    res.status(201).json(entry);
+    res.status(201).json(withWriteMetadata(entry, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     await logOp(req, 'error', 'entry_err', `登记进场失败: ${errorSummary(e)}`);
@@ -2281,7 +2690,7 @@ app.patch('/api/entries/:id', async (req, res, next) => {
       });
     }
     await completeTrackedOperation(tracked, updated, 200, event?.id);
-    res.json(updated);
+    res.json(withWriteMetadata(updated, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     next(e);
@@ -2316,7 +2725,7 @@ app.post('/api/entries/:id/exit', async (req, res, next) => {
       if (previous?.incident_id === currentIncident.id) {
         if (previous.type === 'exit' && previous.payload?.entry_id === entry.id) {
           await completeTrackedOperation(tracked, entry, 200, previous.id);
-          return res.json(entry);
+          return res.json(withWriteMetadata(entry, previous));
         }
         await releaseTrackedOperation(tracked);
         return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
@@ -2348,7 +2757,7 @@ app.post('/api/entries/:id/exit', async (req, res, next) => {
       event = await appendEvent(req, incident.id, 'exit', { entry_id: entry.id, name: entry.name });
     }
     await completeTrackedOperation(tracked, result, 200, event?.id);
-    res.json(result);
+    res.json(withWriteMetadata(result, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     await logOp(req, 'error', 'exit_err', `登记出火场失败: ${errorSummary(e)}`);
@@ -2356,18 +2765,31 @@ app.post('/api/entries/:id/exit', async (req, res, next) => {
   }
 });
 
-app.get('/api/firefighters', async (req, res) => res.json(await db.listFirefighters()));
+function rosterActor(req) {
+  return {
+    memberId: req.auth?.memberId || null,
+    name: String(req.auth?.realName || req.headers['x-actor-name'] || '').trim().slice(0, 32) || null,
+    isManager: !SESSION_AUTH_REQUIRED || hasManagementAccess(req) || ['manager', 'admin'].includes(req.auth?.role),
+  };
+}
+
+app.get('/api/firefighters', async (req, res) => res.json(await db.listFirefighters(rosterUnitIdForRequest(req))));
 app.post('/api/firefighters', async (req, res, next) => {
-  if (!requireManagementRole(req, res)) return;
   try {
     const { name } = req.body || {};
     const cleanName = String(name || '').trim();
     if (!cleanName) return res.status(400).json({ error: '缺少姓名' });
     if (cleanName.length > 64) return res.status(400).json({ error: '姓名过长（最多 64 字）', code: 'ROSTER_ITEM_TOO_LONG' });
-    if ((await db.listFirefighters()).length >= 500) return res.status(400).json({ error: '消防员名单已达到 500 人上限', code: 'ROSTER_LIMIT_REACHED' });
+    const rosterUnitId = rosterUnitIdForRequest(req);
+    if ((await db.listFirefighters(rosterUnitId)).length >= 500) return res.status(400).json({ error: '消防员名单已达到 500 人上限', code: 'ROSTER_LIMIT_REACHED' });
     const id = crypto.randomUUID();
+    const actor = rosterActor(req);
     try {
-      res.status(201).json(await db.addFirefighter(id, cleanName));
+      res.status(201).json(await db.addFirefighter(id, cleanName, rosterUnitId, {
+        createdByMemberId: actor.memberId,
+        createdByName: actor.name,
+        clientOpId: opKey(req),
+      }));
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该姓名已存在' });
       throw e;
@@ -2377,23 +2799,30 @@ app.post('/api/firefighters', async (req, res, next) => {
   }
 });
 app.delete('/api/firefighters/:id', async (req, res) => {
-  if (!requireManagementRole(req, res)) return;
-  await db.removeFirefighter(req.params.id);
-  res.json({ ok: true });
+  const actor = rosterActor(req);
+  const removed = await db.removeFirefighter(req.params.id, rosterUnitIdForRequest(req), { ...actor, clientOpId: opKey(req) });
+  if (!removed) return res.status(404).json({ error: '词条不存在、不可删除或不属于当前单位', code: 'ROSTER_ITEM_NOT_FOUND' });
+  const event = await db.getSyncEventByClientOp?.(opKey(req));
+  res.json({ ok: true, event_id: event?.event_id, stream_sequence: event?.sequence });
 });
 
-app.get('/api/hotwords', async (req, res) => res.json(await db.listHotwords()));
+app.get('/api/hotwords', async (req, res) => res.json(await db.listHotwords(rosterUnitIdForRequest(req))));
 app.post('/api/hotwords', async (req, res, next) => {
-  if (!requireManagementRole(req, res)) return;
   try {
     const { word } = req.body || {};
     const cleanWord = String(word || '').trim();
     if (!cleanWord) return res.status(400).json({ error: '缺少词条' });
     if (cleanWord.length > 128) return res.status(400).json({ error: '词条过长（最多 128 字）', code: 'ROSTER_ITEM_TOO_LONG' });
-    if ((await db.listHotwords()).length >= 500) return res.status(400).json({ error: '热词已达到 500 条上限', code: 'ROSTER_LIMIT_REACHED' });
+    const rosterUnitId = rosterUnitIdForRequest(req);
+    if ((await db.listHotwords(rosterUnitId)).length >= 500) return res.status(400).json({ error: '热词已达到 500 条上限', code: 'ROSTER_LIMIT_REACHED' });
     const id = crypto.randomUUID();
+    const actor = rosterActor(req);
     try {
-      res.status(201).json(await db.addHotword(id, cleanWord));
+      res.status(201).json(await db.addHotword(id, cleanWord, rosterUnitId, {
+        createdByMemberId: actor.memberId,
+        createdByName: actor.name,
+        clientOpId: opKey(req),
+      }));
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该词条已存在' });
       throw e;
@@ -2403,9 +2832,11 @@ app.post('/api/hotwords', async (req, res, next) => {
   }
 });
 app.delete('/api/hotwords/:id', async (req, res) => {
-  if (!requireManagementRole(req, res)) return;
-  await db.removeHotword(req.params.id);
-  res.json({ ok: true });
+  const actor = rosterActor(req);
+  const removed = await db.removeHotword(req.params.id, rosterUnitIdForRequest(req), { ...actor, clientOpId: opKey(req) });
+  if (!removed) return res.status(404).json({ error: '词条不存在、不可删除或不属于当前单位', code: 'ROSTER_ITEM_NOT_FOUND' });
+  const event = await db.getSyncEventByClientOp?.(opKey(req));
+  res.json({ ok: true, event_id: event?.event_id, stream_sequence: event?.sequence });
 });
 
 // 火场随手记：按场景隔离，App 语音/手动记录时间节点，供复盘（新→旧）
@@ -2508,7 +2939,7 @@ app.post('/api/notes', async (req, res, next) => {
       event = await appendEvent(req, incident.id, 'note', { note_id: note.id, text: note.text, category: note.category, author: note.author }, { occurredAt: note.created_at });
     }
     await completeTrackedOperation(tracked, note, 201, event?.id);
-    res.status(201).json(note);
+    res.status(201).json(withWriteMetadata(note, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     await logOp(req, 'error', 'note_err', `记录随手记失败: ${errorSummary(e)}`);
@@ -2592,7 +3023,7 @@ app.patch('/api/notes/:id', async (req, res, next) => {
       await db.touchIncidentActivity(incident.id);
     }
     await completeTrackedOperation(tracked, updated, 200, event?.id);
-    res.json(updated);
+    res.json(withWriteMetadata(updated, event));
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     await logOp(req, 'error', 'note_err', `编辑随手记失败: ${errorSummary(e)}`);
@@ -2613,7 +3044,7 @@ app.delete('/api/notes/:id', async (req, res, next) => {
     let previous = null;
     if (!OPERATION_LEDGER_ENABLED) previous = await db.getIncidentEventByClientOp(opKey(req));
     if (previous?.incident_id === incident.id && previous.type === 'note_voided' && previous.payload?.note_id === note.id) {
-      return res.json({ ok: true, duplicate: true });
+      return res.json({ ok: true, duplicate: true, event_id: previous.sync?.event_id || previous.id, stream_sequence: previous.sync?.sequence ? String(previous.sync.sequence) : undefined });
     }
     tracked = await beginTrackedOperation(req, incident.id, 'note_delete');
     if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
@@ -2627,7 +3058,7 @@ app.delete('/api/notes/:id', async (req, res, next) => {
           return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
         }
         await completeTrackedOperation(tracked, { ok: true, duplicate: true }, 200, previous.id);
-        return res.json({ ok: true, duplicate: true });
+        return res.json({ ok: true, duplicate: true, event_id: previous.sync?.event_id || previous.id, stream_sequence: previous.sync?.sequence ? String(previous.sync.sequence) : undefined });
       }
     }
     const noteEventArgs = {
@@ -2656,7 +3087,7 @@ app.delete('/api/notes/:id', async (req, res, next) => {
       await db.touchIncidentActivity(incident.id);
     }
     await completeTrackedOperation(tracked, { ok: true }, 200, event?.id);
-    res.json({ ok: true });
+    res.json({ ok: true, event_id: event?.sync?.event_id || event?.id, stream_sequence: event?.sync?.sequence ? String(event.sync.sequence) : undefined });
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
     await logOp(req, 'error', 'note_err', `删除随手记失败: ${errorSummary(e)}`);
@@ -2788,6 +3219,7 @@ function forwardAsyncRouteErrors(router) {
 forwardAsyncRouteErrors(app);
 
 app.use(async (err, req, res, next) => {
+  metrics.databaseErrors += ['23505', 'ECONNREFUSED', '57P01', '08006'].includes(String(err?.code || '')) ? 1 : 0;
   logger.error(req.method, req.path, `request_id=${req.requestId}`, errorSummary(err));
   if (req.headers['x-op-id']) {
     await logOp(req, 'error', 'http_err', `${req.method} ${req.path} 失败: ${errorSummary(err)}`);
@@ -2796,15 +3228,21 @@ app.use(async (err, req, res, next) => {
   // 业务校验错误在路由内已明确返回；统一错误处理只公开必要的协议级结果。
   let status = 500;
   let message = '服务器内部错误';
-  if (err?.name === 'CloudBasePostgrestError') {
-    status = Number(err.status) === 409 ? 409 : 503;
-    message = status === 409 ? '数据冲突，请刷新后重试' : '数据服务暂不可用，请稍后重试';
+  if (err?.code === '23505' || Number(err?.status) === 409) {
+    status = 409;
+    message = '数据冲突，请刷新后重试';
+  } else if (err?.code === 'ECONNREFUSED' || err?.code === '57P01') {
+    status = 503;
+    message = '数据服务暂不可用，请稍后重试';
   } else if (err?.type === 'entity.too.large' || Number(err?.status) === 413) {
     status = 413;
     message = '请求数据过大';
   } else if (err?.code === 'INVALID_PAGE_PARAMETER' || Number(err?.status) === 400) {
     status = 400;
     message = '分页参数无效';
+  } else if (err?.code === 'SYNC_CURSOR_INVALID') {
+    status = 400;
+    message = '同步游标无效';
   } else if (Number(err?.status) === 422 && err.message === '未听清，请再说一遍') {
     status = 422;
     message = err.message;
@@ -2830,6 +3268,12 @@ if (require.main === module) {
       logger.error('清理旧记录失败', errorSummary(e));
     }
     try {
+      const n = typeof db.purgeOldSyncEvents === 'function' ? await db.purgeOldSyncEvents(7) : 0;
+      if (n > 0) logger.info(`已清理 ${n} 条超过 7 天的实时事件`);
+    } catch (e) {
+      logger.error('清理实时事件失败', errorSummary(e));
+    }
+    try {
       const n = await db.purgeOldLogs(logPurgeDays);
       if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的操作日志`);
     } catch (e) {
@@ -2850,11 +3294,26 @@ if (require.main === module) {
   };
   const server = http.createServer(app);
   server.on('upgrade', (req, socket, head) => {
-    if (req.url?.split('?')[0] !== '/api/asr/stream') {
+    const route = req.url?.split('?')[0];
+    if (!['/api/asr/stream', '/api/realtime'].includes(route)) {
       socket.destroy();
       return;
     }
+    if (route === '/api/realtime') {
+      authenticateSyncRequest(req).then((auth) => {
+        logger.info(`实时同步 WebSocket 鉴权通过 unit_id=${auth.unit.id} device_id=${auth.auth.deviceId || '-'}`);
+        syncWss.handleUpgrade(req, socket, head, (ws) => {
+          syncWss.emit('connection', ws, req, auth);
+        });
+      }).catch((error) => {
+        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        logger.warn(`实时同步 WebSocket 鉴权失败: ${errorSummary(error)}`);
+      });
+      return;
+    }
     authenticateRealtimeRequest(req).then((auth) => {
+      logger.info(`实时 ASR WebSocket 鉴权通过 op_id=${realtimeHeader(req, 'x-op-id') || '-'} device_id=${auth.deviceId || '-'}`);
       realtimeWss.handleUpgrade(req, socket, head, (ws) => {
         realtimeWss.emit('connection', ws, req, auth);
       });
@@ -2864,6 +3323,9 @@ if (require.main === module) {
       logger.warn(`实时 ASR WebSocket 鉴权失败: ${errorSummary(error)}`);
     });
   });
+  if (db.ready && typeof db.ready.then === 'function') {
+    db.ready.then(startSyncListener).catch((error) => logger.error(`实时同步监听初始化失败: ${errorSummary(error)}`));
+  }
   server.listen(PORT, () => {
     logger.info(`WatchDog 后端已启动: http://0.0.0.0:${PORT}`);
     logger.info(`ASR 配置: ${CFG.asr.appId ? '已配置' : '未配置 (VOLC_APP_KEY)'}`);

@@ -24,79 +24,77 @@ class _NotesPageState extends State<NotesPage> {
     final filtered = _filter == '全部'
         ? notes
         : notes.where((n) => n.category == _filter).toList();
-    final compactHeader =
-        MediaQuery.sizeOf(context).width < 400 ||
-        MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
+    final width = MediaQuery.sizeOf(context).width;
+    final largeText = MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
     return SafeArea(
-      child: Column(
+      child: Stack(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: compactHeader
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text('火场日志', style: AppTextStyles.h1),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        alignment: WrapAlignment.end,
-                        spacing: 10,
-                        runSpacing: 8,
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: largeText || width < 300
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _buildWriteButton(),
+                          const Text('火场日志', style: AppTextStyles.h1),
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: _buildConnectionStatus(),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          const Text('火场日志', style: AppTextStyles.h1),
+                          const Spacer(),
                           _buildConnectionStatus(),
                         ],
                       ),
-                    ],
-                  )
-                : Row(
-                    children: [
-                      const Text('火场日志', style: AppTextStyles.h1),
-                      const Spacer(),
-                      _buildWriteButton(),
-                      const SizedBox(width: 10),
-                      _buildConnectionStatus(),
-                    ],
-                  ),
+              ),
+              _buildFilterChips(),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: widget.controller.refreshNow,
+                  child: filtered.isEmpty
+                      ? _buildEmpty()
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                          itemCount: filtered.length,
+                          itemBuilder: (context, i) => _TimelineNoteCard(
+                            note: filtered[i],
+                            isLast: i == filtered.length - 1,
+                            onTap: () => _openEditor(filtered[i]),
+                          ),
+                        ),
+                ),
+              ),
+            ],
           ),
-          _buildFilterChips(),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: widget.controller.refreshNow,
-              child: filtered.isEmpty
-                  ? _buildEmpty()
-                  : ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, i) => _TimelineNoteCard(
-                        note: filtered[i],
-                        isLast: i == filtered.length - 1,
-                        onTap: () => _openEditor(filtered[i]),
-                      ),
-                    ),
-            ),
-          ),
+          Positioned(right: 16, bottom: 16, child: _buildManualLogFab()),
         ],
       ),
     );
   }
 
-  Widget _buildWriteButton() {
-    return OutlinedButton.icon(
-      onPressed: () => _openEditor(null),
-      icon: const Icon(Icons.edit_note, size: 16),
-      label: const Text('写日志'),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(0, 48),
-        visualDensity: VisualDensity.standard,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        side: const BorderSide(color: AppColors.actionPrimary),
-        foregroundColor: AppColors.actionPrimary,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-        ),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+  Widget _buildManualLogFab() {
+    return Semantics(
+      button: true,
+      label: '手动记录日志',
+      child: FloatingActionButton(
+        key: const Key('notes-manual-log-fab'),
+        onPressed: () => _openEditor(null),
+        tooltip: '手动记录日志',
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.voice,
+        elevation: 3,
+        focusElevation: 4,
+        hoverElevation: 4,
+        highlightElevation: 2,
+        shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
+        child: const Icon(Icons.add_rounded, size: 30),
       ),
     );
   }
@@ -173,7 +171,7 @@ class _NotesPageState extends State<NotesPage> {
         const SizedBox(height: 8),
         const Center(
           child: Text(
-            '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右上角按钮手动记录',
+            '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右下角加号手动记录',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppColors.textTertiary,

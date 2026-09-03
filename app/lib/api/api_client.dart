@@ -88,14 +88,112 @@ class ApiClient {
     return uri;
   }
 
-  /// 实时 ASR 代理使用同一网关和认证头，但通过 WebSocket 协议连接。
+  /// 实时 ASR 代理使用同一认证头，但通过 WebSocket 协议连接。
   Uri realtimeAsrUri() {
-    final httpUri = _uri('/api/asr/stream');
+    return realtimeAsrUris().first;
+  }
+
+  /// 返回实时连接入口，首选云托管直连，直连 DNS/建连失败时再尝试同一
+  /// 后端的历史 HTTP 网关。两个入口都是真实 WebSocket，不改变识别协议。
+  List<Uri> realtimeAsrUris() {
+    final bases = <String>[
+      Settings.realtimeAsrBaseUrl,
+      Settings.realtimeAsrFallbackBaseUrl,
+    ];
+    final result = <Uri>[];
+    for (final base in bases) {
+      if (!Settings.isSafeRealtimeUrl(base)) continue;
+      final normalized = base.trim().replaceFirst(RegExp(r'/+$'), '');
+      final httpUri = Uri.parse('$normalized/api/asr/stream');
+      final uri = httpUri.replace(
+        scheme: httpUri.scheme == 'https' ? 'wss' : 'ws',
+      );
+      if (!result.contains(uri)) result.add(uri);
+    }
+    if (result.isEmpty) throw StateError('实时识别服务器地址不安全');
+    return result;
+  }
+
+  Map<String, String> realtimeAsrHeaders({String? opId}) => _opHeaders(opId);
+
+  /// 业务实时同步连接。与 REST 使用同一服务器地址和会话鉴权，支持
+  /// localhost/10.0.2.2 等本地开发入口，也支持任意自托管后端。
+  Uri realtimeSyncUri() {
+    final httpUri = _uri('/api/realtime');
     return httpUri.replace(scheme: httpUri.scheme == 'https' ? 'wss' : 'ws');
   }
 
-  Map<String, String> realtimeAsrHeaders({String? opId}) =>
-      _opHeaders(opId);
+  Map<String, String> realtimeSyncHeaders() => _headers;
+
+  Future<Map<String, dynamic>> fetchSyncBootstrap({String? forIncidentId}) async {
+    final query = <String, String>{
+      if (forIncidentId != null && forIncidentId.isNotEmpty)
+        'incident_id': forIncidentId,
+    };
+    final path = Uri(path: '/api/sync/bootstrap', queryParameters: query).toString();
+    final res = await _client
+        .get(_uri(path), headers: _headers)
+        .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(res, fallback: '获取实时同步快照失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取实时同步快照失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '实时同步快照格式异常');
+    }
+    return Map<String, dynamic>.from(body);
+  }
+
+  Future<Map<String, dynamic>> fetchSyncCheckpoint({String? forIncidentId}) async {
+    final query = <String, String>{
+      if (forIncidentId != null && forIncidentId.isNotEmpty)
+        'incident_id': forIncidentId,
+    };
+    final path = Uri(path: '/api/sync/checkpoint', queryParameters: query).toString();
+    final res = await _client
+        .get(_uri(path), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '校准实时同步失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '校准实时同步失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '实时同步校验点格式异常');
+    }
+    return Map<String, dynamic>.from(body);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchSyncEvents({
+    required String unitCursor,
+    required String incidentCursor,
+    String? forIncidentId,
+    int limit = 500,
+  }) async {
+    final path = Uri(
+      path: '/api/sync/events',
+      queryParameters: {
+        'unit_cursor': unitCursor,
+        'incident_cursor': incidentCursor,
+        'limit': '${limit.clamp(1, 500)}',
+        if (forIncidentId != null && forIncidentId.isNotEmpty)
+          'incident_id': forIncidentId,
+      },
+    ).toString();
+    final res = await _client
+        .get(_uri(path), headers: _headers)
+        .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(res, fallback: '补拉实时事件失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '补拉实时事件失败');
+    }
+    if (body is! Map || body['events'] is! List) {
+      throw _responseShapeException(res, '实时事件响应格式异常');
+    }
+    return (body['events'] as List)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
 
   /// 创建带底层连接/空闲超时的移动端 HTTP 客户端。
   ///
@@ -126,7 +224,7 @@ class ApiClient {
     _transientClients.clear();
   }
 
-  /// CloudBase 网关故障时可能返回 HTML（例如 503），不能直接 jsonDecode，
+  /// 网关故障时可能返回 HTML（例如 503），不能直接 jsonDecode，
   /// 否则用户只能看到无意义的 FormatException: Unexpected character '<'。
   dynamic _decodeJson(http.Response res, {required String fallback}) {
     try {
@@ -185,7 +283,7 @@ class ApiClient {
     return _responseError(statusCode, body, fallback);
   }
 
-  /// CloudBase 冷启动或移动网络切换时，认证请求可能短暂收到 502/503/504
+  /// 后端冷启动或移动网络切换时，认证请求可能短暂收到 502/503/504
   /// 或在连接层超时。认证写入按设备幂等，允许短暂退避后重试。
   Future<http.Response> _withTransientRetry(
     Future<http.Response> Function(IOClient client) request, {
@@ -605,7 +703,7 @@ class ApiClient {
   }
 
   /// 流式提问（SSE）：服务端产出首个 token 后立即回调，避免等待完整答案。
-  /// CloudBase 冷启动返回 502/503/504 时自动重试一次。
+  /// 后端启动返回 502/503/504 时自动重试一次。
   Future<String> sendChatMessageStream(
     String message, {
     required void Function(String delta) onChunk,
@@ -626,7 +724,7 @@ class ApiClient {
             'stream': 1,
             if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
           });
-          // 首字节允许 CloudBase 冷启动完成；首字节之后按流实时消费。
+          // 首字节允许后端启动完成；首字节之后按流实时消费。
           return client.send(req).timeout(const Duration(seconds: 25));
         }
 

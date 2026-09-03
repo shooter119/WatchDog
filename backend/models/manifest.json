@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "modelVersion": "multi-zh-hans-2023-9-2",
+  "files": {
+    "multi-zh-hans-2023-9-2/encoder-epoch-20-avg-1.int8.onnx": {
+      "sizeBytes": 69037476,
+      "sha256": "6dd1748110f55cb7e9ce00a6abd4b96959fa3f2a25a20d0c52184dd1eb8c9ece"
+    },
+    "multi-zh-hans-2023-9-2/decoder-epoch-20-avg-1.onnx": {
+      "sizeBytes": 5165142,
+      "sha256": "f6bbd5fc9cfa2c69988fafb63e5ccd50756134993eb6c23d89887d81e7f7896c"
+    },
+    "multi-zh-hans-2023-9-2/joiner-epoch-20-avg-1.int8.onnx": {
+      "sizeBytes": 1033479,
+      "sha256": "fc04f95a7c184390f48a64eab541f7bcab7c856b5df03bf67f227d1c74b49f99"
+    },
+    "multi-zh-hans-2023-9-2/tokens.txt": {
+      "sizeBytes": 18610,
+      "sha256": "67352babdf908352d3ce19c4496cb05ca173805616c23b520927117b2c2e2ffa"
+    },
+    "multi-zh-hans-2023-9-2/bpe.vocab": {
+      "sizeBytes": 43556,
+      "sha256": "7c59f35ff9712d8c3c6937faf041da61900b70f21ca06a11be0121f049b0f8ea"
+    },
+    "denoiser/dpdfnet2.onnx": {
+      "sizeBytes": 10249356,
+      "sha256": "ce35d6025fc71df0ef10d1540e1b7916837bbfe5f6896deb744508d2cad487a9"
+    }
+  }
+}

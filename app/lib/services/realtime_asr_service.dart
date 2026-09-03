@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 
 import '../api/api_client.dart';
 import 'audio_service.dart';
 
-typedef RealtimeTextCallback = void Function(String text, {required bool finalText});
+typedef RealtimeTextCallback =
+    void Function(String text, {required bool finalText});
 
 class RealtimeAsrResult {
   final String text;
@@ -36,6 +38,9 @@ class RealtimeAsrService {
   bool _started = false;
   bool _stopping = false;
   Object? _socketError;
+  int _audioBytes = 0;
+  int _audioChunks = 0;
+  int _resultCount = 0;
 
   RealtimeAsrService({
     required this.api,
@@ -50,28 +55,64 @@ class RealtimeAsrService {
     _started = true;
     _done = Completer<void>();
     try {
-      final captureFuture = _recorder.startStream(const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
-        numChannels: 1,
-        streamBufferSize: 3200,
-      ));
-      final socketFuture = WebSocket.connect(
-        api.realtimeAsrUri().toString(),
-        headers: api.realtimeAsrHeaders(opId: opId),
-        compression: CompressionOptions.compressionDefault,
-      ).timeout(const Duration(seconds: 12));
+      final uris = api.realtimeAsrUris();
+      final captureFuture = _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+          streamBufferSize: 3200,
+          androidConfig: AndroidRecordConfig(
+            audioSource: AndroidAudioSource.voiceRecognition,
+          ),
+        ),
+      );
+      final socketFuture = _connectSocket(uris, opId: opId);
       final values = await Future.wait<Object>([captureFuture, socketFuture]);
       final stream = values[0] as Stream<Uint8List>;
       _socket = values[1] as WebSocket;
-      _socket!.listen(_onSocketMessage, onError: _onSocketError, onDone: _onSocketDone);
+      debugPrint(
+        'Realtime ASR capture ready chunks=$_audioChunks bytes=$_audioBytes opId=${opId ?? '-'}',
+      );
+      _socket!.listen(
+        _onSocketMessage,
+        onError: _onSocketError,
+        onDone: _onSocketDone,
+      );
       _socket!.add(jsonEncode({'type': 'start', 'opId': opId ?? ''}));
       _audioSub = stream.listen(_onAudio, onError: _onSocketError);
     } catch (error) {
       await _cleanupRecorder();
+      await _closeSocket();
       _started = false;
       rethrow;
     }
+  }
+
+  Future<WebSocket> _connectSocket(List<Uri> uris, {String? opId}) async {
+    Object? lastError;
+    for (final uri in uris) {
+      debugPrint(
+        'Realtime ASR connect host=${uri.host} path=${uri.path} opId=${opId ?? '-'}',
+      );
+      try {
+        final socket = await WebSocket.connect(
+          uri.toString(),
+          headers: api.realtimeAsrHeaders(opId: opId),
+          compression: CompressionOptions.compressionDefault,
+        ).timeout(const Duration(seconds: 12));
+        debugPrint(
+          'Realtime ASR websocket open host=${uri.host} opId=${opId ?? '-'}',
+        );
+        return socket;
+      } catch (error) {
+        lastError = error;
+        debugPrint(
+          'Realtime ASR websocket connect failed host=${uri.host} error=$error',
+        );
+      }
+    }
+    throw lastError ?? StateError('实时识别连接失败');
   }
 
   Stream<double> amplitudeStream() => _recorder
@@ -85,6 +126,11 @@ class RealtimeAsrService {
       return;
     }
     _audio.add(chunk);
+    _audioBytes += chunk.length;
+    _audioChunks++;
+    if (_audioChunks == 1 || _audioChunks % 50 == 0) {
+      debugPrint('Realtime ASR audio chunks=$_audioChunks bytes=$_audioBytes');
+    }
     _pending.add(chunk);
     final bytes = _pending.takeBytes();
     var offset = 0;
@@ -97,7 +143,11 @@ class RealtimeAsrService {
 
   void _sendAudio(Uint8List bytes) {
     final socket = _socket;
-    if (socket == null || socket.readyState != WebSocket.open || bytes.isEmpty) return;
+    if (socket == null ||
+        socket.readyState != WebSocket.open ||
+        bytes.isEmpty) {
+      return;
+    }
     socket.add(bytes);
   }
 
@@ -110,10 +160,21 @@ class RealtimeAsrService {
       if (type == 'partial' || type == 'final') {
         final text = value['text']?.toString().trim() ?? '';
         if (text.isEmpty) return;
+        _resultCount++;
         _lastText = text;
         if (type == 'final') _hasFinal = true;
+        debugPrint(
+          'Realtime ASR result type=$type chars=${text.length} count=$_resultCount',
+        );
         onText?.call(text, finalText: type == 'final');
+      } else if (type == 'ready') {
+        debugPrint(
+          'Realtime ASR server ready hotwords=${value['hotwordCount'] ?? '-'}',
+        );
       } else if (type == 'error') {
+        debugPrint(
+          'Realtime ASR server error: ${value['code'] ?? '-'} ${value['message'] ?? ''}',
+        );
         _onSocketError(StateError(value['message']?.toString() ?? '实时识别失败'));
       } else if (type == 'done' && !(_done?.isCompleted ?? true)) {
         _done!.complete();
@@ -125,11 +186,17 @@ class RealtimeAsrService {
 
   void _onSocketError(Object error, [StackTrace? stack]) {
     _socketError ??= error;
+    debugPrint('Realtime ASR socket error: $error');
     if (!(_done?.isCompleted ?? true)) _done!.completeError(error, stack);
   }
 
   void _onSocketDone() {
-    if (_stopping) return;
+    debugPrint('Realtime ASR websocket done stopping=$_stopping');
+    // stop() 会先完成结果并重置状态，底层 WebSocket 的 onDone 可能在
+    // reset 之后才异步到达；这属于正常收口，不能再伪造“连接已断开”。
+    if (_stopping || _done == null || _hasFinal || _done!.isCompleted) {
+      return;
+    }
     _onSocketError(StateError('实时识别连接已断开'));
   }
 
@@ -150,9 +217,15 @@ class RealtimeAsrService {
       }
     }
     await _closeSocket();
-    final error = _socketError ??
-        (!_hasFinal ? StateError('实时识别未收到最终结果') : null);
-    final result = RealtimeAsrResult(text: _lastText, wavBytes: _toWav(_audio.takeBytes()));
+    final error =
+        _socketError ?? (!_hasFinal ? StateError('实时识别未收到最终结果') : null);
+    final result = RealtimeAsrResult(
+      text: _lastText,
+      wavBytes: _toWav(_audio.takeBytes()),
+    );
+    debugPrint(
+      'Realtime ASR stop bytes=$_audioBytes chunks=$_audioChunks results=$_resultCount final=$_hasFinal',
+    );
     _reset();
     if (error != null) throw RealtimeAsrException(error, result);
     return result;
@@ -172,13 +245,17 @@ class RealtimeAsrService {
   }
 
   Future<void> _cleanupRecorder() async {
-    try { await _recorder.stop(); } catch (_) {}
+    try {
+      await _recorder.stop();
+    } catch (_) {}
     await _audioSub?.cancel();
     _audioSub = null;
   }
 
   Future<void> _closeSocket() async {
-    try { await _socket?.close(); } catch (_) {}
+    try {
+      await _socket?.close();
+    } catch (_) {}
     _socket = null;
   }
 
@@ -189,15 +266,33 @@ class RealtimeAsrService {
     _lastText = '';
     _hasFinal = false;
     _socketError = null;
+    _audioBytes = 0;
+    _audioChunks = 0;
+    _resultCount = 0;
   }
 
   Uint8List _toWav(Uint8List pcm) {
     final out = BytesBuilder(copy: false);
-    void u16(int value) => out.add(Uint8List(2)..buffer.asByteData().setUint16(0, value, Endian.little));
-    void u32(int value) => out.add(Uint8List(4)..buffer.asByteData().setUint32(0, value, Endian.little));
-    out.add(utf8.encode('RIFF')); u32(36 + pcm.length); out.add(utf8.encode('WAVE'));
-    out.add(utf8.encode('fmt ')); u32(16); u16(1); u16(1); u32(16000); u32(32000); u16(2); u16(16);
-    out.add(utf8.encode('data')); u32(pcm.length); out.add(pcm);
+    void u16(int value) => out.add(
+      Uint8List(2)..buffer.asByteData().setUint16(0, value, Endian.little),
+    );
+    void u32(int value) => out.add(
+      Uint8List(4)..buffer.asByteData().setUint32(0, value, Endian.little),
+    );
+    out.add(utf8.encode('RIFF'));
+    u32(36 + pcm.length);
+    out.add(utf8.encode('WAVE'));
+    out.add(utf8.encode('fmt '));
+    u32(16);
+    u16(1);
+    u16(1);
+    u32(16000);
+    u32(32000);
+    u16(2);
+    u16(16);
+    out.add(utf8.encode('data'));
+    u32(pcm.length);
+    out.add(pcm);
     return out.takeBytes();
   }
 }

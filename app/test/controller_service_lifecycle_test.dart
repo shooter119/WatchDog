@@ -15,7 +15,8 @@ import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/state/app_controller.dart';
 
 class _CountingRosterApi extends ApiClient {
-  _CountingRosterApi() : super(baseUrl: 'http://rec', incidentId: 'test');
+  _CountingRosterApi()
+    : super(baseUrl: 'http://rec', incidentId: 'test', unitId: 'test-unit');
 
   int firefightersRequests = 0;
   int hotwordsRequests = 0;

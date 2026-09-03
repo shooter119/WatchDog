@@ -54,8 +54,10 @@ class _BoardPageState extends State<BoardPage> {
         return sa != sb ? sa.compareTo(sb) : a.exitAt.compareTo(b.exitAt);
       });
     final danger = active.where((e) => statusOf(e) != 'normal').toList();
+    // 真机逻辑宽度约 320dp，标题与紧凑连接状态仍可同排；只有更窄的
+    // 视口或明显放大的字体才切换为上下布局，避免状态胶囊占满横向空间。
     final compactHeader =
-        MediaQuery.sizeOf(context).width < 400 ||
+        MediaQuery.sizeOf(context).width < 300 ||
         MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
 
     return SafeArea(
@@ -63,7 +65,7 @@ class _BoardPageState extends State<BoardPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: compactHeader
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -72,6 +74,8 @@ class _BoardPageState extends State<BoardPage> {
                       const SizedBox(height: 8),
                       Align(
                         alignment: Alignment.centerRight,
+                        widthFactor: 1,
+                        heightFactor: 1,
                         child: ConnectionStatus(
                           connected: !widget.controller.connectionLost,
                           syncing: widget.controller.syncing,
@@ -461,12 +465,14 @@ class _EntryCard extends StatelessWidget {
     final fg = s.fg;
     final subFg = fg.withValues(alpha: 0.75);
     final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    // 320dp 真机上姓名、状态和更新压力可以自然同排；只在更窄视口或
+    // 大字号下确实需要保留可读性时堆叠，不能把正常状态拉成整行。
     final stackedHeader =
-        MediaQuery.sizeOf(context).width < 360 || textScale > 1.25;
-    final statusAndAction = Wrap(
+        MediaQuery.sizeOf(context).width < 300 || textScale > 1.25;
+    final statusAndAction = Row(
+      mainAxisSize: MainAxisSize.min,
       spacing: 8,
-      runSpacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         StatusBadge(
           status: status,
@@ -505,14 +511,19 @@ class _EntryCard extends StatelessWidget {
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (stackedHeader) ...[
                 name,
-                const SizedBox(height: 6),
-                Align(alignment: Alignment.centerLeft, child: statusAndAction),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: 1,
+                  heightFactor: 1,
+                  child: statusAndAction,
+                ),
               ] else
                 Row(
                   children: [
@@ -521,7 +532,7 @@ class _EntryCard extends StatelessWidget {
                     statusAndAction,
                   ],
                 ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -607,7 +618,7 @@ class _EntryCard extends StatelessWidget {
     );
 
     final wrapped = s.danger ? PulseGlow(color: s.color, child: card) : card;
-    return Padding(padding: const EdgeInsets.only(bottom: 10), child: wrapped);
+    return Padding(padding: const EdgeInsets.only(bottom: 8), child: wrapped);
   }
 
   /// 进入现场后的持续时长（MM:SS / H:MM:SS）
@@ -633,28 +644,37 @@ class _UpdatePressureButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: fg.withValues(alpha: 0.16),
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(AppRadius.pill),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.pill),
         onTap: onPressed,
-        child: Container(
+        child: SizedBox(
           height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.speed, size: 16, color: fg),
-              const SizedBox(width: 4),
-              Text(
-                '更新压力',
-                style: TextStyle(
-                  color: fg,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
+          child: Center(
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: fg.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(AppRadius.pill),
               ),
-            ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.speed, size: 16, color: fg),
+                  const SizedBox(width: 4),
+                  Text(
+                    '更新压力',
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
