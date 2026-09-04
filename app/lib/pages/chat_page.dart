@@ -760,7 +760,27 @@ class ChatPageState extends State<ChatPage> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const AssistantAvatar(size: 112),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.avatarBackdrop,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: const Text(
+                  '现场安全 · 快速研判',
+                  style: TextStyle(
+                    color: Color(0xFF236A72),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
               const Text(
                 '你好，我是水元素',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
@@ -775,11 +795,11 @@ class ChatPageState extends State<ChatPage> {
                   height: 1.5,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               const _SampleQuestion('气瓶压力下降太快怎么办？'),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               const _SampleQuestion('浓烟太大看不清路，有什么办法？'),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               const _SampleQuestion('破拆卷帘门有哪些注意事项？'),
             ],
           ),
@@ -830,6 +850,7 @@ class _MessageBubble extends StatelessWidget {
         : splitFollowUp(message.content);
     final body = split.$1;
     final followUp = split.$2;
+    final followUpLabel = followUp == null ? null : '我想进一步确认：$followUp';
     final time = DateTime.fromMillisecondsSinceEpoch(message.createdAt);
     final timeText =
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
@@ -960,7 +981,7 @@ class _MessageBubble extends StatelessWidget {
                               ),
                         ),
                 ),
-                if (followUp != null && onFollowUpTap != null) ...[
+                if (followUpLabel != null && onFollowUpTap != null) ...[
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Material(
@@ -968,7 +989,7 @@ class _MessageBubble extends StatelessWidget {
                       borderRadius: BorderRadius.circular(AppRadius.pill),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(AppRadius.pill),
-                        onTap: () => onFollowUpTap!(followUp),
+                        onTap: () => onFollowUpTap!(followUp!),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -978,14 +999,14 @@ class _MessageBubble extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               const Icon(
-                                Icons.quickreply_outlined,
+                                Icons.north_east_rounded,
                                 size: 15,
                                 color: AppColors.voice,
                               ),
                               const SizedBox(width: 6),
                               Flexible(
                                 child: Text(
-                                  '追问：$followUp',
+                                  followUpLabel,
                                   style: const TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
@@ -1076,21 +1097,43 @@ class _SampleQuestion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
+    return SizedBox(
       key: ValueKey('chat-sample-question-$text'),
-      constraints: const BoxConstraints(minHeight: 48),
+      height: 52,
       child: AppCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         onTap: () {
           final page = context.findAncestorStateOfType<ChatPageState>();
           page?.submitQuestion(text);
         },
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 13.5,
-            color: AppColors.textSecondary,
-          ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 17,
+              color: AppColors.voice,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  height: 1.25,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.arrow_forward_rounded,
+              size: 17,
+              color: AppColors.textTertiary,
+            ),
+          ],
         ),
       ),
     );

@@ -87,8 +87,13 @@ test('PostgreSQL 认证仓储保留成员角色并拒绝过期/已撤销会话',
   const expired = await db.createAuthSession({ id: 'session-pg-expired', tokenHash: 'hash-pg-expired', unitId: 'unit-auth', memberId: member.id, deviceId: 'device-pg', realName: member.real_name, role: member.role, expiresAt: Date.now() - 1 });
   assert.equal(expired.id, 'session-pg-expired');
   assert.equal(await db.getAuthSession('hash-pg-expired'), undefined);
-  await db.createAuthSession({ id: 'session-pg-current', tokenHash: 'hash-pg-current', unitId: 'unit-auth', memberId: member.id, deviceId: 'device-pg', realName: member.real_name, role: member.role, expiresAt: Date.now() + 60_000 });
+  assert.equal((await db.getAuthSessionRecord('hash-pg-expired')).id, 'session-pg-expired');
+  assert.equal(await db.refreshAuthSession('hash-pg-expired', { expiresAt: Date.now() + 60_000 }), undefined);
+  const current = await db.createAuthSession({ id: 'session-pg-current', tokenHash: 'hash-pg-current', unitId: 'unit-auth', memberId: member.id, deviceId: 'device-pg', realName: member.real_name, role: member.role, expiresAt: Date.now() + 60_000 });
   assert.equal((await db.getAuthSession('hash-pg-current')).role, 'manager');
+  const refreshed = await db.refreshAuthSession('hash-pg-current', { expiresAt: current.expires_at + 60_000 });
+  assert.equal(refreshed.expires_at, current.expires_at + 60_000);
+  assert.equal(await db.touchAuthSession('hash-pg-current'), 1);
   assert.equal(await db.revokeAuthSession('hash-pg-current'), 1);
   assert.equal(await db.getAuthSession('hash-pg-current'), undefined);
 });

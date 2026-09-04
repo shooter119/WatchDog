@@ -22,7 +22,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.5.0+63';
+const appVersion = '1.5.1+64';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -46,7 +46,6 @@ class _SettingsPageState extends State<SettingsPage> {
   final FocusNode _consumptionFocus = FocusNode();
   final FocusNode _warnFocus = FocusNode();
   final FocusNode _alarmFocus = FocusNode();
-  final FocusNode _realNameFocus = FocusNode();
   bool _tts = true;
   bool _sound = true;
   bool _keepScreenOn = true;
@@ -65,7 +64,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _saving = false; // 防止失焦时 8 个输入框监听器并发触发多次保存
   bool _saveQueued = false;
   _SaveState _saveState = _SaveState.idle; // 自动保存状态提示
-  bool _editingName = false;
   String _unitName = '';
   bool _unitAuthenticated = false;
 
@@ -80,7 +78,6 @@ class _SettingsPageState extends State<SettingsPage> {
       _consumptionFocus,
       _warnFocus,
       _alarmFocus,
-      _realNameFocus,
     ]) {
       n.addListener(() {
         if (_loaded && !n.hasFocus && _allInputsUnfocused()) _autoSave();
@@ -120,7 +117,6 @@ class _SettingsPageState extends State<SettingsPage> {
       _consumptionFocus,
       _warnFocus,
       _alarmFocus,
-      _realNameFocus,
     ].every((n) => !n.hasFocus);
   }
 
@@ -639,7 +635,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _consumptionFocus.dispose();
     _warnFocus.dispose();
     _alarmFocus.dispose();
-    _realNameFocus.dispose();
     super.dispose();
   }
 
@@ -659,6 +654,7 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('设置', style: AppTextStyles.h1),
               const SizedBox(width: 10),
@@ -672,7 +668,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           const _SettingsEyebrow('现场处置 / 本机状态'),
           const SizedBox(height: 8),
           _SettingsHero(
@@ -840,7 +836,6 @@ class _SettingsPageState extends State<SettingsPage> {
       _unitAuthenticated = false;
       _unitName = '';
       _realName.clear();
-      _editingName = false;
     });
   }
 
@@ -922,81 +917,24 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
               ),
-              IconButton(
-                tooltip: _editingName ? '完成编辑' : '编辑姓名',
-                style: IconButton.styleFrom(
-                  foregroundColor: AppColors.textSecondary,
-                  backgroundColor: AppColors.surfaceSubtle,
-                  minimumSize: const Size(48, 48),
-                  fixedSize: const Size(48, 48),
-                  padding: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+              if (_unitAuthenticated)
+                IconButton(
+                  key: const Key('leave-unit'),
+                  onPressed: _saving ? null : _leaveUnit,
+                  tooltip: '退出当前单位',
+                  style: IconButton.styleFrom(
+                    foregroundColor: AppColors.alarm,
+                    backgroundColor: AppColors.alarm.withValues(alpha: 0.08),
+                    minimumSize: const Size(48, 48),
+                    fixedSize: const Size(48, 48),
+                    padding: EdgeInsets.zero,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
+                  icon: const Icon(Icons.logout_rounded, size: 21),
                 ),
-                onPressed: () {
-                  if (_editingName) {
-                    FocusScope.of(context).unfocus();
-                    setState(() => _editingName = false);
-                    _autoSave();
-                    return;
-                  }
-                  setState(() => _editingName = true);
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return;
-                    _realNameFocus.requestFocus();
-                    _realName.selection = TextSelection.collapsed(
-                      offset: _realName.text.length,
-                    );
-                  });
-                },
-                icon: Icon(
-                  _editingName ? Icons.check_rounded : Icons.edit_outlined,
-                  size: 21,
-                ),
-              ),
             ],
-          ),
-          if (_editingName) ...[
-            const SizedBox(height: 11),
-            TextField(
-              controller: _realName,
-              focusNode: _realNameFocus,
-              autofocus: true,
-              maxLength: 20,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: '真实姓名',
-                hintText: '留空为匿名',
-                counterText: '',
-              ),
-            ),
-          ],
-          const SizedBox(height: 13),
-          const Divider(height: 1),
-          if (_unitAuthenticated) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              key: const Key('leave-unit'),
-              onPressed: _saving ? null : _leaveUnit,
-              icon: const Icon(Icons.logout_rounded, size: 18),
-              label: const Text('退出当前单位'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.alarm,
-                side: const BorderSide(color: AppColors.alarm),
-              ),
-            ),
-          ],
-          const Padding(
-            padding: EdgeInsets.only(top: 12),
-            child: Text(
-              '用于日志署名，留空为“匿名”。',
-              style: TextStyle(
-                color: AppColors.textTertiary,
-                fontSize: 12,
-                height: 1.45,
-              ),
-            ),
           ),
         ],
       ),

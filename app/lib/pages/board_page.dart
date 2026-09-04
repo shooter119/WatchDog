@@ -65,7 +65,7 @@ class _BoardPageState extends State<BoardPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: compactHeader
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -86,6 +86,7 @@ class _BoardPageState extends State<BoardPage> {
                     ],
                   )
                 : Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('管控看板', style: AppTextStyles.h1),
                       const Spacer(),

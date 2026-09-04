@@ -46,9 +46,12 @@ function parseSeedMembers(value) {
 }
 
 function incidentNumberFor(timestamp) {
-  const date = new Date(timestamp);
-  return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日' +
-    String(date.getHours()).padStart(2, '0') + '时' + String(date.getMinutes()).padStart(2, '0') + '分';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(timestamp)).map(({ type, value }) => [type, value]));
+  return `${parts.year}年${Number(parts.month)}月${Number(parts.day)}日${parts.hour}时${parts.minute}分`;
 }
 
 function parseJson(value) {
@@ -207,6 +210,34 @@ async function getAuthSession(tokenHash) {
     filters: { token_hash: String(tokenHash || ''), revoked_at: { op: 'is', value: 'null' }, expires_at: { op: 'gt', value: Date.now() } },
     single: true,
   });
+}
+
+async function getAuthSessionRecord(tokenHash) {
+  return db.select('auth_sessions', {
+    filters: { token_hash: String(tokenHash || '') },
+    single: true,
+  });
+}
+
+async function refreshAuthSession(tokenHash, { expiresAt, lastSeenAt = Date.now() } = {}) {
+  const now = Number(lastSeenAt) || Date.now();
+  const expires = Number(expiresAt);
+  if (!Number.isFinite(expires)) throw new Error('认证会话续期参数不完整');
+  const result = await db.update('auth_sessions', {
+    token_hash: String(tokenHash || ''),
+    revoked_at: { op: 'is', value: 'null' },
+    expires_at: { op: 'gt', value: now },
+  }, { expires_at: expires, last_seen_at: now });
+  return result.rows[0];
+}
+
+async function touchAuthSession(tokenHash, lastSeenAt = Date.now()) {
+  const now = Number(lastSeenAt) || Date.now();
+  return (await db.update('auth_sessions', {
+    token_hash: String(tokenHash || ''),
+    revoked_at: { op: 'is', value: 'null' },
+    expires_at: { op: 'gt', value: now },
+  }, { last_seen_at: now })).changes;
 }
 
 async function revokeAuthSession(tokenHash, revokedAt = Date.now()) {
@@ -1139,7 +1170,8 @@ async function dedupeLegacyIncidentEvents() {
 module.exports = {
   getUnit, findUnit,
   findUnitMember, listUnitMembers, addUnitMember, updateUnitMember,
-  createAuthSession, getAuthSession, revokeAuthSession, revokeAuthSessionsForMember,
+  createAuthSession, getAuthSession, getAuthSessionRecord, refreshAuthSession, touchAuthSession,
+  revokeAuthSession, revokeAuthSessionsForMember,
   getOperation, beginOperation, completeOperation, releaseOperation,
   getIncident, createIncident, createIncidentWithEvent, listIncidents, findRecentActiveIncident, updateIncidentTitle, updateIncidentTitleWithEvent,
   setIncidentSuggestedTitle, touchIncidentActivity, archiveIncident, archiveIncidentWithEvent, archiveStaleIncidents,

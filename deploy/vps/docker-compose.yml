@@ -1,0 +1,78 @@
+services:
+  database:
+    image: docker.m.daocloud.io/library/postgres:17-bookworm
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_DB: watchdog
+      POSTGRES_USER: watchdog
+      POSTGRES_PASSWORD: ${WATCHDOG_DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U watchdog -d watchdog"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 512m
+
+  backend:
+    build:
+      context: ../../backend
+      args:
+        NODE_IMAGE: docker.m.daocloud.io/library/node:24-bookworm-slim
+    restart: unless-stopped
+    env_file:
+      - ../../backend/.env.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      WATCHDOG_DB_DRIVER: postgres
+      DATABASE_URL: postgresql://watchdog:${WATCHDOG_DB_PASSWORD}@database:5432/watchdog
+      DATABASE_POOL_MAX: 5
+      DATABASE_SSL: 0
+    depends_on:
+      database:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    mem_limit: 640m
+
+  caddy:
+    image: docker.m.daocloud.io/library/caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      WATCHDOG_DOMAIN: ${WATCHDOG_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      website:
+        condition: service_started
+    mem_limit: 128m
+
+  website:
+    build:
+      context: ../..
+      dockerfile: deploy/vps/website.Dockerfile
+    restart: unless-stopped
+    expose:
+      - "80"
+    mem_limit: 64m
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

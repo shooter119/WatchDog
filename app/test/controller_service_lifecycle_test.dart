@@ -115,6 +115,28 @@ class _AuthLifecycleController extends AppController {
   Future<void> syncSettings() async {}
 }
 
+class _SessionRefreshApi extends ApiClient {
+  _SessionRefreshApi({this.result, this.error, this.gate})
+    : super(
+        baseUrl: 'https://example.test',
+        incidentId: '',
+        sessionToken: 'session-token',
+      );
+
+  final Map<String, dynamic>? result;
+  final Object? error;
+  final Completer<Map<String, dynamic>>? gate;
+  int refreshCalls = 0;
+
+  @override
+  Future<Map<String, dynamic>> refreshSession() async {
+    refreshCalls++;
+    if (error != null) throw error!;
+    if (gate != null) return gate!.future;
+    return result!;
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -280,7 +302,7 @@ void main() {
     expect(sp.getString('session_token'), isNull);
   });
 
-  test('兼容窗口恢复认证状态并清除会话令牌', () async {
+  test('仅有效会话恢复认证状态，主动退出清除令牌', () async {
     SharedPreferences.setMockInitialValues({
       'real_name': '测试人员',
       'unit_id': 'unit-a',
@@ -290,11 +312,13 @@ void main() {
     });
     final unauthenticated = _AuthLifecycleController();
     await unauthenticated.init();
-    // 后端完成迁移前可能未返回 session_token，客户端暂时走旧认证头。
-    expect(unauthenticated.needsAuthentication, isFalse);
+    expect(unauthenticated.needsAuthentication, isTrue);
     unauthenticated.dispose();
 
     await Settings.setSessionToken('session-token');
+    await Settings.setSessionExpiresAt(
+      DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch,
+    );
     final authenticated = _AuthLifecycleController();
     addTearDown(authenticated.dispose);
     await authenticated.init();
@@ -303,5 +327,117 @@ void main() {
     await authenticated.leaveUnit();
     expect(authenticated.needsAuthentication, isTrue);
     expect(await Settings.sessionToken, isEmpty);
+  });
+
+  test('会话临近过期时续期并保存新的 expires_at', () async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    SharedPreferences.setMockInitialValues({
+      'real_name': '测试人员',
+      'unit_id': 'unit-a',
+      'unit_code': '1234',
+      'unit_name': '测试单位',
+      'session_token': 'session-token',
+      'session_expires_at': now + const Duration(minutes: 30).inMilliseconds,
+    });
+    final api = _SessionRefreshApi(
+      result: {'expires_at': now + const Duration(hours: 8).inMilliseconds},
+    );
+    final controller = _AuthLifecycleController()..api = api;
+    addTearDown(controller.dispose);
+
+    await controller.init();
+    await controller.handleAppResumed();
+
+    expect(api.refreshCalls, 1);
+    expect(
+      await Settings.sessionExpiresAt,
+      now + const Duration(hours: 8).inMilliseconds,
+    );
+  });
+
+  test('过期会话启动时回认证页并保留单位姓名但清除验证码', () async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    SharedPreferences.setMockInitialValues({
+      'real_name': '测试人员',
+      'unit_id': 'unit-a',
+      'unit_code': '1234',
+      'unit_name': '测试单位',
+      'session_token': 'expired-token',
+      'session_expires_at': now - 1,
+      'current_incident_id': 'incident-a',
+    });
+    final controller = _AuthLifecycleController();
+    addTearDown(controller.dispose);
+
+    await controller.init();
+
+    expect(controller.needsAuthentication, isTrue);
+    expect(await Settings.sessionToken, isEmpty);
+    expect(await Settings.sessionExpiresAt, 0);
+    expect(await Settings.currentIncidentId, isEmpty);
+    expect(await Settings.unitId, isEmpty);
+    expect(await Settings.unitCode, isEmpty);
+    expect(await Settings.unitName, '测试单位');
+    expect(await Settings.realName, '测试人员');
+  });
+
+  test('并发会话续期只发起一次请求', () async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    SharedPreferences.setMockInitialValues({
+      'real_name': '测试人员',
+      'unit_id': 'unit-a',
+      'unit_name': '测试单位',
+      'session_token': 'session-token',
+      'session_expires_at': now + const Duration(minutes: 30).inMilliseconds,
+    });
+    final gate = Completer<Map<String, dynamic>>();
+    final api = _SessionRefreshApi(gate: gate);
+    final controller = _AuthLifecycleController()..api = api;
+    addTearDown(controller.dispose);
+    await controller.init();
+
+    final first = controller.handleAppResumed();
+    final second = controller.handleAppResumed();
+    gate.complete({
+      'expires_at': now + const Duration(hours: 8).inMilliseconds,
+    });
+    await Future.wait([first, second]);
+
+    expect(api.refreshCalls, 1);
+  });
+
+  test('续期返回 SESSION_EXPIRED 时统一清理且保留身份预填', () async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    SharedPreferences.setMockInitialValues({
+      'real_name': '测试人员',
+      'unit_id': 'unit-a',
+      'unit_code': '1234',
+      'unit_name': '测试单位',
+      'session_token': 'session-token',
+      'session_expires_at': now + const Duration(minutes: 30).inMilliseconds,
+      'current_incident_id': 'incident-a',
+    });
+    final api = _SessionRefreshApi(
+      error: ApiException(
+        '认证会话已过期，请重新认证',
+        statusCode: 401,
+        code: 'SESSION_EXPIRED',
+      ),
+    );
+    final controller = _AuthLifecycleController()..api = api;
+    addTearDown(controller.dispose);
+    await controller.init();
+
+    await Future.wait([
+      controller.handleAppResumed(),
+      controller.handleAppResumed(),
+    ]);
+
+    expect(api.refreshCalls, 1);
+    expect(controller.needsAuthentication, isTrue);
+    expect(await Settings.sessionToken, isEmpty);
+    expect(await Settings.unitCode, isEmpty);
+    expect(await Settings.unitName, '测试单位');
+    expect(await Settings.realName, '测试人员');
   });
 }

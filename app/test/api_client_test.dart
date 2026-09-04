@@ -23,24 +23,57 @@ class _JsonFixture {
 Future<_JsonFixture> _jsonFixture({
   required int statusCode,
   required Object responseBody,
+  void Function(ApiException error)? onAuthenticationFailure,
+  Map<String, String> responseHeaders = const {},
 }) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final subscription = server.listen((request) async {
     await request.drain();
     request.response
       ..statusCode = statusCode
-      ..headers.contentType = ContentType.json
-      ..write(jsonEncode(responseBody));
+      ..headers.contentType = ContentType.json;
+    responseHeaders.forEach(request.response.headers.set);
+    request.response.write(jsonEncode(responseBody));
     await request.response.close();
   });
   final api = ApiClient(
     baseUrl: 'http://${server.address.address}:${server.port}',
     incidentId: 'incident-for-test',
+    sessionToken: 'session-token',
+    onAuthenticationFailure: onAuthenticationFailure,
   );
   return _JsonFixture(api, server, subscription);
 }
 
 void main() {
+  test('session refresh persists structured auth failures and request id', () async {
+    ApiException? callbackError;
+    final fixture = await _jsonFixture(
+      statusCode: 401,
+      responseBody: const {
+        'error': '认证会话已过期，请重新认证',
+        'code': 'SESSION_EXPIRED',
+      },
+      responseHeaders: const {'X-Request-Id': 'request-session-expired'},
+      onAuthenticationFailure: (error) => callbackError = error,
+    );
+    addTearDown(fixture.close);
+
+    await expectLater(
+      fixture.api.refreshSession(),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.code, 'code', 'SESSION_EXPIRED')
+            .having(
+              (error) => error.requestId,
+              'requestId',
+              'request-session-expired',
+            ),
+      ),
+    );
+    expect(callbackError?.code, 'SESSION_EXPIRED');
+  });
+
   test(
     'realtime ASR exposes a direct endpoint and a WebSocket gateway fallback',
     () {

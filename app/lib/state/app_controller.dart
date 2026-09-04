@@ -87,6 +87,9 @@ class AppController extends ChangeNotifier {
   int _lastOptionalServicesAttemptAt = 0;
   Future<void>? _loadRosterFuture;
   Future<void>? _keepAliveFuture;
+  Future<void>? _sessionRefreshFuture;
+  Future<void>? _authenticationInvalidationFuture;
+  Timer? _sessionRefreshTimer;
   SyncCoordinator? _syncCoordinator;
   Future<void>? _realtimeStartFuture;
   SyncConnectionState syncConnectionState = SyncConnectionState.stopped;
@@ -98,26 +101,27 @@ class AppController extends ChangeNotifier {
   int _lastSyncSuccessAt = 0;
   int _firstSyncFailureAt = 0;
 
-  /// 平滑断线判定：最近 [connectionLostThreshold] 毫秒内无一次同步成功才视为断线，
-  /// 避免网络瞬时抖动导致连接状态频繁变红。从未成功过时乐观视为已连接。
+  /// 平滑断线判定：实时 WebSocket 已建立时保持在线；连接进入错误/重连后，
+  /// 连续超过 [connectionLostThreshold] 毫秒没有同步成功才视为断线，避免网络
+  /// 瞬时抖动导致连接状态频繁变红。从未成功过时乐观视为已连接。
   static const int connectionLostThreshold = 30000;
 
-  bool get connectionLost {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    if (_lastSyncSuccessAt <= 0) {
-      // 首次启动的冷启动、网关实例唤醒或瞬时网络抖动不应立刻显示红色。
-      // 连续失败超过阈值后再判定中断。
-      return _firstSyncFailureAt > 0 &&
-          now - _firstSyncFailureAt > connectionLostThreshold;
-    }
-    return now - _lastSyncSuccessAt > connectionLostThreshold;
-  }
+  bool get connectionLost => isConnectionLost(
+    lastSyncSuccessAt: _lastSyncSuccessAt,
+    firstSyncFailureAt: _firstSyncFailureAt,
+    nowMs: DateTime.now().millisecondsSinceEpoch,
+    thresholdMs: connectionLostThreshold,
+    syncConnected: syncConnectionState == SyncConnectionState.connected,
+  );
 
   Incident? currentIncident;
   List<Incident> activeIncidents = [];
   List<IncidentForce> forces = [];
   bool _authenticated = false;
   bool _syncStarted = false;
+
+  static const Duration sessionRefreshCheckInterval = Duration(minutes: 15);
+  static const Duration sessionRefreshLeadTime = Duration(hours: 1);
 
   /// 首次安装先完成单位验证码 + 实名认证，再进入警情选择。
   bool get needsAuthentication => !_authenticated;
@@ -192,11 +196,26 @@ class AppController extends ChangeNotifier {
     // 先建立 API 客户端。首次安装必须先完成单位认证，认证前不拉取业务数据。
     await refreshConfig();
     if (_disposed) return;
+    final sessionToken = await Settings.sessionToken;
     _authenticated =
         (await Settings.realName).isNotEmpty &&
         (await Settings.unitId).isNotEmpty &&
         (await Settings.unitName).isNotEmpty &&
-        (await Settings.unitCode).isNotEmpty;
+        sessionToken.isNotEmpty;
+    if (_authenticated) {
+      final expiresAt = await Settings.sessionExpiresAt;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (expiresAt > 0 && expiresAt <= now) {
+        await _invalidateAuthenticationOnce();
+      } else if (expiresAt <= 0) {
+        // 兼容升级前没有保存 expires_at 的会话：启动时立即向服务端校验并补齐。
+        try {
+          await _refreshSession(force: true);
+        } on ApiException catch (error) {
+          if (!ApiClient.isAuthenticationFailure(error)) rethrow;
+        }
+      }
+    }
     // 认证前只恢复本地名单，不向服务端发送未认证请求；认证成功后由
     // _startAuthenticatedServices 统一发起一次远端刷新。
     await _ensureLocalRoster();
@@ -209,6 +228,7 @@ class AppController extends ChangeNotifier {
 
   void _startAuthenticatedServices() {
     if (_disposed || !_authenticated || _syncStarted) return;
+    _startSessionRefreshTimer();
     startSync();
     // 认证前的名单请求会被服务端拒绝；认证完成后重新拉取，拿到单位当前名单。
     unawaited(loadRoster());
@@ -219,6 +239,121 @@ class AppController extends ChangeNotifier {
     // 报警、TTS 和后台值守在后台初始化，任何系统权限/插件问题都不影响
     // 活跃警情列表与新建警情。
     unawaited(_ensureOptionalServices());
+  }
+
+  void _startSessionRefreshTimer() {
+    _sessionRefreshTimer?.cancel();
+    if (_disposed || !_authenticated) return;
+    _sessionRefreshTimer = Timer.periodic(sessionRefreshCheckInterval, (_) {
+      unawaited(
+        _refreshSession().catchError((Object error, StackTrace stackTrace) {
+          if (!ApiClient.isAuthenticationFailure(error)) {
+            debugPrint('WatchDog session refresh failed: $error');
+          }
+        }),
+      );
+    });
+  }
+
+  /// App 从后台回到前台时立即核对会话，避免后台挂起期间错过定时续期。
+  Future<void> handleAppResumed() async {
+    try {
+      await _refreshSession();
+    } catch (error) {
+      if (!ApiClient.isAuthenticationFailure(error) &&
+          error is! StateError) {
+        debugPrint('WatchDog resume session check failed: $error');
+      }
+    }
+  }
+
+  Future<void> _refreshSession({bool force = false}) {
+    final existing = _sessionRefreshFuture;
+    if (existing != null) return existing;
+    final future = _refreshSessionInternal(force: force);
+    _sessionRefreshFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_sessionRefreshFuture, future)) {
+          _sessionRefreshFuture = null;
+        }
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_sessionRefreshFuture, future)) {
+          _sessionRefreshFuture = null;
+        }
+      },
+    );
+    return future;
+  }
+
+  Future<void> _refreshSessionInternal({required bool force}) async {
+    if (_disposed || !_authenticated) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final expiresAt = await Settings.sessionExpiresAt;
+    if (expiresAt > 0 && expiresAt <= now) {
+      await _invalidateAuthenticationOnce();
+      throw StateError('认证会话已过期，请重新认证');
+    }
+    if (!force &&
+        expiresAt > now + sessionRefreshLeadTime.inMilliseconds) {
+      return;
+    }
+    final activeApi = api;
+    if (activeApi == null || activeApi.sessionToken.isEmpty) {
+      await _invalidateAuthenticationOnce();
+      throw StateError('认证会话已失效，请重新认证');
+    }
+    final generation = _sessionGeneration;
+    try {
+      final result = await activeApi.refreshSession();
+      if (!_isCurrentSession(activeApi, generation) || !_authenticated) return;
+      final refreshedExpiresAt = _intValue(result['expires_at']);
+      if (refreshedExpiresAt <= now) {
+        throw ApiException(
+          '认证续期响应无效，请重新认证',
+          statusCode: 401,
+          code: 'SESSION_INVALID',
+        );
+      }
+      await Settings.setSessionExpiresAt(refreshedExpiresAt);
+    } catch (error) {
+      if (ApiClient.isAuthenticationFailure(error)) {
+        await _invalidateAuthenticationOnce();
+      }
+      rethrow;
+    }
+  }
+
+  void _handleAuthenticationFailure(ApiException error) {
+    if (_disposed || !ApiClient.isAuthenticationFailure(error)) return;
+    unawaited(_invalidateAuthenticationOnce());
+  }
+
+  Future<void> _invalidateAuthenticationOnce() {
+    final existing = _authenticationInvalidationFuture;
+    if (existing != null) return existing;
+    final future = _invalidateAuthentication();
+    _authenticationInvalidationFuture = future;
+    future.then<void>(
+      (_) {
+        if (identical(_authenticationInvalidationFuture, future)) {
+          _authenticationInvalidationFuture = null;
+        }
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_authenticationInvalidationFuture, future)) {
+          _authenticationInvalidationFuture = null;
+        }
+      },
+    );
+    return future;
+  }
+
+  static int _intValue(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   /// 完成启动浮层中的单位认证，认证成功后浮层自动切换为警情选择阶段。
@@ -283,6 +418,10 @@ class AppController extends ChangeNotifier {
     // 兼容窗口内旧后端可能尚未签发会话令牌；一旦服务端启用强制会话，
     // 受保护探测会返回 SESSION_REQUIRED，随后按统一失效流程回到认证浮层。
     final sessionToken = result['session_token']?.toString().trim() ?? '';
+    final sessionExpiresAt = _intValue(result['expires_at']);
+    if (sessionToken.isEmpty || sessionExpiresAt <= 0) {
+      throw StateError('单位认证响应缺少有效会话，请稍后重试');
+    }
 
     // 在切换门禁和持久化前，使用本次令牌完成第一条受保护请求。
     final protectedProbe = ApiClient(
@@ -302,6 +441,7 @@ class AppController extends ChangeNotifier {
 
     // 单位验证码是当前部署的唯一人工认证凭据；认证成功后保存设备会话。
     await Settings.setSessionToken(sessionToken);
+    await Settings.setSessionExpiresAt(sessionExpiresAt);
     await Settings.setRealName(name);
     await Settings.setUnitId(unitId);
     await Settings.setUnitCode(code);
@@ -324,6 +464,8 @@ class AppController extends ChangeNotifier {
     _realtimeStartFuture = null;
     _tickTimer?.cancel();
     _tickTimer = null;
+    _sessionRefreshTimer?.cancel();
+    _sessionRefreshTimer = null;
     _syncStarted = false;
     _syncFuture = null;
     _keepAliveFuture = null;
@@ -339,6 +481,7 @@ class AppController extends ChangeNotifier {
     await Settings.setCurrentIncidentId('');
     await Settings.setApiToken('');
     await Settings.setSessionToken('');
+    await Settings.setSessionExpiresAt(0);
     await Settings.setRealName('');
     await Settings.setUnitId('');
     await Settings.setUnitCode('');
@@ -581,6 +724,7 @@ class AppController extends ChangeNotifier {
       actorName: await Settings.realName,
       unitId: unitId,
       unitCode: unitCode,
+      onAuthenticationFailure: _handleAuthenticationFailure,
     );
     if (_disposed) {
       nextApi.dispose();
@@ -903,7 +1047,7 @@ class AppController extends ChangeNotifier {
               e.code == 'SESSION_REQUIRED' ||
               e.code == 'SESSION_INVALID' ||
               e.code == 'SESSION_EXPIRED')) {
-        await _invalidateAuthentication();
+        await _invalidateAuthenticationOnce();
         return;
       }
       // 请求级超时和 HttpClient 的连接/空闲超时负责回收失败连接；不能为了
@@ -1077,6 +1221,8 @@ class AppController extends ChangeNotifier {
     _realtimeStartFuture = null;
     _tickTimer?.cancel();
     _tickTimer = null;
+    _sessionRefreshTimer?.cancel();
+    _sessionRefreshTimer = null;
     _syncStarted = false;
     _syncFuture = null;
     _keepAliveFuture = null;
@@ -1086,10 +1232,9 @@ class AppController extends ChangeNotifier {
     await Settings.setCurrentIncidentId('');
     await Settings.setApiToken('');
     await Settings.setSessionToken('');
-    await Settings.setRealName('');
+    await Settings.setSessionExpiresAt(0);
     await Settings.setUnitId('');
     await Settings.setUnitCode('');
-    await Settings.setUnitName('');
     final previousApi = api;
     api = null;
     previousApi?.dispose();
@@ -1422,6 +1567,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> selectIncident(String id, {Incident? knownIncident}) async {
+    await _refreshSession();
+    if (needsAuthentication) throw StateError('认证会话已过期，请重新认证');
     await Settings.setCurrentIncidentId(id);
     _sessionGeneration++;
     _syncFuture = null;
@@ -1446,6 +1593,8 @@ class AppController extends ChangeNotifier {
     final name = await Settings.realName;
     if (name.isEmpty) throw StateError('请先在设置中填写真实姓名');
     await _ensureApiReady();
+    await _refreshSession();
+    if (needsAuthentication) throw StateError('认证会话已过期，请重新认证');
     // 新建警情是核心链路，不能因为启动时某个可选插件失败而没有
     // ApiClient。按当前设置现场补建客户端，确保请求得到真实的网络/服务端错误。
     final a = api ??= ApiClient(
@@ -1456,12 +1605,30 @@ class AppController extends ChangeNotifier {
       actorName: name,
       unitId: await Settings.unitId,
       unitCode: await Settings.unitCode,
+      onAuthenticationFailure: _handleAuthenticationFailure,
     );
-    debugPrint('WatchDog createIncident: api=ready, actor=configured');
-    final incident = await a.createIncident(
-      realName: name,
-      opId: 'incident-create-${DateTime.now().microsecondsSinceEpoch}',
-    );
+    final opId = 'incident-create-${DateTime.now().microsecondsSinceEpoch}';
+    debugPrint('WatchDog createIncident: api=ready, actor=configured, op_id=$opId');
+    late final Incident incident;
+    try {
+      incident = await a.createIncident(realName: name, opId: opId);
+    } catch (error) {
+      final requestId = error is ApiException ? error.requestId : null;
+      OpLogService.instance.record(
+        opId,
+        'incident_create_fail',
+        '新建警情失败: $error',
+        level: 'error',
+        data: {
+          if (requestId != null && requestId.isNotEmpty)
+            'request_id': requestId,
+        },
+      );
+      if (ApiClient.isAuthenticationFailure(error)) {
+        await _invalidateAuthenticationOnce();
+      }
+      rethrow;
+    }
     await Settings.setCurrentIncidentId(incident.id);
     _sessionGeneration++;
     _syncFuture = null;
@@ -1932,6 +2099,7 @@ class AppController extends ChangeNotifier {
     unawaited(OpLogService.instance.flushLocal());
     unawaited(_syncCoordinator?.stop() ?? Future<void>.value());
     _tickTimer?.cancel();
+    _sessionRefreshTimer?.cancel();
     _syncFuture = null;
     _keepAliveFuture = null;
     api?.dispose();
@@ -1945,14 +2113,20 @@ class AppController extends ChangeNotifier {
 }
 
 /// 平滑断线判定纯函数（可单测）：
-/// 从未同步成功（lastSyncSuccessAt == 0）→ 乐观视为已连接；
-/// 距上次成功超过 [thresholdMs] 毫秒 → 断线。
+/// 实时同步连接已建立时保持在线；从未同步成功（lastSyncSuccessAt == 0）
+/// → 乐观视为已连接；距上次成功超过 [thresholdMs] 毫秒 → 断线。
 bool isConnectionLost({
   required int lastSyncSuccessAt,
   required int nowMs,
   int thresholdMs = 30000,
+  bool syncConnected = false,
+  int firstSyncFailureAt = 0,
 }) {
-  if (lastSyncSuccessAt <= 0) return false;
+  if (syncConnected) return false;
+  if (lastSyncSuccessAt <= 0) {
+    // 首次启动的冷启动、网关实例唤醒或瞬时网络抖动不应立刻显示红色。
+    return firstSyncFailureAt > 0 && nowMs - firstSyncFailureAt > thresholdMs;
+  }
   return nowMs - lastSyncSuccessAt > thresholdMs;
 }
 

@@ -76,7 +76,8 @@ class WatchDogApp extends StatefulWidget {
   State<WatchDogApp> createState() => _WatchDogAppState();
 }
 
-class _WatchDogAppState extends State<WatchDogApp> {
+class _WatchDogAppState extends State<WatchDogApp>
+    with WidgetsBindingObserver {
   late final AppController controller;
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
@@ -94,6 +95,7 @@ class _WatchDogAppState extends State<WatchDogApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     controller =
         widget.controller ?? AppController(localAsr: LocalAsrService());
     DiagnosticLogService.instance.setPage('home');
@@ -113,10 +115,18 @@ class _WatchDogAppState extends State<WatchDogApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _chatInput.dispose();
     _chatInputFocus.dispose();
     controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(controller.handleAppResumed());
+    }
   }
 
   void _selectTab(int i) {
