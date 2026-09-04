@@ -1,4 +1,5 @@
-FROM node:24-bookworm-slim
+ARG NODE_IMAGE=node:24-bookworm-slim
+FROM ${NODE_IMAGE}
 
 WORKDIR /app
 
@@ -6,6 +7,7 @@ COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY --chown=node:node src ./src
+COPY --chown=node:node migrations ./migrations
 COPY --chown=node:node models ./models
 
 ENV NODE_ENV=production

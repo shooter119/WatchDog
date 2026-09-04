@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import '../services/settings.dart';
 import '../theme/app_widgets.dart';
 
 /// 启动时的强制认证/警情选择层。
@@ -47,6 +48,24 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
   final TextEditingController _unitCode = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _restoreIdentityDefaults();
+  }
+
+  Future<void> _restoreIdentityDefaults() async {
+    final unitName = await Settings.unitName;
+    final realName = await Settings.realName;
+    if (!mounted) return;
+    if (_unitName.text.isEmpty && unitName.trim().isNotEmpty) {
+      _unitName.text = unitName.trim();
+    }
+    if (_realName.text.isEmpty && realName.trim().isNotEmpty) {
+      _realName.text = realName.trim();
+    }
+  }
+
+  @override
   void dispose() {
     _unitName.dispose();
     _realName.dispose();
@@ -56,7 +75,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
 
   Future<void> _select(Incident incident) async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       await widget.onSelect(incident);
     } catch (error) {
@@ -68,7 +90,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
 
   Future<void> _create() async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       await widget.onCreate();
     } catch (error) {
@@ -394,6 +419,17 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay> {
                                           ),
                                         ),
                                       ],
+                                    ),
+                                  ],
+                                  if (_error != null) ...[
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      _error!,
+                                      key: const Key('incident-selection-error'),
+                                      style: const TextStyle(
+                                        color: AppColors.alarm,
+                                        fontSize: 13,
+                                      ),
                                     ),
                                   ],
                                   const SizedBox(height: 16),

@@ -18,6 +18,7 @@ class ApiClient {
   final String unitId;
   final String unitCode;
   final String sessionToken;
+  final void Function(ApiException error)? onAuthenticationFailure;
   final IOClient _client = _newHttpClient();
   IOClient? _activeChatClient;
   final Set<IOClient> _transientClients = <IOClient>{};
@@ -32,6 +33,7 @@ class ApiClient {
     this.unitId = '',
     this.unitCode = '',
     this.sessionToken = '',
+    this.onAuthenticationFailure,
   });
 
   ApiClient forIncident(String id) => ApiClient(
@@ -43,6 +45,7 @@ class ApiClient {
     unitId: unitId,
     unitCode: unitCode,
     sessionToken: sessionToken,
+    onAuthenticationFailure: onAuthenticationFailure,
   );
 
   /// 辅助 AI 不属于任何警情，也不参与警情协同。
@@ -55,6 +58,7 @@ class ApiClient {
     unitId: unitId,
     unitCode: unitCode,
     sessionToken: sessionToken,
+    onAuthenticationFailure: onAuthenticationFailure,
   );
 
   Map<String, String> get _headers => {
@@ -125,12 +129,17 @@ class ApiClient {
 
   Map<String, String> realtimeSyncHeaders() => _headers;
 
-  Future<Map<String, dynamic>> fetchSyncBootstrap({String? forIncidentId}) async {
+  Future<Map<String, dynamic>> fetchSyncBootstrap({
+    String? forIncidentId,
+  }) async {
     final query = <String, String>{
       if (forIncidentId != null && forIncidentId.isNotEmpty)
         'incident_id': forIncidentId,
     };
-    final path = Uri(path: '/api/sync/bootstrap', queryParameters: query).toString();
+    final path = Uri(
+      path: '/api/sync/bootstrap',
+      queryParameters: query,
+    ).toString();
     final res = await _client
         .get(_uri(path), headers: _headers)
         .timeout(const Duration(seconds: 15));
@@ -144,12 +153,17 @@ class ApiClient {
     return Map<String, dynamic>.from(body);
   }
 
-  Future<Map<String, dynamic>> fetchSyncCheckpoint({String? forIncidentId}) async {
+  Future<Map<String, dynamic>> fetchSyncCheckpoint({
+    String? forIncidentId,
+  }) async {
     final query = <String, String>{
       if (forIncidentId != null && forIncidentId.isNotEmpty)
         'incident_id': forIncidentId,
     };
-    final path = Uri(path: '/api/sync/checkpoint', queryParameters: query).toString();
+    final path = Uri(
+      path: '/api/sync/checkpoint',
+      queryParameters: query,
+    ).toString();
     final res = await _client
         .get(_uri(path), headers: _headers)
         .timeout(const Duration(seconds: 10));
@@ -254,12 +268,46 @@ class ApiClient {
     required dynamic body,
     required String fallback,
   }) {
-    return ApiException(
+    final error = ApiException(
       _responseError(res.statusCode, body, fallback),
       statusCode: res.statusCode,
       code: _responseCode(res, body),
+      requestId: res.headers['x-request-id'],
     );
+    if (isAuthenticationFailure(error)) onAuthenticationFailure?.call(error);
+    return error;
   }
+
+  ApiException _streamedApiException(
+    http.StreamedResponse res,
+    String responseBody, {
+    required String fallback,
+  }) {
+    dynamic body;
+    try {
+      body = jsonDecode(responseBody);
+    } catch (_) {
+      body = null;
+    }
+    final error = ApiException(
+      _responseError(res.statusCode, body, fallback),
+      statusCode: res.statusCode,
+      code: body is Map && body['code'] != null
+          ? body['code'].toString()
+          : 'HTTP_${res.statusCode}',
+      requestId: res.headers['x-request-id'],
+    );
+    if (isAuthenticationFailure(error)) onAuthenticationFailure?.call(error);
+    return error;
+  }
+
+  static bool isAuthenticationFailure(Object error) =>
+      error is ApiException &&
+      const {
+        'SESSION_REQUIRED',
+        'SESSION_INVALID',
+        'SESSION_EXPIRED',
+      }.contains(error.code);
 
   String _responseCode(http.Response res, dynamic body) {
     final code = body is Map ? body['code']?.toString().trim() : null;
@@ -272,16 +320,6 @@ class ApiClient {
         statusCode: res.statusCode,
         code: 'INVALID_RESPONSE_SHAPE',
       );
-
-  String _responseErrorText(String raw, int statusCode, String fallback) {
-    dynamic body;
-    try {
-      body = jsonDecode(raw);
-    } catch (_) {
-      body = null;
-    }
-    return _responseError(statusCode, body, fallback);
-  }
 
   /// 后端冷启动或移动网络切换时，认证请求可能短暂收到 502/503/504
   /// 或在连接层超时。认证写入按设备幂等，允许短暂退避后重试。
@@ -738,7 +776,7 @@ class ApiClient {
         }
         if (res.statusCode != 200) {
           final body = await res.stream.bytesToString();
-          throw ApiException(_responseErrorText(body, res.statusCode, '提问失败'));
+          throw _streamedApiException(res, body, fallback: '提问失败');
         }
         final full = StringBuffer();
         final parser = SseLineParser();
@@ -958,6 +996,20 @@ class ApiClient {
     }
     if (body is! Map) {
       throw _responseShapeException(res, '单位认证响应格式异常');
+    }
+    return Map<String, dynamic>.from(body);
+  }
+
+  Future<Map<String, dynamic>> refreshSession() async {
+    final res = await _client
+        .post(_uri('/api/auth/refresh'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '续期认证会话失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '续期认证会话失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '认证续期响应格式异常');
     }
     return Map<String, dynamic>.from(body);
   }
@@ -1224,7 +1276,8 @@ class ApiException implements Exception {
   final String message;
   final int? statusCode;
   final String? code;
-  ApiException(this.message, {this.statusCode, this.code});
+  final String? requestId;
+  ApiException(this.message, {this.statusCode, this.code, this.requestId});
   @override
   String toString() => message;
 }

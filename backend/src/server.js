@@ -57,9 +57,14 @@ const OPERATION_LEDGER_ENABLED = String(
   process.env.WATCHDOG_OPERATION_LEDGER_ENABLED ?? '1',
 ) !== '0';
 const configuredSessionTtl = Number(process.env.WATCHDOG_SESSION_TTL_MS || 8 * 60 * 60 * 1000);
+const minimumSessionTtl = process.env.NODE_ENV === 'test' ? 100 : 15 * 60 * 1000;
 const SESSION_TTL_MS = Number.isFinite(configuredSessionTtl)
-  ? Math.min(Math.max(configuredSessionTtl, 15 * 60 * 1000), 7 * 24 * 60 * 60 * 1000)
+  ? Math.min(Math.max(configuredSessionTtl, minimumSessionTtl), 7 * 24 * 60 * 60 * 1000)
   : 8 * 60 * 60 * 1000;
+const configuredSessionMaxTtl = Number(process.env.WATCHDOG_SESSION_MAX_TTL_MS || 30 * 24 * 60 * 60 * 1000);
+const SESSION_MAX_TTL_MS = Number.isFinite(configuredSessionMaxTtl)
+  ? Math.min(Math.max(configuredSessionMaxTtl, SESSION_TTL_MS), 90 * 24 * 60 * 60 * 1000)
+  : 30 * 24 * 60 * 60 * 1000;
 if (process.env.NODE_ENV === 'production' && !UNIT_AUTH_REQUIRED) {
   throw new Error('生产环境必须启用 WATCHDOG_UNIT_AUTH_REQUIRED');
 }
@@ -215,16 +220,22 @@ app.use(async (req, res, next) => {
 // 单位认证由数据库中的 units 记录驱动。未归属历史警情不属于任何普通单位，
 // 不在这里把旧数据强行归属到当前认证单位。
 app.use(async (req, res, next) => {
-  if (req.path === '/api/health' || req.path === '/api/auth/verify') return next();
+  if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh') return next();
   if (SESSION_AUTH_REQUIRED) {
     const rawToken = sessionTokenFromRequest(req);
     if (!rawToken || rawToken.length > 256) {
       return res.status(401).json({ error: '请先完成单位认证', code: 'SESSION_REQUIRED' });
     }
     try {
-      const session = await db.getAuthSession(hashSessionToken(rawToken));
-      if (!session) {
+      const tokenHash = hashSessionToken(rawToken);
+      const session = typeof db.getAuthSessionRecord === 'function'
+        ? await db.getAuthSessionRecord(tokenHash)
+        : await db.getAuthSession(tokenHash);
+      if (!session || session.revoked_at != null) {
         return res.status(401).json({ error: '认证会话已失效，请重新认证', code: 'SESSION_INVALID' });
+      }
+      if (Number(session.expires_at) <= Date.now()) {
+        return res.status(401).json({ error: '认证会话已过期，请重新认证', code: 'SESSION_EXPIRED' });
       }
       const unit = await db.getUnit(session.unit_id);
       if (!unit) {
@@ -239,6 +250,11 @@ app.use(async (req, res, next) => {
         role: ['member', 'manager', 'admin'].includes(session.role) ? session.role : 'member',
       };
       req.unit = { id: unit.id, name: unit.name };
+      res.once('finish', () => {
+        if (res.statusCode >= 400 || typeof db.touchAuthSession !== 'function') return;
+        Promise.resolve(db.touchAuthSession(tokenHash, Date.now()))
+          .catch((error) => logger.warn(`更新会话活跃时间失败: ${errorSummary(error)}`));
+      });
       return next();
     } catch (error) {
       return next(error);
@@ -310,9 +326,12 @@ async function authenticateRealtimeRequest(req) {
   if (SESSION_AUTH_REQUIRED) {
     const raw = sessionTokenFromRequest(req);
     const session = raw && raw.length <= 256
-      ? await db.getAuthSession(hashSessionToken(raw))
+      ? await (typeof db.getAuthSessionRecord === 'function'
+        ? db.getAuthSessionRecord(hashSessionToken(raw))
+        : db.getAuthSession(hashSessionToken(raw)))
       : null;
-    if (!session) throw Object.assign(new Error('认证会话已失效'), { code: 'SESSION_INVALID' });
+    if (!session || session.revoked_at != null) throw Object.assign(new Error('认证会话已失效'), { code: 'SESSION_INVALID' });
+    if (Number(session.expires_at) <= Date.now()) throw Object.assign(new Error('认证会话已过期'), { code: 'SESSION_EXPIRED' });
     unit = await db.getUnit(session.unit_id);
     if (!unit) throw Object.assign(new Error('认证单位不存在'), { code: 'SESSION_INVALID' });
     req.auth = {
@@ -343,9 +362,12 @@ async function authenticateSyncRequest(req) {
   if (SESSION_AUTH_REQUIRED) {
     const raw = sessionTokenFromRequest(req);
     const session = raw && raw.length <= 256
-      ? await db.getAuthSession(hashSessionToken(raw))
+      ? await (typeof db.getAuthSessionRecord === 'function'
+        ? db.getAuthSessionRecord(hashSessionToken(raw))
+        : db.getAuthSession(hashSessionToken(raw)))
       : null;
-    if (!session) throw Object.assign(new Error('认证会话已失效'), { code: 'SESSION_INVALID' });
+    if (!session || session.revoked_at != null) throw Object.assign(new Error('认证会话已失效'), { code: 'SESSION_INVALID' });
+    if (Number(session.expires_at) <= Date.now()) throw Object.assign(new Error('认证会话已过期'), { code: 'SESSION_EXPIRED' });
     unit = await db.getUnit(session.unit_id);
     if (!unit) throw Object.assign(new Error('认证单位不存在'), { code: 'SESSION_INVALID' });
     auth = {
@@ -1096,10 +1118,12 @@ app.post('/api/auth/verify', async (req, res, next) => {
     if (device) await db.saveDeviceProfile(device, name, unit.id);
     let sessionToken = null;
     let sessionExpiresAt = null;
+    let sessionAbsoluteExpiresAt = null;
     if (SESSION_AUTH_REQUIRED) {
       sessionToken = newSessionToken();
       const now = Date.now();
-      sessionExpiresAt = now + SESSION_TTL_MS;
+      sessionAbsoluteExpiresAt = now + SESSION_MAX_TTL_MS;
+      sessionExpiresAt = Math.min(now + SESSION_TTL_MS, sessionAbsoluteExpiresAt);
       await db.createAuthSession({
         id: crypto.randomUUID(),
         tokenHash: hashSessionToken(sessionToken),
@@ -1118,6 +1142,48 @@ app.post('/api/auth/verify', async (req, res, next) => {
       user: { real_name: name, role: member?.role || 'member' },
       session_token: sessionToken,
       expires_at: sessionExpiresAt,
+      idle_ttl_ms: SESSION_TTL_MS,
+      absolute_expires_at: sessionAbsoluteExpiresAt,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.post('/api/auth/refresh', async (req, res, next) => {
+  try {
+    if (!SESSION_AUTH_REQUIRED) {
+      return res.json({ refreshed: false, expires_at: null, idle_ttl_ms: null, absolute_expires_at: null });
+    }
+    const rawToken = sessionTokenFromRequest(req);
+    if (!rawToken || rawToken.length > 256) {
+      return res.status(401).json({ error: '请先完成单位认证', code: 'SESSION_REQUIRED' });
+    }
+    const tokenHash = hashSessionToken(rawToken);
+    const session = typeof db.getAuthSessionRecord === 'function'
+      ? await db.getAuthSessionRecord(tokenHash)
+      : await db.getAuthSession(tokenHash);
+    if (!session || session.revoked_at != null) {
+      return res.status(401).json({ error: '认证会话已失效，请重新认证', code: 'SESSION_INVALID' });
+    }
+    const now = Date.now();
+    const absoluteExpiresAt = Number(session.created_at) + SESSION_MAX_TTL_MS;
+    if (Number(session.expires_at) <= now || absoluteExpiresAt <= now) {
+      return res.status(401).json({ error: '认证会话已过期，请重新认证', code: 'SESSION_EXPIRED' });
+    }
+    const expiresAt = Math.min(now + SESSION_TTL_MS, absoluteExpiresAt);
+    const refreshed = typeof db.refreshAuthSession === 'function'
+      ? await db.refreshAuthSession(tokenHash, { expiresAt, lastSeenAt: now })
+      : session;
+    if (!refreshed) {
+      return res.status(401).json({ error: '认证会话已过期，请重新认证', code: 'SESSION_EXPIRED' });
+    }
+    res.json({
+      refreshed: true,
+      session_token: rawToken,
+      expires_at: expiresAt,
+      idle_ttl_ms: SESSION_TTL_MS,
+      absolute_expires_at: absoluteExpiresAt,
     });
   } catch (e) {
     next(e);
@@ -2124,7 +2190,7 @@ const CHAT_SYSTEM_PROMPT = `你是"水元素"，消防救援现场安全管控�
 8. 回答结构固定为三段，每段以「结论」「立即行动」「注意事项」标题开头（标题独占一行）：
    - 结论：一句话概括警情性质、当前风险和优先级；如果是警情简报，直接给出初步研判，不要等待追问
    - 立即行动：分条列出 2~4 条马上能做的措施
-   - 注意事项：指出风险点与禁忌，必要时追问一句关键信息帮助判断现场情况
+   - 注意事项：指出风险点与禁忌；如需补充关键信息，追加一条可直接点击发送的用户视角问题。问题必须写成安全员向水元素提问的语气（例如“我想确认当前气瓶压力是多少？”），不要写成水元素向安全员索取信息的命令或反问（例如“请告诉我当前气瓶压力”）
 9. 问题简单明确时可不分段，直接简洁作答，但需保留安全提示要点`;
 
 const CHAT_OFF_TOPIC_REPLY = '抱歉，我只提供消防救援现场相关的帮助。';

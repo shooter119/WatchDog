@@ -24,6 +24,8 @@ test('认证仓储：成员准入、会话哈希、过期与撤销', () => {
     createdAt: Date.now() - 2000, expiresAt: Date.now() - 1000,
   });
   assert.equal(db.getAuthSession(expiredHash), undefined);
+  assert.equal(db.getAuthSessionRecord(expiredHash).id, 'expired-session');
+  assert.equal(db.refreshAuthSession(expiredHash, { expiresAt: Date.now() + 60_000 }), undefined);
 
   const currentHash = crypto.createHash('sha256').update('current').digest('hex');
   const session = db.createAuthSession({
@@ -33,6 +35,11 @@ test('认证仓储：成员准入、会话哈希、过期与撤销', () => {
   });
   assert.equal(session.token_hash, currentHash);
   assert.equal(db.getAuthSession(currentHash).role, 'manager');
+  const previousExpiry = session.expires_at;
+  const refreshed = db.refreshAuthSession(currentHash, { expiresAt: previousExpiry + 60_000 });
+  assert.equal(refreshed.expires_at, previousExpiry + 60_000);
+  assert.equal(db.touchAuthSession(currentHash), 1);
   assert.equal(db.revokeAuthSession(currentHash), 1);
   assert.equal(db.getAuthSession(currentHash), undefined);
+  assert.notEqual(db.getAuthSessionRecord(currentHash).revoked_at, null);
 });

@@ -4,6 +4,8 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
+const { DatabaseSync } = require('node:sqlite');
 
 let child;
 let base;
@@ -88,12 +90,27 @@ test('严格认证：成员白名单、会话绑定、注销和管理角色门�
   assert.equal((await json(response)).code, 'SESSION_REQUIRED');
 
   const sessionHeaders = headers({ Authorization: `Bearer ${memberAuth.session_token}` });
+  response = await fetch(`${base}/api/auth/refresh`, { method: 'POST', headers: sessionHeaders });
+  assert.equal(response.status, 200);
+  const refreshedAuth = await json(response);
+  assert.equal(refreshedAuth.refreshed, true);
+  assert.equal(refreshedAuth.session_token, memberAuth.session_token);
+  assert.ok(refreshedAuth.expires_at >= memberAuth.expires_at);
+  assert.ok(refreshedAuth.absolute_expires_at > refreshedAuth.expires_at);
+
   response = await fetch(`${base}/api/config`, { headers: sessionHeaders });
   assert.equal(response.status, 200);
   assert.deepEqual((await json(response)).unit, { id: 'session-test-unit', name: '会话测试单位' });
 
   response = await fetch(`${base}/api/config`, {
     headers: headers({ Authorization: 'Bearer invalid-session', 'X-Unit-Id': 'session-test-unit', 'X-Unit-Code': '2468' }),
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await json(response)).code, 'SESSION_INVALID');
+
+  response = await fetch(`${base}/api/auth/refresh`, {
+    method: 'POST',
+    headers: headers({ Authorization: 'Bearer invalid-session' }),
   });
   assert.equal(response.status, 401);
   assert.equal((await json(response)).code, 'SESSION_INVALID');
@@ -180,4 +197,45 @@ test('严格认证：成员白名单、会话绑定、注销和管理角色门�
   response = await fetch(`${base}/api/config`, { headers: sessionHeaders });
   assert.equal(response.status, 401);
   assert.equal((await json(response)).code, 'SESSION_INVALID');
+
+  response = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: headers({ 'X-Device-Id': 'session-expired-device' }),
+    body: JSON.stringify({ unit_name: '会话测试单位', unit_code: '2468', real_name: '队员' }),
+  });
+  assert.equal(response.status, 200);
+  const expiredAuth = await json(response);
+  const sqlite = new DatabaseSync(path.join(dataDir, 'watchdog.db'));
+  const expiredHash = crypto.createHash('sha256').update(expiredAuth.session_token).digest('hex');
+  sqlite.prepare('UPDATE auth_sessions SET expires_at = ? WHERE token_hash = ?')
+    .run(Date.now() - 1, expiredHash);
+  response = await fetch(`${base}/api/auth/refresh`, {
+    method: 'POST',
+    headers: headers({ Authorization: `Bearer ${expiredAuth.session_token}` }),
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await json(response)).code, 'SESSION_EXPIRED');
+  response = await fetch(`${base}/api/incidents`, {
+    headers: headers({ Authorization: `Bearer ${expiredAuth.session_token}` }),
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await json(response)).code, 'SESSION_EXPIRED');
+
+  response = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: headers({ 'X-Device-Id': 'session-absolute-expired-device' }),
+    body: JSON.stringify({ unit_name: '会话测试单位', unit_code: '2468', real_name: '队员' }),
+  });
+  assert.equal(response.status, 200);
+  const absoluteExpiredAuth = await json(response);
+  const absoluteHash = crypto.createHash('sha256').update(absoluteExpiredAuth.session_token).digest('hex');
+  sqlite.prepare('UPDATE auth_sessions SET created_at = ?, expires_at = ? WHERE token_hash = ?')
+    .run(Date.now() - 31 * 24 * 60 * 60 * 1000, Date.now() + 60_000, absoluteHash);
+  response = await fetch(`${base}/api/auth/refresh`, {
+    method: 'POST',
+    headers: headers({ Authorization: `Bearer ${absoluteExpiredAuth.session_token}` }),
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await json(response)).code, 'SESSION_EXPIRED');
+  sqlite.close();
 });

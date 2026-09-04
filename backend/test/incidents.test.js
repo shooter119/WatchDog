@@ -77,6 +77,14 @@ test('新建警情使用 UUID 主键、可读编号，并处理同一分钟编�
   assert.ok(Array.isArray(created.forces));
 });
 
+test('警情编号始终按东八区生成，不依赖服务器系统时区', () => {
+  const incident = db.createIncident({
+    id: 'shanghai-timezone-incident',
+    createdAt: Date.UTC(2024, 0, 1, 0, 5),
+  });
+  assert.match(incident.number, /^2024年1月1日08时05分\d+#警情$/);
+});
+
 test('支持中文实名的 Base64 请求头，不因 HTTP 头编码失败', async () => {
   const utf8Headers = headers({ 'X-Op-Id': 'create-utf8-actor' });
   delete utf8Headers['X-Actor-Name'];

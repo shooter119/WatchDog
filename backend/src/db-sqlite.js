@@ -221,9 +221,12 @@ db.exec(
 );
 
 function incidentNumberFor(timestamp) {
-  const date = new Date(timestamp);
-  return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日' +
-    String(date.getHours()).padStart(2, '0') + '时' + String(date.getMinutes()).padStart(2, '0') + '分';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(timestamp)).map(({ type, value }) => [type, value]));
+  return `${parts.year}年${Number(parts.month)}月${Number(parts.day)}日${parts.hour}时${parts.minute}分`;
 }
 
 function uniqueIncidentNumber(timestamp) {
@@ -607,6 +610,29 @@ function getAuthSession(tokenHash) {
   return db.prepare(
     'SELECT id, token_hash, unit_id, member_id, device_id, real_name, role, created_at, expires_at, last_seen_at, revoked_at FROM auth_sessions WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?'
   ).get(String(tokenHash || ''), Date.now());
+}
+
+function getAuthSessionRecord(tokenHash) {
+  return db.prepare(
+    'SELECT id, token_hash, unit_id, member_id, device_id, real_name, role, created_at, expires_at, last_seen_at, revoked_at FROM auth_sessions WHERE token_hash = ?'
+  ).get(String(tokenHash || ''));
+}
+
+function refreshAuthSession(tokenHash, { expiresAt, lastSeenAt = Date.now() } = {}) {
+  const now = Number(lastSeenAt) || Date.now();
+  const expires = Number(expiresAt);
+  if (!Number.isFinite(expires)) throw new Error('认证会话续期参数不完整');
+  const result = db.prepare(
+    'UPDATE auth_sessions SET expires_at = ?, last_seen_at = ? WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?'
+  ).run(expires, now, String(tokenHash || ''), now);
+  return result.changes > 0 ? getAuthSession(tokenHash) : undefined;
+}
+
+function touchAuthSession(tokenHash, lastSeenAt = Date.now()) {
+  const now = Number(lastSeenAt) || Date.now();
+  return db.prepare(
+    'UPDATE auth_sessions SET last_seen_at = ? WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?'
+  ).run(now, String(tokenHash || ''), now).changes;
 }
 
 function revokeAuthSession(tokenHash, revokedAt = Date.now()) {
@@ -1403,6 +1429,9 @@ module.exports = {
   updateUnitMember,
   createAuthSession,
   getAuthSession,
+  getAuthSessionRecord,
+  refreshAuthSession,
+  touchAuthSession,
   revokeAuthSession,
   revokeAuthSessionsForMember,
   getOperation,

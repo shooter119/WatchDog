@@ -23,16 +23,25 @@ class AssistantAvatar extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.avatarBackdrop,
         shape: BoxShape.circle,
-        border: Border.all(color: AppColors.border),
-        boxShadow: AppShadow.card,
+        border: Border.all(color: AppColors.avatarBackdrop),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A2D7F86),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
       child: ClipOval(
-        child: Image.asset(
-          'assets/avatars/water-element-avatar-selected.png',
-          fit: BoxFit.cover,
-          filterQuality: FilterQuality.high,
+        child: ColoredBox(
+          color: AppColors.avatarBackdrop,
+          child: Image.asset(
+            'assets/avatars/water-element-avatar-selected.png',
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.high,
+          ),
         ),
       ),
     );

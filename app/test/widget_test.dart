@@ -2415,9 +2415,9 @@ void main() {
       await tester.pumpAndSettle();
       // 追问段被解析出来：正文不含"追问"，气泡下方显示可点击胶囊
       expect(find.textContaining('立即撤离'), findsOneWidget);
-      expect(find.textContaining('追问：当前气瓶压力多少？'), findsOneWidget);
+      expect(find.textContaining('我想进一步确认：当前气瓶压力多少？'), findsOneWidget);
       // 点击追问胶囊 → 问题被发送
-      await tester.tap(find.textContaining('追问：当前气瓶压力多少？'));
+      await tester.tap(find.textContaining('我想进一步确认：当前气瓶压力多少？'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 5));
       await tester.pump(const Duration(milliseconds: 20));
@@ -2451,7 +2451,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('停止剧烈活动'), findsOneWidget);
       expect(find.textContaining('关键'), findsNothing);
-      expect(find.textContaining('追问：当前压力表读数多少？'), findsOneWidget);
+      expect(find.textContaining('我想进一步确认：当前压力表读数多少？'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });
@@ -2509,6 +2509,37 @@ void main() {
       await tester.tap(find.text('加入'));
       await tester.pumpAndSettle();
       expect(selected, isTrue);
+    });
+
+    testWidgets('警情浮层显示新建失败原因并恢复按钮', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async => throw ApiException('认证会话已过期，请重新认证'),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('新建警情'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('incident-selection-error')),
+        findsOneWidget,
+      );
+      expect(find.text('认证会话已过期，请重新认证'), findsOneWidget);
+      final createButton = find.ancestor(
+        of: find.text('新建警情'),
+        matching: find.byWidgetPredicate((widget) => widget is FilledButton),
+      );
+      expect(
+        tester.widget<FilledButton>(createButton).onPressed,
+        isNotNull,
+      );
     });
 
     testWidgets('警情浮层父级点击排除重复语义但保留加入按钮', (tester) async {
@@ -3063,6 +3094,15 @@ void main() {
       expect(
         isConnectionLost(lastSyncSuccessAt: now - 60000, nowMs: now),
         true,
+      );
+      // 实时 WebSocket 已连接时，即使业务空闲超过阈值也不能误报断线。
+      expect(
+        isConnectionLost(
+          lastSyncSuccessAt: now - 60000,
+          nowMs: now,
+          syncConnected: true,
+        ),
+        false,
       );
     });
   });

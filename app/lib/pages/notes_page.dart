@@ -32,7 +32,7 @@ class _NotesPageState extends State<NotesPage> {
           Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                 child: largeText || width < 300
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -46,6 +46,7 @@ class _NotesPageState extends State<NotesPage> {
                         ],
                       )
                     : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('火场日志', style: AppTextStyles.h1),
                           const Spacer(),

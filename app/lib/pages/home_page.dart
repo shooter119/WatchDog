@@ -1299,6 +1299,7 @@ class HomePageState extends State<HomePage> {
                   ],
                 )
               : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('警情处置', style: AppTextStyles.h1),
                     const Spacer(),
@@ -1355,7 +1356,7 @@ class HomePageState extends State<HomePage> {
             child: Column(
               children: [
                 pageHeader,
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 if (incident == null)
                   Expanded(
                     flex: 4,
@@ -1367,7 +1368,7 @@ class HomePageState extends State<HomePage> {
                   )
                 else if (taskBar != null)
                   taskBar,
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Expanded(
                   child: incident == null
                       ? const SizedBox.shrink()
@@ -1401,7 +1402,7 @@ class HomePageState extends State<HomePage> {
   Future<void> selectIncidentFromGate(Incident incident) =>
       _selectIncident(incident);
 
-  Future<void> _createIncident() async {
+  Future<void> _createIncident({bool bubbleError = false}) async {
     try {
       final incident = await widget.controller.createIncident();
       if (mounted) await _renameIncident(incident: incident, prompt: true);
@@ -1438,6 +1439,7 @@ class HomePageState extends State<HomePage> {
         }
       }
     } catch (e) {
+      if (bubbleError) rethrow;
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -1447,7 +1449,7 @@ class HomePageState extends State<HomePage> {
   }
 
   /// 启动警情选择浮层复用首页已有的新建流程。
-  Future<void> createIncidentFromGate() => _createIncident();
+  Future<void> createIncidentFromGate() => _createIncident(bubbleError: true);
 
   Future<void> _renameIncident({
     Incident? incident,
@@ -1841,120 +1843,137 @@ class HomePageState extends State<HomePage> {
     if (_transcript == null || _parsed == null) {
       // 引导区：统一卡片 + 图标网格，内容不足时居中，窄屏可滚动不溢出
       return LayoutBuilder(
-        builder: (ctx, box) => SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: box.maxHeight),
-            child: Center(
-              child: AppCard(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 30,
-                          height: 30,
-                          decoration: const BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: AppColors.voice,
-                          ),
-                          child: const Icon(
-                            Icons.mic_rounded,
-                            size: 17,
-                            color: Colors.white,
-                          ),
+        builder: (ctx, box) =>
+            NotificationListener<OverscrollIndicatorNotification>(
+              onNotification: (notification) {
+                notification.disallowIndicator();
+                return false;
+              },
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: box.maxHeight),
+                  child: Center(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        border: const Border.fromBorderSide(
+                          BorderSide(color: AppColors.border),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '按住下方按钮说话',
-                            softWrap: true,
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    LayoutBuilder(
-                      builder: (ctx, c) {
-                        final itemW = (c.maxWidth - 10) / 2;
-                        // 三行等高：文字行数不同也保持六块整齐一致
-                        return IntrinsicHeight(
-                          child: Column(
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: _guideRow(
-                                  itemW,
-                                  _guideItem(
-                                    Icons.login_rounded,
-                                    '进场登记',
-                                    '「张伟，20兆帕」\n自动开始倒计时',
-                                  ),
-                                  _guideItem(
-                                    Icons.groups_rounded,
-                                    '多人进场',
-                                    '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场',
-                                  ),
+                              Container(
+                                width: 30,
+                                height: 30,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: AppColors.voice,
+                                ),
+                                child: const Icon(
+                                  Icons.mic_rounded,
+                                  size: 17,
+                                  color: Colors.white,
                                 ),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(width: 10),
                               Expanded(
-                                child: _guideRow(
-                                  itemW,
-                                  _guideItem(
-                                    Icons.logout_rounded,
-                                    '出场登记',
-                                    '「刘洋出来了」\n登记出火场',
-                                  ),
-                                  _guideItem(
-                                    Icons.update_rounded,
-                                    '压力复核',
-                                    '「张伟，15兆帕」\n场中报数，更新倒计时',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Expanded(
-                                child: _guideRow(
-                                  itemW,
-                                  _guideItem(
-                                    Icons.edit_note_rounded,
-                                    '火场随手记',
-                                    '「三楼破拆完成」\n自动记入火场日志',
-                                  ),
-                                  _guideItem(
-                                    Icons.assistant_rounded,
-                                    '火场提问',
-                                    '「浓烟太大看不清路怎么办？」\n转给辅助智囊',
+                                child: Text(
+                                  '按住下方按钮说话',
+                                  softWrap: true,
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                        );
-                      },
-                    ),
-                    if (_peopleEditors.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      FilledButton.icon(
-                        onPressed: _showPendingConfirm,
-                        icon: const Icon(Icons.fact_check_outlined),
-                        label: Text('继续确认已录入的 ${_peopleEditors.length} 人'),
+                          const SizedBox(height: 14),
+                          LayoutBuilder(
+                            builder: (ctx, c) {
+                              final itemW = (c.maxWidth - 10) / 2;
+                              // 三行等高：文字行数不同也保持六块整齐一致
+                              return IntrinsicHeight(
+                                child: Column(
+                                  children: [
+                                    Expanded(
+                                      child: _guideRow(
+                                        itemW,
+                                        _guideItem(
+                                          Icons.login_rounded,
+                                          '进场登记',
+                                          '「张伟，20兆帕」\n自动开始倒计时',
+                                        ),
+                                        _guideItem(
+                                          Icons.groups_rounded,
+                                          '多人进场',
+                                          '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场',
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Expanded(
+                                      child: _guideRow(
+                                        itemW,
+                                        _guideItem(
+                                          Icons.logout_rounded,
+                                          '出场登记',
+                                          '「刘洋出来了」\n登记出火场',
+                                        ),
+                                        _guideItem(
+                                          Icons.update_rounded,
+                                          '压力复核',
+                                          '「张伟，15兆帕」\n场中报数，更新倒计时',
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Expanded(
+                                      child: _guideRow(
+                                        itemW,
+                                        _guideItem(
+                                          Icons.edit_note_rounded,
+                                          '火场随手记',
+                                          '「三楼破拆完成」\n自动记入火场日志',
+                                        ),
+                                        _guideItem(
+                                          Icons.assistant_rounded,
+                                          '火场提问',
+                                          '「浓烟太大看不清路怎么办？」\n转给辅助智囊',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                          if (_peopleEditors.isNotEmpty) ...[
+                            const SizedBox(height: 14),
+                            FilledButton.icon(
+                              onPressed: _showPendingConfirm,
+                              icon: const Icon(Icons.fact_check_outlined),
+                              label: Text(
+                                '继续确认已录入的 ${_peopleEditors.length} 人',
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
-                  ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
       );
     }
 
@@ -2429,9 +2448,9 @@ class HomePageState extends State<HomePage> {
       key: ValueKey('guide-$label'),
       padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
       decoration: BoxDecoration(
-        color: AppColors.surfaceSubtle.withValues(alpha: 0.6),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.7)),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2800,7 +2819,7 @@ class _TaskBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     key: const Key('incident-card'),
-    padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+    padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
     decoration: BoxDecoration(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -2856,7 +2875,7 @@ class _TaskBar extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 6),
         Row(
           children: [
             const Expanded(
@@ -2877,9 +2896,16 @@ class _TaskBar extends StatelessWidget {
           ],
         ),
         if (forces.isEmpty)
-          const Text(
-            '尚未登记参战力量',
-            style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Text(
+              '尚未登记参战力量',
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.2,
+                color: AppColors.textTertiary,
+              ),
+            ),
           )
         else
           Column(
@@ -2895,7 +2921,7 @@ class _TaskBar extends StatelessWidget {
               ],
             ],
           ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 4),
         Row(
           children: [
             Expanded(

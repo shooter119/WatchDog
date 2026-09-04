@@ -15,6 +15,7 @@ class AppColors {
   static const background = Color(0xFFF2F4F7); // color.background.primary
   static const surface = Color(0xFFFFFFFF); // color.surface.primary
   static const surfaceSubtle = Color(0xFFE8ECF1); // color.surface.subtle
+  static const avatarBackdrop = Color(0xFFDDF3F5); // 水元素头像透明区承载底色
   static const border = Color(0xFFD7DDE5); // color.border.default
 
   // 文字
@@ -565,13 +566,13 @@ class ConnectionStatus extends StatelessWidget {
     final inner = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 6),
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 4),
         Text(
           label,
           style: const TextStyle(
             color: AppColors.textSecondary,
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -589,17 +590,23 @@ class ConnectionStatus extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: canRetry ? onRetry : null,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+            // 让视觉高度参与页头排版，避免 48dp 点击热区把胶囊垂直居中
+            // 后与左侧标题错位；横向仍保留足够的点击宽度。
+            constraints: const BoxConstraints(minWidth: 48),
             child: Center(
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(color: AppColors.border),
+              child: Transform.translate(
+                // 标题字面顶部有字体内置留白，视觉胶囊下移后与字面边缘对齐。
+                offset: const Offset(0, 1),
+                child: Container(
+                  height: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Center(child: inner),
                 ),
-                child: Center(child: inner),
               ),
             ),
           ),

@@ -50,6 +50,7 @@ class Settings {
   static const _kIncident = 'current_incident_id';
   static const _kToken = 'api_token';
   static const _kSessionToken = 'session_token';
+  static const _kSessionExpiresAt = 'session_expires_at';
   static const _kVolume = 'cylinder_vol_l';
   static const _kFullPressure = 'full_pressure_mpa';
   static const _kConsumption = 'consumption_lpm';
@@ -305,6 +306,20 @@ class Settings {
       await SecureStore.delete(_kSessionToken);
     } else {
       await SecureStore.write(_kSessionToken, value);
+    }
+  }
+
+  static Future<int> get sessionExpiresAt async {
+    final sp = await SharedPreferences.getInstance();
+    return sp.getInt(_kSessionExpiresAt) ?? 0;
+  }
+
+  static Future<void> setSessionExpiresAt(int value) async {
+    final sp = await SharedPreferences.getInstance();
+    if (value <= 0) {
+      await sp.remove(_kSessionExpiresAt);
+    } else {
+      await sp.setInt(_kSessionExpiresAt, value);
     }
   }
 
