@@ -1,5 +1,5 @@
 # WatchDog 发布流水线：push tag v* → 构建 arm64 正式签名 APK → 发布 GitHub Release
-# App 端通过公开 GitHub Releases 检查版本，发布流程只创建 GitHub Release。
+# App 端从 ALI 静态 OTA 服务检查和下载；GitHub Release 作为代码与备份存档。
 name: Build & Release APK
 
 on:
@@ -236,8 +236,8 @@ jobs:
           # 只发布 arm64 split APK；Prepare release assets 会从包内读取最终
           # versionCode 并与 tag 校验一致。
           flutter build apk --release --target-platform android-arm64 --split-per-abi \
-            --dart-define=WATCHDOG_API_BASE_URL=https://watchdog.120-27-153-83.nip.io \
-            --dart-define=WATCHDOG_ASR_WS_BASE_URL=https://watchdog.120-27-153-83.nip.io
+            --dart-define=WATCHDOG_API_BASE_URL=https://api.fireman119.xyz \
+            --dart-define=WATCHDOG_ASR_WS_BASE_URL=https://api.fireman119.xyz
           ls -lh build/app/outputs/flutter-apk/
 
       # 文件名标记为 arm64 前先确认包内没有误带其他 ABI，避免发布体积和兼容性
@@ -319,6 +319,17 @@ jobs:
             echo "### 更新内容"
             echo "${CHANGELOG}"
           } > release-body.md
+          cat > ota-manifest.json <<EOF
+          {
+            "tag_name": "${TAG}",
+            "version_code": ${VERSION_CODE},
+            "apk_url": "https://fireman119.xyz/ota/versions/watchdog-${VERSION}-arm64-v8a.apk",
+            "size_bytes": $(stat -c '%s' "$APK"),
+            "sha256": "${SHA256}",
+            "changelog": $(jq -Rs . < release-body.md)
+          }
+          EOF
+          jq empty ota-manifest.json
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           cat release-body.md
 
@@ -331,3 +342,46 @@ jobs:
           files: |
             app/build/app/outputs/flutter-apk/watchdog-*-arm64-v8a.apk
           fail_on_unmatched_files: true
+
+      - name: Publish OTA package to ALI
+        working-directory: app
+        env:
+          ALI_HOST: ${{ secrets.WATCHDOG_OTA_HOST }}
+          ALI_USER: ${{ secrets.WATCHDOG_OTA_USER }}
+          ALI_KEY: ${{ secrets.WATCHDOG_OTA_SSH_KEY }}
+          ALI_KNOWN_HOSTS: ${{ secrets.WATCHDOG_OTA_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ALI_HOST"; test -n "$ALI_USER"; test -n "$ALI_KEY"; test -n "$ALI_KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/ota-ssh"
+          printf '%s\n' "$ALI_KEY" > "$RUNNER_TEMP/ota-ssh/id_ed25519"
+          printf '%s\n' "$ALI_KNOWN_HOSTS" > "$RUNNER_TEMP/ota-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ota-ssh/id_ed25519" "$RUNNER_TEMP/ota-ssh/known_hosts"
+          SSH=(ssh -i "$RUNNER_TEMP/ota-ssh/id_ed25519" -o UserKnownHostsFile="$RUNNER_TEMP/ota-ssh/known_hosts" -o StrictHostKeyChecking=yes)
+          SCP=(scp -i "$RUNNER_TEMP/ota-ssh/id_ed25519" -o UserKnownHostsFile="$RUNNER_TEMP/ota-ssh/known_hosts" -o StrictHostKeyChecking=yes)
+          REMOTE="$ALI_USER@$ALI_HOST"
+          VERSION_FILE="watchdog-${{ steps.release.outputs.version }}-arm64-v8a.apk"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p /opt/watchdog/ota/incoming /opt/watchdog/ota/versions'
+          "${SCP[@]}" "build/app/outputs/flutter-apk/$VERSION_FILE" "$REMOTE:/opt/watchdog/ota/incoming/$VERSION_FILE"
+          "${SCP[@]}" ota-manifest.json "$REMOTE:/opt/watchdog/ota/incoming/latest.json"
+          "${SSH[@]}" "$REMOTE" "VERSION_FILE='$VERSION_FILE' sh -s" <<'REMOTE_SCRIPT'
+          set -eu
+          base=/opt/watchdog/ota
+          test -s "$base/incoming/$VERSION_FILE"
+          manifest_sha=$(sed -n 's/.*"sha256": "\([0-9a-f]*\)".*/\1/p' "$base/incoming/latest.json")
+          actual_sha=$(sha256sum "$base/incoming/$VERSION_FILE" | awk '{print $1}')
+          test -n "$manifest_sha" && test "$manifest_sha" = "$actual_sha"
+          if [ -f "$base/latest.json" ]; then
+            old_code=$(sed -n 's/.*"version_code": \([0-9]*\).*/\1/p' "$base/latest.json")
+            new_code=$(sed -n 's/.*"version_code": \([0-9]*\).*/\1/p' "$base/incoming/latest.json")
+            test -z "$old_code" || test "$new_code" -gt "$old_code"
+          fi
+          mv "$base/incoming/$VERSION_FILE" "$base/versions/$VERSION_FILE"
+          cp "$base/incoming/latest.json" "$base/latest.json.new"
+          mv "$base/latest.json.new" "$base/latest.json"
+          rm -f "$base/incoming/latest.json"
+          REMOTE_SCRIPT
+          curl --fail --silent --show-error --location "https://fireman119.xyz/ota/latest.json" | jq -e --arg sha "$(jq -r .sha256 ota-manifest.json)" '.sha256 == $sha'
+          curl --fail --silent --show-error --location "https://fireman119.xyz/ota/versions/$VERSION_FILE" -o "$RUNNER_TEMP/$VERSION_FILE"
+          echo "$(jq -r .sha256 ota-manifest.json)  $RUNNER_TEMP/$VERSION_FILE" | sha256sum --check --status

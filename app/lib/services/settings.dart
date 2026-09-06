@@ -14,15 +14,13 @@ class Settings {
   /// 时只需提供同一 REST/WebSocket 入口。
   static const defaultServerUrl = String.fromEnvironment(
     'WATCHDOG_API_BASE_URL',
-    defaultValue:
-        'http://10.0.2.2:3000',
+    defaultValue: 'https://api.fireman119.xyz',
   );
 
   /// ASR 与业务实时同步共用同一后端入口；正式环境可通过 dart-define 覆盖。
   static const realtimeAsrBaseUrl = String.fromEnvironment(
     'WATCHDOG_ASR_WS_BASE_URL',
-    defaultValue:
-        'http://10.0.2.2:3000',
+    defaultValue: 'https://api.fireman119.xyz',
   );
 
   static const realtimeAsrFallbackBaseUrl = realtimeAsrBaseUrl;

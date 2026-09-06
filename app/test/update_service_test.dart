@@ -28,7 +28,7 @@ void main() {
     });
   });
 
-  group('GitHub Release 解析', () {
+  group('ALI OTA 清单解析', () {
     const sha =
         '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
@@ -36,12 +36,11 @@ void main() {
       final info = UpdateService.parseReleaseJson('''
 {
   "tag_name": "v0.14.0+43",
-  "body": "修复现场日志显示问题\\nSHA256: $sha",
-  "assets": [{
-    "name": "watchdog-0.14.0+43-arm64-v8a.apk",
-    "browser_download_url": "https://github.com/shooter119/WatchDog/releases/download/v0.14.0%2B43/watchdog-0.14.0%2B43-arm64-v8a.apk",
-    "size": 12345678
-  }]
+  "version_code": 2043,
+  "changelog": "修复现场日志显示问题",
+  "apk_url": "https://fireman119.xyz/ota/versions/watchdog-0.14.0+43-arm64-v8a.apk",
+  "size_bytes": 12345678,
+  "sha256": "$sha"
 }
 ''');
 
@@ -49,8 +48,7 @@ void main() {
       expect(info?.versionCode, 2043);
       expect(
         info?.apkUrl,
-        'https://github.com/shooter119/WatchDog/releases/download/v0.14.0%2B43/'
-        'watchdog-0.14.0%2B43-arm64-v8a.apk',
+        'https://fireman119.xyz/ota/versions/watchdog-0.14.0+43-arm64-v8a.apk',
       );
       expect(info?.sizeBytes, 12345678);
       expect(info?.sha256, sha);
@@ -60,38 +58,18 @@ void main() {
     test('tag、assets、APK 名称或下载地址无效时拒绝 release', () {
       const valid = {
         'tag_name': 'v0.14.0+43',
-        'body': '测试更新',
-        'assets': [
-          {
-            'name': 'watchdog-0.14.0+43-arm64-v8a.apk',
-            'browser_download_url':
-                'https://github.com/shooter119/WatchDog/releases/download/v0.14.0%2B43/watchdog-0.14.0%2B43-arm64-v8a.apk',
-            'size': 12345678,
-          },
-        ],
+        'version_code': 2043,
+        'changelog': '测试更新',
+        'apk_url':
+            'https://fireman119.xyz/ota/versions/watchdog-0.14.0+43-arm64-v8a.apk',
+        'size_bytes': 12345678,
+        'sha256': sha,
       };
       for (final replacement in [
         {'tag_name': ''},
-        {'assets': []},
-        {
-          'assets': [
-            {
-              'name': 'watchdog-0.14.0+43-not-an-apk.zip',
-              'browser_download_url':
-                  'https://github.com/shooter119/WatchDog/releases/download/x/x.zip',
-              'size': 12345678,
-            },
-          ],
-        },
-        {
-          'assets': [
-            {
-              'name': 'watchdog-0.14.0+43-arm64-v8a.apk',
-              'browser_download_url': 'http://evil.example/update.apk',
-              'size': 12345678,
-            },
-          ],
-        },
+        {'apk_url': 'http://evil.example/update.apk'},
+        {'version_code': 2044},
+        {'sha256': 'bad'},
       ]) {
         final body = jsonEncode({...valid, ...replacement});
         expect(
@@ -102,59 +80,26 @@ void main() {
       }
     });
 
-    test('拒绝非 arm64 或不受信任主机的 APK 资产', () {
-      const names = [
-        'watchdog-0.14.0+43-armeabi-v7a.apk',
-        'watchdog-0.14.0+43-arm64-v8a.zip',
-      ];
-      for (final name in names) {
-        final body = jsonEncode({
-          'tag_name': 'v0.14.0+43',
-          'assets': [
-            {
-              'name': name,
-              'browser_download_url':
-                  'https://github.com/shooter119/WatchDog/releases/download/x/$name',
-            },
-          ],
-        });
-        expect(
-          UpdateService.parseReleaseJson(body),
-          isNull,
-          reason: 'asset=$name',
-        );
-      }
-    });
-
     test('缺少 SHA256 时保留版本信息但安装阶段不能跳过校验', () {
       final body = jsonEncode({
         'tag_name': 'v0.14.0+43',
-        'assets': [
-          {
-            'name': 'watchdog-0.14.0+43-arm64-v8a.apk',
-            'browser_download_url':
-                'https://github.com/shooter119/WatchDog/releases/download/x/watchdog.apk',
-          },
-        ],
+        'apk_url': 'https://fireman119.xyz/ota/versions/watchdog.apk',
       });
       expect(UpdateService.parseReleaseJson(body)?.sha256, isNull);
     });
   });
 
-  group('GitHub Release 请求', () {
+  group('ALI OTA 请求', () {
     const sha =
         '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     final release = jsonEncode({
       'tag_name': 'v9.9.9+99',
-      'body': '测试更新\\nSHA256: $sha',
-      'assets': [
-        {
-          'name': 'watchdog-9.9.9+99-arm64-v8a.apk',
-          'browser_download_url':
-              'https://github.com/shooter119/WatchDog/releases/download/x/watchdog.apk',
-          'size': 123,
-        },
-      ],
+      'version_code': 2099,
+      'changelog': '测试更新',
+      'apk_url':
+          'https://fireman119.xyz/ota/versions/watchdog-9.9.9+99-arm64-v8a.apk',
+      'size_bytes': 123,
+      'sha256': sha,
     });
 
     setUp(() {
@@ -179,25 +124,22 @@ void main() {
       expect(error, isNull);
       expect(info?.tagName, 'v9.9.9+99');
       expect(client.requests, hasLength(2));
-      expect(
-        client.requests.first.headers['accept'],
-        'application/vnd.github+json',
-      );
+      expect(client.requests.first.headers['cache-control'], 'no-cache');
       expect(client.requests.first.headers['user-agent'], contains('watchdog'));
     });
 
-    test('4xx 不重试，并返回 GitHub Releases 错误', () async {
+    test('4xx 不重试，并返回 ALI OTA 错误', () async {
       final client = _QueueClient([_response('', 404)]);
       final (info, error) = await UpdateService(
         httpClientFactory: () => client,
       ).checkForUpdate();
 
       expect(info, isNull);
-      expect(error, 'GitHub Releases 不可达（HTTP 404）');
+      expect(error, 'ALI OTA 服务不可达（HTTP 404）');
       expect(client.requests, hasLength(1));
     });
 
-    test('网络异常重试后仍失败时返回 GitHub 网络错误', () async {
+    test('网络异常重试后仍失败时返回 ALI 网络错误', () async {
       final client = _QueueClient([
         const SocketException('offline'),
         const SocketException('offline'),
@@ -207,11 +149,11 @@ void main() {
       ).checkForUpdate();
 
       expect(info, isNull);
-      expect(error, '无法连接 GitHub Releases，请检查网络后重试');
+      expect(error, '无法连接 ALI OTA 服务，请检查网络后重试');
       expect(client.requests, hasLength(2));
     });
 
-    test('请求超时重试后仍失败时返回 GitHub 超时提示', () async {
+    test('请求超时重试后仍失败时返回 ALI 超时提示', () async {
       final client = _QueueClient([
         TimeoutException('slow'),
         TimeoutException('slow'),
@@ -221,7 +163,7 @@ void main() {
       ).checkForUpdate();
 
       expect(info, isNull);
-      expect(error, 'GitHub Releases 响应超时，请稍后重试');
+      expect(error, 'ALI OTA 服务响应超时，请稍后重试');
       expect(client.requests, hasLength(2));
     });
   });

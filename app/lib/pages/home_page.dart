@@ -1374,7 +1374,6 @@ class HomePageState extends State<HomePage> {
                       ? const SizedBox.shrink()
                       : _buildResultCard(context, cfg),
                 ),
-                const SizedBox(height: 24),
               ],
             ),
           );

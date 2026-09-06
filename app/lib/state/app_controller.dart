@@ -130,7 +130,7 @@ class AppController extends ChangeNotifier {
   /// 辅助问答使用独立请求通道，不阻塞业务实时连接。
   bool get assistantBusy => _assistantBusy;
 
-  /// 启动时从 GitHub Releases 检查到的新版本（非空 = 有新版本可更新）
+  /// 启动时从 ALI OTA 检查到的新版本（非空 = 有新版本可更新）
   UpdateInfo? pendingUpdate;
 
   /// 是否已完成一次版本检查（区分「未检查」与「已是最新」）
@@ -148,7 +148,7 @@ class AppController extends ChangeNotifier {
         stage,
         message,
         level: level,
-        data: {'source': 'GitHub Releases'},
+        data: {'source': 'ALI OTA'},
       );
     }
 
@@ -260,8 +260,7 @@ class AppController extends ChangeNotifier {
     try {
       await _refreshSession();
     } catch (error) {
-      if (!ApiClient.isAuthenticationFailure(error) &&
-          error is! StateError) {
+      if (!ApiClient.isAuthenticationFailure(error) && error is! StateError) {
         debugPrint('WatchDog resume session check failed: $error');
       }
     }
@@ -295,8 +294,7 @@ class AppController extends ChangeNotifier {
       await _invalidateAuthenticationOnce();
       throw StateError('认证会话已过期，请重新认证');
     }
-    if (!force &&
-        expiresAt > now + sessionRefreshLeadTime.inMilliseconds) {
+    if (!force && expiresAt > now + sessionRefreshLeadTime.inMilliseconds) {
       return;
     }
     final activeApi = api;
@@ -829,7 +827,8 @@ class AppController extends ChangeNotifier {
           : _firstSyncFailureAt;
       syncError = error is TimeoutException ? '连接服务器超时，请检查网络后重试' : '$error';
     }
-    syncing = state == SyncConnectionState.bootstrapping ||
+    syncing =
+        state == SyncConnectionState.bootstrapping ||
         state == SyncConnectionState.connecting;
     _notify();
   }
@@ -863,7 +862,9 @@ class AppController extends ChangeNotifier {
           .toList();
       forces = (data['forces'] as List? ?? const [])
           .whereType<Map>()
-          .map((item) => IncidentForce.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+            (item) => IncidentForce.fromJson(Map<String, dynamic>.from(item)),
+          )
           .toList();
     } else if ((snapshot['cursors'] as Map?)?['incident'] == '0') {
       currentIncident = null;
@@ -932,22 +933,46 @@ class AppController extends ChangeNotifier {
         break;
       case 'roster.firefighter_added':
         final firefighter = Firefighter.fromJson(payload);
-        firefighters = [firefighter, ...firefighters.where((item) => item.id != firefighter.id)];
+        firefighters = [
+          firefighter,
+          ...firefighters.where((item) => item.id != firefighter.id),
+        ];
         unawaited(_cacheRoster(api?.unitId ?? ''));
-        unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+        unawaited(
+          localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]),
+        );
         break;
       case 'roster.firefighter_removed':
-        firefighters = firefighters.where((item) => item.id != (event.aggregateId ?? payload['id']?.toString())).toList();
-        unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+        firefighters = firefighters
+            .where(
+              (item) =>
+                  item.id != (event.aggregateId ?? payload['id']?.toString()),
+            )
+            .toList();
+        unawaited(
+          localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]),
+        );
         break;
       case 'roster.hotword_added':
         final hotword = Hotword.fromJson(payload);
-        hotwords = [hotword, ...hotwords.where((item) => item.id != hotword.id)];
-        unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+        hotwords = [
+          hotword,
+          ...hotwords.where((item) => item.id != hotword.id),
+        ];
+        unawaited(
+          localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]),
+        );
         break;
       case 'roster.hotword_removed':
-        hotwords = hotwords.where((item) => item.id != (event.aggregateId ?? payload['id']?.toString())).toList();
-        unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+        hotwords = hotwords
+            .where(
+              (item) =>
+                  item.id != (event.aggregateId ?? payload['id']?.toString()),
+            )
+            .toList();
+        unawaited(
+          localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]),
+        );
         break;
     }
     _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
@@ -1608,7 +1633,9 @@ class AppController extends ChangeNotifier {
       onAuthenticationFailure: _handleAuthenticationFailure,
     );
     final opId = 'incident-create-${DateTime.now().microsecondsSinceEpoch}';
-    debugPrint('WatchDog createIncident: api=ready, actor=configured, op_id=$opId');
+    debugPrint(
+      'WatchDog createIncident: api=ready, actor=configured, op_id=$opId',
+    );
     late final Incident incident;
     try {
       incident = await a.createIncident(realName: name, opId: opId);

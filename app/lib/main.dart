@@ -51,13 +51,19 @@ void main() {
       // 新协议首次启动必须先停止旧保活、清理旧会话/离线队列/模型缓存，
       // 再创建控制器，避免旧状态在新 WebSocket 会话建立前短暂泄漏。
       unawaited(
-        ensureAppDataEpoch().then<void>((_) {
-          runApp(const WatchDogApp());
-        }).catchError((error, stack) {
-          diagnostics.recordUncaught(error, stack, source: 'data_epoch_reset');
-          // 清理失败不把用户卡在黑屏；控制器仍会要求重新认证。
-          runApp(const WatchDogApp());
-        }),
+        ensureAppDataEpoch()
+            .then<void>((_) {
+              runApp(const WatchDogApp());
+            })
+            .catchError((error, stack) {
+              diagnostics.recordUncaught(
+                error,
+                stack,
+                source: 'data_epoch_reset',
+              );
+              // 清理失败不把用户卡在黑屏；控制器仍会要求重新认证。
+              runApp(const WatchDogApp());
+            }),
       );
     },
     (error, stack) {
@@ -76,8 +82,7 @@ class WatchDogApp extends StatefulWidget {
   State<WatchDogApp> createState() => _WatchDogAppState();
 }
 
-class _WatchDogAppState extends State<WatchDogApp>
-    with WidgetsBindingObserver {
+class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   late final AppController controller;
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
@@ -109,7 +114,7 @@ class _WatchDogAppState extends State<WatchDogApp>
       }),
     );
     controller.init();
-    // 启动即静默检查 GitHub Releases：有新版本时设置页显示提示（失败静默）
+    // 启动即静默检查 ALI OTA：有新版本时设置页显示提示（失败静默）
     controller.checkUpdateSilently();
   }
 

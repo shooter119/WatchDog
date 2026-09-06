@@ -1,4 +1,4 @@
-{$WATCHDOG_DOMAIN} {
+{$WATCHDOG_DOMAIN}, api.fireman119.xyz {
   tls {
     issuer acme {
       preferred_chains {
@@ -28,7 +28,14 @@ fireman119.xyz {
   }
 
   encode zstd gzip
-  reverse_proxy website:80
+  handle_path /ota/* {
+    root * /srv/ota
+    header /latest.json Cache-Control "no-store, max-age=0"
+    file_server
+  }
+  handle {
+    reverse_proxy website:80
+  }
 
   header {
     Strict-Transport-Security "max-age=31536000; includeSubDomains"
