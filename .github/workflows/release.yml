@@ -375,13 +375,24 @@ jobs:
           if [ -f "$base/latest.json" ]; then
             old_code=$(sed -n 's/.*"version_code": \([0-9]*\).*/\1/p' "$base/latest.json")
             new_code=$(sed -n 's/.*"version_code": \([0-9]*\).*/\1/p' "$base/incoming/latest.json")
-            test -z "$old_code" || test "$new_code" -gt "$old_code"
+            if [ -n "$old_code" ]; then
+              test "$new_code" -ge "$old_code"
+              if [ "$new_code" -eq "$old_code" ]; then
+                old_sha=$(sed -n 's/.*"sha256": "\([0-9a-f]*\)".*/\1/p' "$base/latest.json")
+                test "$old_sha" = "$manifest_sha"
+              fi
+            fi
           fi
           mv "$base/incoming/$VERSION_FILE" "$base/versions/$VERSION_FILE"
           cp "$base/incoming/latest.json" "$base/latest.json.new"
           mv "$base/latest.json.new" "$base/latest.json"
           rm -f "$base/incoming/latest.json"
           REMOTE_SCRIPT
-          curl --fail --silent --show-error --location "https://fireman119.xyz/ota/latest.json" | jq -e --arg sha "$(jq -r .sha256 ota-manifest.json)" '.sha256 == $sha'
-          curl --fail --silent --show-error --location "https://fireman119.xyz/ota/versions/$VERSION_FILE" -o "$RUNNER_TEMP/$VERSION_FILE"
-          echo "$(jq -r .sha256 ota-manifest.json)  $RUNNER_TEMP/$VERSION_FILE" | sha256sum --check --status
+          EXPECTED_SHA=$(jq -r .sha256 ota-manifest.json)
+          "${SSH[@]}" "$REMOTE" "EXPECTED_SHA='$EXPECTED_SHA' VERSION_FILE='$VERSION_FILE' sh -s" <<'VERIFY_SCRIPT'
+          set -eu
+          base=/opt/watchdog/ota
+          actual_sha=$(sha256sum "$base/versions/$VERSION_FILE" | awk '{print $1}')
+          test "$actual_sha" = "$EXPECTED_SHA"
+          jq -e --arg sha "$EXPECTED_SHA" '.sha256 == $sha' "$base/latest.json" >/dev/null
+          VERIFY_SCRIPT
