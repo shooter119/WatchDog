@@ -4,6 +4,7 @@
 # Node backend
 node_modules/
 backend/.env
+deploy/.env.ali
 backend/data/
 *.log
 

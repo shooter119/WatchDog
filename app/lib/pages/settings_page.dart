@@ -22,7 +22,7 @@ import 'roster_page.dart';
 import 'stats_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.5.1+64';
+const appVersion = '1.6.0+65';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
@@ -158,7 +158,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  /// 检查更新：GitHub Releases 最新版 → 提示/下载/安装
+  /// 检查更新：ALI OTA 最新版 → 提示/下载/安装
   Future<void> _checkUpdate() async {
     if (_checkingUpdate) return;
     setState(() => _checkingUpdate = true);
@@ -171,7 +171,7 @@ class _SettingsPageState extends State<SettingsPage> {
         stage,
         message,
         level: level,
-        data: {'source': 'GitHub Releases'},
+        data: {'source': 'ALI OTA'},
       );
     }
 
@@ -1272,7 +1272,7 @@ class _SettingsPageState extends State<SettingsPage> {
       subtitle = '已是最新版本';
       subtitleColor = AppColors.textTertiary;
     } else {
-      subtitle = '从 GitHub Releases 获取最新版本';
+      subtitle = '从 ALI 更新服务器获取最新版本';
       subtitleColor = AppColors.textTertiary;
     }
     return AppCard(

@@ -63,7 +63,7 @@ class AboutPage extends StatelessWidget {
           SectionTitle(text: '后端部署'),
           _SectionCard(
             body:
-                '后端使用标准 PostgreSQL 17。业务数据、审计事件和实时 Outbox 在同一事务中提交，'
+                '服务端使用 api.fireman119.xyz 提供 HTTPS 访问。后端使用标准 PostgreSQL 17。业务数据、审计事件和实时 Outbox 在同一事务中提交，'
                 '通过 PostgreSQL LISTEN/NOTIFY 唤醒多实例，再由 WebSocket 推送给同单位在线 App。'
                 '模型由后端 /models/ 目录分发，部署平台不作限定；AI 仍使用 DeepSeek 直连。',
           ),
@@ -161,7 +161,7 @@ class _FeaturesCard extends StatelessWidget {
     (
       Icons.system_update_alt_rounded,
       '版本更新',
-      '通过 GitHub Releases 检查正式版本，下载后校验 SHA-256，再交由系统安装器完成更新',
+      '通过 ALI 更新服务器检查正式版本，下载后校验 SHA-256，再交由系统安装器完成更新；代码和 Release 备份保留在 GitHub',
     ),
     (
       Icons.folder_copy_outlined,
