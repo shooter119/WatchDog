@@ -1794,7 +1794,9 @@ class AppController extends ChangeNotifier {
         updatedAt: at,
       );
     }
-    notes = [note, ...notes];
+    // 创建请求返回与实时 note.created 事件可能以任意顺序到达；按服务端
+    // note.id 合并，避免同一条日志在本地列表中显示两次。
+    notes = [note, ...notes.where((item) => item.id != note.id)];
     _notify();
     return note;
   }
