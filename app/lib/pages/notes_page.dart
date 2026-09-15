@@ -485,6 +485,19 @@ class _TimelineNoteCard extends StatelessWidget {
                           ),
                         ),
                         const Spacer(),
+                        Flexible(
+                          child: Text(
+                            note.author.isEmpty ? '匿名' : note.author,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: AppColors.textTertiary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
                           _time,
                           style: const TextStyle(
@@ -497,16 +510,6 @@ class _TimelineNoteCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    // 发布者：实名用户显示姓名，未实名显示匿名（小字）
-                    Text(
-                      note.author.isEmpty ? '匿名' : note.author,
-                      style: const TextStyle(
-                        color: AppColors.textTertiary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
                     Text(
                       note.text,
                       style: const TextStyle(
