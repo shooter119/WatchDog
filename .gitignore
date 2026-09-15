@@ -8,6 +8,17 @@ deploy/.env.ali
 backend/data/
 *.log
 
+# 当前仅公开 Android 客户端；Flutter 检查可能在本地重新生成 iOS 工程
+app/ios/
+app/.metadata
+app/third_party/package_info_plus/example/
+
+# 内部设计稿、审查记录与过程文件不进入公开仓库
+opendesign/
+
+# 个人项目介绍网站，仅保留在本地使用
+website/
+
 # 临时调试脚本（含真实 key，不入库）
 backend/asr-debug.js
 .playwright-mcp/
