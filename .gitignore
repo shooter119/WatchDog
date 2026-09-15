@@ -19,6 +19,12 @@ opendesign/
 # 个人项目介绍网站，仅保留在本地使用
 website/
 
+# 内部 UI 风格与设计规范，仅保留在本地
+fire-rescue-safety-app-ui-spec-*.md
+
+# 本地协作与 Codex 工作约定，不进入公开仓库
+AGENTS.md
+
 # 临时调试脚本（含真实 key，不入库）
 backend/asr-debug.js
 .playwright-mcp/
