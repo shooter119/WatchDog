@@ -1859,6 +1859,22 @@ class AppController extends ChangeNotifier {
   /// 智能体问答：读取本机历史（旧→新），不依赖警情或云端。
   Future<List<ChatMessage>> fetchChatHistory() => ChatHistory.load();
 
+  Future<VisionAnalysis> analyzeVision(
+    Uint8List bytes, {
+    required String mimeType,
+    String message = '',
+    String? opId,
+  }) async {
+    final a = api;
+    if (a == null) throw StateError('AI 服务未连接');
+    _assistantBusy = true;
+    try {
+      return await a.analyzeVision(bytes, mimeType: mimeType, message: message, opId: opId);
+    } finally {
+      _assistantBusy = false;
+    }
+  }
+
   /// 智能体问答：提问并返回完整 AI 回复。
   Future<ChatMessage> askAssistant(
     String message, {

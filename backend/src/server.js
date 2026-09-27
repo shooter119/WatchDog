@@ -1,10 +1,11 @@
 const express = require('express');
+const multer = require('multer');
 const crypto = require('crypto');
 const path = require('path');
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const { transcribe, openStreamingSession } = require('./asr');
-const { parseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch } = require('./parse');
+const { parseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch, analyzeVisionWithDeepSeek } = require('./parse');
 const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const logger = require('./logger');
@@ -83,7 +84,7 @@ const CFG = {
     apiKey: process.env.DEEPSEEK_API_KEY || '',
     baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
-    chatModel: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-v4-flash',
+    chatModel: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-flash',
     chatSearch: (process.env.CHAT_SEARCH_ENABLED ?? '1') !== '0',
   },
   calc: {
@@ -2318,9 +2319,17 @@ async function* streamDeepSeekWithAbort({
 // 智能体问答限流：单实例每分钟最多 10 次提问；固定容量防止调用方
 // 轮换来源标识制造高基数 key，跨实例共享限流仍由网关负责。
 const chatRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
+const visionRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
 function chatRateLimited(clientKey, now = Date.now()) {
   return chatRateLimiter.isLimited(clientKey, 10, now);
 }
+function visionRateLimited(clientKey, now = Date.now()) {
+  return visionRateLimiter.isLimited(clientKey, 3, now);
+}
+const visionUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 1, fileSize: 8 * 1024 * 1024 },
+});
 
 function chatHistoryFromRequest(value) {
   if (!Array.isArray(value)) return [];
@@ -2465,6 +2474,39 @@ app.post('/api/chat', async (req, res, next) => {
     res.json({ reply, created_at: Date.now(), search_used: CFG.llm.chatSearch });
   } catch (e) {
     await logOp(req, 'error', 'chat_err', `问答失败: ${errorSummary(e)}`);
+    next(e);
+  }
+});
+
+// 单图视觉辅助：图片仅保留在 multer 内存 Buffer 中，不写入业务数据库或操作日志。
+app.post('/api/chat/vision', visionUpload.single('image'), async (req, res, next) => {
+  try {
+    if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY' });
+    if (!req.file?.buffer?.length) return res.status(400).json({ error: '缺少图片' });
+    const clientKey = `${req.ip || 'anonymous'}:${req.unit?.id || 'unauthenticated'}`;
+    if (visionRateLimited(clientKey)) return res.status(429).json({ error: '图片分析请求过于频繁，请稍后再试' });
+    const mime = String(req.file.mimetype || '').toLowerCase();
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mime)) {
+      return res.status(415).json({ error: '仅支持 JPEG、PNG、GIF 或 WebP 图片' });
+    }
+    const message = String(req.body?.message || '').trim().slice(0, 1000);
+    const t0 = Date.now();
+    const analysis = await analyzeVisionWithDeepSeek({
+      apiKey: CFG.llm.apiKey,
+      baseUrl: CFG.llm.baseUrl,
+      model: CFG.llm.chatModel,
+      imageDataUrl: `data:${mime};base64,${req.file.buffer.toString('base64')}`,
+      message,
+      search: CFG.llm.chatSearch,
+    });
+    await logOp(req, 'info', 'vision_done', '图片辅助分析完成', {
+      relevance: analysis.relevance,
+      category: analysis.category,
+      ms: Date.now() - t0,
+    });
+    res.json({ analysis, created_at: Date.now(), search_used: CFG.llm.chatSearch });
+  } catch (e) {
+    await logOp(req, 'error', 'vision_err', `图片辅助分析失败: ${errorSummary(e)}`);
     next(e);
   }
 });

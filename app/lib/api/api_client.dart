@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'package:http_parser/http_parser.dart';
 
 import '../models/models.dart';
 import '../services/settings.dart';
@@ -817,6 +818,35 @@ class ApiClient {
       if (identical(_activeChatClient, client)) _activeChatClient = null;
       client.close();
     }
+  }
+
+  Future<VisionAnalysis> analyzeVision(
+    Uint8List bytes, {
+    required String mimeType,
+    String message = '',
+    String? opId,
+  }) async {
+    final request = http.MultipartRequest('POST', _uri('/api/chat/vision'));
+    request.headers.addAll(_opHeaders(opId)..remove('Content-Type'));
+    request.fields['message'] = message.trim();
+    request.files.add(http.MultipartFile.fromBytes(
+      'image', bytes,
+      filename: 'vision.jpg',
+      contentType: _mediaType(mimeType),
+    ));
+    final response = await _client.send(request).timeout(const Duration(seconds: 100));
+    final res = await http.Response.fromStream(response);
+    final body = _decodeJson(res, fallback: '图片分析失败');
+    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '图片分析失败');
+    if (body is! Map || body['analysis'] is! Map) {
+      throw _responseShapeException(res, '图片分析响应格式异常');
+    }
+    return VisionAnalysis.fromJson(Map<String, dynamic>.from(body['analysis'] as Map));
+  }
+
+  MediaType _mediaType(String mimeType) {
+    final parts = mimeType.split('/');
+    return MediaType(parts.first, parts.length > 1 ? parts[1] : 'jpeg');
   }
 
   List<Map<String, String>> _chatHistoryPayload(List<ChatMessage> history) =>

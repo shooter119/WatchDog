@@ -40,7 +40,7 @@ const mockChat = () => {
   globalThis.fetch = (url, opts) => {
     if (!String(url).match(/\/responses$/)) return realFetch(url, opts);
     const body = JSON.parse(opts.body);
-    assert.equal(body.model, 'deepseek-v4-flash');
+    assert.equal(body.model, 'deepseek-flash');
     assert.match(body.instructions, /水元素/);
     assert.deepEqual(body.tools, [{ type: 'web_search' }]);
     assert.equal(body.tool_choice, 'auto');
@@ -178,7 +178,7 @@ test('POST /api/chat 流式（stream=1）：SSE 增量输出且不落云端历�
     if (String(url).match(/chat\/completions$/)) {
       const body = JSON.parse(opts.body);
       assert.equal(body.stream, true, '流式应请求 stream: true');
-      assert.equal(body.model, 'deepseek-v4-flash');
+      assert.equal(body.model, 'deepseek-flash');
       streamed = true;
       const enc = new TextEncoder();
       const sse = [

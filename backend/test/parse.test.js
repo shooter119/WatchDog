@@ -6,6 +6,7 @@ const {
   reviseTextWithDeepSeek,
   chatWithDeepSeek,
   chatWithWebSearch,
+  analyzeVisionWithDeepSeek,
   guardrailAction,
   guardrailIntent,
 } = require('../src/parse');
@@ -310,4 +311,28 @@ test('chatWithWebSearch 解析 Responses API output_text 并禁止重定向', as
   assert.match(captured.url, /\/responses$/);
   assert.equal(captured.opts.redirect, 'error');
   assert.ok(captured.opts.signal instanceof AbortSignal);
+});
+
+test('analyzeVisionWithDeepSeek 使用 deepseek-flash 和 input_image 并解析结构化结果', async () => {
+  let captured;
+  globalThis.fetch = (url, opts) => {
+    captured = { url: String(url), body: JSON.parse(opts.body) };
+    return Promise.resolve({
+      ok: true,
+      async json() { return { output_text: JSON.stringify({
+        relevance: 'related', category: 'equipment_risk', confidence: 0.86,
+        facts: ['可见消防装备'], risks: ['状态需确认'], to_confirm: ['确认压力'], suggestions: ['由专业人员复核'],
+      }) }; },
+    });
+  };
+  const result = await analyzeVisionWithDeepSeek({
+    apiKey: 'k', imageDataUrl: 'data:image/jpeg;base64,abc', search: true,
+  });
+  assert.match(captured.url, /\/responses$/);
+  assert.equal(captured.body.model, 'deepseek-flash');
+  assert.equal(captured.body.input[0].content[1].type, 'input_image');
+  assert.equal(captured.body.input[0].content[1].image_url, 'data:image/jpeg;base64,abc');
+  assert.deepEqual(captured.body.tools, [{ type: 'web_search' }]);
+  assert.equal(result.relevance, 'related');
+  assert.equal(result.disclaimer, '以上为图片辅助分析，不替代现场专业判断');
 });
