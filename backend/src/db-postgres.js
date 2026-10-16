@@ -478,8 +478,8 @@ async function purgeOldExited(days = 7) {
   const old = await db.select('entries', { select: 'id', filters: { exited_at: { op: 'lt', value: cutoff } } });
   if (old.length === 0) return 0;
   const ids = old.map((row) => row.id);
-  const removed = (await db.remove('entries', { id: { op: 'in', value: ids } })).changes;
   await db.remove('pressure_samples', { entry_id: { op: 'in', value: ids } });
+  const removed = (await db.remove('entries', { id: { op: 'in', value: ids } })).changes;
   return removed;
 }
 

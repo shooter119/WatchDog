@@ -1,6 +1,7 @@
 const { Client, Pool } = require('pg');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { migrate } = require('./postgres-migrator');
+const logger = require('./logger');
 
 const tables = new Set([
   'units', 'unit_members', 'auth_sessions', 'incidents', 'entries', 'pressure_samples',
@@ -18,6 +19,9 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
   ...(sslEnabled ? { ssl: { rejectUnauthorized: false } } : {}),
+});
+pool.on('error', (err) => {
+  logger.error('PostgreSQL 连接池空闲连接异常', err?.message || String(err));
 });
 
 const transactionStorage = new AsyncLocalStorage();
@@ -238,6 +242,9 @@ async function transaction(fn) {
 
 async function listenSync(onNotification) {
   const client = new Client({ connectionString: databaseUrl, ...(sslEnabled ? { ssl: { rejectUnauthorized: false } } : {}) });
+  client.on('error', (err) => {
+    logger.error('PostgreSQL sync listener client 异常', err?.message || String(err));
+  });
   await client.connect();
   await client.query('LISTEN watchdog_sync');
   const handler = (message) => {

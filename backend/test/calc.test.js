@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('../src/calc');
+const { durationMinutes, workDurationMinutes, exitAtMs, measuredConsumptionLpm, EVACUATION_RESERVE_PRESSURE_MPA } = require('../src/calc');
 
 test('标准换算：6.8L × 20MPa × 10 ÷ 40L/min = 34 分钟', () => {
   assert.equal(durationMinutes({ cylinderVolL: 6.8, pressureMpa: 20, consumptionLpm: 40 }), 34);
@@ -63,4 +63,14 @@ test('实测耗气率：超出合理范围（间隔过短/过长）→ null', ()
     measuredConsumptionLpm({ cylinderVolL: 6.8, prevPressureMpa: 30, newPressureMpa: 5, intervalMs: 60000 }),
     null
   );
+});
+
+test('安全撤离余量：扣除法定 5.5MPa 撤离气量', () => {
+  assert.equal(EVACUATION_RESERVE_PRESSURE_MPA, 5.5);
+  // 20MPa 扣除 5.5MPa 剩余 14.5MPa 工作压力：6.8 × 14.5 × 10 ÷ 80 = 12.325 分钟
+  assert.equal(workDurationMinutes({ cylinderVolL: 6.8, pressureMpa: 20, consumptionLpm: 80 }), 12.325);
+  // 压力低于或等于法定报警阈值 5.5MPa 时，工作可用时间归零（必须撤出）
+  assert.equal(workDurationMinutes({ pressureMpa: 5.5 }), 0);
+  assert.equal(workDurationMinutes({ pressureMpa: 4.0 }), 0);
+  assert.equal(workDurationMinutes({ pressureMpa: 0 }), 0);
 });

@@ -1,11 +1,23 @@
+const EVACUATION_RESERVE_PRESSURE_MPA = 5.5;
+
 /**
  * 气瓶空气量换算
- * 可用时间(分钟) = 气瓶容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
+ * 物理总可用时间(分钟) = 气瓶容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
  * 例：6.8L 气瓶，20MPa，消耗率 80L/min → 6.8 × 20 × 10 ÷ 80 = 17 分钟
  */
 function durationMinutes({ cylinderVolL = 6.8, pressureMpa, consumptionLpm = 80 }) {
   if (!pressureMpa || pressureMpa <= 0) return 0;
   return (cylinderVolL * pressureMpa * 10) / consumptionLpm;
+}
+
+/**
+ * 内攻工作可用时间(分钟，扣除法定安全撤离余量)
+ * 依据 GB/T 16556《正压式消防空气呼吸器》警报器动作压力(5.5±0.5MPa)与 NFPA 1404 安全撤离余量原则
+ */
+function workDurationMinutes({ cylinderVolL = 6.8, pressureMpa, consumptionLpm = 80, reservePressureMpa = EVACUATION_RESERVE_PRESSURE_MPA }) {
+  if (!pressureMpa || pressureMpa <= 0) return 0;
+  const effectivePressure = Math.max(0, pressureMpa - reservePressureMpa);
+  return (cylinderVolL * effectivePressure * 10) / consumptionLpm;
 }
 
 function exitAtMs({ entryAtMs, cylinderVolL, pressureMpa, consumptionLpm }) {
@@ -30,4 +42,10 @@ function measuredConsumptionLpm({ cylinderVolL = 6.8, prevPressureMpa, newPressu
   return Math.round(lpm * 10) / 10;
 }
 
-module.exports = { durationMinutes, exitAtMs, measuredConsumptionLpm };
+module.exports = {
+  durationMinutes,
+  workDurationMinutes,
+  exitAtMs,
+  measuredConsumptionLpm,
+  EVACUATION_RESERVE_PRESSURE_MPA,
+};

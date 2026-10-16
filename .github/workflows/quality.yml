@@ -4,6 +4,7 @@ name: Quality Checks
 on:
   push:
     branches: ['**']
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -26,7 +27,7 @@ jobs:
           --health-retries=5
     env:
       # 通过 npm test 运行时摘要校验；新增测试后只允许提高此基线。
-      MIN_BACKEND_TESTS: '162'
+      MIN_BACKEND_TESTS: '168'
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/watchdog_test
     steps:
       - name: Checkout
@@ -93,7 +94,7 @@ jobs:
     timeout-minutes: 20
     env:
       # Flutter JSON reporter 的可见 testDone 事件是运行时计数；新增测试后只允许提高此基线。
-      MIN_APP_TESTS: '223'
+      MIN_APP_TESTS: '238'
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

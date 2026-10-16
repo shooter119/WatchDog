@@ -22,6 +22,7 @@ const databaseReadiness = createDatabaseReadiness(db.ready, {
 });
 
 const app = express();
+app.set('trust proxy', 1);
 const realtimeWss = new WebSocketServer({ noServer: true });
 const syncWss = new WebSocketServer({ noServer: true });
 const realtimeSessions = new Set();
@@ -2026,7 +2027,7 @@ app.post('/api/stations', async (req, res, next) => {
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
     res.status(201).json(await db.addStation({ name: req.body?.name, createdBy: deviceKey(req) }));
   } catch (e) {
-    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该消防站已存在' });
+    if (e?.code === '23505' || /unique/i.test(String(e.message || ''))) return res.status(409).json({ error: '该消防站已存在' });
     next(e);
   }
 });
@@ -2049,7 +2050,7 @@ app.post('/api/unit-members', async (req, res, next) => {
     if (!['member', 'manager', 'admin'].includes(role)) return res.status(400).json({ error: '成员角色无效', code: 'ROLE_INVALID' });
     res.status(201).json(await db.addUnitMember({ unitId: req.unit.id, realName, role }));
   } catch (error) {
-    if (String(error.message || '').includes('UNIQUE')) return res.status(409).json({ error: '该成员已存在', code: 'MEMBER_EXISTS' });
+    if (error?.code === '23505' || /unique/i.test(String(error.message || ''))) return res.status(409).json({ error: '该成员已存在', code: 'MEMBER_EXISTS' });
     next(error);
   }
 });
@@ -2899,7 +2900,7 @@ app.post('/api/firefighters', async (req, res, next) => {
         clientOpId: opKey(req),
       }));
     } catch (e) {
-      if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该姓名已存在' });
+      if (e?.code === '23505' || /unique/i.test(String(e.message || ''))) return res.status(409).json({ error: '该姓名已存在' });
       throw e;
     }
   } catch (e) {
@@ -2932,7 +2933,7 @@ app.post('/api/hotwords', async (req, res, next) => {
         clientOpId: opKey(req),
       }));
     } catch (e) {
-      if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: '该词条已存在' });
+      if (e?.code === '23505' || /unique/i.test(String(e.message || ''))) return res.status(409).json({ error: '该词条已存在' });
       throw e;
     }
   } catch (e) {
