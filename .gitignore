@@ -12,6 +12,8 @@ backend/data/
 app/ios/
 app/.metadata
 app/third_party/package_info_plus/example/
+.gradle/
+**/.gradle/
 
 # 内部设计稿、审查记录与过程文件不进入公开仓库
 opendesign/
