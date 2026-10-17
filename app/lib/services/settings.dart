@@ -65,6 +65,14 @@ class Settings {
   static const _kUnitId = 'unit_id';
   static const _kUnitCode = 'unit_code';
   static const _kUnitName = 'unit_name';
+  static const _kIsGuestMode = 'is_guest_mode';
+  static const _kUserRole = 'user_role';
+  static const _kPendingAppUnitName = 'pending_app_unit_name';
+  static const _kPendingAppUnitCode = 'pending_app_unit_code';
+  static const _kPendingAppRealName = 'pending_app_real_name';
+  static const _kPendingAppStationName = 'pending_app_station_name';
+  static const _kPendingAppPhone = 'pending_app_phone';
+  static const _kPendingAppSubmittedAt = 'pending_app_submitted_at';
 
   static bool _isLocalHost(String host) => const {
     'localhost',
@@ -380,6 +388,72 @@ class Settings {
     } else {
       await sp.setString(_kUnitName, value);
     }
+  }
+
+  static Future<bool> get isGuestMode async {
+    final sp = await SharedPreferences.getInstance();
+    return sp.getBool(_kIsGuestMode) ?? false;
+  }
+
+  static Future<void> setIsGuestMode(bool v) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool(_kIsGuestMode, v);
+  }
+
+  static Future<String> get userRole async {
+    final sp = await SharedPreferences.getInstance();
+    return (sp.getString(_kUserRole) ?? 'member').trim();
+  }
+
+  static Future<void> setUserRole(String v) async {
+    final sp = await SharedPreferences.getInstance();
+    final value = v.trim();
+    if (value.isEmpty) {
+      await sp.remove(_kUserRole);
+    } else {
+      await sp.setString(_kUserRole, value);
+    }
+  }
+
+  static Future<Map<String, String>?> get pendingApplication async {
+    final sp = await SharedPreferences.getInstance();
+    final realName = sp.getString(_kPendingAppRealName);
+    if (realName == null || realName.isEmpty) return null;
+    final unitCode = await SecureStore.read(_kPendingAppUnitCode) ?? '';
+    return {
+      'unit_name': sp.getString(_kPendingAppUnitName) ?? '',
+      'unit_code': unitCode,
+      'real_name': realName,
+      'station_name': sp.getString(_kPendingAppStationName) ?? '',
+      'phone': sp.getString(_kPendingAppPhone) ?? '',
+      'submitted_at': sp.getString(_kPendingAppSubmittedAt) ?? '',
+    };
+  }
+
+  static Future<void> setPendingApplication({
+    required String unitName,
+    required String unitCode,
+    required String realName,
+    String? stationName,
+    String? phone,
+  }) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kPendingAppUnitName, unitName.trim());
+    await SecureStore.write(_kPendingAppUnitCode, unitCode.trim());
+    await sp.setString(_kPendingAppRealName, realName.trim());
+    await sp.setString(_kPendingAppStationName, (stationName ?? '').trim());
+    await sp.setString(_kPendingAppPhone, (phone ?? '').trim());
+    await sp.setString(_kPendingAppSubmittedAt, DateTime.now().toIso8601String());
+  }
+
+  static Future<void> clearPendingApplication() async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.remove(_kPendingAppUnitName);
+    await SecureStore.delete(_kPendingAppUnitCode);
+    await sp.remove(_kPendingAppRealName);
+    await sp.remove(_kPendingAppStationName);
+    await sp.remove(_kPendingAppPhone);
+    await sp.remove(_kPendingAppSubmittedAt);
   }
 
   static Future<double> get cylinderVolL async =>

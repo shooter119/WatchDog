@@ -87,6 +87,12 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
   }
 
   Future<void> _initialize() async {
+    if (widget.incident.id == 'guest-drill-incident') {
+      if (mounted) {
+        setState(() => _error = '当前处于游客模式，智能分析需连接单位云端服务。请先转为正式队员加入单位。');
+      }
+      return;
+    }
     try {
       final saved = await IncidentImageDraft.load(
         _api.cacheScope,
@@ -141,7 +147,18 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
   }
 
   void _fail(Object error) {
-    if (mounted) setState(() => _error = error.toString());
+    if (!mounted) return;
+    String message = error.toString();
+    if (error is ApiException) {
+      if (error.statusCode == 404 || error.code == 'IMPORT_NOT_FOUND') {
+        message = '当前警情在云端不存在或已归档，无法导入';
+      } else if (error.statusCode == 401 || error.code == 'IMPORT_AUTH_REQUIRED') {
+        message = '请先完成单位认证后再使用警情导入';
+      } else {
+        message = error.message;
+      }
+    }
+    setState(() => _error = message);
   }
 
   Future<void> _chooseSource() async {
@@ -299,6 +316,10 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
 
   Future<void> _start() async {
     if (_busy) return;
+    if (widget.incident.id == 'guest-drill-incident') {
+      _fail('当前处于游客模式，智能分析需调用单位云端 AI 服务。请先转为正式队员加入单位。');
+      return;
+    }
     if (_images.isEmpty && _text.text.trim().isEmpty) {
       _fail('请先输入文字或选择图片');
       return;

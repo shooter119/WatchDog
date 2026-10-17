@@ -121,13 +121,16 @@ class AppController extends ChangeNotifier {
   List<IncidentForce> forces = [];
   bool _authenticated = false;
   bool _syncStarted = false;
+  bool _isGuest = false;
+  bool get isGuest => _isGuest;
+  int pendingMemberCount = 0;
 
   static const Duration sessionRefreshCheckInterval = Duration(minutes: 15);
   static const Duration sessionRefreshLeadTime = Duration(hours: 1);
 
-  /// 首次安装先完成单位验证码 + 实名认证，再进入警情选择。
-  bool get needsAuthentication => !_authenticated;
-  bool get needsIncidentSelection => currentIncident == null;
+  /// 首次安装先完成单位验证码 + 实名认证，或选择游客模式，再进入警情选择。
+  bool get needsAuthentication => !_authenticated && !_isGuest;
+  bool get needsIncidentSelection => !_isGuest && currentIncident == null;
 
   /// 辅助问答使用独立请求通道，不阻塞业务实时连接。
   bool get assistantBusy => _assistantBusy;
@@ -217,6 +220,12 @@ class AppController extends ChangeNotifier {
           if (!ApiClient.isAuthenticationFailure(error)) rethrow;
         }
       }
+    } else {
+      _isGuest = await Settings.isGuestMode;
+      if (_isGuest) {
+        _initGuestIncident();
+        unawaited(_ensureOptionalServices());
+      }
     }
     // 认证前只恢复本地名单，不向服务端发送未认证请求；认证成功后由
     // _startAuthenticatedServices 统一发起一次远端刷新。
@@ -238,6 +247,8 @@ class AppController extends ChangeNotifier {
     syncSettings();
     // 启动后补传上次未上传完的操作日志（fire-and-forget）
     OpLogService.instance.flush(api: api);
+    // 管理员拉取待审批成员数
+    unawaited(refreshPendingMembersCount());
     // 报警、TTS 和后台值守在后台初始化，任何系统权限/插件问题都不影响
     // 活跃警情列表与新建警情。
     unawaited(_ensureOptionalServices());
@@ -440,6 +451,14 @@ class AppController extends ChangeNotifier {
     }
 
     // 单位验证码是当前部署的唯一人工认证凭据；认证成功后保存设备会话。
+    final userRole = (result['user'] is Map)
+        ? (result['user']['role']?.toString() ?? 'member')
+        : 'member';
+    await Settings.setUserRole(userRole);
+    await Settings.setIsGuestMode(false);
+    await Settings.clearPendingApplication();
+    _isGuest = false;
+
     await Settings.setSessionToken(sessionToken);
     await Settings.setSessionExpiresAt(sessionExpiresAt);
     await Settings.setRealName(name);
@@ -452,6 +471,79 @@ class AppController extends ChangeNotifier {
     _startAuthenticatedServices();
     await _realtimeStartFuture;
     _notify();
+  }
+
+  /// 进入游客模式：跳过强制登录门禁，使用本地单机功能
+  Future<void> enterGuestMode() async {
+    _isGuest = true;
+    await Settings.setIsGuestMode(true);
+    _initGuestIncident();
+    unawaited(_ensureOptionalServices());
+    _notify();
+  }
+
+  void _initGuestIncident() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    currentIncident = Incident(
+      id: 'guest-drill-incident',
+      number: '单机演练',
+      title: '单机演练测试',
+      status: 'active',
+      createdAt: now,
+      lastActivityAt: now,
+    );
+  }
+
+  /// 申请加入单位：免登录提交入队申请
+  Future<Map<String, dynamic>> applyUnitMembership({
+    required String unitName,
+    required String unitCode,
+    required String realName,
+    String? stationName,
+    String? phone,
+    String? applyReason,
+  }) async {
+    final bootstrap = ApiClient(
+      baseUrl: await Settings.serverUrl,
+      incidentId: '',
+      deviceId: await OpLogService.instance.deviceId,
+      actorName: realName.trim(),
+    );
+    try {
+      final res = await bootstrap.applyUnitMembership(
+        unitName: unitName,
+        unitCode: unitCode,
+        realName: realName,
+        stationName: stationName,
+        phone: phone,
+        applyReason: applyReason,
+      );
+      await Settings.setPendingApplication(
+        unitName: unitName,
+        unitCode: unitCode,
+        realName: realName,
+        stationName: stationName,
+        phone: phone,
+      );
+      return res;
+    } finally {
+      bootstrap.dispose();
+    }
+  }
+
+  /// 管理员刷新待审批成员数（用于小红点）
+  Future<void> refreshPendingMembersCount() async {
+    if (_disposed || !_authenticated || api == null) return;
+    final role = await Settings.userRole;
+    if (role != 'manager' && role != 'admin') {
+      pendingMemberCount = 0;
+      return;
+    }
+    try {
+      final pending = await api!.fetchPendingMembers();
+      pendingMemberCount = pending.length;
+      _notify();
+    } catch (_) {}
   }
 
   /// 主动退出当前单位：清理本机认证信息和当前警情，回到启动认证浮层。
@@ -478,6 +570,10 @@ class AppController extends ChangeNotifier {
     await _stopKeepAliveSafely();
     await _clearScheduledNotifications();
 
+    _isGuest = false;
+    pendingMemberCount = 0;
+    await Settings.setIsGuestMode(false);
+    await Settings.setUserRole('member');
     await Settings.setCurrentIncidentId('');
     await Settings.setApiToken('');
     await Settings.setSessionToken('');

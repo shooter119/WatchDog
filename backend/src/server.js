@@ -224,7 +224,7 @@ app.use(async (req, res, next) => {
 // 单位认证由数据库中的 units 记录驱动。未归属历史警情不属于任何普通单位，
 // 不在这里把旧数据强行归属到当前认证单位。
 app.use(async (req, res, next) => {
-  if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh') return next();
+  if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply') return next();
   if (SESSION_AUTH_REQUIRED) {
     const rawToken = sessionTokenFromRequest(req);
     if (!rawToken || rawToken.length > 256) {
@@ -1100,6 +1100,68 @@ function upstreamRateLimited(req, route, limit, now = Date.now()) {
   return upstreamRateLimiter.isLimited(key, limit, now);
 }
 
+app.post('/api/auth/apply', async (req, res, next) => {
+  try {
+    const code = String(req.body?.unit_code || '').trim();
+    const unitName = String(req.body?.unit_name || '').trim().slice(0, 120);
+    const realName = String(req.body?.real_name || '').trim().slice(0, 32);
+    const stationName = String(req.body?.station_name || '').trim().slice(0, 64);
+    const phone = String(req.body?.phone || '').trim().slice(0, 32);
+    const applyReason = String(req.body?.apply_reason || '').trim().slice(0, 255);
+
+    if (!unitName) return res.status(400).json({ error: '请输入单位名称', code: 'UNIT_NAME_REQUIRED' });
+    if (!code) return res.status(400).json({ error: '请输入单位验证码', code: 'UNIT_CODE_REQUIRED' });
+    if (!realName) return res.status(400).json({ error: '请输入真实姓名', code: 'REAL_NAME_REQUIRED' });
+    if (code.length > 64) return res.status(400).json({ error: '单位验证码格式错误', code: 'UNIT_CODE_INVALID' });
+
+    const namePattern = /^[\u4e00-\u9fa5]{2,10}(?:·[\u4e00-\u9fa5]{2,10})*$/;
+    if (!namePattern.test(realName)) {
+      return res.status(400).json({ error: '真实姓名应为2-10位规范汉字', code: 'REAL_NAME_INVALID' });
+    }
+
+    const failureKey = authFailureKey(req, unitName);
+    if (isAuthRateLimited(failureKey)) {
+      return res.status(429).json({ error: '申请提交过于频繁，请稍后再试', code: 'AUTH_RATE_LIMITED' });
+    }
+
+    const unit = await db.findUnit(unitName, code);
+    if (!unit) {
+      recordAuthFailure(failureKey);
+      return res.status(403).json({ error: '单位名称或验证码错误', code: 'UNIT_INVALID' });
+    }
+
+    const member = await db.applyUnitMember({
+      unitId: unit.id,
+      realName,
+      stationName,
+      phone,
+      applyReason,
+    });
+
+    res.status(202).json({
+      applied: true,
+      message: '入队申请已提交，请等待管理员审核',
+      member: {
+        id: member.id,
+        unit_id: member.unit_id,
+        real_name: member.real_name,
+        station_name: member.station_name,
+        phone: member.phone,
+        review_status: member.review_status,
+        created_at: member.created_at,
+      },
+    });
+  } catch (e) {
+    if (e.code === 'PENDING_QUEUE_FULL') {
+      return res.status(429).json({ error: e.message, code: 'PENDING_QUEUE_FULL' });
+    }
+    if (e.code === 'MEMBER_EXISTS') {
+      return res.status(409).json({ error: e.message, code: 'MEMBER_EXISTS' });
+    }
+    next(e);
+  }
+});
+
 app.post('/api/auth/verify', async (req, res, next) => {
   try {
     const code = String(req.body?.unit_code || '').trim();
@@ -1117,8 +1179,22 @@ app.post('/api/auth/verify', async (req, res, next) => {
       recordAuthFailure(failureKey);
       return res.status(403).json({ error: '单位名称或验证码错误', code: 'UNIT_INVALID' });
     }
-    const member = MEMBER_AUTH_REQUIRED ? await db.findUnitMember(unit.id, name) : null;
+    let member = MEMBER_AUTH_REQUIRED ? await db.findUnitMember(unit.id, name) : null;
     if (MEMBER_AUTH_REQUIRED && !member) {
+      if (typeof db.getUnitMemberByName === 'function') {
+        const anyMember = await db.getUnitMemberByName(unit.id, name);
+        if (anyMember) {
+          if (anyMember.review_status === 'pending') {
+            return res.status(403).json({ error: '入队申请正在审核中，请联系站长批准', code: 'MEMBER_APPLICATION_PENDING' });
+          }
+          if (anyMember.review_status === 'rejected') {
+            return res.status(403).json({ error: '入队申请已被拒绝，请重新申请', code: 'MEMBER_APPLICATION_REJECTED' });
+          }
+          if (anyMember.status === 'disabled') {
+            return res.status(403).json({ error: '该账号已被停用，请联系管理员', code: 'MEMBER_DISABLED' });
+          }
+        }
+      }
       recordAuthFailure(failureKey);
       return res.status(403).json({ error: '该姓名未被单位授权，请联系管理员', code: 'MEMBER_NOT_ALLOWED' });
     }
@@ -2072,6 +2148,12 @@ app.get('/api/unit-members', async (req, res) => {
   res.json(await db.listUnitMembers(req.unit.id));
 });
 
+app.get('/api/unit-members/pending', async (req, res) => {
+  if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  if (!requireManagementRole(req, res)) return;
+  res.json(await db.listPendingUnitMembers(req.unit.id));
+});
+
 app.post('/api/unit-members', async (req, res, next) => {
   if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
   if (!requireManagementRole(req, res)) return;
@@ -2081,9 +2163,47 @@ app.post('/api/unit-members', async (req, res, next) => {
     if (realName.length > 32) return res.status(400).json({ error: '成员姓名过长（最多 32 字）', code: 'REAL_NAME_TOO_LONG' });
     const role = req.body?.role == null ? 'member' : String(req.body.role);
     if (!['member', 'manager', 'admin'].includes(role)) return res.status(400).json({ error: '成员角色无效', code: 'ROLE_INVALID' });
-    res.status(201).json(await db.addUnitMember({ unitId: req.unit.id, realName, role }));
+    const stationName = req.body?.station_name ? String(req.body.station_name).trim().slice(0, 64) : '';
+    const phone = req.body?.phone ? String(req.body.phone).trim().slice(0, 32) : '';
+    res.status(201).json(await db.addUnitMember({
+      unitId: req.unit.id,
+      realName,
+      role,
+      stationName,
+      phone,
+      createdByMemberId: req.auth?.memberId,
+      createdByName: req.auth?.realName,
+      clientOpId: req.header('x-op-id'),
+    }));
   } catch (error) {
     if (error?.code === '23505' || /unique/i.test(String(error.message || ''))) return res.status(409).json({ error: '该成员已存在', code: 'MEMBER_EXISTS' });
+    next(error);
+  }
+});
+
+app.post('/api/unit-members/:id/approve', async (req, res, next) => {
+  if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  if (!requireManagementRole(req, res)) return;
+  try {
+    const member = await db.approveUnitMember(req.params.id, req.unit.id, req.auth?.memberId, {
+      reviewerName: req.auth?.realName,
+      clientOpId: req.header('x-op-id'),
+    });
+    res.json({ approved: true, member });
+  } catch (error) {
+    if (error.message === '待审批成员不存在') return res.status(404).json({ error: error.message, code: 'MEMBER_NOT_FOUND' });
+    next(error);
+  }
+});
+
+app.post('/api/unit-members/:id/reject', async (req, res, next) => {
+  if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  if (!requireManagementRole(req, res)) return;
+  try {
+    const reason = req.body?.reason ? String(req.body.reason).trim().slice(0, 255) : '';
+    const member = await db.rejectUnitMember(req.params.id, req.unit.id, req.auth?.memberId, reason);
+    res.json({ rejected: true, member });
+  } catch (error) {
     next(error);
   }
 });
@@ -2094,8 +2214,10 @@ app.patch('/api/unit-members/:id', async (req, res, next) => {
   try {
     const role = req.body?.role == null ? null : String(req.body.role);
     const status = req.body?.status == null ? null : String(req.body.status);
-    if (role == null && status == null) return res.status(400).json({ error: '至少提供 role 或 status', code: 'MEMBER_UPDATE_EMPTY' });
-    const updated = await db.updateUnitMember(req.params.id, req.unit.id, { role, status });
+    const stationName = req.body?.station_name == null ? null : String(req.body.station_name);
+    const phone = req.body?.phone == null ? null : String(req.body.phone);
+    if (role == null && status == null && stationName == null && phone == null) return res.status(400).json({ error: '至少提供一个更新字段', code: 'MEMBER_UPDATE_EMPTY' });
+    const updated = await db.updateUnitMember(req.params.id, req.unit.id, { role, status, stationName, phone });
     if (!updated) return res.status(404).json({ error: '单位成员不存在', code: 'MEMBER_NOT_FOUND' });
     res.json(updated);
   } catch (error) {

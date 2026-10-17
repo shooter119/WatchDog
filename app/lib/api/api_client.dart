@@ -1042,6 +1042,137 @@ class ApiClient {
     return Map<String, dynamic>.from(body);
   }
 
+  /// 申请加入单位：免登录提交入队申请（状态为 pending 等待站长审批）
+  Future<Map<String, dynamic>> applyUnitMembership({
+    required String unitName,
+    required String unitCode,
+    required String realName,
+    String? stationName,
+    String? phone,
+    String? applyReason,
+  }) async {
+    final res = await _withTransientRetry(
+      (client) => client.post(
+        _uri('/api/auth/apply'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (apiToken.isNotEmpty) 'X-Api-Token': apiToken,
+          if (deviceId.isNotEmpty) 'X-Device-Id': deviceId,
+        },
+        body: jsonEncode({
+          'unit_name': unitName.trim(),
+          'unit_code': unitCode.trim(),
+          'real_name': realName.trim(),
+          if (stationName != null && stationName.trim().isNotEmpty)
+            'station_name': stationName.trim(),
+          if (phone != null && phone.trim().isNotEmpty)
+            'phone': phone.trim(),
+          if (applyReason != null && applyReason.trim().isNotEmpty)
+            'apply_reason': applyReason.trim(),
+        }),
+      ),
+      timeout: const Duration(seconds: 12),
+    );
+    final body = _decodeJson(res, fallback: '提交申请失败');
+    if (res.statusCode != 202 && res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '提交申请失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '申请响应格式异常');
+    }
+    return Map<String, dynamic>.from(body);
+  }
+
+  Future<List<UnitMember>> fetchUnitMembers() async {
+    final res = await _client.get(_uri('/api/unit-members'), headers: _headers);
+    final body = _decodeJson(res, fallback: '获取成员列表失败');
+    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '获取成员列表失败');
+    if (body is! List) throw _responseShapeException(res, '成员列表响应格式异常');
+    return body.whereType<Map<String, dynamic>>().map(UnitMember.fromJson).toList();
+  }
+
+  Future<List<UnitMember>> fetchPendingMembers() async {
+    final res = await _client.get(_uri('/api/unit-members/pending'), headers: _headers);
+    final body = _decodeJson(res, fallback: '获取待审批成员列表失败');
+    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '获取待审批成员列表失败');
+    if (body is! List) throw _responseShapeException(res, '待审列表响应格式异常');
+    return body.whereType<Map<String, dynamic>>().map(UnitMember.fromJson).toList();
+  }
+
+  Future<UnitMember> approveMember(String memberId) async {
+    final res = await _client.post(
+      _uri('/api/unit-members/$memberId/approve'),
+      headers: _headers,
+    );
+    final body = _decodeJson(res, fallback: '审批成员失败');
+    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '审批成员失败');
+    if (body is! Map || body['member'] is! Map) {
+      throw _responseShapeException(res, '审批响应格式异常');
+    }
+    return UnitMember.fromJson(Map<String, dynamic>.from(body['member'] as Map));
+  }
+
+  Future<UnitMember> rejectMember(String memberId, {String? reason}) async {
+    final res = await _client.post(
+      _uri('/api/unit-members/$memberId/reject'),
+      headers: _headers,
+      body: jsonEncode({if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim()}),
+    );
+    final body = _decodeJson(res, fallback: '驳回成员申请失败');
+    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '驳回成员申请失败');
+    if (body is! Map || body['member'] is! Map) {
+      throw _responseShapeException(res, '驳回响应格式异常');
+    }
+    return UnitMember.fromJson(Map<String, dynamic>.from(body['member'] as Map));
+  }
+
+  Future<UnitMember> addUnitMember({
+    required String realName,
+    String role = 'member',
+    String? stationName,
+    String? phone,
+  }) async {
+    final res = await _client.post(
+      _uri('/api/unit-members'),
+      headers: _headers,
+      body: jsonEncode({
+        'real_name': realName.trim(),
+        'role': role,
+        if (stationName != null && stationName.trim().isNotEmpty) 'station_name': stationName.trim(),
+        if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+      }),
+    );
+    final body = _decodeJson(res, fallback: '添加成员失败');
+    if (res.statusCode != 201 && res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '添加成员失败');
+    }
+    if (body is! Map) throw _responseShapeException(res, '添加成员响应格式异常');
+    return UnitMember.fromJson(Map<String, dynamic>.from(body));
+  }
+
+  Future<UnitMember> updateUnitMember(
+    String memberId, {
+    String? role,
+    String? status,
+    String? stationName,
+    String? phone,
+  }) async {
+    final res = await _client.patch(
+      _uri('/api/unit-members/$memberId'),
+      headers: _headers,
+      body: jsonEncode({
+        if (role != null) 'role': role,
+        if (status != null) 'status': status,
+        if (stationName != null) 'station_name': stationName.trim(),
+        if (phone != null) 'phone': phone.trim(),
+      }),
+    );
+    final body = _decodeJson(res, fallback: '更新成员失败');
+    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '更新成员失败');
+    if (body is! Map) throw _responseShapeException(res, '更新成员响应格式异常');
+    return UnitMember.fromJson(Map<String, dynamic>.from(body));
+  }
+
   Future<Map<String, dynamic>> refreshSession() async {
     final res = await _client
         .post(_uri('/api/auth/refresh'), headers: _headers)
@@ -1564,3 +1695,45 @@ class EntryConflictException implements Exception {
   @override
   String toString() => message;
 }
+
+class UnitMember {
+  final String id;
+  final String unitId;
+  final String realName;
+  final String role;
+  final String status;
+  final String reviewStatus;
+  final String stationName;
+  final String phone;
+  final String applyReason;
+  final int createdAt;
+
+  const UnitMember({
+    required this.id,
+    required this.unitId,
+    required this.realName,
+    required this.role,
+    required this.status,
+    required this.reviewStatus,
+    this.stationName = '',
+    this.phone = '',
+    this.applyReason = '',
+    this.createdAt = 0,
+  });
+
+  factory UnitMember.fromJson(Map<String, dynamic> json) {
+    return UnitMember(
+      id: json['id'] as String? ?? '',
+      unitId: json['unit_id'] as String? ?? '',
+      realName: (json['real_name'] ?? json['name'] ?? '') as String,
+      role: json['role'] as String? ?? 'member',
+      status: json['status'] as String? ?? 'active',
+      reviewStatus: json['review_status'] as String? ?? 'approved',
+      stationName: json['station_name'] as String? ?? '',
+      phone: json['phone'] as String? ?? '',
+      applyReason: json['apply_reason'] as String? ?? '',
+      createdAt: (json['created_at'] is num) ? (json['created_at'] as num).toInt() : 0,
+    );
+  }
+}
+

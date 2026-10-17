@@ -686,7 +686,9 @@ class _SettingsPageState extends State<SettingsPage> {
             _SettingsShortcut(
               icon: Icons.group_outlined,
               title: '添加语音热词',
-              subtitle: '补充本单位的姓名或专业词汇',
+              subtitle: widget.controller.pendingMemberCount > 0
+                  ? '有 ${widget.controller.pendingMemberCount} 名新队员待审批'
+                  : '补充本单位的姓名或专业词汇',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(

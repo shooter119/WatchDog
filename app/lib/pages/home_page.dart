@@ -10,6 +10,7 @@ import 'incident_import_page.dart';
 import 'incident_details_page.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
+import 'report_pressure_sheet.dart';
 import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
@@ -1571,6 +1572,39 @@ class HomePageState extends State<HomePage> {
   }
 
   Future<void> _openImport(bool fromImages) async {
+    if (widget.controller.isGuest) {
+      final goAuth = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.lock_outline_rounded, color: AppColors.voice),
+              SizedBox(width: 8),
+              Text('需要转为正式队员'),
+            ],
+          ),
+          content: const Text(
+            '警情智能分析与参战力量导入需调用单位云端 AI 智算服务，并将力量实时同步至全队。\n\n当前处于游客模式（单机演练），请先完成单位认证。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('暂不认证'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.verified_user_outlined),
+              label: const Text('去完成认证'),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.voice),
+            ),
+          ],
+        ),
+      );
+      if (goAuth == true && mounted) {
+        widget.controller.leaveUnit();
+      }
+      return;
+    }
     final api = widget.controller.api;
     final incident = widget.controller.currentIncident;
     if (api == null || incident == null) return;
@@ -2051,6 +2085,10 @@ class HomePageState extends State<HomePage> {
       );
     }
     if (_transcript == null || _parsed == null) {
+      final activeEntries = widget.controller.entries.where((e) => e.isActive).toList();
+      if (activeEntries.isNotEmpty) {
+        return _buildActiveCombatLiveOverview(context, activeEntries);
+      }
       // 引导区：统一卡片 + 图标网格，内容不足时居中，窄屏可滚动不溢出
       return LayoutBuilder(
         builder: (ctx, box) =>
@@ -2425,6 +2463,268 @@ class HomePageState extends State<HomePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActiveCombatLiveOverview(
+    BuildContext context,
+    List<Entry> activeEntries,
+  ) {
+    final cfg = widget.controller.calcConfig;
+    final dangerEntries = activeEntries.where((e) {
+      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+      return s == 'alarm' || s == 'warn';
+    }).toList();
+
+    return LayoutBuilder(
+      builder: (ctx, box) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: const Border.fromBorderSide(
+            BorderSide(color: AppColors.border),
+          ),
+          boxShadow: AppShadow.card,
+        ),
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.voice,
+                  ),
+                  child: const Icon(
+                    Icons.mic_rounded,
+                    size: 18,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Flexible(
+                            child: Text(
+                              '按住下方按钮说话',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.voice.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '在场${activeEntries.length}人',
+                              style: const TextStyle(
+                                color: AppColors.voice,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        '空呼倒计时监护中 · 报数/出场/记录',
+                        style: TextStyle(
+                          color: AppColors.textTertiary,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.onEntryConfirmed != null)
+                  TextButton.icon(
+                    onPressed: widget.onEntryConfirmed,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    icon: const Icon(Icons.dashboard_outlined, size: 14),
+                    label: const Text(
+                      '看板',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+              ],
+            ),
+            if (dangerEntries.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.alarm.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(
+                    color: AppColors.alarm.withValues(alpha: 0.3),
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      size: 15,
+                      color: AppColors.alarm,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '${dangerEntries.length} 名队员气瓶已进入警报或预警，请注意！',
+                        style: const TextStyle(
+                          color: AppColors.alarm,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.separated(
+                padding: EdgeInsets.zero,
+                itemCount: activeEntries.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (ctx, idx) {
+                  final e = activeEntries[idx];
+                  final status = e.statusAt(
+                    warnMin: cfg.warnMin,
+                    alarmMin: cfg.alarmMin,
+                  );
+                  final s = EntryStatus.of(status);
+                  return Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      onTap: () {
+                        showModalBottomSheet<double>(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: AppColors.background,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(AppRadius.xl),
+                            ),
+                          ),
+                          builder: (_) => ReportPressureSheet(
+                            controller: widget.controller,
+                            entry: e,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: s.color.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                          border: Border.all(
+                            color: s.color.withValues(alpha: 0.35),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              e.name,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            StatusBadge(
+                              status: status,
+                              onColorCard: false,
+                              fontSize: 10.5,
+                              height: 20,
+                            ),
+                            const Spacer(),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                CountdownText(
+                                  ms: e.remainingMs,
+                                  color: s.fg == Colors.white ? s.color : s.fg,
+                                  size: 16,
+                                  timeoutText: '已超时',
+                                ),
+                                Text(
+                                  '${(e.pressureMpa ?? 0).toStringAsFixed(1)} MPa',
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: AppColors.textTertiary,
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              size: 18,
+                              color: AppColors.textTertiary,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              alignment: Alignment.center,
+              child: const Text(
+                '长按底部橙色按钮，可直接报数复核或登记出场',
+                style: TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

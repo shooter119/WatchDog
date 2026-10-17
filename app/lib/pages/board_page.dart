@@ -503,10 +503,33 @@ class _EntryCard extends StatelessWidget {
         color: s.color,
         borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.4),
-          width: 1,
+          color: status == 'alarm'
+              ? Colors.white.withValues(alpha: 0.95)
+              : (status == 'warn'
+                  ? Colors.white.withValues(alpha: 0.7)
+                  : Colors.white.withValues(alpha: 0.4)),
+          width: status == 'alarm' ? 1.6 : 1.0,
         ),
-        boxShadow: AppShadow.card,
+        boxShadow: [
+          if (status == 'alarm')
+            BoxShadow(
+              color: AppColors.alarm.withValues(alpha: 0.5),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            )
+          else if (status == 'warn')
+            BoxShadow(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            )
+          else
+            const BoxShadow(
+              color: Colors.black12,
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+        ],
       ),
       child: GestureDetector(
         onTap: onTap,

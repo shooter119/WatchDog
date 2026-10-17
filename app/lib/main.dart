@@ -284,14 +284,114 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
           final startupGateLocked =
               controller.needsAuthentication ||
               controller.needsIncidentSelection;
+          final Widget bodyContent = controller.isGuest
+              ? Column(
+                  children: [
+                    SafeArea(
+                      bottom: false,
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(14, 6, 14, 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.75),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            ),
+                            const BoxShadow(
+                              color: Colors.black38,
+                              blurRadius: 6,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.shield_outlined,
+                                size: 15,
+                                color: Color(0xFFFBBF24),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                '游客模式（数据仅保存在本机）',
+                                style: TextStyle(
+                                  color: Color(0xFFF1F5F9),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ),
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                key: const Key('guest-convert-btn'),
+                                borderRadius: BorderRadius.circular(AppRadius.sm),
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  controller.leaveUnit();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF59E0B).withValues(alpha: 0.18),
+                                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                                    border: Border.all(
+                                      color: const Color(0xFFF59E0B),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    '转为正式队员',
+                                    style: TextStyle(
+                                      color: Color(0xFFFBBF24),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: MediaQuery.removePadding(
+                        context: context,
+                        removeTop: true,
+                        child: IndexedStack(index: _tab, children: pages),
+                      ),
+                    ),
+                  ],
+                )
+              : IndexedStack(index: _tab, children: pages);
+
           final appScaffold = Scaffold(
-            body: IndexedStack(index: _tab, children: pages),
+            body: bodyContent,
             bottomNavigationBar: ExcludeSemantics(
               excluding: startupGateLocked,
               child: IgnorePointer(
                 ignoring: startupGateLocked,
                 child: _BottomNav(
                   index: _tab,
+                  pendingCount: controller.pendingMemberCount,
                   recording: _recording,
                   processing: _processing,
                   chatMode: _tab == 3,
@@ -341,6 +441,16 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                           realName: name,
                           unitCode: code,
                         ),
+                    onEnterGuestMode: () => controller.enterGuestMode(),
+                    onApply: (unitName, name, code, {stationName, phone, applyReason}) =>
+                        controller.applyUnitMembership(
+                          unitName: unitName,
+                          unitCode: code,
+                          realName: name,
+                          stationName: stationName,
+                          phone: phone,
+                          applyReason: applyReason,
+                        ),
                     onSelect: (incident) =>
                         _homeKey.currentState?.selectIncidentFromGate(
                           incident,
@@ -364,6 +474,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 /// 点「文字」切换为文字输入（麦克风隐藏，输入框+键盘呼出）
 class _BottomNav extends StatelessWidget {
   final int index;
+  final int pendingCount;
   final bool recording; // 录音中：按钮变停止图标 + 橙色脉冲 + 上方提示
   final bool processing; // 识别/确认中：禁用语音按钮
   final bool chatMode; // 辅助页：底部变身聊天操作条（语音+输入+发送）
@@ -380,6 +491,7 @@ class _BottomNav extends StatelessWidget {
 
   const _BottomNav({
     required this.index,
+    this.pendingCount = 0,
     required this.recording,
     required this.processing,
     required this.chatMode,
@@ -610,6 +722,7 @@ class _BottomNav extends StatelessWidget {
                       glyph: NavGlyph.settings,
                       label: '设置',
                       selected: index == 4,
+                      hasBadge: pendingCount > 0,
                       onTap: () => onSelect(4),
                     ),
                   ),
@@ -751,12 +864,14 @@ class _NavItem extends StatelessWidget {
   final NavGlyph glyph;
   final String label;
   final bool selected;
+  final bool hasBadge;
   final VoidCallback onTap;
 
   const _NavItem({
     required this.glyph,
     required this.label,
     required this.selected,
+    this.hasBadge = false,
     required this.onTap,
   });
 
@@ -786,9 +901,27 @@ class _NavItem extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Transform.translate(
-                  offset: const Offset(0, -1),
-                  child: NavIcon(glyph: glyph, color: color, size: 28),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Transform.translate(
+                      offset: const Offset(0, -1),
+                      child: NavIcon(glyph: glyph, color: color, size: 28),
+                    ),
+                    if (hasBadge)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFF59E0B),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Text(

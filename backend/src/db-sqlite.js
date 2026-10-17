@@ -57,11 +57,18 @@ CREATE TABLE IF NOT EXISTS unit_members (
   real_name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('member', 'manager', 'admin')),
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+  review_status TEXT NOT NULL DEFAULT 'approved' CHECK(review_status IN ('pending', 'approved', 'rejected')),
+  station_name TEXT DEFAULT '',
+  phone TEXT DEFAULT '',
+  apply_reason TEXT DEFAULT '',
+  reviewed_by TEXT,
+  reviewed_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE(unit_id, real_name)
 );
 CREATE INDEX IF NOT EXISTS idx_unit_members_lookup ON unit_members(unit_id, real_name, status);
+CREATE INDEX IF NOT EXISTS idx_unit_members_review ON unit_members(unit_id, review_status, created_at);
 
 CREATE TABLE IF NOT EXISTS auth_sessions (
   id TEXT PRIMARY KEY,
@@ -564,36 +571,128 @@ function findUnit(name, verificationCode) {
 
 function findUnitMember(unitId, realName) {
   return db.prepare(
-    'SELECT id, unit_id, real_name, role, status, created_at, updated_at FROM unit_members WHERE unit_id = ? AND real_name = ? AND status = \'active\''
+    'SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE unit_id = ? AND real_name = ? AND status = \'active\''
+  ).get(String(unitId || ''), String(realName || '').trim());
+}
+
+function getUnitMemberByName(unitId, realName) {
+  return db.prepare(
+    'SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE unit_id = ? AND real_name = ?'
   ).get(String(unitId || ''), String(realName || '').trim());
 }
 
 function listUnitMembers(unitId) {
   return db.prepare(
-    'SELECT id, unit_id, real_name, role, status, created_at, updated_at FROM unit_members WHERE unit_id = ? ORDER BY real_name ASC'
+    'SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE unit_id = ? ORDER BY real_name ASC'
   ).all(String(unitId || ''));
 }
 
-function addUnitMember({ id = randomUUID(), unitId, realName, role = 'member' }) {
+function listPendingUnitMembers(unitId) {
+  return db.prepare(
+    'SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE unit_id = ? AND review_status = \'pending\' ORDER BY created_at ASC'
+  ).all(String(unitId || ''));
+}
+
+function applyUnitMember({ unitId, realName, stationName = '', phone = '', applyReason = '' }) {
+  const name = String(realName || '').trim().slice(0, 32);
+  const uid = String(unitId || '').trim();
+  if (!uid || !name) throw new Error('单位和姓名不能为空');
+
+  const pendingCount = db.prepare('SELECT COUNT(*) as count FROM unit_members WHERE unit_id = ? AND review_status = ?').get(uid, 'pending')?.count || 0;
+  if (pendingCount >= 50) {
+    const err = new Error('当前单位待审批申请已达上限(50条)，请联系管理员处理后再试');
+    err.code = 'PENDING_QUEUE_FULL';
+    throw err;
+  }
+
+  const existing = getUnitMemberByName(uid, name);
+  const cleanStation = String(stationName || '').trim().slice(0, 64);
+  const cleanPhone = String(phone || '').trim().slice(0, 32);
+  const cleanReason = String(applyReason || '').trim().slice(0, 255);
+
+  if (existing) {
+    if (existing.review_status === 'approved' && existing.status === 'active') {
+      const err = new Error('该成员已在单位名单中，可直接登录');
+      err.code = 'MEMBER_EXISTS';
+      throw err;
+    }
+    if (existing.review_status === 'pending') {
+      return existing;
+    }
+    const now = Date.now();
+    db.prepare(
+      'UPDATE unit_members SET review_status = ?, status = ?, station_name = ?, phone = ?, apply_reason = ?, reviewed_by = NULL, reviewed_at = NULL, updated_at = ? WHERE id = ?'
+    ).run('pending', 'disabled', cleanStation, cleanPhone, cleanReason, now, existing.id);
+    return getUnitMemberByName(uid, name);
+  }
+
+  const id = randomUUID();
+  const now = Date.now();
+  db.prepare(
+    'INSERT INTO unit_members (id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, uid, name, 'member', 'disabled', 'pending', cleanStation, cleanPhone, cleanReason, now, now);
+  return db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ?').get(id);
+}
+
+function approveUnitMember(id, unitId, reviewerMemberId = null, { reviewerName = null, clientOpId = null } = {}) {
+  const mid = String(id || '');
+  const uid = String(unitId || '');
+  const member = db.prepare('SELECT id, unit_id, real_name FROM unit_members WHERE id = ? AND unit_id = ?').get(mid, uid);
+  if (!member) throw new Error('待审批成员不存在');
+
+  const now = Date.now();
+  db.prepare(
+    'UPDATE unit_members SET review_status = ?, status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ? AND unit_id = ?'
+  ).run('approved', 'active', reviewerMemberId ? String(reviewerMemberId) : null, now, now, mid, uid);
+
+  // 同步写入 firefighters
+  const ffId = randomUUID();
+  db.prepare(
+    'INSERT INTO firefighters (id, unit_id, name, source, created_by_member_id, created_by_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(unit_id, name) DO UPDATE SET updated_at = excluded.updated_at'
+  ).run(ffId, uid, member.real_name, 'user', reviewerMemberId ? String(reviewerMemberId) : null, reviewerName || null, now, now);
+
+  return db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ?').get(mid);
+}
+
+function rejectUnitMember(id, unitId, reviewerMemberId = null, reason = '') {
+  const mid = String(id || '');
+  const uid = String(unitId || '');
+  const now = Date.now();
+  db.prepare(
+    'UPDATE unit_members SET review_status = ?, status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ? AND unit_id = ?'
+  ).run('rejected', 'disabled', reviewerMemberId ? String(reviewerMemberId) : null, now, now, mid, uid);
+  return db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ?').get(mid);
+}
+
+function addUnitMember({ id = randomUUID(), unitId, realName, role = 'member', stationName = '', phone = '', createdByMemberId = null, createdByName = null, clientOpId = null }) {
   const name = String(realName || '').trim().slice(0, 32);
   if (!unitId || !name) throw new Error('单位成员姓名不能为空');
   const cleanRole = ['member', 'manager', 'admin'].includes(role) ? role : 'member';
+  const cleanStation = String(stationName || '').trim().slice(0, 64);
+  const cleanPhone = String(phone || '').trim().slice(0, 32);
   const now = Date.now();
   db.prepare(
-    'INSERT INTO unit_members (id, unit_id, real_name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, \'active\', ?, ?)'
-  ).run(String(id), String(unitId), name, cleanRole, now, now);
-  return db.prepare('SELECT id, unit_id, real_name, role, status, created_at, updated_at FROM unit_members WHERE id = ?').get(String(id));
+    'INSERT INTO unit_members (id, unit_id, real_name, role, status, review_status, station_name, phone, created_at, updated_at) VALUES (?, ?, ?, ?, \'active\', \'approved\', ?, ?, ?, ?)'
+  ).run(String(id), String(unitId), name, cleanRole, cleanStation, cleanPhone, now, now);
+
+  // 同步写入 firefighters
+  const ffId = randomUUID();
+  db.prepare(
+    'INSERT INTO firefighters (id, unit_id, name, source, created_by_member_id, created_by_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(unit_id, name) DO UPDATE SET updated_at = excluded.updated_at'
+  ).run(ffId, String(unitId), name, 'user', createdByMemberId ? String(createdByMemberId) : null, createdByName || null, now, now);
+
+  return db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ?').get(String(id));
 }
 
-function updateUnitMember(id, unitId, { role, status } = {}) {
+function updateUnitMember(id, unitId, { role, status, stationName, phone } = {}) {
   const cleanRole = role == null ? null : (['member', 'manager', 'admin'].includes(role) ? role : null);
   const cleanStatus = status == null ? null : (['active', 'disabled'].includes(status) ? status : null);
   if (role != null && cleanRole == null) throw new Error('成员角色无效');
   if (status != null && cleanStatus == null) throw new Error('成员状态无效');
   const result = db.prepare(
-    'UPDATE unit_members SET role = COALESCE(?, role), status = COALESCE(?, status), updated_at = ? WHERE id = ? AND unit_id = ?'
-  ).run(cleanRole, cleanStatus, Date.now(), String(id || ''), String(unitId || ''));
-  const updated = db.prepare('SELECT id, unit_id, real_name, role, status, created_at, updated_at FROM unit_members WHERE id = ? AND unit_id = ?')
+    'UPDATE unit_members SET role = COALESCE(?, role), status = COALESCE(?, status), station_name = COALESCE(?, station_name), phone = COALESCE(?, phone), updated_at = ? WHERE id = ? AND unit_id = ?'
+  ).run(cleanRole, cleanStatus, stationName != null ? String(stationName).trim().slice(0, 64) : null, phone != null ? String(phone).trim().slice(0, 32) : null, Date.now(), String(id || ''), String(unitId || ''));
+  const updated = db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ? AND unit_id = ?')
     .get(String(id || ''), String(unitId || ''));
   if (result.changes > 0) revokeAuthSessionsForMember(String(id || ''));
   return updated;
@@ -1422,7 +1521,12 @@ module.exports = {
   getUnit,
   findUnit,
   findUnitMember,
+  getUnitMemberByName,
   listUnitMembers,
+  listPendingUnitMembers,
+  applyUnitMember,
+  approveUnitMember,
+  rejectUnitMember,
   addUnitMember,
   updateUnitMember,
   createAuthSession,

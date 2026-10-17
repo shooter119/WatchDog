@@ -57,9 +57,15 @@ class _FakeController extends AppController {
   final exited = <String>[];
   final reported = <double>[];
 
+  bool fakeNeedsAuthentication = false;
+  bool fakeIsGuest = false;
+
   // 测试直接从业务页开始；首次安装认证流程由独立的启动浮层用例覆盖。
   @override
-  bool get needsAuthentication => false;
+  bool get needsAuthentication => fakeNeedsAuthentication;
+
+  @override
+  bool get isGuest => fakeIsGuest;
 
   @override
   void startSync() {} // 测试环境不启动轮询定时器（否则每秒刷新导致 pumpAndSettle 无法收敛）
@@ -3408,6 +3414,48 @@ void main() {
       }
       expect(find.text('按住下方按钮说话'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    group('游客模式与申请审批流程', () {
+      testWidgets('IncidentSelectionOverlay 渲染游客体验按钮并可触发', (tester) async {
+        var guestTriggered = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: IncidentSelectionOverlay(
+                authenticationRequired: true,
+                activeIncidents: const [],
+                loading: false,
+                onSelect: (_) async {},
+                onCreate: () async {},
+                onEnterGuestMode: () async {
+                  guestTriggered = true;
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('auth-guest-mode')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('auth-guest-mode')));
+        await tester.pumpAndSettle();
+        expect(guestTriggered, isTrue);
+      });
+
+      testWidgets('游客模式下在界面顶部展示常驻横幅并提供转为正式队员入口', (tester) async {
+        final c = _FakeController()..fakeIsGuest = true;
+        await tester.pumpWidget(WatchDogApp(controller: c));
+        await tester.pump();
+        expect(find.text('游客模式（数据仅保存在本机）'), findsOneWidget);
+        expect(find.byKey(const Key('guest-convert-btn')), findsOneWidget);
+      });
+
+      testWidgets('设置 Tab 在存在待审批队员时正常渲染', (tester) async {
+        final c = _FakeController()..pendingMemberCount = 3;
+        await tester.pumpWidget(WatchDogApp(controller: c));
+        await tester.pump();
+        expect(find.text('设置'), findsOneWidget);
+      });
     });
   });
 }

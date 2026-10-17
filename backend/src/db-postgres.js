@@ -157,23 +157,197 @@ async function findUnitMember(unitId, realName) {
   });
 }
 
+async function getUnitMemberByName(unitId, realName) {
+  return db.select('unit_members', {
+    filters: { unit_id: String(unitId || ''), real_name: String(realName || '').trim() },
+    single: true,
+  });
+}
+
 async function listUnitMembers(unitId) {
   return db.select('unit_members', {
     filters: { unit_id: String(unitId || '') }, order: 'real_name.asc',
   });
 }
 
-async function addUnitMember({ id = randomUUID(), unitId, realName, role = 'member' }) {
-  const name = String(realName || '').trim().slice(0, 32);
-  if (!unitId || !name) throw new Error('单位成员姓名不能为空');
-  const cleanRole = ['member', 'manager', 'admin'].includes(role) ? role : 'member';
-  return insertOne('unit_members', {
-    id: String(id), unit_id: String(unitId), real_name: name, role: cleanRole, status: 'active',
-    created_at: Date.now(), updated_at: Date.now(),
+async function listPendingUnitMembers(unitId) {
+  return db.select('unit_members', {
+    filters: { unit_id: String(unitId || ''), review_status: 'pending' },
+    order: 'created_at.asc',
   });
 }
 
-async function updateUnitMember(id, unitId, { role, status } = {}) {
+async function applyUnitMember({ unitId, realName, stationName = '', phone = '', applyReason = '' }) {
+  const name = String(realName || '').trim().slice(0, 32);
+  const uid = String(unitId || '').trim();
+  if (!uid || !name) throw new Error('单位和姓名不能为空');
+
+  const pendingCountResult = await db.query(
+    'SELECT COUNT(*)::int AS count FROM unit_members WHERE unit_id = $1 AND review_status = $2',
+    [uid, 'pending']
+  );
+  const pendingCount = pendingCountResult.rows[0]?.count || 0;
+  if (pendingCount >= 50) {
+    const err = new Error('当前单位待审批申请已达上限(50条)，请联系管理员处理后再试');
+    err.code = 'PENDING_QUEUE_FULL';
+    throw err;
+  }
+
+  const existing = await getUnitMemberByName(uid, name);
+  const cleanStation = String(stationName || '').trim().slice(0, 64);
+  const cleanPhone = String(phone || '').trim().slice(0, 32);
+  const cleanReason = String(applyReason || '').trim().slice(0, 255);
+
+  if (existing) {
+    if (existing.review_status === 'approved' && existing.status === 'active') {
+      const err = new Error('该成员已在单位名单中，可直接登录');
+      err.code = 'MEMBER_EXISTS';
+      throw err;
+    }
+    if (existing.review_status === 'pending') {
+      return existing;
+    }
+    const values = {
+      review_status: 'pending',
+      status: 'disabled',
+      station_name: cleanStation,
+      phone: cleanPhone,
+      apply_reason: cleanReason,
+      reviewed_by: null,
+      reviewed_at: null,
+      updated_at: Date.now(),
+    };
+    const res = await db.update('unit_members', { id: existing.id, unit_id: uid }, values);
+    return res.rows[0] || getUnitMember(existing.id, uid);
+  }
+
+  return insertOne('unit_members', {
+    id: randomUUID(),
+    unit_id: uid,
+    real_name: name,
+    role: 'member',
+    status: 'disabled',
+    review_status: 'pending',
+    station_name: cleanStation,
+    phone: cleanPhone,
+    apply_reason: cleanReason,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+  });
+}
+
+async function approveUnitMember(id, unitId, reviewerMemberId = null, { reviewerName = null, clientOpId = null } = {}) {
+  const mid = String(id || '');
+  const uid = String(unitId || '');
+  return db.transaction(async () => {
+    const member = await db.select('unit_members', {
+      filters: { id: mid, unit_id: uid },
+      single: true,
+    });
+    if (!member) throw new Error('待审批成员不存在');
+    const values = {
+      review_status: 'approved',
+      status: 'active',
+      reviewed_by: reviewerMemberId ? String(reviewerMemberId) : null,
+      reviewed_at: Date.now(),
+      updated_at: Date.now(),
+    };
+    const updateRes = await db.update('unit_members', { id: mid, unit_id: uid }, values);
+    const updatedMember = updateRes.rows[0] || (await getUnitMember(mid, uid));
+
+    // 同步到 firefighters 名单并广播
+    const ffId = randomUUID();
+    const [ffRow] = await db.insert('firefighters', [{
+      id: ffId,
+      unit_id: uid,
+      name: member.real_name,
+      source: 'user',
+      created_by_member_id: reviewerMemberId ? String(reviewerMemberId) : null,
+      created_by_name: reviewerName || null,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    }], { onConflict: 'unit_id,name', ignoreDuplicates: true });
+
+    await db.query('UPDATE units SET roster_version = roster_version + 1, updated_at = $1 WHERE id = $2', [Date.now(), uid]);
+    const eventPayload = ffRow || { id: ffId, name: member.real_name, unit_id: uid, source: 'user' };
+    await appendRosterSyncEvent({
+      unitId: uid,
+      eventType: 'roster.firefighter_added',
+      aggregateId: eventPayload.id,
+      payload: eventPayload,
+      clientOpId,
+    });
+
+    return updatedMember;
+  });
+}
+
+async function rejectUnitMember(id, unitId, reviewerMemberId = null, reason = '') {
+  const mid = String(id || '');
+  const uid = String(unitId || '');
+  const values = {
+    review_status: 'rejected',
+    status: 'disabled',
+    reviewed_by: reviewerMemberId ? String(reviewerMemberId) : null,
+    reviewed_at: Date.now(),
+    updated_at: Date.now(),
+  };
+  const result = await db.update('unit_members', { id: mid, unit_id: uid }, values);
+  return result.rows[0] || getUnitMember(mid, uid);
+}
+
+async function addUnitMember({ id = randomUUID(), unitId, realName, role = 'member', stationName = '', phone = '', createdByMemberId = null, createdByName = null, clientOpId = null }) {
+  const name = String(realName || '').trim().slice(0, 32);
+  const uid = String(unitId || '');
+  if (!uid || !name) throw new Error('单位成员姓名不能为空');
+  const cleanRole = ['member', 'manager', 'admin'].includes(role) ? role : 'member';
+  const cleanStation = String(stationName || '').trim().slice(0, 64);
+  const cleanPhone = String(phone || '').trim().slice(0, 32);
+
+  return db.transaction(async () => {
+    const member = await insertOne('unit_members', {
+      id: String(id),
+      unit_id: uid,
+      real_name: name,
+      role: cleanRole,
+      status: 'active',
+      review_status: 'approved',
+      station_name: cleanStation,
+      phone: cleanPhone,
+      reviewed_by: createdByMemberId ? String(createdByMemberId) : null,
+      reviewed_at: Date.now(),
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    });
+
+    // 同步到 firefighters
+    const ffId = randomUUID();
+    const [ffRow] = await db.insert('firefighters', [{
+      id: ffId,
+      unit_id: uid,
+      name,
+      source: 'user',
+      created_by_member_id: createdByMemberId ? String(createdByMemberId) : null,
+      created_by_name: createdByName || null,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    }], { onConflict: 'unit_id,name', ignoreDuplicates: true });
+
+    await db.query('UPDATE units SET roster_version = roster_version + 1, updated_at = $1 WHERE id = $2', [Date.now(), uid]);
+    const eventPayload = ffRow || { id: ffId, name, unit_id: uid, source: 'user' };
+    await appendRosterSyncEvent({
+      unitId: uid,
+      eventType: 'roster.firefighter_added',
+      aggregateId: eventPayload.id,
+      payload: eventPayload,
+      clientOpId,
+    });
+
+    return member;
+  });
+}
+
+async function updateUnitMember(id, unitId, { role, status, stationName, phone } = {}) {
   const cleanRole = role == null ? null : (['member', 'manager', 'admin'].includes(role) ? role : null);
   const cleanStatus = status == null ? null : (['active', 'disabled'].includes(status) ? status : null);
   if (role != null && cleanRole == null) throw new Error('成员角色无效');
@@ -181,6 +355,8 @@ async function updateUnitMember(id, unitId, { role, status } = {}) {
   const values = { updated_at: Date.now() };
   if (cleanRole != null) values.role = cleanRole;
   if (cleanStatus != null) values.status = cleanStatus;
+  if (stationName != null) values.station_name = String(stationName).trim().slice(0, 64);
+  if (phone != null) values.phone = String(phone).trim().slice(0, 32);
   const result = await db.update('unit_members', { id: String(id || ''), unit_id: String(unitId || '') }, values);
   if (result.rows[0]) await revokeAuthSessionsForMember(result.rows[0].id);
   return result.rows[0] || getUnitMember(id, unitId);
@@ -1172,7 +1348,8 @@ async function dedupeLegacyIncidentEvents() {
 
 module.exports = {
   getUnit, findUnit,
-  findUnitMember, listUnitMembers, addUnitMember, updateUnitMember,
+  findUnitMember, getUnitMemberByName, listUnitMembers, listPendingUnitMembers,
+  applyUnitMember, approveUnitMember, rejectUnitMember, addUnitMember, updateUnitMember,
   createAuthSession, getAuthSession, getAuthSessionRecord, refreshAuthSession, touchAuthSession,
   revokeAuthSession, revokeAuthSessionsForMember,
   getOperation, beginOperation, completeOperation, releaseOperation,
