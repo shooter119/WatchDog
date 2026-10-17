@@ -5,8 +5,10 @@ process.env.WATCHDOG_DB_DRIVER = 'postgres';
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql:///watchdog_test';
 process.env.WATCHDOG_SKIP_SEED = '1';
 
-const db = require('../src/db');
-const store = require('../src/postgres-store');
+const { Pool } = require('pg');
+const adminPool = new Pool({ connectionString: process.env.DATABASE_URL });
+const testSchema = `import_repo_${process.pid}_${Date.now()}`;
+let db, store, imports, importTasks;
 
 async function seedUnit(id) {
   await store.query(`
@@ -17,17 +19,23 @@ async function seedUnit(id) {
 }
 
 before(async () => {
+  await adminPool.query(`CREATE SCHEMA "${testSchema}"`);
+  const url = new URL(process.env.DATABASE_URL);
+  const existingOptions = url.searchParams.get('options') || '';
+  url.searchParams.set('options', `${existingOptions} -c search_path=${testSchema}`.trim());
+  process.env.DATABASE_URL = url.toString();
+  db = require('../src/db');
+  store = require('../src/postgres-store');
+  imports = require('../src/incident-import-repository');
+  importTasks = require('../src/incident-import-tasks');
   await db.ready;
-  await store.query(`TRUNCATE TABLE
-    sync_events, sync_streams, incident_events, operation_ledger, pressure_samples,
-    entries, notes, incident_forces, incidents, auth_sessions, unit_members,
-    firefighters, hotwords, device_profiles, user_settings, logs, chat_messages,
-    stations, units CASCADE`);
   await seedUnit('unit-test');
 });
 
 after(async () => {
-  await store.close();
+  await store?.close();
+  await adminPool.query(`DROP SCHEMA IF EXISTS "${testSchema}" CASCADE`);
+  await adminPool.end();
 });
 
 test('PostgreSQL 仓储保留警情、事件幂等和进退场行为', async () => {
@@ -122,4 +130,173 @@ test('PostgreSQL 仓储的出场状态转换只成功一次', async () => {
   assert.equal(first.changed, true);
   assert.equal(second.changed, false);
   assert.equal(Number(second.entry.exited_at), 1000);
+});
+
+test('PostgreSQL 力量按ID改名，名称冲突与跨警情编辑不误写', async () => {
+  const incident = await db.createIncident({ unitId: 'unit-test', createdAt: 6000 });
+  const a = await db.upsertIncidentForce({ incidentId: incident.id, stationName: '灵山队', vehicleCount: 2, personnelCount: 10 });
+  const b = await db.upsertIncidentForce({ incidentId: incident.id, stationName: '林山专职队', vehicleCountKnown: false, personnelCountKnown: false });
+  const renamed = await db.upsertIncidentForce({ id: a.id, updateOnly: true, incidentId: incident.id, stationName: '灵山专职队', expectedVersion: a.version });
+  assert.equal(renamed.id, a.id);
+  assert.equal(renamed.station_name, '灵山专职队');
+  assert.equal(renamed.personnel_count, 10);
+  await assert.rejects(db.upsertIncidentForce({ id: a.id, updateOnly: true, incidentId: incident.id, stationName: b.station_name }), { code: 'FORCE_NAME_CONFLICT' });
+  await assert.rejects(db.upsertIncidentForce({ id: a.id, incidentId: 'other-incident', stationName: '越权' }), { code: 'FORCE_NOT_FOUND' });
+  await assert.rejects(db.upsertIncidentForce({ id: a.id, incidentId: incident.id, stationName: '过期修改', expectedVersion: a.version }), { code: 'VERSION_CONFLICT' });
+  assert.equal((await db.getIncidentForce(b.id)).personnel_count_known, false);
+  assert.equal((await db.listIncidentForces(incident.id)).length, 2);
+});
+
+test('PostgreSQL 未知数量经旧版无关编辑保留，显式补全可确认真实零', async () => {
+  const incident = await db.createIncident({ unitId: 'unit-test', createdAt: 7000 });
+  const force = await db.upsertIncidentForce({ incidentId: incident.id, stationName: '未知专职队', vehicleCountKnown: false, personnelCountKnown: false });
+  const legacy = await db.upsertIncidentForce({ id: force.id, incidentId: incident.id, stationName: '未知队改名', vehicleCount: 0, personnelCount: 0 });
+  assert.equal(legacy.vehicle_count_known, false);
+  assert.equal(legacy.personnel_count_known, false);
+  const completed = await db.upsertIncidentForce({ id: force.id, incidentId: incident.id, stationName: legacy.station_name, vehicleCount: 0, vehicleCountKnown: true, personnelCount: 7 });
+  assert.equal(completed.vehicle_count_known, true);
+  assert.equal(completed.personnel_count_known, true);
+  assert.equal(completed.personnel_count, 7);
+});
+
+const { randomUUID } = require('node:crypto');
+
+test('单位常用队伍隔离、别名冲突、停用及历史快照保护', async () => {
+  await seedUnit('unit-directory-a');
+  await seedUnit('unit-directory-b');
+  const a = await imports.addStation('unit-directory-a', '灵山专职队', 'actor-a');
+  const b = await imports.addStation('unit-directory-b', '灵山专职队', 'actor-b');
+  assert.notEqual(a.id, b.id);
+  const updated = await imports.updateStation('unit-directory-a', a.id, { expected_version: 1, aliases: ['灵山队'] }, 'manager');
+  assert.equal(updated.version, 2);
+  const second = await imports.addStation('unit-directory-a', '林山专职队', 'actor-a');
+  await assert.rejects(imports.updateStation('unit-directory-a', second.id, { expected_version: 1, aliases: ['灵山队'] }, 'manager'), { code: 'STATION_NAME_CONFLICT' });
+  await assert.rejects(imports.updateStation('unit-directory-b', a.id, { expected_version: 2, name: '越权' }, 'other'), { code: 'STATION_NOT_FOUND' });
+  await imports.updateStation('unit-directory-a', a.id, { expected_version: 2, active: false }, 'manager');
+  assert.equal((await imports.listStations('unit-directory-a')).length, 1);
+  assert.equal((await imports.listStations('unit-directory-a', true)).length, 2);
+});
+
+async function readyImport(incident, actorId = 'actor-import', draft = {}) {
+  const id = randomUUID(), now = Date.now();
+  await store.query(`INSERT INTO incident_imports(id, unit_id, incident_id, actor_id, actor_name, source, status, input_hash, pages, draft, created_at, updated_at, expires_at)
+    VALUES ($1,$2,$3,$4,'测试员','text','ready','sample',$5,$6,$7,$7,$8)`,
+    [id, incident.unit_id, incident.id, actorId, JSON.stringify([{ index: 1, status: 'succeeded', text: '脱敏通报' }]), JSON.stringify(draft), now, now + 86400000]);
+  return id;
+}
+
+test('导入事务原子更新、响应丢失重放、操作号内容冲突与跨单位保护', async () => {
+  const incident = await db.createIncident({ unitId: 'unit-test', createdAt: 9000 });
+  const id = await readyImport(incident);
+  const body = { expected_incident_version: incident.version, expected_details_version: 0, replace_title: true, title: '大源村电表箱火灾', details: { original_category: '火灾扑救', trapped: '无人员被困' }, forces: [{ station_name: '未预设专职队', vehicle_count: 0, personnel_count: 0, vehicle_count_known: false, personnel_count_known: false, save_common: true }] };
+  const args = { unitId: 'unit-test', incidentId: incident.id, actorId: 'actor-import', actorName: '测试员', importId: id, opId: `import-${id}`, body };
+  const first = await imports.applyImport(args);
+  const replay = await imports.applyImport(args);
+  assert.deepEqual(replay, first);
+  assert.equal((await db.listIncidentForces(incident.id)).length, 1);
+  assert.equal((await imports.details('unit-test', incident.id)).data.trapped, '无人员被困');
+  assert.equal((await db.listEntries({ scene: incident.id })).length, 0);
+  await assert.rejects(imports.applyImport({ ...args, body: { ...body, title: '不同内容' } }), { code: 'CLIENT_OP_ID_CONFLICT' });
+  await assert.rejects(imports.readImport('unit-directory-b', incident.id, 'actor-import', id), { code: 'IMPORT_NOT_FOUND' });
+});
+
+test('导入中途名称冲突整批回滚，资料、名录和Outbox不留半成品', async () => {
+  const incident = await db.createIncident({ unitId: 'unit-test', createdAt: 10000 });
+  const force = await db.upsertIncidentForce({ incidentId: incident.id, stationName: '已有力量' });
+  const id = await readyImport(incident);
+  const before = await db.getSyncCheckpoint('unit-test', incident.id);
+  await assert.rejects(imports.applyImport({ unitId: 'unit-test', incidentId: incident.id, actorId: 'actor-import', actorName: '测试员', importId: id, opId: `rollback-${id}`,
+    body: { expected_incident_version: incident.version, expected_details_version: 0, details: { location: '不应保存' }, forces: [{ station_name: '事务内新队伍', save_common: true, vehicle_count: 1, personnel_count: 7 }, { station_name: force.station_name }] } }), { code: 'FORCE_NAME_CONFLICT' });
+  assert.equal((await imports.details('unit-test', incident.id)).version, 0);
+  assert.equal((await imports.listStations('unit-test')).some((s) => s.name === '事务内新队伍'), false);
+  assert.equal((await db.listIncidentForces(incident.id)).length, 1);
+  assert.deepEqual(await db.getSyncCheckpoint('unit-test', incident.id), before);
+  assert.equal(await db.getOperation('unit-test', `rollback-${id}`), undefined);
+});
+
+const {validateExtraction}=require('../src/incident-extraction');
+
+test('多页任务保留成功页、失败页可重试，取消任务阻止迟到应用', async()=>{
+  const incident=await db.createIncident({unitId:'unit-test',createdAt:11000});
+  // Header validation happens before any filesystem storage or provider call.
+  const png=Buffer.alloc(24);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.writeUInt32BE(100,16);png.writeUInt32BE(100,20);
+  const task=await importTasks.createTask({unitId:'unit-test',incidentId:incident.id,actorId:'task-actor',actorName:'测试员',files:[{buffer:png},{buffer:png}]});
+  const duplicate=await importTasks.createTask({unitId:'unit-test',incidentId:incident.id,actorId:'task-actor',actorName:'测试员',files:[{buffer:png},{buffer:png}]});
+  assert.equal(task.id,duplicate.id);
+  const claimed=await importTasks.claimTask();
+  let calls=0;
+  await importTasks.runTask(claimed,{},async()=>{
+    if(++calls===2) throw Object.assign(new Error('failed'),{code:'IMPORT_PAGE_FAILED'});
+    return validateExtraction({raw_text:'甲站出动1车7人',location:'测试村',forces:[{station_name:'甲站',vehicle_count:1,personnel_count:7}]});
+  });
+  const row=await imports.readImport('unit-test',incident.id,'task-actor',task.id);
+  assert.equal(row.status,'partial');
+  assert.equal(row.pages[0].status,'succeeded');
+  assert.equal(row.pages[1].status,'failed');
+  assert.equal(JSON.stringify(imports.publicImport(row)).includes('file_path'),false);
+  const scope={unitId:'unit-test',incidentId:incident.id,actorId:'task-actor',id:task.id};
+  await importTasks.retryTask(scope,[2]);
+  const retry=await importTasks.claimTask();
+  await importTasks.runTask(retry,{},async()=>validateExtraction({raw_text:'第二页',forces:[]}));
+  assert.equal((await imports.readImport('unit-test',incident.id,'task-actor',task.id)).status,'ready');
+  await importTasks.cancelTask(scope);
+  assert.equal((await imports.readImport('unit-test',incident.id,'task-actor',task.id)).status,'cancelled');
+  assert.equal((await db.listIncidentForces(incident.id)).length,0);
+});
+
+test('力量显式合并采用确认数量且可幂等重放，不相加',async()=>{
+  const incident=await db.createIncident({unitId:'unit-test',createdAt:12000});
+  const a=await db.upsertIncidentForce({incidentId:incident.id,stationName:'甲队简称',vehicleCount:1,personnelCount:7});
+  const b=await db.upsertIncidentForce({incidentId:incident.id,stationName:'甲队正式名',vehicleCount:2,personnelCount:10});
+  const args={unitId:'unit-test',incidentId:incident.id,actorId:'merge-actor',actorName:'测试员',opId:randomUUID(),body:{source_id:a.id,target_id:b.id,source_version:a.version,target_version:b.version,vehicle_count:2,personnel_count:10,vehicle_count_known:true,personnel_count_known:true}};
+  await imports.mergeForces(args);await imports.mergeForces(args);
+  const rows=await db.listIncidentForces(incident.id);
+  assert.equal(rows.length,1);assert.equal(rows[0].personnel_count,10);
+});
+
+test('真实HTTP路由隔离草稿、限制共享名录管理并原子应用',async()=>{
+  process.env.WATCHDOG_UNIT_AUTH_REQUIRED='1';
+  process.env.WATCHDOG_SESSION_AUTH_REQUIRED='1';
+  const {createHash}=require('node:crypto');
+  const token=`http-${randomUUID()}`;
+  const member=await db.addUnitMember({unitId:'unit-test',realName:'接口测试员',role:'member'});
+  await db.createAuthSession({id:randomUUID(),tokenHash:createHash('sha256').update(token).digest('hex'),unitId:'unit-test',memberId:member.id,deviceId:'http-device',realName:member.real_name,role:'member',expiresAt:Date.now()+60000});
+  const incident=await db.createIncident({unitId:'unit-test',createdAt:13000});
+  const task=await readyImport(incident,member.id);
+  const foreignTask=await readyImport(incident,'other-member');
+  const app=require('../src/server');
+  const server=app.listen(0,'127.0.0.1');
+  await new Promise((resolve)=>server.once('listening',resolve));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  const headers={'Authorization':`Bearer ${token}`,'Content-Type':'application/json','X-Incident-Id':incident.id};
+  try{
+    assert.equal((await fetch(`${base}/api/incidents/${incident.id}/imports/${foreignTask}`,{headers})).status,404);
+    const read=await fetch(`${base}/api/incidents/${incident.id}/imports/${task}`,{headers});
+    assert.equal(read.status,200);
+    const station=await imports.addStation('unit-test',`HTTP常用-${randomUUID()}`,member.id);
+    const denied=await fetch(`${base}/api/unit-stations/${station.id}`,{method:'PATCH',headers,body:JSON.stringify({name:'无权改名',expected_version:station.version})});
+    assert.equal(denied.status,403);
+    const access=await (await fetch(`${base}/api/unit-stations/access`,{headers})).json();
+    assert.equal(access.can_manage,false);
+    const body={expected_incident_version:incident.version,expected_details_version:0,details:{location:'HTTP测试地点'},forces:[]};
+    const apply=await fetch(`${base}/api/incidents/${incident.id}/imports/${task}/apply`,{method:'POST',headers:{...headers,'X-Op-Id':`http-apply-${task}`},body:JSON.stringify(body)});
+    assert.equal(apply.status,200);
+    const detail=await (await fetch(`${base}/api/incidents/${incident.id}/details`,{headers})).json();
+    assert.equal(detail.data.location,'HTTP测试地点');
+    assert.equal(detail.imports.length,1);
+  }finally{await new Promise((resolve)=>server.close(resolve));}
+});
+
+test('常用队伍别名匹配稳定身份，相似名称只建议且跨单位关联拒绝',async()=>{
+  const unit=await imports.addStation('unit-directory-a','测试专职队','actor');
+  await imports.updateStation('unit-directory-a',unit.id,{expected_version:unit.version,aliases:['测试队']},'manager');
+  const incident=await db.createIncident({unitId:'unit-directory-a'});
+  const force=await db.upsertIncidentForce({incidentId:incident.id,stationName:'测试专职队',unitStationId:unit.id});
+  const [matched]=await imports.matchForces('unit-directory-a',incident.id,[{station_name:'测试队'}]);
+  assert.equal(matched.target_force_id,force.id);
+  const [similar]=await imports.matchForces('unit-directory-a',incident.id,[{station_name:'测式专职队'}]);
+  assert.equal(similar.match,'unmatched');assert.equal(similar.target_force_id,null);
+  assert.ok(similar.candidates.some(c=>c.name==='测试专职队'));
+  const other=await db.createIncident({unitId:'unit-directory-b'});
+  await assert.rejects(db.upsertIncidentForce({incidentId:other.id,stationName:'测试队',unitStationId:unit.id}),{code:'FORCE_NOT_FOUND'});
 });

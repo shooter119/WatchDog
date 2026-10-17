@@ -155,4 +155,40 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+  testWidgets('切换警情后旧回复和旧历史不会进入新警情', (tester) async {
+    final controller = _ScopedChatController();
+    controller.histories['a']!.complete([]);
+    await _pumpChatPage(tester, controller);
+    final state = tester.state<ChatPageState>(find.byType(ChatPage));
+    final request = state.submitQuestion('警情A问题');
+    await tester.pump();
+    controller.switchScope('b');
+    controller.histories['b']!.complete([
+      const ChatMessage(id: 'b1', role: 'user', content: '警情B历史', createdAt: 1),
+    ]);
+    await tester.pump();
+    controller.replyCompleter.complete('警情A迟到回复');
+    await request;
+    await tester.pump();
+    expect(find.text('警情A问题'), findsNothing);
+    expect(find.text('警情A迟到回复'), findsNothing);
+    expect(find.text('警情B历史'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _ScopedChatController extends _ControlledChatController {
+  String scope = 'a';
+  final histories = {
+    'a': Completer<List<ChatMessage>>(),
+    'b': Completer<List<ChatMessage>>(),
+  };
+  @override
+  String get assistantScope => scope;
+  @override
+  Future<List<ChatMessage>> fetchChatHistory() => histories[scope]!.future;
+  void switchScope(String value) {
+    scope = value;
+    notifyListeners();
+  }
 }

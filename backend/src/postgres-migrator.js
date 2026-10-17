@@ -3,7 +3,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const MIGRATION_DIR = path.join(__dirname, '..', 'migrations');
-const BASELINE = '000_standard_baseline.sql';
 
 async function checksum(file) {
   const content = await fs.readFile(file);
@@ -22,21 +21,23 @@ async function migrate(pool) {
         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);
-    const file = path.join(MIGRATION_DIR, BASELINE);
-    const digest = await checksum(file);
-    const existing = await client.query(
-      'SELECT checksum FROM schema_migrations WHERE version = $1',
-      [BASELINE],
-    );
-    if (existing.rowCount && existing.rows[0].checksum !== digest) {
-      throw new Error(`迁移文件校验失败：${BASELINE}`);
-    }
-    if (!existing.rowCount) {
-      await client.query(await fs.readFile(file, 'utf8'));
-      await client.query(
-        'INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)',
-        [BASELINE, digest],
+    const versions = (await fs.readdir(MIGRATION_DIR))
+      .filter((name) => /^\d{3}_[a-z0-9_]+\.sql$/.test(name)).sort();
+    for (const version of versions) {
+      const file = path.join(MIGRATION_DIR, version);
+      const digest = await checksum(file);
+      const existing = await client.query(
+        'SELECT checksum FROM schema_migrations WHERE version = $1', [version],
       );
+      if (existing.rowCount && existing.rows[0].checksum !== digest) {
+        throw new Error(`迁移文件校验失败：${version}`);
+      }
+      if (!existing.rowCount) {
+        await client.query(await fs.readFile(file, 'utf8'));
+        await client.query(
+          'INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)', [version, digest],
+        );
+      }
     }
     await client.query('COMMIT');
   } catch (error) {
@@ -54,7 +55,7 @@ if (require.main === module) {
   const url = process.env.DATABASE_URL || 'postgresql:///watchdog_dev';
   const pool = new Pool({ connectionString: url });
   migrate(pool)
-    .then(() => console.log(`PostgreSQL 迁移完成：${url}`))
+    .then(() => console.log('PostgreSQL 迁移完成'))
     .catch((error) => {
       console.error(`PostgreSQL 迁移失败：${error.message}`);
       process.exitCode = 1;

@@ -231,7 +231,7 @@ async function parseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighter
 }
 
 /// 自由文本对话（用于智能体问答）：返回完整回复文本
-async function chatWithDeepSeek({ apiKey, baseUrl, model, messages, timeoutMs = 60000, temperature = 0.3, maxTokens = 800 }) {
+async function chatWithDeepSeek({ apiKey, baseUrl, model, messages, timeoutMs = 60000, temperature = 0.3, maxTokens = 2000 }) {
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
   const res = await fetch(url, {
     method: 'POST',
@@ -260,7 +260,7 @@ async function chatWithDeepSeek({ apiKey, baseUrl, model, messages, timeoutMs = 
 
 /// 智能体问答（流式 SSE）：yield 每次增量文本，供 /api/chat stream 模式逐段转发。
 /// DeepSeek 原生 stream 输出 `data: {...delta...}` 行，[DONE] 结束。
-async function* chatWithDeepSeekStream({ apiKey, baseUrl, model, messages, timeoutMs = 60000, temperature = 0.3, maxTokens = 800 }) {
+async function* chatWithDeepSeekStream({ apiKey, baseUrl, model, messages, timeoutMs = 60000, temperature = 0.3, maxTokens = 2000 }) {
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
   const res = await fetch(url, {
     method: 'POST',
@@ -322,7 +322,7 @@ function responsesText(data) {
 }
 
 /// 智能体问答（Responses API + 服务端联网搜索）：返回完整回复文本。
-async function chatWithWebSearch({ apiKey, baseUrl, model, messages, timeoutMs = 90000, temperature = 0.3, maxOutputTokens = 2000 }) {
+async function chatWithWebSearch({ apiKey, baseUrl, model, messages, timeoutMs = 90000, temperature = 0.3, maxOutputTokens = 4000 }) {
   const url = (baseUrl || 'https://api.deepseek.com') + '/responses';
   const system = messages.find((m) => m.role === 'system')?.content || '';
   const input = messages

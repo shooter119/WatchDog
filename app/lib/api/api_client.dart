@@ -9,6 +9,7 @@ import 'package:http_parser/http_parser.dart';
 
 import '../models/models.dart';
 import '../services/settings.dart';
+import '../services/scoped_json_cache.dart';
 
 class ApiClient {
   final String baseUrl;
@@ -718,6 +719,7 @@ class ApiClient {
           headers: _opHeaders(opId),
           body: jsonEncode({
             'message': modelMessage,
+            'history_incident_id': incidentId,
             if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
           }),
         )
@@ -760,6 +762,7 @@ class ApiClient {
           req.headers['Content-Type'] = 'application/json';
           req.body = jsonEncode({
             'message': modelMessage,
+            'history_incident_id': incidentId,
             'stream': 1,
             if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
           });
@@ -829,19 +832,28 @@ class ApiClient {
     final request = http.MultipartRequest('POST', _uri('/api/chat/vision'));
     request.headers.addAll(_opHeaders(opId)..remove('Content-Type'));
     request.fields['message'] = message.trim();
-    request.files.add(http.MultipartFile.fromBytes(
-      'image', bytes,
-      filename: 'vision.jpg',
-      contentType: _mediaType(mimeType),
-    ));
-    final response = await _client.send(request).timeout(const Duration(seconds: 100));
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'image',
+        bytes,
+        filename: 'vision.jpg',
+        contentType: _mediaType(mimeType),
+      ),
+    );
+    final response = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 100));
     final res = await http.Response.fromStream(response);
     final body = _decodeJson(res, fallback: '图片分析失败');
-    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '图片分析失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '图片分析失败');
+    }
     if (body is! Map || body['analysis'] is! Map) {
       throw _responseShapeException(res, '图片分析响应格式异常');
     }
-    return VisionAnalysis.fromJson(Map<String, dynamic>.from(body['analysis'] as Map));
+    return VisionAnalysis.fromJson(
+      Map<String, dynamic>.from(body['analysis'] as Map),
+    );
   }
 
   MediaType _mediaType(String mimeType) {
@@ -1135,12 +1147,188 @@ class ApiClient {
         .toList();
   }
 
+  Future<Map<String, dynamic>> _importJson(
+    String path, {
+    Map<String, dynamic>? body,
+    String method = 'GET',
+    String? opId,
+  }) async {
+    final request = http.Request(method, _uri(path));
+    request.headers.addAll(_opHeaders(opId));
+    if (body != null) request.body = jsonEncode(body);
+    final response = await (() async {
+      final stream = await _client.send(request);
+      return http.Response.fromStream(stream);
+    })().timeout(const Duration(seconds: 30));
+    final value = _decodeJson(response, fallback: '警情资料请求失败');
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _apiException(response, body: value, fallback: '警情资料请求失败');
+    }
+    if (value is! Map) throw _responseShapeException(response, '警情资料格式异常');
+    return Map<String, dynamic>.from(value);
+  }
+
+  String get cacheScope => unitId.isEmpty ? '' : '$baseUrl|$unitId|$actorName';
+  Future<Map<String, dynamic>> fetchIncidentDetails() async {
+    try {
+      final value = await _importJson('/api/incidents/$incidentId/details');
+      await ScopedJsonCache.write(cacheScope, 'details:$incidentId', value);
+      return value;
+    } catch (error) {
+      if (error is ApiException && (error.statusCode ?? 500) < 500) rethrow;
+      final cached = await ScopedJsonCache.read(
+        cacheScope,
+        'details:$incidentId',
+      );
+      if (cached is Map) {
+        return {...Map<String, dynamic>.from(cached), 'offline': true};
+      }
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> updateIncidentDetails(
+    Map<String, dynamic> data,
+    int version,
+    String opId,
+  ) => _importJson(
+    '/api/incidents/$incidentId/details',
+    method: 'PATCH',
+    opId: opId,
+    body: {'data': data, 'expected_version': version},
+  );
+
+  Future<Map<String, dynamic>> createIncidentImport({
+    String? text,
+    List<Uint8List> images = const [],
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/api/incidents/$incidentId/imports'),
+    );
+    request.headers.addAll(_headers..remove('Content-Type'));
+    if (text != null) request.fields['text'] = text;
+    for (var i = 0; i < images.length; i++) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'images',
+          images[i],
+          filename: 'page-$i.jpg',
+          contentType: MediaType('image', 'jpeg'),
+        ),
+      );
+    }
+    final response = await (() async {
+      final stream = await _client.send(request);
+      return http.Response.fromStream(stream);
+    })().timeout(const Duration(seconds: 90));
+    final value = _decodeJson(response, fallback: '提交导入失败');
+    if (response.statusCode != 202) {
+      throw _apiException(response, body: value, fallback: '提交导入失败');
+    }
+    if (value is! Map) throw _responseShapeException(response, '导入任务格式异常');
+    return Map<String, dynamic>.from(value);
+  }
+
+  Future<Uint8List> fetchImportImage(String id, int page) async {
+    final response = await _client
+        .get(
+          _uri('/api/incidents/$incidentId/imports/$id/images/$page'),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) {
+      throw ApiException('临时图片不可用，可能已清理', statusCode: response.statusCode);
+    }
+    return response.bodyBytes;
+  }
+
+  Future<Map<String, dynamic>> fetchIncidentImport(String id) =>
+      _importJson('/api/incidents/$incidentId/imports/$id');
+  Future<Map<String, dynamic>> retryIncidentImport(
+    String id,
+    List<int> pages,
+  ) => _importJson(
+    '/api/incidents/$incidentId/imports/$id/retry',
+    method: 'POST',
+    body: {'pages': pages},
+  );
+  Future<Map<String, dynamic>> cancelIncidentImport(String id) => _importJson(
+    '/api/incidents/$incidentId/imports/$id/cancel',
+    method: 'POST',
+  );
+  Future<Map<String, dynamic>> applyIncidentImport(
+    String id,
+    Map<String, dynamic> body,
+    String opId,
+  ) => _importJson(
+    '/api/incidents/$incidentId/imports/$id/apply',
+    method: 'POST',
+    body: body,
+    opId: opId,
+  );
+
+  Future<List<Map<String, dynamic>>> _importList(String path) async {
+    final response = await _client
+        .get(_uri(path), headers: _headers)
+        .timeout(const Duration(seconds: 15));
+    final value = _decodeJson(response, fallback: '读取列表失败');
+    if (response.statusCode != 200) {
+      throw _apiException(response, body: value, fallback: '读取列表失败');
+    }
+    if (value is! List) throw _responseShapeException(response, '列表格式异常');
+    return value.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchIncidentImports() =>
+      _importList('/api/incidents/$incidentId/imports');
+  Future<List<Map<String, dynamic>>> fetchUnitStations({
+    bool includeInactive = false,
+  }) async {
+    final key = 'directory:${includeInactive ? 'all' : 'active'}';
+    try {
+      final value = await _importList(
+        '/api/unit-stations${includeInactive ? '?include_inactive=1' : ''}',
+      );
+      await ScopedJsonCache.write(cacheScope, key, value);
+      return value;
+    } catch (error) {
+      if (error is ApiException && (error.statusCode ?? 500) < 500) rethrow;
+      final cached = await ScopedJsonCache.read(cacheScope, key);
+      if (cached is List) {
+        return cached.map((s) => Map<String, dynamic>.from(s as Map)).toList();
+      }
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> unitStationAccess() =>
+      _importJson('/api/unit-stations/access');
+  Future<Map<String, dynamic>> addUnitStation(String name) =>
+      _importJson('/api/unit-stations', method: 'POST', body: {'name': name});
+  Future<Map<String, dynamic>> updateUnitStation(
+    String id,
+    Map<String, dynamic> data,
+  ) => _importJson('/api/unit-stations/$id', method: 'PATCH', body: data);
+  Future<Map<String, dynamic>> mergeIncidentForces(
+    Map<String, dynamic> body,
+    String opId,
+  ) => _importJson(
+    '/api/incidents/$incidentId/forces/merge',
+    method: 'POST',
+    body: body,
+    opId: opId,
+  );
+
   Future<IncidentForce> saveIncidentForce({
     String? forceId,
     required String stationName,
     String? stationId,
+    String? unitStationId,
     required int vehicleCount,
     required int personnelCount,
+    bool vehicleCountKnown = true,
+    bool personnelCountKnown = true,
     int? expectedVersion,
   }) async {
     final path = forceId == null

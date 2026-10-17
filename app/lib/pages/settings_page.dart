@@ -20,6 +20,7 @@ import 'archived_incidents_page.dart';
 import 'op_log_page.dart';
 import 'roster_page.dart';
 import 'stats_page.dart';
+import 'unit_stations_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
 const appVersion = '1.7.1+69';
@@ -731,6 +732,23 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           const SizedBox(height: 22),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.local_fire_department_outlined),
+            title: const Text('单位常用队伍'),
+            subtitle: const Text('登记名称、别名及启用状态'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: widget.controller.api == null
+                ? null
+                : () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          UnitStationsPage(api: widget.controller.api!),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 12),
           const SectionTitle(text: '运行策略'),
           _SettingsAccordion(
             icon: Icons.calculate_outlined,

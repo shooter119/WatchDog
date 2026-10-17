@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import 'incident_import_page.dart';
+import 'incident_details_page.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import '../services/audio_service.dart';
@@ -1313,6 +1315,9 @@ class HomePageState extends State<HomePage> {
                   forces: widget.controller.forces,
                   onRename: _renameIncident,
                   onAddForce: () => _editForce(),
+                  onImageImport: () => _openImport(true),
+                  onTextImport: () => _openImport(false),
+                  onDetails: _openDetails,
                   onEditForce: (force) => _editForce(force),
                   onRemoveForce: (force) => _removeForce(force),
                   onArchive: _confirmArchive,
@@ -1565,26 +1570,84 @@ class HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _openImport(bool fromImages) async {
+    final api = widget.controller.api;
+    final incident = widget.controller.currentIncident;
+    if (api == null || incident == null) return;
+    final applied = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => IncidentImportPage(
+          api: api,
+          incident: incident,
+          fromImages: fromImages,
+        ),
+      ),
+    );
+    if (applied == true) {
+      try {
+        await widget.controller.refreshIncidentData(incident.id);
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('已提交，刷新资料失败：$error')));
+        }
+      }
+    }
+  }
+
+  Future<void> _openDetails() async {
+    final api = widget.controller.api;
+    final incident = widget.controller.currentIncident;
+    if (api == null || incident == null) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => IncidentDetailsPage(api: api, incident: incident),
+      ),
+    );
+    await widget.controller.refreshIncidentData(incident.id);
+  }
+
   Future<void> _editForce([IncidentForce? force]) async {
     final api = widget.controller.api;
     List<Station> stations = const [];
+    List<Map<String, dynamic>> commonStations = const [];
     if (api != null) {
       try {
         stations = await api.fetchStations();
+        try {
+          commonStations = await api.fetchUnitStations();
+        } catch (_) {
+          /* manual input remains available */
+        }
       } catch (_) {
         // 名录加载失败时仍允许现场手动填写站名。
       }
     }
-    final names = <String>{...stations.map((s) => s.name)};
+    final names = <String>{
+      ...commonStations.map((s) => s['name'].toString()),
+      ...stations.map((s) => s.name),
+    };
     if (force != null) names.add(force.stationName);
     if (!mounted) return;
+    var saveCommon = false;
     var selected = force?.stationName ?? (names.isEmpty ? '' : names.first);
     var custom = names.isEmpty || !names.contains(selected);
     final customStation = TextEditingController(
       text: custom ? force?.stationName ?? '' : '',
     );
-    final vehicles = TextEditingController(text: '${force?.vehicleCount ?? 1}');
-    final people = TextEditingController(text: '${force?.personnelCount ?? 1}');
+    final vehicles = TextEditingController(
+      text: force != null && force.vehicleCountKnown
+          ? '${force.vehicleCount}'
+          : '',
+    );
+    final people = TextEditingController(
+      text: force != null && force.personnelCountKnown
+          ? '${force.personnelCount}'
+          : '',
+    );
     final result = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1626,13 +1689,24 @@ class HomePageState extends State<HomePage> {
                   label: Text(custom ? '返回名录选择' : '现场新增消防站'),
                 ),
               ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('保存到本单位常用队伍', style: TextStyle(fontSize: 13)),
+                value: saveCommon,
+                onChanged: (value) =>
+                    setDialogState(() => saveCommon = value == true),
+              ),
               Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: vehicles,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: '车辆数'),
+                      decoration: const InputDecoration(
+                        labelText: '车辆数',
+                        hintText: '留空待补充',
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1640,7 +1714,10 @@ class HomePageState extends State<HomePage> {
                     child: TextField(
                       controller: people,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: '人员数'),
+                      decoration: const InputDecoration(
+                        labelText: '人员数',
+                        hintText: '留空待补充',
+                      ),
                     ),
                   ),
                 ],
@@ -1657,6 +1734,7 @@ class HomePageState extends State<HomePage> {
                 'station': custom ? customStation.text.trim() : selected,
                 'vehicles': vehicles.text,
                 'people': people.text,
+                'save_common': saveCommon,
               }),
               child: const Text('保存'),
             ),
@@ -1674,19 +1752,152 @@ class HomePageState extends State<HomePage> {
     final personnelCount =
         int.tryParse(result['people']?.toString() ?? '') ?? 0;
     try {
+      if ((result['vehicles'].toString().trim().isNotEmpty &&
+              (int.tryParse(result['vehicles'].toString()) == null ||
+                  vehicleCount < 0 ||
+                  vehicleCount > 999)) ||
+          (result['people'].toString().trim().isNotEmpty &&
+              (int.tryParse(result['people'].toString()) == null ||
+                  personnelCount < 0 ||
+                  personnelCount > 999))) {
+        throw ArgumentError('车辆和人员数量须为0至999的整数，未知请留空');
+      }
       await widget.controller.saveForce(
         forceId: force?.id,
         stationName: stationName,
+        unitStationId: stationName == force?.stationName
+            ? force?.unitStationId
+            : commonStations
+                  .where((s) => s['name'] == stationName)
+                  .firstOrNull?['id']
+                  ?.toString(),
         vehicleCount: vehicleCount,
         personnelCount: personnelCount,
+        vehicleCountKnown: result['vehicles'].toString().trim().isNotEmpty,
+        personnelCountKnown: result['people'].toString().trim().isNotEmpty,
         expectedVersion: force?.version,
       );
+      if (result['save_common'] == true && api != null) {
+        try {
+          await api.addUnitStation(stationName);
+        } catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('力量已保存，常用队伍保存失败：$error')));
+          }
+        }
+      }
     } catch (e) {
+      if (mounted &&
+          force != null &&
+          e is ApiException &&
+          e.code == 'FORCE_NAME_CONFLICT') {
+        await _confirmForceMerge(
+          force,
+          stationName,
+          result['vehicles'].toString(),
+          result['people'].toString(),
+        );
+        return;
+      }
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('保存参战力量失败：$e')));
       }
+    }
+  }
+
+  Future<void> _confirmForceMerge(
+    IncidentForce source,
+    String targetName,
+    String vehicles,
+    String people,
+  ) async {
+    final api = widget.controller.api?.forIncident(source.incidentId);
+    final candidates = widget.controller.forces
+        .where((f) => f.id != source.id)
+        .toList();
+    if (api == null || candidates.isEmpty) return;
+    String? selected = candidates
+        .where((f) => f.stationName == targetName)
+        .firstOrNull
+        ?.id;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('确认合并力量'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('源记录：${source.stationName} · ${source.quantityLabel}'),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: selected,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: '合并到已登记队伍'),
+                items: [
+                  for (final f in candidates)
+                    DropdownMenuItem(
+                      value: f.id,
+                      child: Text(
+                        '${f.stationName} · ${f.quantityLabel}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (v) => update(() => selected = v),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '最终采用本次输入：${vehicles.trim().isEmpty ? '车辆待补充' : '$vehicles车'}，${people.trim().isEmpty ? '人数待补充' : '$people人'}。不累加原数量。',
+              ),
+              const Text(
+                '源记录将合并到目标记录，保留目标名称及合并历史。',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: selected == null
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: const Text('确认合并'),
+            ),
+          ],
+        ),
+      ),
+    );
+    try {
+      if (confirmed != true || selected == null) return;
+      final target = candidates.firstWhere((f) => f.id == selected);
+      await api.mergeIncidentForces({
+        'source_id': source.id,
+        'target_id': target.id,
+        'source_version': source.version,
+        'target_version': target.version,
+        'vehicle_count': int.tryParse(vehicles) ?? 0,
+        'personnel_count': int.tryParse(people) ?? 0,
+        'vehicle_count_known': vehicles.trim().isNotEmpty,
+        'personnel_count_known': people.trim().isNotEmpty,
+      }, 'force-merge-${DateTime.now().microsecondsSinceEpoch}');
+      await widget.controller.refreshIncidentData(source.incidentId);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('合并失败：$error')));
+      }
+    } finally {
+      api.dispose();
     }
   }
 
@@ -2794,11 +3005,14 @@ class _IncidentPicker extends StatelessWidget {
   }
 }
 
-class _TaskBar extends StatelessWidget {
+class _TaskBar extends StatefulWidget {
   final Incident incident;
   final List<IncidentForce> forces;
   final VoidCallback onRename;
   final VoidCallback onAddForce;
+  final VoidCallback onImageImport;
+  final VoidCallback onTextImport;
+  final VoidCallback onDetails;
   final ValueChanged<IncidentForce> onEditForce;
   final ValueChanged<IncidentForce> onRemoveForce;
   final VoidCallback onArchive;
@@ -2809,11 +3023,27 @@ class _TaskBar extends StatelessWidget {
     required this.forces,
     required this.onRename,
     required this.onAddForce,
+    required this.onImageImport,
+    required this.onTextImport,
+    required this.onDetails,
     required this.onEditForce,
     required this.onRemoveForce,
     required this.onArchive,
     required this.onExit,
   });
+
+  @override
+  State<_TaskBar> createState() => _TaskBarState();
+}
+
+class _TaskBarState extends State<_TaskBar> {
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(covariant _TaskBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.incident.id != widget.incident.id) _expanded = false;
+  }
 
   @override
   Widget build(BuildContext context) => Container(
@@ -2828,129 +3058,270 @@ class _TaskBar extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Flexible(
-              child: Text(
-                incident.displayName,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: const Key('toggle-incident-card'),
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Semantics(
+              button: true,
+              expanded: _expanded,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                        Text(
+                          widget.incident.displayName,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          [
+                            if ((widget.incident.info['original_category']
+                                        as String?)
+                                    ?.isNotEmpty ==
+                                true)
+                              widget.incident.info['original_category']
+                                  as String,
+                            widget.forces.isEmpty
+                                ? '力量待登记'
+                                : '${widget.forces.length}支队伍',
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _expanded ? '收起' : '展开',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 20,
+                    color: AppColors.textSecondary,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 4),
-            IconButton(
-              key: const Key('rename-incident'),
-              onPressed: onRename,
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              tooltip: '修改名称',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          ),
+        ),
+      ),
+      if (_expanded) ...[
+          Row(
+            children: [
+              const Icon(
+                Icons.schedule_outlined,
+                size: 14,
+                color: AppColors.textTertiary,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  widget.incident.number,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textTertiary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                key: const Key('rename-incident'),
+                onPressed: widget.onRename,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                tooltip: '修改名称',
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              ),
+            ],
+          ),
+          if (widget.incident.info.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              [
+                widget.incident.info['original_category'],
+                widget.incident.info['location'],
+              ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
             ),
           ],
-        ),
-        Row(
-          children: [
-            const Icon(
-              Icons.schedule_outlined,
-              size: 14,
-              color: AppColors.textTertiary,
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceSubtle.withValues(alpha: .5),
+              borderRadius: BorderRadius.circular(8),
             ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                incident.number,
+            child: Row(
+              children: [
+                _IncidentAction(
+                  label: '登记力量',
+                  icon: Icons.group_add_outlined,
+                  onTap: widget.onAddForce,
+                ),
+                const SizedBox(height: 18, child: VerticalDivider(width: 1)),
+                _IncidentAction(
+                  label: '图片导入',
+                  icon: Icons.image_outlined,
+                  onTap: widget.onImageImport,
+                ),
+                const SizedBox(height: 18, child: VerticalDivider(width: 1)),
+                _IncidentAction(
+                  label: '文字导入',
+                  icon: Icons.description_outlined,
+                  onTap: widget.onTextImport,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '参战力量',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text(
+                '${widget.forces.length}支队伍',
                 style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textTertiary,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                '参战力量',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-            TextButton.icon(
-              onPressed: onAddForce,
-              icon: const Icon(Icons.add, size: 17),
-              label: const Text('添加'),
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-              ),
-            ),
-          ],
-        ),
-        if (forces.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 1),
-            child: Text(
-              '尚未登记参战力量',
-              style: TextStyle(
-                fontSize: 11,
-                height: 1.2,
-                color: AppColors.textTertiary,
-              ),
-            ),
-          )
-        else
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < forces.length; i++) ...[
-                _ForceRow(
-                  force: forces[i],
-                  onEdit: () => onEditForce(forces[i]),
-                  onRemove: () => onRemoveForce(forces[i]),
-                ),
-                if (i < forces.length - 1) const SizedBox(height: 8),
-              ],
             ],
           ),
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            Expanded(
-              child: TextButton.icon(
-                onPressed: onExit,
-                icon: const Icon(Icons.logout_outlined, size: 18),
-                label: const Text('退出当前警情'),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size.fromHeight(48),
+          if (widget.forces.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 1),
+              child: Text(
+                '尚未登记参战力量',
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.2,
+                  color: AppColors.textTertiary,
                 ),
               ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < widget.forces.length; i++) ...[
+                  _ForceRow(
+                    force: widget.forces[i],
+                    onEdit: () => widget.onEditForce(widget.forces[i]),
+                    onRemove: () => widget.onRemoveForce(widget.forces[i]),
+                  ),
+                  if (i < widget.forces.length - 1) const SizedBox(height: 8),
+                ],
+              ],
             ),
-            Expanded(
-              child: TextButton.icon(
-                onPressed: onArchive,
-                icon: const Icon(Icons.archive_outlined, size: 18),
-                label: const Text('归档警情'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.alarm,
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size.fromHeight(48),
+          TextButton(
+            onPressed: widget.onDetails,
+            style: TextButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              padding: EdgeInsets.zero,
+            ),
+            child: const Row(
+              children: [
+                Expanded(child: Text('警情详情')),
+                Icon(Icons.chevron_right, size: 18),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: widget.onExit,
+                  icon: const Icon(Icons.logout_outlined, size: 18),
+                  label: const Text('退出当前警情'),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    minimumSize: const Size.fromHeight(48),
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+              Expanded(
+                child: TextButton.icon(
+                  onPressed: widget.onArchive,
+                  icon: const Icon(Icons.archive_outlined, size: 18),
+                  label: const Text('归档警情'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.alarm,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
+    ),
+  );
+}
+
+class _IncidentAction extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  const _IncidentAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) => Expanded(
+    child: TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -2968,15 +3339,13 @@ class _ForceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label =
-        '${force.stationName} ${force.vehicleCount}车${force.personnelCount}人';
+    final label = '${force.stationName} ${force.quantityLabel}';
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AppRadius.md),
-      side: const BorderSide(color: AppColors.border),
     );
 
     return Material(
-      color: AppColors.surfaceSubtle.withValues(alpha: .42),
+      color: AppColors.surface,
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -3002,14 +3371,31 @@ class _ForceRow extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (force.informationSource == 'import')
+                      Text(
+                        '${force.deploymentStatus == 'mobilized'
+                            ? '通报已出动'
+                            : force.deploymentStatus == 'dispatched'
+                            ? '通报已调派'
+                            : '来自通报'} · 到场未确认',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               IconButton(

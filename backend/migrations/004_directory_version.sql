@@ -1,0 +1,1 @@
+ALTER TABLE units ADD COLUMN directory_version BIGINT NOT NULL DEFAULT 0;

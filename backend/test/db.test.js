@@ -359,3 +359,14 @@ test('操作账本租约到期后允许同摘要接管，未到期仍保持处�
   assert.equal(reclaimed.created, true);
   assert.equal(reclaimed.reclaimed, true);
 });
+
+test('SQLite兼容仓储按ID改名且保护同名和未知数量', () => {
+  const incident = db.createIncident({ createdAt: 8000 });
+  const a = db.upsertIncidentForce({ incidentId: incident.id, stationName: '临时甲队', vehicleCountKnown: false, personnelCountKnown: false });
+  const b = db.upsertIncidentForce({ incidentId: incident.id, stationName: '临时乙队', vehicleCount: 1, personnelCount: 7 });
+  const renamed = db.upsertIncidentForce({ id: a.id, updateOnly: true, incidentId: incident.id, stationName: '甲队正式名', vehicleCount: 0, personnelCount: 0 });
+  assert.equal(renamed.id, a.id);
+  assert.equal(renamed.personnel_count_known, 0);
+  assert.throws(() => db.upsertIncidentForce({ id: a.id, incidentId: incident.id, stationName: b.station_name }), { code: 'FORCE_NAME_CONFLICT' });
+  assert.equal(db.listIncidentForces(incident.id).length, 2);
+});

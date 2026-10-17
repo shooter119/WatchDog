@@ -2527,19 +2527,13 @@ void main() {
       await tester.tap(find.text('新建警情'));
       await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const Key('incident-selection-error')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('incident-selection-error')), findsOneWidget);
       expect(find.text('认证会话已过期，请重新认证'), findsOneWidget);
       final createButton = find.ancestor(
         of: find.text('新建警情'),
         matching: find.byWidgetPredicate((widget) => widget is FilledButton),
       );
-      expect(
-        tester.widget<FilledButton>(createButton).onPressed,
-        isNotNull,
-      );
+      expect(tester.widget<FilledButton>(createButton).onPressed, isNotNull);
     });
 
     testWidgets('警情浮层父级点击排除重复语义但保留加入按钮', (tester) async {
@@ -3124,7 +3118,7 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('当前警情卡显示名称和编号，不显示在场与状态汇总', (tester) async {
+    testWidgets('当前警情卡默认折叠，仅显示名称和必要摘要', (tester) async {
       final c =
           _FakeController(
               entries: [
@@ -3143,7 +3137,20 @@ void main() {
       await pumpTask(tester, c);
       expect(find.byKey(const Key('incident-card')), findsOneWidget);
       expect(find.text('小区火灾'), findsOneWidget);
+      expect(find.text('2026-8-9-8-59'), findsNothing);
+      expect(find.text('力量待登记'), findsOneWidget);
+      expect(find.text('登记力量'), findsNothing);
+      final collapsedHeight = tester
+          .getSize(find.byKey(const Key('incident-card')))
+          .height;
+      expect(collapsedHeight, lessThan(120));
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
       expect(find.text('2026-8-9-8-59'), findsOneWidget);
+      expect(find.text('登记力量'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
+      expect(find.text('登记力量'), findsNothing);
       expect(find.text('在场 2人'), findsNothing);
       expect(find.text('需关注 1'), findsNothing);
       expect(find.text('状态正常'), findsNothing);
@@ -3163,6 +3170,10 @@ void main() {
           ),
         ];
       await pumpTask(tester, c);
+      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('toggle-incident-card')));
+        await tester.pumpAndSettle();
+      }
       expect(find.byKey(const Key('incident-picker')), findsOneWidget);
       expect(find.text('2026-8-9-8-59'), findsOneWidget);
       expect(find.text('新建警情'), findsOneWidget);
@@ -3182,6 +3193,10 @@ void main() {
           ),
         ];
       await pumpTask(tester, c);
+      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('toggle-incident-card')));
+        await tester.pumpAndSettle();
+      }
       expect(find.text('幸福小区住宅楼地下车库及周边商铺火灾现场处置警情'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -3226,6 +3241,10 @@ void main() {
           ),
         ];
       await pumpTask(tester, c);
+      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('toggle-incident-card')));
+        await tester.pumpAndSettle();
+      }
       expect(find.text('龙翔路站 5车25人'), findsOneWidget);
       expect(find.byType(InputChip), findsNothing);
       final forceRow = find.ancestor(
@@ -3241,6 +3260,10 @@ void main() {
         ..currentIncident = null
         ..api = _FakeApi(incidentId: '');
       await pumpTask(tester, c);
+      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('toggle-incident-card')));
+        await tester.pumpAndSettle();
+      }
       expect(find.text('新建警情'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -3255,6 +3278,10 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
+      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('toggle-incident-card')));
+        await tester.pumpAndSettle();
+      }
       expect(find.byKey(const Key('rename-incident')), findsOneWidget);
       expect(find.text('修改名称'), findsNothing);
 
@@ -3267,7 +3294,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('活动警情提供参战力量添加入口', (tester) async {
+    testWidgets('活动警情提供紧凑的力量及双导入入口', (tester) async {
       final c = _FakeController()
         ..currentIncident = const Incident(
           id: 'i1',
@@ -3277,7 +3304,66 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
-      expect(find.text('添加'), findsOneWidget);
+      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('toggle-incident-card')));
+        await tester.pumpAndSettle();
+      }
+      for (final label in ['登记力量', '图片导入', '文字导入']) {
+        expect(find.text(label), findsOneWidget);
+        final button = find
+            .ancestor(of: find.text(label), matching: find.byType(TextButton))
+            .first;
+        expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      }
+    });
+
+    testWidgets('窄屏放大字体下导入工具栏不溢出且保留触控范围', (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final c = _FakeController()
+        ..forces = const [
+          IncidentForce(
+            id: 'f1',
+            incidentId: 'test-incident',
+            stationName: '林山专职消防救援队',
+            vehicleCount: 0,
+            personnelCount: 0,
+            vehicleCountKnown: false,
+            personnelCountKnown: false,
+            createdAt: 1,
+            updatedAt: 1,
+            version: 1,
+          ),
+        ];
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(320, 720),
+              textScaler: TextScaler.linear(1.5),
+            ),
+            child: Scaffold(
+              body: HomePage(controller: c, audioService: _FakeAudio()),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
+      for (final label in ['登记力量', '图片导入', '文字导入']) {
+        expect(find.text(label), findsOneWidget);
+        final button = find
+            .ancestor(of: find.text(label), matching: find.byType(TextButton))
+            .first;
+        expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      }
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('活动警情提供手动归档入口并二次确认', (tester) async {
@@ -3290,6 +3376,10 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
+      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('toggle-incident-card')));
+        await tester.pumpAndSettle();
+      }
       await tester.tap(find.byIcon(Icons.archive_outlined));
       await tester.pumpAndSettle();
       expect(
@@ -3312,6 +3402,10 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
+      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const Key('toggle-incident-card')));
+        await tester.pumpAndSettle();
+      }
       expect(find.text('按住下方按钮说话'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

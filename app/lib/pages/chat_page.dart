@@ -8,6 +8,8 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import '../models/models.dart';
+import '../services/chat_history.dart';
+import 'incident_details_page.dart';
 import '../services/audio_service.dart';
 import '../services/op_log_service.dart';
 import '../services/realtime_asr_service.dart';
@@ -47,6 +49,7 @@ class ChatPageState extends State<ChatPage> {
 
   List<ChatMessage> _messages = [];
   // 本机历史异步读取不应阻塞辅助页首屏；未读完时先展示欢迎态。
+  String _scope = '';
   bool _loading = false;
   bool _sending = false;
   bool _visionBusy = false;
@@ -74,11 +77,63 @@ class ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    _scope = widget.controller.assistantScope;
+    widget.controller.addListener(_onScopeChanged);
     _loadHistory();
+  }
+
+  void _onScopeChanged() {
+    final scope = widget.controller.assistantScope;
+    if (scope == _scope || !mounted) return;
+    _scope = scope;
+    _requestGeneration++;
+    _historyGeneration++;
+    _historyCleared = false;
+    setState(() {
+      _messages = [];
+      _error = null;
+      _sending = false;
+      _visionBusy = false;
+    });
+    widget.onSendingChanged?.call(false);
+    _loadHistory();
+  }
+
+  Future<void> _showLegacyHistory() async {
+    final history = await ChatHistory.load();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('历史通用对话'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              history.isEmpty
+                  ? '没有旧版通用对话记录'
+                  : history
+                        .map(
+                          (m) =>
+                              '${m.role == 'user' ? '提问' : '回复'}：${m.content}',
+                        )
+                        .join('\n\n'),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onScopeChanged);
     _recordingRequested = false;
     _recordingGeneration++;
     _recordingStarting = false;
@@ -93,9 +148,10 @@ class ChatPageState extends State<ChatPage> {
 
   Future<void> _loadHistory() async {
     final loadGeneration = _historyGeneration;
+    final loadScope = _scope;
     try {
       final history = await widget.controller.fetchChatHistory();
-      if (!mounted) return;
+      if (!mounted || loadScope != _scope) return;
       final cleanedHistory = history
           .where(
             (message) =>
@@ -245,32 +301,54 @@ class ChatPageState extends State<ChatPage> {
 
   Future<void> _pickVisionImage() async {
     if (_sending || _visionBusy || _clearing) return;
+    final generation = _requestGeneration;
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      builder: (context) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('拍照'), onTap: () => Navigator.pop(context, ImageSource.camera)),
-        ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('从相册选择'), onTap: () => Navigator.pop(context, ImageSource.gallery)),
-      ])),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('拍照'),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('从相册选择'),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
     );
-    if (source == null || !mounted) return;
+    if (source == null || !mounted || generation != _requestGeneration) return;
     final picked = await ImagePicker().pickImage(source: source);
-    if (picked == null || !mounted) return;
+    if (picked == null || !mounted || generation != _requestGeneration) return;
     final original = await picked.readAsBytes();
-    if (!mounted) return;
+    if (!mounted || generation != _requestGeneration) return;
     final decoded = img.decodeImage(original);
     if (decoded == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('无法读取图片，请重新选择')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法读取图片，请重新选择')));
       return;
     }
-    final resized = decoded.width > 1600 ? img.copyResize(decoded, width: 1600) : decoded;
+    final resized = decoded.width > 1600
+        ? img.copyResize(decoded, width: 1600)
+        : decoded;
     final bytes = Uint8List.fromList(img.encodeJpg(resized, quality: 82));
     if (bytes.length > 8 * 1024 * 1024) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('图片过大，请重新拍摄')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('图片过大，请重新拍摄')));
       return;
     }
-    if (!mounted) return;
+    if (!mounted || generation != _requestGeneration) return;
     final question = await _askVisionQuestion();
-    if (question == null || !mounted) return;
+    if (question == null || !mounted || generation != _requestGeneration) {
+      return;
+    }
     setState(() => _visionBusy = true);
     try {
       final analysis = await widget.controller.analyzeVision(
@@ -279,36 +357,76 @@ class ChatPageState extends State<ChatPage> {
         message: question,
         opId: 'vision-${DateTime.now().millisecondsSinceEpoch}',
       );
-      if (!mounted) return;
+      if (!mounted || generation != _requestGeneration) return;
       final reply = _formatVisionAnalysis(analysis);
       setState(() {
-        _messages = [..._messages,
-          ChatMessage(id: 'vision-${DateTime.now().millisecondsSinceEpoch}', role: 'user', content: '图片分析：$question', createdAt: DateTime.now().millisecondsSinceEpoch),
-          ChatMessage(id: 'vision-result-${DateTime.now().millisecondsSinceEpoch}', role: 'assistant', content: reply, createdAt: DateTime.now().millisecondsSinceEpoch),
+        _messages = [
+          ..._messages,
+          ChatMessage(
+            id: 'vision-${DateTime.now().millisecondsSinceEpoch}',
+            role: 'user',
+            content: '图片分析：$question',
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+          ChatMessage(
+            id: 'vision-result-${DateTime.now().millisecondsSinceEpoch}',
+            role: 'assistant',
+            content: reply,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+          ),
         ];
       });
       _scrollToBottom();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('图片分析失败：$e')));
+      if (mounted && generation == _requestGeneration) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('图片分析失败：$e')));
+      }
     } finally {
-      if (mounted) setState(() => _visionBusy = false);
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _visionBusy = false);
+      }
     }
   }
 
   Future<String?> _askVisionQuestion() async {
     final controller = TextEditingController(text: '请分析这张图片中与消防救援相关的内容。');
-    final result = await showDialog<String>(context: context, builder: (context) => AlertDialog(
-      title: const Text('确认图片分析'),
-      content: TextField(controller: controller, maxLines: 3, decoration: const InputDecoration(hintText: '可补充关注重点')),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('发送'))],
-    ));
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认图片分析'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(hintText: '可补充关注重点'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('发送'),
+          ),
+        ],
+      ),
+    );
     controller.dispose();
     return result;
   }
 
   String _formatVisionAnalysis(VisionAnalysis a) {
-    String section(String title, List<String> values) => values.isEmpty ? '$title\n暂无明确内容' : '$title\n${values.map((v) => '• $v').join('\n')}';
-    final relevance = switch (a.relevance) { 'related' => '相关', 'unrelated' => '无关', 'unsafe_to_judge' => '图片质量不足', _ => '关联性不明确' };
+    String section(String title, List<String> values) => values.isEmpty
+        ? '$title\n暂无明确内容'
+        : '$title\n${values.map((v) => '• $v').join('\n')}';
+    final relevance = switch (a.relevance) {
+      'related' => '相关',
+      'unrelated' => '无关',
+      'unsafe_to_judge' => '图片质量不足',
+      _ => '关联性不明确',
+    };
     return '**图片相关性：$relevance**\n\n${section('### 已确认事实', a.facts)}\n\n${section('### 可能风险', a.risks)}\n\n${section('### 待确认事项', a.toConfirm)}\n\n${section('### 建议措施', a.suggestions)}\n\n> ${a.disclaimer}';
   }
 
@@ -663,6 +781,27 @@ class ChatPageState extends State<ChatPage> {
       child: Column(
         children: [
           _buildHeader(context),
+          if (widget.controller.currentIncident?.info.isNotEmpty == true)
+            TextButton.icon(
+              onPressed: () {
+                final api = widget.controller.api;
+                final incident = widget.controller.currentIncident;
+                if (api != null && incident != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          IncidentDetailsPage(api: api, incident: incident),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.info_outline, size: 15),
+              label: const Text(
+                '已结合当前警情资料 · 查看背景',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
           if (_recording) _buildRecordingHint(),
           Expanded(child: _buildBody()),
           Container(
@@ -736,9 +875,22 @@ class ChatPageState extends State<ChatPage> {
             color: AppColors.textTertiary,
           ),
           IconButton(
+            onPressed: _showLegacyHistory,
+            tooltip: '历史通用对话',
+            icon: const Icon(Icons.history, size: 20),
+          ),
+          IconButton(
             key: const Key('chat-vision-button'),
-            onPressed: _sending || _visionBusy || _clearing ? null : _pickVisionImage,
-            icon: _visionBusy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.camera_alt_outlined, size: 21),
+            onPressed: _sending || _visionBusy || _clearing
+                ? null
+                : _pickVisionImage,
+            icon: _visionBusy
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.camera_alt_outlined, size: 21),
             tooltip: '拍照分析',
             color: AppColors.voice,
           ),
@@ -1198,22 +1350,43 @@ class _VisionCallout extends StatelessWidget {
               color: AppColors.voice.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
-            child: const Icon(Icons.camera_alt_outlined, color: AppColors.voice),
+            child: const Icon(
+              Icons.camera_alt_outlined,
+              color: AppColors.voice,
+            ),
           ),
           const SizedBox(width: 12),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('拍照分析现场', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                Text(
+                  '拍照分析现场',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                ),
                 SizedBox(height: 3),
-                Text('识别装备、环境和潜在安全风险', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                Text(
+                  '识别装备、环境和潜在安全风险',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
                 SizedBox(height: 3),
-                Text('图片仅临时处理，不保存原图', style: TextStyle(fontSize: 10.5, color: AppColors.textTertiary)),
+                Text(
+                  '图片仅临时处理，不保存原图',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
               ],
             ),
           ),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.textTertiary,
+          ),
         ],
       ),
     );

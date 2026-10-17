@@ -90,13 +90,23 @@ ThemeData buildAppTheme() {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(
+          fontFamily: AppFonts.family,
+          fontFamilyFallback: AppFonts.fallback,
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: AppColors.actionPrimary,
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(
+          fontFamily: AppFonts.family,
+          fontFamilyFallback: AppFonts.fallback,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     ),
     snackBarTheme: SnackBarThemeData(

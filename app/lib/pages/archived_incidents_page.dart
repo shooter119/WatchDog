@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import 'incident_details_page.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
@@ -332,8 +333,18 @@ class _ArchivedIncidentCard extends StatelessWidget {
           Row(
             children: [
               _StatItem(label: '参战站点', value: '${incident.forceStationCount}'),
-              _StatItem(label: '车辆', value: '${incident.vehicleCount}'),
-              _StatItem(label: '人员', value: '${incident.personnelCount}'),
+              _StatItem(
+                label: incident.unknownVehicleStationCount > 0 ? '已知车辆' : '车辆',
+                value:
+                    '${incident.vehicleCount}${incident.unknownVehicleStationCount > 0 ? '+' : ''}',
+              ),
+              _StatItem(
+                label: incident.unknownPersonnelStationCount > 0
+                    ? '已知人员'
+                    : '人员',
+                value:
+                    '${incident.personnelCount}${incident.unknownPersonnelStationCount > 0 ? '+' : ''}',
+              ),
               if (incident.unresolvedActiveCount > 0)
                 _StatItem(
                   label: '未确认离场',
@@ -486,6 +497,21 @@ class _IncidentDetailPageState extends State<IncidentDetailPage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
               children: [
                 _IncidentIdentity(incident: widget.incident),
+                TextButton.icon(
+                  onPressed: widget.controller.api == null
+                      ? null
+                      : () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => IncidentDetailsPage(
+                              api: widget.controller.api!,
+                              incident: widget.incident,
+                            ),
+                          ),
+                        ),
+                  icon: const Icon(Icons.description_outlined, size: 18),
+                  label: const Text('警情资料与导入记录'),
+                ),
                 if (widget.incident.unresolvedActiveCount > 0) ...[
                   const SizedBox(height: 10),
                   _UnresolvedBanner(
@@ -764,7 +790,7 @@ class _ForceSnapshot extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${forces[i].vehicleCount}车',
+                        forces[i].vehicleLabel,
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
@@ -772,7 +798,7 @@ class _ForceSnapshot extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        '${forces[i].personnelCount}人',
+                        forces[i].personnelLabel,
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 14,

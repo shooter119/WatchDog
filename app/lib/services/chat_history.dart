@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:crypto/crypto.dart';
 
 import '../models/models.dart';
 
@@ -9,17 +10,20 @@ class ChatHistory {
   ChatHistory._();
 
   static const _key = 'assistant_chat_history_v1';
+  static String _storageKey(String scope) => scope.isEmpty
+      ? _key
+      : 'assistant_chat_history_v2_${sha256.convert(utf8.encode(scope))}';
   static const maxMessages = 100;
   static Future<void> _mutationQueue = Future<void>.value();
 
-  static Future<List<ChatMessage>> load() async {
+  static Future<List<ChatMessage>> load({String scope = ''}) async {
     await _mutationQueue;
-    return _loadRaw();
+    return _loadRaw(scope);
   }
 
-  static Future<List<ChatMessage>> _loadRaw() async {
+  static Future<List<ChatMessage>> _loadRaw(String scope) async {
     final sp = await SharedPreferences.getInstance();
-    final raw = sp.getString(_key);
+    final raw = sp.getString(_storageKey(scope));
     if (raw == null || raw.isEmpty) return [];
     try {
       final list = jsonDecode(raw);
@@ -44,28 +48,29 @@ class ChatHistory {
     return next;
   }
 
-  static Future<void> _saveRaw(List<ChatMessage> messages) async {
+  static Future<void> _saveRaw(List<ChatMessage> messages, String scope) async {
     final kept = messages.length <= maxMessages
         ? messages
         : messages.sublist(messages.length - maxMessages);
     final sp = await SharedPreferences.getInstance();
     await sp.setString(
-      _key,
+      _storageKey(scope),
       jsonEncode(kept.map((message) => message.toJson()).toList()),
     );
   }
 
-  static Future<void> save(List<ChatMessage> messages) =>
-      _enqueue(() => _saveRaw(messages));
+  static Future<void> save(List<ChatMessage> messages, {String scope = ''}) =>
+      _enqueue(() => _saveRaw(messages, scope));
 
   static Future<void> appendExchange({
     required String question,
     required String reply,
     required int createdAt,
+    String scope = '',
   }) async {
     if (question.trim().isEmpty || reply.trim().isEmpty) return;
     await _enqueue(() async {
-      final messages = await _loadRaw();
+      final messages = await _loadRaw(scope);
       messages.addAll([
         ChatMessage(
           id: 'local-user-$createdAt',
@@ -80,12 +85,12 @@ class ChatHistory {
           createdAt: DateTime.now().millisecondsSinceEpoch,
         ),
       ]);
-      await _saveRaw(messages);
+      await _saveRaw(messages, scope);
     });
   }
 
-  static Future<void> clear() => _enqueue(() async {
+  static Future<void> clear({String scope = ''}) => _enqueue(() async {
     final sp = await SharedPreferences.getInstance();
-    await sp.remove(_key);
+    await sp.remove(_storageKey(scope));
   });
 }

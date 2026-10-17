@@ -133,6 +133,18 @@ class MainActivity : FlutterActivity() {
                 "availableBytes" -> {
                     result.success(android.os.StatFs(filesDir.path).availableBytes)
                 }
+                "openAppSettings" -> {
+                    try {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.parse("package:$packageName")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("open_app_settings_failed", null, null)
+                    }
+                }
                 "openStorageSettings" -> {
                     runOnUiThread {
                         try {

@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const db = require('./postgres-store');
+const { forceError, forceFields } = require('./force-fields');
 
 
 const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救', '初战'];
@@ -1090,39 +1091,41 @@ async function getIncidentForce(id) {
   return db.select('incident_forces', { filters: { id }, single: true });
 }
 
-function forceCount(value) {
-  const number = Number(value);
-  if (!Number.isInteger(number) || number < 0 || number > 999) throw new Error('参战车辆或人员数量无效');
-  return number;
-}
-
-async function upsertIncidentForce({ id = randomUUID(), incidentId, stationId = null, stationName, vehicleCount = 0, personnelCount = 0, expectedVersion = null } = {}) {
-  const cleanName = String(stationName || '').trim().slice(0, 80);
-  if (!cleanName) throw new Error('消防站名称不能为空');
-  const vehicles = forceCount(vehicleCount);
-  const personnel = forceCount(personnelCount);
-  const current = await db.select('incident_forces', { filters: { incident_id: incidentId, station_name: cleanName }, single: true });
-  if (current && expectedVersion != null && Number(expectedVersion) !== Number(current.version)) {
-    const error = new Error('该消防站的参战力量已被其他用户修改，请刷新后重试');
-    error.code = 'VERSION_CONFLICT';
-    throw error;
-  }
-  if (current) {
-    const result = await db.update('incident_forces', { id: current.id, version: current.version }, {
-      station_id: stationId, vehicle_count: vehicles, personnel_count: personnel,
-      updated_at: Date.now(), version: Number(current.version) + 1,
-    });
-    if (result.rows.length === 0) {
-      const error = new Error('该消防站的参战力量已被其他用户修改，请刷新后重试');
-      error.code = 'VERSION_CONFLICT';
-      throw error;
+async function upsertIncidentForce(args = {}) {
+  return db.transaction(async () => {
+    const { id, incidentId, stationId, unitStationId, stationName, expectedVersion = null, updateOnly = false } = args;
+    const cleanName = String(stationName || '').trim();
+    if (!cleanName || cleanName.length > 80) throw forceError('消防站名称须为1至80字');
+    const byId = id ? await getIncidentForce(id) : null;
+    if (byId && byId.incident_id !== incidentId) throw forceError('参战力量不存在', 'FORCE_NOT_FOUND', 404);
+    if (updateOnly && !byId) throw forceError('参战力量不存在', 'FORCE_NOT_FOUND', 404);
+    const sameName = await db.select('incident_forces', { filters: { incident_id: incidentId, station_name: cleanName }, single: true });
+    if (byId && sameName && byId.id !== sameName.id) throw forceError('当前警情已存在同名队伍，请核对后合并', 'FORCE_NAME_CONFLICT', 409);
+    const current = byId || sameName;
+    if (current && expectedVersion != null && Number(expectedVersion) !== Number(current.version)) {
+      throw forceError('该消防站的参战力量已被其他用户修改，请刷新后重试', 'VERSION_CONFLICT', 409);
     }
-    return result.rows[0];
-  }
-  const now = Date.now();
-  return insertOne('incident_forces', {
-    id, incident_id: incidentId, station_id: stationId, station_name: cleanName,
-    vehicle_count: vehicles, personnel_count: personnel, created_at: now, updated_at: now, version: 1,
+    if (unitStationId) {
+      const linked = await db.query('SELECT s.id FROM unit_stations s JOIN incidents i ON i.unit_id=s.unit_id WHERE i.id=$1 AND s.id=$2 AND s.active', [incidentId,unitStationId]);
+      if (!linked.rowCount) throw forceError('常用队伍不存在或已停用', 'FORCE_NOT_FOUND', 404);
+      const duplicate = await db.query('SELECT id FROM incident_forces WHERE incident_id=$1 AND unit_station_id=$2', [incidentId,unitStationId]);
+      if (duplicate.rows.some((row) => row.id !== current?.id)) throw forceError('该常用队伍已登记，请选择已有记录', 'FORCE_NAME_CONFLICT', 409);
+    }
+    const fields = forceFields(args, current);
+    if (current) {
+      const result = await db.update('incident_forces', { id: current.id, incident_id: incidentId, version: current.version }, {
+        station_id: stationId === undefined ? current.station_id : stationId,
+        station_name: cleanName, unit_station_id: unitStationId === undefined ? current.unit_station_id : unitStationId, ...fields,
+        updated_at: Date.now(), version: Number(current.version) + 1,
+      });
+      if (result.rows.length === 0) throw forceError('参战力量已被其他用户修改，请刷新后重试', 'VERSION_CONFLICT', 409);
+      return result.rows[0];
+    }
+    const now = Date.now();
+    return insertOne('incident_forces', {
+      id: id || randomUUID(), incident_id: incidentId, station_id: stationId ?? null,
+      station_name: cleanName, unit_station_id: unitStationId ?? null, ...fields, created_at: now, updated_at: now, version: 1,
+    });
   });
 }
 

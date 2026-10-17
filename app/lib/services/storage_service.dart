@@ -17,6 +17,17 @@ class StorageService {
     return null;
   }
 
+  static Future<bool> openAppSettings() async {
+    try {
+      return await _channel
+              .invokeMethod<bool>('openAppSettings')
+              .timeout(const Duration(seconds: 2)) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<bool> openStorageSettings() async {
     try {
       final result = await _channel

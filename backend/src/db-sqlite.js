@@ -2,6 +2,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { randomUUID } = require('node:crypto');
 const path = require('path');
 const fs = require('fs');
+const { forceError, forceFields } = require('./force-fields');
 
 const DATA_DIR = process.env.WATCHDOG_DATA_DIR || path.join(__dirname, '..', 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -310,6 +311,11 @@ for (const stationName of ['龙翔路站', '永安路站', '兴园站']) {
   db.prepare(
     'INSERT OR IGNORE INTO stations (id, name, normalized_name, created_at, created_by) VALUES (?, ?, ?, ?, ?)'
   ).run(randomUUID(), stationName, normalized, Date.now(), 'system');
+}
+
+// Preserve existing quantities as known; only new explicit flags mark unknown.
+for (const column of ['vehicle_count_known', 'personnel_count_known']) {
+  if (!hasColumn('incident_forces', column)) db.exec(`ALTER TABLE incident_forces ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 1 CHECK(${column} IN (0, 1))`);
 }
 
 // 动态耗气率迁移：entries 增加实测耗气率列（可空，无采样时为 null）
@@ -1296,40 +1302,32 @@ function getIncidentForce(id) {
   return db.prepare('SELECT * FROM incident_forces WHERE id = ?').get(id);
 }
 
-function forceCount(value) {
-  const number = Number(value);
-  if (!Number.isInteger(number) || number < 0 || number > 999) throw new Error('参战车辆或人员数量无效');
-  return number;
-}
-
-function upsertIncidentForce({ id = randomUUID(), incidentId, stationId = null, stationName, vehicleCount = 0, personnelCount = 0, expectedVersion = null } = {}) {
-  const cleanName = String(stationName || '').trim().slice(0, 80);
-  if (!cleanName) throw new Error('消防站名称不能为空');
-  const vehicles = forceCount(vehicleCount);
-  const personnel = forceCount(personnelCount);
-  const current = db.prepare('SELECT * FROM incident_forces WHERE incident_id = ? AND station_name = ?').get(incidentId, cleanName);
-  if (current && expectedVersion != null && Number(expectedVersion) !== current.version) {
-    const error = new Error('该消防站的参战力量已被其他用户修改，请刷新后重试');
-    error.code = 'VERSION_CONFLICT';
-    throw error;
-  }
-  if (current) {
-    const result = expectedVersion == null
-      ? db.prepare('UPDATE incident_forces SET station_id = ?, vehicle_count = ?, personnel_count = ?, updated_at = ?, version = version + 1 WHERE id = ?')
-        .run(stationId, vehicles, personnel, Date.now(), current.id)
-      : db.prepare('UPDATE incident_forces SET station_id = ?, vehicle_count = ?, personnel_count = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?')
-        .run(stationId, vehicles, personnel, Date.now(), current.id, current.version);
-    if (expectedVersion != null && result.changes === 0) {
-      const error = new Error('该消防站的参战力量已被其他用户修改，请刷新后重试');
-      error.code = 'VERSION_CONFLICT';
-      throw error;
+function upsertIncidentForce(args = {}) {
+  return transaction(() => {
+    const { id, incidentId, stationId, stationName, expectedVersion = null, updateOnly = false } = args;
+    const cleanName = String(stationName || '').trim();
+    if (!cleanName || cleanName.length > 80) throw forceError('消防站名称须为1至80字');
+    const byId = id ? getIncidentForce(id) : null;
+    if (byId && byId.incident_id !== incidentId) throw forceError('参战力量不存在', 'FORCE_NOT_FOUND', 404);
+    if (updateOnly && !byId) throw forceError('参战力量不存在', 'FORCE_NOT_FOUND', 404);
+    const sameName = db.prepare('SELECT * FROM incident_forces WHERE incident_id = ? AND station_name = ?').get(incidentId, cleanName);
+    if (byId && sameName && byId.id !== sameName.id) throw forceError('当前警情已存在同名队伍，请核对后合并', 'FORCE_NAME_CONFLICT', 409);
+    const current = byId || sameName;
+    if (current && expectedVersion != null && Number(expectedVersion) !== current.version) throw forceError('该消防站的参战力量已被其他用户修改，请刷新后重试', 'VERSION_CONFLICT', 409);
+    const fields = forceFields(args, current);
+    const values = [stationId === undefined ? current?.station_id ?? null : stationId, cleanName,
+      fields.vehicle_count, Number(fields.vehicle_count_known), fields.personnel_count, Number(fields.personnel_count_known), Date.now()];
+    if (current) {
+      const result = db.prepare('UPDATE incident_forces SET station_id = ?, station_name = ?, vehicle_count = ?, vehicle_count_known = ?, personnel_count = ?, personnel_count_known = ?, updated_at = ?, version = version + 1 WHERE id = ? AND incident_id = ? AND version = ?')
+        .run(...values, current.id, incidentId, current.version);
+      if (!result.changes) throw forceError('参战力量已被其他用户修改，请刷新后重试', 'VERSION_CONFLICT', 409);
+      return getIncidentForce(current.id);
     }
-    return getIncidentForce(current.id);
-  }
-  const now = Date.now();
-  db.prepare('INSERT INTO incident_forces (id, incident_id, station_id, station_name, vehicle_count, personnel_count, created_at, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
-    .run(id, incidentId, stationId, cleanName, vehicles, personnel, now, now);
-  return getIncidentForce(id);
+    const forceId = id || randomUUID();
+    db.prepare('INSERT INTO incident_forces (station_id, station_name, vehicle_count, vehicle_count_known, personnel_count, personnel_count_known, updated_at, id, incident_id, created_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)')
+      .run(...values, forceId, incidentId, Date.now());
+    return getIncidentForce(forceId);
+  });
 }
 
 function upsertIncidentForceWithEvent({ force, event, activityAt = null } = {}) {

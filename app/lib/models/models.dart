@@ -89,6 +89,7 @@ class Entry {
 
 class Incident {
   final String id;
+  final Map<String, dynamic> info;
   final String number;
   final String? title;
   final String? suggestedTitle;
@@ -103,9 +104,12 @@ class Incident {
   final int forceStationCount;
   final int vehicleCount;
   final int personnelCount;
+  final int unknownVehicleStationCount;
+  final int unknownPersonnelStationCount;
 
   const Incident({
     required this.id,
+    this.info = const {},
     required this.number,
     this.title,
     this.suggestedTitle,
@@ -120,6 +124,8 @@ class Incident {
     this.forceStationCount = 0,
     this.vehicleCount = 0,
     this.personnelCount = 0,
+    this.unknownVehicleStationCount = 0,
+    this.unknownPersonnelStationCount = 0,
   });
 
   String get displayName =>
@@ -128,6 +134,9 @@ class Incident {
 
   factory Incident.fromJson(Map<String, dynamic> json) => Incident(
     id: json['id']?.toString() ?? '',
+    info: json['info'] is Map
+        ? Map<String, dynamic>.from(json['info'] as Map)
+        : const {},
     number: json['number']?.toString() ?? '',
     title: json['title']?.toString(),
     suggestedTitle: json['suggested_title']?.toString(),
@@ -141,6 +150,10 @@ class Incident {
         (json['unresolved_active_count'] as num?)?.toInt() ?? 0,
     version: (json['version'] as num?)?.toInt() ?? 1,
     forceStationCount: (json['force_station_count'] as num?)?.toInt() ?? 0,
+    unknownVehicleStationCount:
+        (json['unknown_vehicle_station_count'] as num?)?.toInt() ?? 0,
+    unknownPersonnelStationCount:
+        (json['unknown_personnel_station_count'] as num?)?.toInt() ?? 0,
     vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
     personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,
   );
@@ -150,9 +163,14 @@ class IncidentForce {
   final String id;
   final String incidentId;
   final String? stationId;
+  final String? unitStationId;
+  final String? deploymentStatus;
+  final String? informationSource;
   final String stationName;
   final int vehicleCount;
   final int personnelCount;
+  final bool vehicleCountKnown;
+  final bool personnelCountKnown;
   final int createdAt;
   final int updatedAt;
   final int version;
@@ -161,18 +179,39 @@ class IncidentForce {
     required this.id,
     required this.incidentId,
     this.stationId,
+    this.unitStationId,
+    this.deploymentStatus,
+    this.informationSource,
     required this.stationName,
     required this.vehicleCount,
     required this.personnelCount,
+    this.vehicleCountKnown = true,
+    this.personnelCountKnown = true,
     required this.createdAt,
     required this.updatedAt,
     required this.version,
   });
 
+  String get vehicleLabel => vehicleCountKnown ? '$vehicleCount车' : '车辆待补充';
+  String get personnelLabel =>
+      personnelCountKnown ? '$personnelCount人' : '人数待补充';
+  String get quantityLabel => vehicleCountKnown && personnelCountKnown
+      ? '$vehicleLabel$personnelLabel'
+      : '$vehicleLabel $personnelLabel';
+
   factory IncidentForce.fromJson(Map<String, dynamic> json) => IncidentForce(
     id: json['id']?.toString() ?? '',
     incidentId: json['incident_id']?.toString() ?? '',
     stationId: json['station_id']?.toString(),
+    unitStationId: json['unit_station_id']?.toString(),
+    deploymentStatus: json['deployment_status']?.toString(),
+    informationSource: json['information_source']?.toString(),
+    vehicleCountKnown:
+        json['vehicle_count_known'] != false &&
+        json['vehicle_count_known'] != 0,
+    personnelCountKnown:
+        json['personnel_count_known'] != false &&
+        json['personnel_count_known'] != 0,
     stationName: json['station_name']?.toString() ?? '',
     vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
     personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,

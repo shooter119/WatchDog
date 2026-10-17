@@ -16,6 +16,7 @@ import '../services/op_log_service.dart';
 import '../services/offline_queue.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
+import '../services/scoped_json_cache.dart';
 import '../services/tts_service.dart';
 import '../services/update_service.dart';
 import '../services/sync_coordinator.dart';
@@ -67,7 +68,8 @@ class AppController extends ChangeNotifier {
   );
 
   bool syncing = false;
-  bool _assistantBusy = false;
+  int _assistantPending = 0;
+  bool get _assistantBusy => _assistantPending > 0;
   String? syncError;
   Timer? _tickTimer;
 
@@ -845,9 +847,29 @@ class AppController extends ChangeNotifier {
         .whereType<Map>()
         .map((item) => Incident.fromJson(Map<String, dynamic>.from(item)))
         .toList();
+    final directoryApi = api;
+    if (directoryApi != null && snapshot['unit_stations'] is List) {
+      unawaited(
+        ScopedJsonCache.write(
+          directoryApi.cacheScope,
+          'directory:active',
+          snapshot['unit_stations'] as List,
+        ),
+      );
+    }
     final incidentSnapshot = snapshot['incident_snapshot'];
     if (incidentSnapshot is Map) {
       final data = Map<String, dynamic>.from(incidentSnapshot);
+      final details = data['incident_details'];
+      if (directoryApi != null && details is Map) {
+        unawaited(
+          ScopedJsonCache.write(
+            directoryApi.cacheScope,
+            'details:${details['incident_id']}',
+            details,
+          ),
+        );
+      }
       final incident = data['incident'];
       currentIncident = incident is Map
           ? Incident.fromJson(Map<String, dynamic>.from(incident))
@@ -921,6 +943,58 @@ class AppController extends ChangeNotifier {
       case 'note.deleted':
         final id = event.aggregateId ?? payload['id']?.toString();
         if (id != null) notes = notes.where((item) => item.id != id).toList();
+        break;
+      case 'import.applied':
+        final importDetailsApi = api;
+        if (importDetailsApi != null && payload['details'] is Map) {
+          final details = payload['details'] as Map;
+          unawaited(
+            ScopedJsonCache.write(
+              importDetailsApi.cacheScope,
+              'details:${details['incident_id']}',
+              details,
+            ),
+          );
+        }
+        if (payload['incident'] is Map) {
+          final incident = Incident.fromJson(
+            Map<String, dynamic>.from(payload['incident'] as Map),
+          );
+          if (currentIncident?.id == incident.id) {
+            currentIncident = incident;
+            forces = (payload['forces'] as List? ?? [])
+                .map(
+                  (f) => IncidentForce.fromJson(
+                    Map<String, dynamic>.from(f as Map),
+                  ),
+                )
+                .toList();
+          }
+        }
+        break;
+      case 'directory.updated':
+        final directoryApi = api;
+        if (directoryApi != null) {
+          unawaited(
+            directoryApi.fetchUnitStations().catchError(
+              (_) => <Map<String, dynamic>>[],
+            ),
+          );
+        }
+        break;
+      case 'details.updated':
+        final detailsApi = api;
+        if (detailsApi != null && payload['incident_id'] != null) {
+          unawaited(
+            ScopedJsonCache.write(
+              detailsApi.cacheScope,
+              'details:${payload['incident_id']}',
+              payload,
+            ),
+          );
+        }
+        final id = currentIncident?.id;
+        if (id != null) unawaited(refreshIncidentData(id));
         break;
       case 'force.upserted':
         if (payload.isEmpty) break;
@@ -1713,12 +1787,26 @@ class AppController extends ChangeNotifier {
     await sync();
   }
 
+  Future<void> refreshIncidentData(String id) async {
+    final a = api;
+    if (a == null || currentIncident?.id != id) return;
+    final incident = await a.fetchIncident(id);
+    final rows = await a.fetchIncidentForces();
+    if (!identical(api, a) || currentIncident?.id != id || _disposed) return;
+    currentIncident = incident;
+    forces = rows;
+    _notify();
+  }
+
   Future<void> saveForce({
     String? forceId,
     required String stationName,
     String? stationId,
+    String? unitStationId,
     required int vehicleCount,
     required int personnelCount,
+    bool vehicleCountKnown = true,
+    bool personnelCountKnown = true,
     int? expectedVersion,
   }) async {
     final a = api;
@@ -1857,7 +1945,14 @@ class AppController extends ChangeNotifier {
   }
 
   /// 智能体问答：读取本机历史（旧→新），不依赖警情或云端。
-  Future<List<ChatMessage>> fetchChatHistory() => ChatHistory.load();
+  String get assistantScope {
+    final a = api;
+    if (a == null || a.unitId.isEmpty) return '';
+    return '${a.baseUrl}|${a.unitId}|${a.actorName.isNotEmpty ? a.actorName : a.deviceId}|${currentIncident?.id ?? 'general'}';
+  }
+
+  Future<List<ChatMessage>> fetchChatHistory() =>
+      ChatHistory.load(scope: assistantScope);
 
   Future<VisionAnalysis> analyzeVision(
     Uint8List bytes, {
@@ -1867,11 +1962,29 @@ class AppController extends ChangeNotifier {
   }) async {
     final a = api;
     if (a == null) throw StateError('AI 服务未连接');
-    _assistantBusy = true;
+    final historyScope = assistantScope;
+    _assistantPending++;
     try {
-      return await a.analyzeVision(bytes, mimeType: mimeType, message: message, opId: opId);
+      final analysis = await a.analyzeVision(
+        bytes,
+        mimeType: mimeType,
+        message: message,
+        opId: opId,
+      );
+      await ChatHistory.appendExchange(
+        scope: historyScope,
+        question: '图片分析：$message',
+        reply: [
+          ...analysis.facts,
+          ...analysis.risks,
+          ...analysis.toConfirm,
+          ...analysis.suggestions,
+        ].join('\n'),
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      return analysis;
     } finally {
-      _assistantBusy = false;
+      _assistantPending--;
     }
   }
 
@@ -1883,7 +1996,8 @@ class AppController extends ChangeNotifier {
   }) async {
     final a = api;
     if (a == null) throw StateError('AI 服务未连接');
-    _assistantBusy = true;
+    final historyScope = assistantScope;
+    _assistantPending++;
     try {
       final reply = await a.sendChatMessage(
         message,
@@ -1891,13 +2005,14 @@ class AppController extends ChangeNotifier {
         history: history,
       );
       await ChatHistory.appendExchange(
+        scope: historyScope,
         question: message,
         reply: reply.content,
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
       return reply;
     } finally {
-      _assistantBusy = false;
+      _assistantPending--;
     }
   }
 
@@ -1910,7 +2025,8 @@ class AppController extends ChangeNotifier {
   }) async {
     final a = api;
     if (a == null) throw StateError('AI 服务未连接');
-    _assistantBusy = true;
+    final historyScope = assistantScope;
+    _assistantPending++;
     try {
       final reply = await a.sendChatMessageStream(
         message,
@@ -1924,6 +2040,7 @@ class AppController extends ChangeNotifier {
       // 持久化不阻塞首屏回复；ChatHistory 内部队列保证追加/清空按入队顺序执行。
       unawaited(
         ChatHistory.appendExchange(
+          scope: historyScope,
           question: message,
           reply: reply,
           createdAt: DateTime.now().millisecondsSinceEpoch,
@@ -1931,7 +2048,7 @@ class AppController extends ChangeNotifier {
       );
       return reply;
     } finally {
-      _assistantBusy = false;
+      _assistantPending--;
     }
   }
 
@@ -1940,7 +2057,7 @@ class AppController extends ChangeNotifier {
 
   /// 清空本机辅助问答记录
   Future<void> clearChatHistory() async {
-    await ChatHistory.clear();
+    await ChatHistory.clear(scope: assistantScope);
   }
 
   Future<void> deleteNote(String id) async {
