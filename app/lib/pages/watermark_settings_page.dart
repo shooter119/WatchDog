@@ -278,9 +278,8 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
   }
 
   Widget _previewCardBody(WatermarkSettings s) {
-    // 原生水印固定用这抹蓝，不跟随 App 双配色切换：成片里的水印要与现场
-    // 惯例一致，预览必须按原生真实观感（半透明蓝条 + 半透明白卡）来画。
-    const watermarkBlue = Color(0xFF3A7AD6);
+    // 设置预览使用深蓝实底，保证白色小字对比度；字段与拍摄配置保持一致。
+    const watermarkBlue = Color(0xFF24569A);
     final rows = <(String, String)>[
       if (s.showTime) ('拍摄\r\n时间', '2026.10.18 星期日 08:39'),
       if (s.showWeather) ('天气', '晴 21℃ 东南风2级 湿度87%'),
@@ -307,7 +306,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            color: watermarkBlue.withValues(alpha: 0.84),
+            color: watermarkBlue,
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Row(
               children: [
@@ -332,10 +331,8 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                 Expanded(
                   child: Text(
                     s.unitTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.94),
+                      color: Colors.white,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                     ),
@@ -383,7 +380,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
             ),
           if (s.department.isNotEmpty)
             Container(
-              color: watermarkBlue.withValues(alpha: 0.84),
+              color: watermarkBlue,
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
               // 底条字号与正文一致；只把「拍摄单位：」加粗，与原生底条对应。
               child: Text.rich(
@@ -395,14 +392,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                     ),
                     TextSpan(
                       text: s.department,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.88),
-                      ),
+                      style: TextStyle(color: Colors.white),
                     ),
                   ],
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
@@ -455,8 +448,14 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
   }) {
     return SwitchListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(title, style: const TextStyle(fontSize: 14)),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      title: Text(
+        title,
+        style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      ),
       value: value,
       activeThumbColor: AppColors.textPrimary,
       activeTrackColor: AppColors.voice,

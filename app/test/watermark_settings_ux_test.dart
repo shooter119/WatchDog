@@ -4,8 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:watchdog/pages/watermark_settings_page.dart';
 import 'package:watchdog/services/watermark_settings.dart';
 
-Future<void> openPage(WidgetTester tester, {double scale = 1}) async {
-  SharedPreferences.setMockInitialValues({'unit_name': '衢州市消防救援支队'});
+Future<void> openPage(
+  WidgetTester tester, {
+  double scale = 1,
+  String unitName = '衢州市消防救援支队',
+}) async {
+  SharedPreferences.setMockInitialValues({'unit_name': unitName});
   await tester.pumpWidget(
     MaterialApp(
       builder: (context, child) => MediaQuery(
@@ -96,6 +100,35 @@ void main() {
     expect(find.text('晴 21℃ 东南风2级 湿度87%'), findsNothing);
   });
 
+  testWidgets('没有登录单位时明确提示抬头缺失', (tester) async {
+    await openPage(tester, unitName: '');
+    expect(find.text('未填写单位抬头'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).first, '临时支援单位');
+    await tester.pump();
+    expect(find.text('临时支援单位'), findsNWidgets(2));
+  });
+
+  testWidgets('预览蓝条白字对比度至少 4.5', (tester) async {
+    await openPage(tester);
+    final title = tester.widget<Text>(find.text('衢州市消防救援支队'));
+    final bar = tester.widget<Container>(
+      find
+          .ancestor(
+            of: find.text('衢州市消防救援支队'),
+            matching: find.byWidgetPredicate(
+              (w) => w is Container && w.color != null,
+            ),
+          )
+          .first,
+    );
+    final foreground = title.style!.color!.computeLuminance();
+    final background = bar.color!.computeLuminance();
+    expect(
+      (foreground + 0.05) / (background + 0.05),
+      greaterThanOrEqualTo(4.5),
+    );
+  });
+
   for (final scale in [1.5, 2.0]) {
     testWidgets('320dp 字号 $scale 全页无溢出', (tester) async {
       await tester.binding.setSurfaceSize(const Size(320, 800));
@@ -126,6 +159,13 @@ void main() {
       }
       await tester.drag(find.byType(ListView), const Offset(0, 5000));
       await tester.pumpAndSettle();
+      final title = tester.widget<Text>(
+        find.byWidgetPredicate(
+          (w) => w is Text && w.data == '很长的单位名称用于确认顶部蓝条在大字号下能够换行显示全部文字',
+        ),
+      );
+      expect(title.maxLines, isNull);
+      expect(title.overflow, isNot(TextOverflow.ellipsis));
       expect(tester.takeException(), isNull);
     });
   }
