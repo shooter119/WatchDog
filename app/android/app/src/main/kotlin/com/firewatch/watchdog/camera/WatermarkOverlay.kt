@@ -34,17 +34,22 @@ import kotlin.math.min
  */
 object WatermarkOverlay {
 
-    private const val CARD_WIDTH_RATIO = 0.50f
-    private const val MARGIN_RATIO = 0.018f
-    private const val HEADER_RATIO = 0.078f // 相对卡片宽度
-    private const val FOOTER_RATIO = 0.062f
-    private const val ROW_RATIO = 0.058f
-    private const val LABEL_COLUMN_RATIO = 0.175f
+    // 以下比例全部按现场水印相机参考图实测（原图 3264×2448）：
+    //   卡片 1052×704 → 宽占画面 32.2%、高占 28.8%
+    //   抬头 230、信息区 400（5 行，每行 80）、底条 68
+    //   左边距 56、底边距 68
+    private const val CARD_WIDTH_RATIO = 0.322f
+    private const val MARGIN_LEFT_RATIO = 0.017f
+    private const val MARGIN_BOTTOM_RATIO = 0.021f
+    private const val HEADER_RATIO = 0.219f // 相对卡片宽度
+    private const val FOOTER_RATIO = 0.065f
+    private const val ROW_RATIO = 0.076f
+    private const val LABEL_COLUMN_RATIO = 0.235f
 
     private val DEBUG_LOG = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    private val BLUE = Color.rgb(42, 114, 212)
-    private val CARD_BG = Color.WHITE
+    private val BLUE = Color.argb(238, 58, 122, 214) // 参考图抬头/底条的蓝
+    private val CARD_BG = Color.argb(204, 255, 255, 255) // 参考图为半透明白，能透出背景层次
     private val TEXT_MAIN = Color.rgb(26, 26, 26)
     private val EMBLEM_RED = Color.rgb(200, 16, 46)
 
@@ -180,16 +185,17 @@ object WatermarkOverlay {
         // 保证同一台设备拍出的照片与视频、以及不同机型之间的水印观感一致。
         val cardWidth = width * CARD_WIDTH_RATIO
         val rowRatio = ROW_RATIO
-        val margin = width * MARGIN_RATIO
+        val marginLeft = width * MARGIN_LEFT_RATIO
+        val marginBottom = width * MARGIN_BOTTOM_RATIO
         val headerHeight = cardWidth * HEADER_RATIO
         val footerHeight = if (model.department.isBlank()) 0f else cardWidth * FOOTER_RATIO
         val rowHeight = cardWidth * rowRatio
         val bodyHeight = rows.sumOf { (rowHeight * it.valueLines).toDouble() }.toFloat()
         val cardHeight = headerHeight + bodyHeight + footerHeight
 
-        val left = area.left + margin
+        val left = area.left + marginLeft
         // 卡片贴可见区域底部：竖屏录制时缓冲区底部才是画面底部
-        val top = area.bottom - margin - cardHeight
+        val top = area.bottom - marginBottom - cardHeight
         val card = RectF(left, top, left + cardWidth, top + cardHeight)
 
         drawCard(canvas, card, cardWidth)
@@ -265,7 +271,7 @@ object WatermarkOverlay {
         canvas.drawRect(card.left, card.top, card.right, card.top + headerHeight, headerPaint)
         canvas.restore()
 
-        val emblemSize = headerHeight * 0.92f
+        val emblemSize = headerHeight * 0.76f
         val emblemLeft = card.left + headerHeight * 0.10f
         val emblemTop = card.top + (headerHeight - emblemSize) / 2f
         if (model.showLogo) {
@@ -276,7 +282,7 @@ object WatermarkOverlay {
         val title = model.unitTitle.ifBlank { "现场影像" }
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            textSize = headerHeight * 0.44f
+            textSize = headerHeight * 0.40f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val available = card.right - textLeft - headerHeight * 0.20f
@@ -305,7 +311,7 @@ object WatermarkOverlay {
         }
         // 白色圆角底衬托，避免蓝色队徽与蓝色抬头条混在一起
         val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-        val padding = box.width() * 0.03f
+        val padding = box.width() * 0.05f
         canvas.drawRoundRect(
             RectF(box.left - padding, box.top - padding, box.right + padding, box.bottom + padding),
             box.width() * 0.08f,
@@ -404,7 +410,7 @@ object WatermarkOverlay {
 
             // 标签：两字一行，最多两行，居中对齐
             val labelLines = splitLabel(row.label)
-            labelPaint.textSize = rowHeight * 0.38f
+            labelPaint.textSize = rowHeight * 0.44f
             val lineHeight = labelPaint.textSize * 1.16f
             val labelBlockHeight = lineHeight * labelLines.size
             var labelY = centerY - labelBlockHeight / 2f + labelPaint.textSize
@@ -431,7 +437,7 @@ object WatermarkOverlay {
             // 值：按可用宽度自动字号，超长自动缩到两行上限
             val valueLeft = card.left + labelColumnWidth + cardWidth * 0.032f
             val maxValueWidth = card.right - valueLeft - cardWidth * 0.022f
-            valuePaint.textSize = rowHeight * 0.50f
+            valuePaint.textSize = rowHeight * 0.55f
             val lines = wrapText(row.value, valuePaint, maxValueWidth, maxLines = row.valueLines)
             val valueLineHeight = valuePaint.textSize * 1.24f
             val valueBlockHeight = valueLineHeight * lines.size
