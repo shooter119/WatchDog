@@ -58,12 +58,37 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   }
 
   Future<void> _purge() async {
+    final count = await MediaCaptureService.countExpired();
+    if (!mounted) return;
+    if (count == 0) {
+      _toast('没有超过保留期的文件');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('清理过期文件？'),
+        content: Text(
+          '将删除 $count 个超过 ${LocalMediaStore.retentionDays} 天的媒体文件，'
+          '删除后无法恢复。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清理'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     final removed = await MediaCaptureService.purgeExpired();
     await _load();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(removed == 0 ? '没有超过保留期的文件' : '已清理 $removed 个过期文件')),
-    );
+    _toast(removed == 0 ? '没有超过保留期的文件' : '已清理 $removed 个过期文件');
   }
 
   Future<void> _share(LocalMedia media) async {
@@ -111,6 +136,23 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
     await _load();
   }
 
+  /// 识别失败或中途离开后，可以从资料页重新触发，不必重新拍摄。
+  Future<void> _rederive(LocalMedia media) async {
+    _toast('正在重新识别口述…');
+    String? error;
+    final updated = await MediaCaptureService.derive(
+      media,
+      controller: widget.controller,
+      onError: (message) => error = message,
+    );
+    await _load();
+    if (!mounted) return;
+    _toast(
+      error ??
+          (updated.hasTranscript ? '识别完成，可在「查看与核对」里确认' : '没有识别到口述内容，可在核对页手动补写'),
+    );
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -140,22 +182,29 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   }
 
   Widget _empty() {
+    final hasIncident = (widget.controller.currentIncident?.id ?? '').isNotEmpty;
     return ListView(
       padding: const EdgeInsets.all(32),
-      children: const [
-        SizedBox(height: 60),
-        Icon(Icons.photo_library_outlined, size: 42, color: AppColors.textTertiary),
-        SizedBox(height: 12),
-        Text(
-          '还没有现场照片或录像',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.textSecondary),
+      children: [
+        const SizedBox(height: 60),
+        const Icon(
+          Icons.photo_library_outlined,
+          size: 42,
+          color: AppColors.textSecondary,
         ),
-        SizedBox(height: 6),
+        const SizedBox(height: 12),
         Text(
-          '在首页警情卡点「水印相机」拍摄，文件会保存在这台设备上',
+          hasIncident ? '还没有拍摄现场照片或录像' : '还没有当前警情',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          hasIncident
+              ? '在首页警情卡点「水印相机」拍摄，文件会保存在这台设备上'
+              : '先加入或新建警情，拍摄的现场资料会归到当前警情下',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ],
     );
@@ -199,13 +248,50 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                   : '照片',
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
-            subtitle: Text(
-              media.hasTranscript
-                  ? media.transcript
-                  : (media.address.isNotEmpty ? media.address : '未识别到口述内容'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (media.observationId.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.check_circle_rounded,
+                          size: 14,
+                          color: AppColors.online,
+                        ),
+                        SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            '已写入警情',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Text(
+                  media.hasTranscript
+                      ? media.transcript
+                      : (media.address.isNotEmpty
+                            ? media.address
+                            : '未识别到口述内容'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
             ),
             trailing: PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert_rounded),
@@ -217,6 +303,8 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                     CameraBridge.openWithSystem(media.path);
                   case 'share':
                     _share(media);
+                  case 'rederive':
+                    _rederive(media);
                   case 'attach':
                     _attach(media);
                   case 'delete':
@@ -225,6 +313,8 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'review', child: Text('查看与核对')),
+                if (media.isVideo && !media.hasTranscript)
+                  const PopupMenuItem(value: 'rederive', child: Text('重新识别口述')),
                 const PopupMenuItem(value: 'open', child: Text('用其他应用打开')),
                 const PopupMenuItem(value: 'share', child: Text('分享')),
                 if (media.incidentId.isEmpty)

@@ -74,39 +74,59 @@ class MediaCaptureService {
   /// 抽取音轨 → 本地识别 → 抽帧。任一步失败都不抛出，返回尽可能完整的结果。
   ///
   /// [onProgress] 用于界面上给出「正在识别…」的具体阶段，避免用户以为卡死。
+  /// [onError] 在识别失败时给出可展示的原因，界面据此提供「重试识别」；
+  /// [isCancelled] 在阶段之间检查，用户取消后不再写回识别结果。
   static Future<LocalMedia> derive(
     LocalMedia media, {
     required AppController controller,
     void Function(String stage)? onProgress,
+    void Function(String message)? onError,
+    bool Function()? isCancelled,
   }) async {
-    if (!media.isVideo || !File(media.path).existsSync()) return media;
-
-    onProgress?.call('正在提取音轨');
-    final wavPath = await CameraBridge.extractAudioWav(media.path);
-    var transcript = media.transcript;
-    var segments = media.segments;
-
-    if (wavPath != null && File(wavPath).existsSync()) {
-      onProgress?.call('正在识别口述内容');
-      try {
-        final bytes = await File(wavPath).readAsBytes();
-        final result = await controller.transcribeMediaAudio(bytes);
-        if (result.text.trim().isNotEmpty) {
-          transcript = result.text.trim();
-          segments = result.segments;
-        }
-      } catch (_) {
-        // 本地模型未安装或识别失败时保留空转写，用户仍可手动补写
-      } finally {
-        // WAV 只是中间产物，识别完即删，避免占空间
-        try {
-          await File(wavPath).delete();
-        } catch (_) {}
-      }
+    bool cancelled() => isCancelled?.call() ?? false;
+    if (!media.isVideo) return media;
+    if (!File(media.path).existsSync()) {
+      onError?.call('找不到视频文件，无法识别口述内容');
+      return media;
     }
 
-    onProgress?.call('正在提取关键画面');
-    final frames = await CameraBridge.extractFrames(media.path, count: 3);
+    var transcript = media.transcript;
+    var segments = media.segments;
+    var frames = media.frames;
+    try {
+      onProgress?.call('正在提取音轨');
+      final wavPath = await CameraBridge.extractAudioWav(media.path);
+      if (cancelled()) return media;
+
+      if (wavPath != null && File(wavPath).existsSync()) {
+        onProgress?.call('正在识别口述内容');
+        try {
+          final bytes = await File(wavPath).readAsBytes();
+          final result = await controller.transcribeMediaAudio(bytes);
+          if (result.text.trim().isNotEmpty) {
+            transcript = result.text.trim();
+            segments = result.segments;
+          }
+        } catch (_) {
+          // 本地模型未安装或识别失败时保留已有转写，用户仍可手动补写或重试
+          onError?.call('本地语音识别失败，可重试识别或手动补写口述');
+        } finally {
+          // WAV 只是中间产物，识别完即删，避免占空间
+          try {
+            await File(wavPath).delete();
+          } catch (_) {}
+        }
+      } else {
+        onError?.call('无法提取视频音轨，可重试识别或手动补写口述');
+      }
+      if (cancelled()) return media;
+
+      onProgress?.call('正在提取关键画面');
+      frames = await CameraBridge.extractFrames(media.path, count: 3);
+    } catch (error) {
+      onError?.call('识别失败：$error');
+    }
+    if (cancelled()) return media;
 
     await LocalMediaStore.instance.updateDerived(
       id: media.id,
@@ -117,6 +137,10 @@ class MediaCaptureService {
     final updated = await LocalMediaStore.instance.byId(media.id);
     return updated ?? media;
   }
+
+  /// 统计超期文件数量（默认 30 天），用于清理前的二次确认。
+  static Future<int> countExpired({int days = LocalMediaStore.retentionDays}) =>
+      LocalMediaStore.instance.countExpired(days: days);
 
   /// 清理过期媒体（默认 30 天），返回被删除的文件路径。
   static Future<int> purgeExpired({int days = LocalMediaStore.retentionDays}) async {
