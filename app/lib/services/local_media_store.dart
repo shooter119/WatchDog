@@ -269,6 +269,27 @@ class LocalMediaStore {
     await db.delete('local_media', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// 超期文件数量（含视频关键帧），用于清理前向用户确认。
+  Future<int> countExpired({int days = retentionDays, DateTime? now}) async {
+    final db = await _database;
+    final cutoff = (now ?? DateTime.now())
+        .subtract(Duration(days: days))
+        .millisecondsSinceEpoch;
+    final rows = await db.query(
+      'local_media',
+      columns: ['path', 'frames'],
+      where: 'captured_at < ?',
+      whereArgs: [cutoff],
+    );
+    return rows.fold<int>(0, (count, row) {
+      final path = (row['path'] as String?) ?? '';
+      final frames = LocalMedia._decodeFrames(row['frames'] as String?);
+      return count +
+          (path.isNotEmpty ? 1 : 0) +
+          frames.where((frame) => frame.isNotEmpty).length;
+    });
+  }
+
   /// 清理超期记录；文件删除失败时仍移除记录，避免数据库无限增长。
   Future<List<String>> purgeExpired({
     int days = retentionDays,

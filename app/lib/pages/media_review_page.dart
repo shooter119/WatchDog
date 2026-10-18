@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -31,46 +32,131 @@ class MediaReviewPage extends StatefulWidget {
 }
 
 class _MediaReviewPageState extends State<MediaReviewPage> {
+  static const Duration _draftDebounce = Duration(milliseconds: 400);
+
   late LocalMedia _media;
   late final TextEditingController _transcript;
+  Timer? _draftTimer;
+  String _lastText = '';
+  String _savedDraft = '';
   bool _busy = false;
   bool _deriving = false;
-  String _stage = '';
   bool _submitted = false;
+  String _stage = '';
+  String? _deriveError;
+  int _deriveRun = 0;
 
   @override
   void initState() {
     super.initState();
     _media = widget.media;
     _transcript = TextEditingController(text: _media.transcript);
+    _lastText = _media.transcript;
+    _savedDraft = _media.transcript;
+    _transcript.addListener(_onTranscriptChanged);
+    _submitted = widget.media.observationId.isNotEmpty;
     _deriving = widget.deriving;
-    if (_deriving) _runDerive();
+    if (_deriving) {
+      unawaited(_runDerive());
+    }
   }
 
   @override
   void dispose() {
+    _draftTimer?.cancel();
+    if (_transcript.text != _savedDraft) {
+      // 离开页面也把最后一段手动编辑落盘，避免草稿随页面一起丢失。
+      unawaited(_persistDraft());
+    }
+    _transcript.removeListener(_onTranscriptChanged);
     _transcript.dispose();
     super.dispose();
   }
 
+  void _onTranscriptChanged() {
+    final text = _transcript.text;
+    if (text == _lastText) return; // 仅光标移动，不触发保存与重建
+    _lastText = text;
+    _draftTimer?.cancel();
+    if (text != _savedDraft) {
+      _draftTimer = Timer(_draftDebounce, _persistDraft);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _persistDraft() async {
+    final text = _transcript.text;
+    if (text == _savedDraft) return;
+    try {
+      await LocalMediaStore.instance.updateDerived(
+        id: _media.id,
+        transcript: text,
+      );
+      _savedDraft = text;
+    } catch (_) {
+      // 本机存储暂不可用时保留内存内容，下次编辑或写入前会再次尝试。
+    }
+  }
+
+  Future<void> _flushDraft() async {
+    _draftTimer?.cancel();
+    _draftTimer = null;
+    await _persistDraft();
+  }
+
   Future<void> _runDerive() async {
-    final updated = await MediaCaptureService.derive(
-      _media,
-      controller: widget.controller,
-      onProgress: (stage) {
-        if (!mounted) return;
-        setState(() => _stage = stage);
-      },
-    );
-    if (!mounted) return;
+    final run = ++_deriveRun;
+    String? deriveError;
+    LocalMedia result;
+    try {
+      result = await MediaCaptureService.derive(
+        _media,
+        controller: widget.controller,
+        onProgress: (stage) {
+          if (!mounted || run != _deriveRun) return;
+          setState(() => _stage = stage);
+        },
+        onError: (message) => deriveError = message,
+        isCancelled: () => run != _deriveRun,
+      );
+    } catch (e) {
+      deriveError = '识别失败：$e';
+      result = _media;
+    }
+    if (!mounted || run != _deriveRun) return;
     setState(() {
-      _media = updated;
+      _media = result;
       _deriving = false;
       _stage = '';
-      if (_transcript.text.trim().isEmpty && updated.transcript.isNotEmpty) {
-        _transcript.text = updated.transcript;
-      }
+      _deriveError = deriveError;
     });
+    if (_transcript.text.trim().isEmpty && result.transcript.isNotEmpty) {
+      _transcript.text = result.transcript;
+    }
+  }
+
+  void _retryDerive() {
+    if (_deriving) return;
+    setState(() {
+      _deriving = true;
+      _deriveError = null;
+      _stage = '';
+    });
+    unawaited(_runDerive());
+  }
+
+  void _cancelDerive() {
+    _deriveRun++;
+    setState(() {
+      _deriving = false;
+      _stage = '';
+      _deriveError = null;
+    });
+    _toast('已取消识别，可随时重试');
+  }
+
+  void _dismissDeriveError() {
+    setState(() => _deriveError = null);
   }
 
   String get _timeText {
@@ -85,12 +171,47 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     return '视频 ${seconds}s';
   }
 
-  Future<void> _submit() async {
+  String get _incidentName {
+    final incident = widget.controller.currentIncident;
+    if (incident == null) return '';
+    final title = (incident.title ?? '').trim();
+    return title.isNotEmpty ? title : incident.number;
+  }
+
+  bool get _hasIncident =>
+      (widget.controller.currentIncident?.id ?? '').isNotEmpty;
+
+  bool get _hasText => _transcript.text.trim().isNotEmpty;
+
+  Future<void> _confirmAndSubmit() async {
+    if (_busy || _submitted || !_hasText || !_hasIncident) return;
     final text = _transcript.text.trim();
-    if (text.isEmpty) {
-      _toast('口述内容为空，没有可写入的现场记录');
-      return;
-    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('写入警情？'),
+        content: Text(
+          '将把核对后的口述写入「$_incidentName」。'
+          '写入后辅助问答会引用这段口述。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认写入'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _submit(text);
+  }
+
+  Future<void> _submit(String text) async {
+    if (_submitted || _busy) return;
     final incidentId = widget.controller.currentIncident?.id ?? '';
     if (incidentId.isEmpty) {
       _toast('还没有关联警情，先加入或新建警情才能写入');
@@ -98,7 +219,9 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     }
     final api = widget.controller.api;
     if (api == null) {
-      _toast('未连接服务器，当前仅保存在本机');
+      await _flushDraft();
+      if (!mounted) return;
+      _toast('未连接服务器，口述文字已保存在本机草稿，联网后可再写入');
       return;
     }
     setState(() => _busy = true);
@@ -114,6 +237,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
         transcript: text,
         observationId: _media.id,
       );
+      _savedDraft = text;
       if (!mounted) return;
       setState(() {
         _submitted = true;
@@ -122,9 +246,18 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       _toast('已写入警情，辅助问答会把它作为现场背景');
     } catch (error) {
       if (!mounted) return;
+      // 失败时内容仍保留在本机草稿里，用户重进页面不会丢。
+      await _flushDraft();
+      if (!mounted) return;
       setState(() => _busy = false);
-      _toast('写入失败：$error');
+      _toast('写入失败：$error；文字已保存在本机草稿');
     }
+  }
+
+  Future<void> _saveOnly() async {
+    await _flushDraft();
+    if (!mounted) return;
+    _toast('已保存在本机，可稍后在「现场资料」里补写口述');
   }
 
   Future<void> _share() async {
@@ -150,13 +283,40 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     }
   }
 
+  Future<void> _openPhotoViewer(String path) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _PhotoViewerPage(path: path),
+      ),
+    );
+  }
+
   void _removeSegment(LocalAsrSegment segment) {
-    final current = _transcript.text;
-    final next = current.replaceFirst(segment.text, '').trim();
-    setState(() {
-      _transcript.text = next;
-      _transcript.selection = TextSelection.collapsed(offset: next.length);
-    });
+    final before = _transcript.text;
+    final next = before.replaceFirst(segment.text, '').trim();
+    if (next == before) return;
+    _transcript.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('已删除该片段'),
+          action: SnackBarAction(
+            label: '撤销',
+            onPressed: () {
+              if (!mounted) return;
+              _transcript.value = TextEditingValue(
+                text: before,
+                selection: TextSelection.collapsed(offset: before.length),
+              );
+            },
+          ),
+        ),
+      );
   }
 
   void _toast(String message) {
@@ -181,12 +341,17 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
         children: [
-          if (_previewPath != null) _previewCard(_previewPath!),
-          if (_previewPath != null) const SizedBox(height: 14),
+          _mediaPreviewCard(),
+          const SizedBox(height: 14),
           _infoCard(),
           const SizedBox(height: 14),
-          if (_deriving) _derivingCard(),
-          if (!_deriving) ...[
+          if (_deriving)
+            _derivingCard()
+          else ...[
+            if (_deriveError != null) ...[
+              _deriveErrorCard(),
+              const SizedBox(height: 14),
+            ],
             _transcriptCard(),
             if (_media.frames.isNotEmpty) ...[
               const SizedBox(height: 14),
@@ -199,45 +364,78 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     );
   }
 
-  bool get _hasIncident =>
-      (widget.controller.currentIncident?.id ?? '').isNotEmpty;
-
-  String? get _previewPath {
-    if (!_media.isVideo) {
-      return File(_media.path).existsSync() ? _media.path : null;
-    }
+  String? get _firstFramePath {
     for (final frame in _media.frames) {
       if (File(frame).existsSync()) return frame;
     }
     return null;
   }
 
-  Widget _previewCard(String path) {
+  Widget _mediaPreviewCard() {
+    final isVideo = _media.isVideo;
+    final imagePath = isVideo ? _firstFramePath : _media.path;
+    final hasImage =
+        imagePath != null && imagePath.isNotEmpty && File(imagePath).existsSync();
+    final onTap = isVideo
+        ? _openMedia
+        : (hasImage ? () => _openPhotoViewer(_media.path) : null);
     return GestureDetector(
-      onTap: _openMedia,
+      onTap: onTap,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Stack(
           children: [
-            Image.file(
-              File(path),
-              height: 180,
+            SizedBox(
+              height: 220,
               width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                height: 180,
-                color: AppColors.surfaceSubtle,
-                child: const Icon(Icons.image_not_supported_outlined),
+              child: hasImage
+                  ? Image.file(
+                      File(imagePath),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _previewPlaceholder(isVideo),
+                    )
+                  : _previewPlaceholder(isVideo),
+            ),
+            if (isVideo)
+              Center(
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                ),
+              ),
+            Positioned(
+              right: 10,
+              bottom: 10,
+              child: _PreviewChip(
+                text: isVideo ? '播放视频' : '查看原图',
+                icon: isVideo
+                    ? Icons.play_circle_outline
+                    : Icons.zoom_out_map_rounded,
               ),
             ),
-            if (_media.isVideo)
-              const Positioned(
-                right: 10,
-                bottom: 10,
-                child: _VideoChip(),
-              ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _previewPlaceholder(bool isVideo) {
+    return Container(
+      color: AppColors.surfaceSubtle,
+      alignment: Alignment.center,
+      child: Icon(
+        isVideo ? Icons.videocam_rounded : Icons.photo_rounded,
+        size: 42,
+        color: AppColors.textSecondary,
       ),
     );
   }
@@ -261,16 +459,32 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                 color: AppColors.voice,
               ),
               const SizedBox(width: 6),
-              Text(
-                _durationText,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const Spacer(),
-              if (_submitted)
-                const Text(
-                  '已写入警情',
-                  style: TextStyle(fontSize: 12, color: AppColors.safe),
+              Expanded(
+                child: Text(
+                  _durationText,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
+              ),
+              if (_submitted) ...[
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 16,
+                  color: AppColors.online,
+                ),
+                const SizedBox(width: 4),
+                const Flexible(
+                  child: Text(
+                    '已写入警情',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
@@ -293,8 +507,8 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             ),
           const SizedBox(height: 6),
           const Text(
-            '文件只保存在本机，不会自动上传',
-            style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+            '原始文件只保存在本机；只有你核对后的文字会上传',
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -303,7 +517,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
 
   Widget _derivingCard() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
@@ -319,12 +533,79 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           const SizedBox(height: 12),
           Text(
             _stage.isEmpty ? '正在处理…' : _stage,
+            textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
           ),
           const SizedBox(height: 4),
           const Text(
             '识别在本机完成，不上传音频',
+            textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+          ),
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: _cancelDerive,
+            icon: const Icon(Icons.close_rounded, size: 18),
+            label: const Text('取消识别'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _deriveErrorCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Icon(
+                  Icons.error_outline_rounded,
+                  size: 18,
+                  color: AppColors.timeout,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _deriveError!,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textPrimary,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                TextButton(
+                  onPressed: _dismissDeriveError,
+                  child: const Text('手动填写'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _retryDerive,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('重试识别'),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -355,6 +636,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             style: const TextStyle(fontSize: 14, height: 1.5),
             decoration: InputDecoration(
               hintText: '没有识别到口述内容时，可以在这里手动补写',
+              hintStyle: const TextStyle(color: AppColors.textSecondary),
               filled: true,
               fillColor: AppColors.surfaceSubtle,
               border: OutlineInputBorder(
@@ -367,7 +649,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           if (segments.isNotEmpty) ...[
             const SizedBox(height: 10),
             const Text(
-              '按住片段可删除误识别内容',
+              '按住片段可删除误识别内容，删除后可撤销',
               style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
             ),
             const SizedBox(height: 6),
@@ -377,11 +659,15 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               children: [
                 for (final segment in segments)
                   GestureDetector(
+                    key: Key('segment-chip-${segment.startMs}'),
+                    behavior: HitTestBehavior.opaque,
                     onLongPress: () => _removeSegment(segment),
                     child: Container(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      alignment: Alignment.center,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
+                        horizontal: 12,
+                        vertical: 6,
                       ),
                       decoration: BoxDecoration(
                         color: AppColors.surfaceSubtle,
@@ -459,6 +745,45 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
   }
 
   Widget _actionBar() {
+    final primary = FilledButton.icon(
+      onPressed: _busy || _deriving || _submitted
+          ? null
+          : (!_hasText ? _saveOnly : (_hasIncident ? _confirmAndSubmit : null)),
+      icon: _busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : Icon(
+              _submitted
+                  ? Icons.check_rounded
+                  : (!_hasText
+                        ? Icons.save_outlined
+                        : Icons.check_rounded),
+              size: 18,
+            ),
+      label: Text(
+        _submitted
+            ? '已写入'
+            : (!_hasText
+                  ? '仅保存'
+                  : (_hasIncident ? '核对无误，写入警情' : '先加入警情才能写入')),
+        maxLines: 2,
+        textAlign: TextAlign.center,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+    final share = OutlinedButton.icon(
+      onPressed: _busy || _deriving ? null : _share,
+      icon: const Icon(Icons.ios_share_rounded, size: 18),
+      label: const Text('分享'),
+    );
+    // 大字号下并排按钮会挤压文案，改为上下排列并占满整行。
+    final stacked = MediaQuery.textScalerOf(context).scale(1) >= 1.4;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
       decoration: BoxDecoration(
@@ -467,46 +792,69 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            OutlinedButton.icon(
-              onPressed: _busy || _deriving ? null : _share,
-              icon: const Icon(Icons.ios_share_rounded, size: 18),
-              label: const Text('分享'),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _busy || _deriving || _submitted || !_hasIncident
-                    ? null
-                    : _submit,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.check_rounded, size: 18),
-                label: Text(
-                  _submitted
-                      ? '已写入'
-                      : (_hasIncident ? '核对无误，写入警情' : '先加入警情才能写入'),
-                ),
+        child: stacked
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(width: double.infinity, child: primary),
+                  const SizedBox(height: 8),
+                  SizedBox(width: double.infinity, child: share),
+                ],
+              )
+            : Row(
+                children: [
+                  share,
+                  const SizedBox(width: 10),
+                  Expanded(child: primary),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+/// 全屏查看照片原图，支持双指缩放。
+class _PhotoViewerPage extends StatelessWidget {
+  final String path;
+
+  const _PhotoViewerPage({required this.path});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: const Text('查看原图'),
+      ),
+      body: SafeArea(
+        child: InteractiveViewer(
+          minScale: 1,
+          maxScale: 5,
+          child: Center(
+            child: Image.file(
+              File(path),
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.image_not_supported_outlined,
+                color: Colors.white70,
+                size: 42,
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// 视频预览角标，提示这一帧来自录像首帧。
-class _VideoChip extends StatelessWidget {
-  const _VideoChip();
+/// 预览角标：照片提示可查看原图，视频提示可播放。
+class _PreviewChip extends StatelessWidget {
+  final String text;
+  final IconData icon;
+
+  const _PreviewChip({required this.text, required this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -516,12 +864,15 @@ class _VideoChip extends StatelessWidget {
         color: Colors.black54,
         borderRadius: BorderRadius.circular(20),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.play_circle_outline, size: 14, color: Colors.white),
-          SizedBox(width: 4),
-          Text('点击播放', style: TextStyle(color: Colors.white, fontSize: 11)),
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
         ],
       ),
     );
