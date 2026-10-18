@@ -95,6 +95,7 @@ class CameraSession(
     fun start() {
         if (started || disposed) return
         started = true
+        bindRetries = 0
         previewView.addOnLayoutChangeListener(layoutListener)
         startDisplayListener()
         val future = ProcessCameraProvider.getInstance(context)
@@ -218,24 +219,8 @@ class CameraSession(
 
     private fun currentRotation(): Int = previewView.display?.rotation ?: Surface.ROTATION_0
 
-    // 初始 attach/layout 与显示旋转只共用一个可取消任务；布局稳定后才首次绑定。
-    // 不再在 bind 完成后立即改 targetRotation，也不再用 300/900ms 定时补偿。
-    private val updateRotation = Runnable {
-        if (!disposed && provider != null && previewView.display != null &&
-            previewView.width > 0 && previewView.height > 0) {
-            // 此页面锁横屏。竖屏分支的 PlatformView 会在旋转时被替换，
-            // 不为这个即将销毁的视图创建短命的 effect / EGLContext。
-            if (preview == null && (context.resources.configuration.orientation !=
-                    Configuration.ORIENTATION_LANDSCAPE || previewView.width <= previewView.height)) {
-                return@Runnable
-            }
-            try {
-                if (preview == null) bind() else applyTargetRotation()
-            } catch (error: Exception) {
-                callbacks.onError("bind_failed", error.message ?: "相机初始化失败")
-            }
-        }
-    }
+    private var bindRetries = 0
+    private val maxBindRetries = 60 // 60 * 50ms = 3000ms 自愈轮询上限
 
     private fun isReadyForBind(): Boolean {
         if (disposed || provider == null || previewView.display == null) return false
@@ -245,6 +230,38 @@ class CameraSession(
             return false
         }
         return true
+    }
+
+    // 初始 attach/layout 与显示旋转只共用一个可取消任务；布局稳定后才首次绑定。
+    // 不再在 bind 完成后立即改 targetRotation，也不再用 300/900ms 定时补偿。
+    private val updateRotation: Runnable = Runnable {
+        if (disposed) return@Runnable
+        if (preview == null) {
+            if (!isReadyForBind()) {
+                // 条件尚未就绪，自愈重新排队轮询，直到就绪或超时
+                if (bindRetries < maxBindRetries) {
+                    bindRetries++
+                    mainHandler.removeCallbacks(updateRotation)
+                    mainHandler.postDelayed(updateRotation, 50)
+                } else {
+                    callbacks.onError("bind_timeout", "相机就绪超时：等待布局/横屏就绪超过 3 秒")
+                }
+                return@Runnable
+            }
+            try {
+                bind()
+            } catch (error: Exception) {
+                callbacks.onError("bind_failed", error.message ?: "相机初始化失败")
+            }
+        } else {
+            if (previewView.display != null && currentRotation() != lastAppliedRotation) {
+                try {
+                    applyTargetRotation()
+                } catch (error: Exception) {
+                    callbacks.onError("rotation_failed", error.message ?: "旋转更新失败")
+                }
+            }
+        }
     }
 
     private fun scheduleRotationUpdate(immediateIfReady: Boolean = false) {
@@ -417,6 +434,7 @@ class CameraSession(
         if (disposed) return
         disposed = true
         mainHandler.removeCallbacksAndMessages(null)
+        bindRetries = 0
         stopDisplayListener()
         previewView.removeOnLayoutChangeListener(layoutListener)
         val cameraProvider = provider
