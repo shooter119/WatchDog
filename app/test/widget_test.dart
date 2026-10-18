@@ -979,14 +979,16 @@ void main() {
       expect(find.text('归档警情'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('数据统计'));
       expect(find.text('数据统计'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('操作日志'));
+      expect(find.text('操作日志'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('单位常用队伍'));
+      expect(find.text('单位常用队伍'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('计算参数'));
       expect(find.text('计算参数'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('语音识别'));
       expect(find.text('语音识别'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('提醒方式'));
       expect(find.text('提醒方式'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('操作日志'));
-      expect(find.text('操作日志'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('服务连接'));
       expect(find.text('服务连接'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('版本更新'));
@@ -1023,6 +1025,37 @@ void main() {
         findsOneWidget,
       );
       expect(find.byIcon(Icons.local_fire_department_outlined), findsOneWidget);
+    });
+
+    testWidgets('身份栏与设置项高度、字号一致', (tester) async {
+      tester.view.physicalSize = const Size(1080, 4000);
+      tester.view.devicePixelRatio = 2.75;
+      addTearDown(tester.view.reset);
+      final c = _FakeController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('添加语音热词'));
+
+      const labels = ['未认证', '水印设置', '添加语音热词'];
+      for (final label in labels) {
+        final card = find
+            .ancestor(of: find.text(label), matching: find.byType(AppCard))
+            .first;
+        expect(
+          tester.getSize(card).height,
+          closeTo(66, 0.5),
+          reason: '$label 的设置项高度应与身份栏一致',
+        );
+        final text = tester.widget<Text>(find.text(label).first);
+        expect(text.style?.fontSize, 14, reason: '$label 的字号应与设置项一致');
+        expect(text.style?.fontWeight, FontWeight.w800);
+      }
     });
 
     testWidgets('现场资料卡在 320dp 大字号下纵向展开并保留数量信息', (tester) async {
@@ -3328,7 +3361,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('活动警情提供紧凑的力量及双导入入口', (tester) async {
+    testWidgets('活动警情提供登记力量及双导入入口', (tester) async {
       final c = _FakeController()
         ..currentIncident = const Incident(
           id: 'i1',
@@ -3349,6 +3382,8 @@ void main() {
             .first;
         expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
       }
+      // 水印相机已有首页悬浮主入口，展开工具栏不再重复。
+      expect(find.text('水印相机'), findsNothing);
     });
 
     testWidgets('窄屏放大字体下导入工具栏不溢出且保留触控范围', (tester) async {

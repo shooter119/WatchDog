@@ -896,101 +896,94 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildIdentityCard() {
     final name = _realName.text.trim().isEmpty ? '未认证' : _realName.text.trim();
     final unitName = _unitName.trim().isEmpty ? '未选择单位' : _unitName.trim();
+    // 与「水印设置」「添加语音热词」等设置项共用同一套行高与字号：
+    // 35dp 图标框 + 14/11 两级文字 + 至少 48dp 的行高。
     return AppCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 45,
-                height: 45,
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(
-                  Icons.person_outline,
-                  size: 24,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.caution.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(AppRadius.pill),
-                          ),
-                          child: Text(
-                            '单位',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            unitName,
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              height: 1.4,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (_unitAuthenticated)
-                IconButton(
-                  key: const Key('leave-unit'),
-                  onPressed: _saving ? null : _leaveUnit,
-                  tooltip: '退出当前单位',
-                  style: IconButton.styleFrom(
-                    foregroundColor: AppColors.alarm,
-                    backgroundColor: AppColors.alarm.withValues(alpha: 0.08),
-                    minimumSize: const Size(48, 48),
-                    fixedSize: const Size(48, 48),
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const _SettingsIconBox(icon: Icons.person_outline),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
                     ),
                   ),
-                  icon: const Icon(Icons.logout_rounded, size: 21),
+                  const SizedBox(height: 3),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.caution.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                        ),
+                        child: Text(
+                          '单位',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          unitName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (_unitAuthenticated) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                key: const Key('leave-unit'),
+                onPressed: _saving ? null : _leaveUnit,
+                tooltip: '退出当前单位',
+                style: IconButton.styleFrom(
+                  foregroundColor: AppColors.alarm,
+                  backgroundColor: AppColors.alarm.withValues(alpha: 0.08),
+                  minimumSize: const Size(48, 48),
+                  fixedSize: const Size(48, 48),
+                  padding: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
+                icon: const Icon(Icons.logout_rounded, size: 21),
+              ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1011,13 +1004,17 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       );
     }
-    return GridView.count(
-      crossAxisCount: 2,
+    final scale = MediaQuery.textScalerOf(context).scale(1.0);
+    return GridView(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 9,
-      mainAxisSpacing: 9,
-      childAspectRatio: 2.05,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 9,
+        mainAxisSpacing: 9,
+        // 与身份栏、水印设置等保持同一行高；大字号时允许按比例增高。
+        mainAxisExtent: (66 * scale.clamp(1.0, 1.25)).toDouble(),
+      ),
       children: cards,
     );
   }
@@ -1848,49 +1845,55 @@ class _SettingsShortcut extends StatelessWidget {
     return AppCard(
       onTap: onTap,
       padding: const EdgeInsets.all(11),
-      child: Row(
-        crossAxisAlignment: compact
-            ? CrossAxisAlignment.start
-            : CrossAxisAlignment.center,
-        children: [
-          _SettingsIconBox(icon: icon),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: compact ? 2 : 1,
-                  overflow: compact
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Row(
+          crossAxisAlignment: compact
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.center,
+          children: [
+            _SettingsIconBox(icon: icon),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: compact ? 2 : 1,
+                    overflow: compact
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  maxLines: compact ? 3 : 1,
-                  overflow: compact
-                      ? TextOverflow.visible
-                      : TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10, color: AppColors.textTertiary),
-                ),
-              ],
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: compact ? 3 : 1,
+                    overflow: compact
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 5),
-          Icon(
-            Icons.arrow_forward_outlined,
-            size: 15,
-            color: AppColors.textTertiary,
-          ),
-        ],
+            const SizedBox(width: 5),
+            Icon(
+              Icons.arrow_forward_outlined,
+              size: 15,
+              color: AppColors.textTertiary,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1917,41 +1920,45 @@ class _SettingsLinkCard extends StatelessWidget {
       opacity: enabled ? 1 : 0.45,
       child: AppCard(
         onTap: enabled ? onTap : null,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-        child: Row(
-          children: [
-            _SettingsIconBox(icon: icon),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Row(
+            children: [
+              _SettingsIconBox(icon: icon),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textTertiary,
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textTertiary,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Icon(
-              Icons.arrow_forward_outlined,
-              size: 16,
-              color: AppColors.textTertiary,
-            ),
-          ],
+              Icon(
+                Icons.arrow_forward_outlined,
+                size: 16,
+                color: AppColors.textTertiary,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2048,19 +2055,20 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
               child: InkWell(
                 excludeFromSemantics: true,
                 onTap: () => setState(() => _expanded = !_expanded),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 48),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 11,
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 44),
                     child: Row(
                       children: [
                         _SettingsIconBox(icon: widget.icon),
                         const SizedBox(width: 11),
                         Expanded(
                           child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
@@ -2076,7 +2084,7 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 11,
                                   color: AppColors.textTertiary,
                                 ),
                               ),
