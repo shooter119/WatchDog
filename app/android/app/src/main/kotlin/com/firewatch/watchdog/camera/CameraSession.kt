@@ -56,7 +56,6 @@ class CameraSession(
     private var preview: Preview? = null
     private var displayManager: DisplayManager? = null
     private var recording: Recording? = null
-    private var recordingStartedAt = 0L
     private var lensFacing = CameraSelector.LENS_FACING_BACK
     private var torchOn = false
     private var disposed = false
@@ -260,7 +259,6 @@ class CameraSession(
         val pending = capture.output.prepareRecording(context, options)
         if (hasAudioPermission()) pending.withAudioEnabled()
 
-        recordingStartedAt = System.currentTimeMillis()
         recording = pending.start(mainExecutor) { event ->
             when (event) {
                 is VideoRecordEvent.Start -> {
@@ -269,7 +267,7 @@ class CameraSession(
                 }
                 is VideoRecordEvent.Finalize -> {
                     mainHandler.removeCallbacks(stopAtLimit)
-                    val durationMs = System.currentTimeMillis() - recordingStartedAt
+                    val durationMs = event.recordingStats.recordedDurationNanos / 1_000_000
                     recording = null
                     if (event.hasError()) {
                         callbacks.onRecordingEvent(
