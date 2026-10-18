@@ -16,62 +16,87 @@ import kotlin.math.min
 /**
  * 现场水印版式（对齐消防通讯常用的水印相机样式）。
  *
- * 左下角一块白色信息卡：
+ * 左下角一块半透明白色信息卡：
  *   ┌───────────────────────────────┐
- *   │ [徽标]  单位全称（蓝底白字）      │
+ *   │ [徽标]  单位全称（半透明蓝底白字） │
  *   ├───────────────────────────────┤
- *   │ 拍摄  │ 2026.10.18 星期日 08:39 │
- *   │ 时间  │                         │
- *   │ 天气  │ 晴 21℃ 东南风2级 湿度87% │
- *   │ 地点  │ 衢州市 · 某某有限公司     │
- *   │ 经度  │ 东经 118°22′            │
- *   │ 纬度  │ 北纬 29°0′              │
+ *   │ 拍 摄 时 间：2026.10.18 星期日 08:39 │
+ *   │ 天      气：晴 21℃ 东南风2级 湿度87% │
+ *   │ 地      点：衢州市 · 某某有限公司     │
+ *   │ 经      度：东经 118°22′            │
+ *   │ 纬      度：北纬 29°0′              │
  *   ├───────────────────────────────┤
- *   │ 拍摄单位：…（蓝底白字）           │
+ *   │ 拍 摄 单 位：…（半透明蓝底白字）     │
  *   └───────────────────────────────┘
  *
- * 尺寸全部按画面宽度等比计算，720p / 1080p / 4K 观感一致。
+ * 版式要点（按现场参考图 3264×2448 实测）：
+ * - 卡片宽占画面 32.2%，抬头 232‰、信息行 76.5‰、底条 76‰（均相对卡片宽度）
+ * - 标签在固定列内按字符分散对齐，单行显示；数值从 296‰ 处开始
+ * - 抬头字号与正文同级，不再用整条抬头高度去撑字；底条字号与正文同级
+ * - 白色卡面、蓝色抬头/底条都保留透明度，能透出背景又保证文字可读
+ * - 所有尺寸只与画面宽度相关，720p / 1080p / 4K 以及照片、视频观感一致
  */
 object WatermarkOverlay {
 
-    // 以下比例全部按现场水印相机参考图实测（原图 3264×2448）：
-    //   卡片 1052×704 → 宽占画面 32.2%、高占 28.8%
-    //   抬头 230、信息区 400（5 行，每行 80）、底条 68
-    //   左边距 56、底边距 68
     private const val CARD_WIDTH_RATIO = 0.322f
     private const val MARGIN_LEFT_RATIO = 0.017f
-    private const val MARGIN_BOTTOM_RATIO = 0.021f
-    private const val HEADER_RATIO = 0.219f // 相对卡片宽度
-    private const val FOOTER_RATIO = 0.065f
-    private const val ROW_RATIO = 0.076f
-    private const val LABEL_COLUMN_RATIO = 0.235f
+    private const val MARGIN_BOTTOM_RATIO = 0.017f
+    private const val HEADER_RATIO = 0.232f
+    private const val FOOTER_RATIO = 0.076f
+    private const val ROW_RATIO = 0.0765f
+    private const val CORNER_RATIO = 0.026f
+
+    /** 标签列：首字左边缘、末字右边缘、冒号与数值起点，均为卡片宽度的占比。 */
+    private const val LABEL_LEFT_RATIO = 0.040f
+    private const val LABEL_RIGHT_RATIO = 0.245f
+    private const val COLON_RATIO = 0.262f
+    private const val VALUE_LEFT_RATIO = 0.296f
+    private const val VALUE_RIGHT_PADDING_RATIO = 0.018f
+
+    /** 卡片最多占可见高度的比例，全字段换行时也不会顶出画面上沿。 */
+    private const val MAX_CARD_HEIGHT_RATIO = 0.62f
+
+    /** 照片与录像统一按 16:9 裁剪；水印必须落在两种比例都保留的安全区内。 */
+    private const val TARGET_ASPECT = 16f / 9f
 
     private val DEBUG_LOG = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    private val BLUE = Color.argb(238, 58, 122, 214) // 参考图抬头/底条的蓝
-    private val CARD_BG = Color.argb(204, 255, 255, 255) // 参考图为半透明白，能透出背景层次
-    private val TEXT_MAIN = Color.rgb(26, 26, 26)
+    // 半透明配色：白卡和蓝条都要能透出背景，同时保持黑字/白字的对比度。
+    private val BLUE = Color.argb(212, 58, 122, 214)
+    private val CARD_BG = Color.argb(158, 255, 255, 255)
+    private val TEXT_MAIN = Color.argb(236, 24, 24, 24)
+    private val TITLE_TEXT = Color.argb(236, 255, 255, 255)
+    private val FOOTER_LABEL = Color.argb(250, 255, 255, 255)
+    private val FOOTER_VALUE = Color.argb(218, 255, 255, 255)
+    private val DIVIDER = Color.argb(26, 0, 0, 0)
     private val EMBLEM_RED = Color.rgb(200, 16, 46)
 
     private data class Row(
         val label: String,
         val value: String,
-        val valueLines: Int = 1,
+        val maxLines: Int = 1,
     )
 
-    /**
-     * 在相机帧上绘制水印。
-     *
-     * 坐标系问题：OverlayEffect 回调拿到的 Canvas 是**传感器缓冲区坐标**（通常是横向
-     * 1280×960），而预览要按 rotationDegrees 旋转后才竖屏显示。直接在缓冲区坐标里排版，
-     * 水印会整体转 90° 甚至倒置。
-     *
-     * 做法：先在「直立坐标系」渲染成一张位图（排版逻辑因此保持直观），再用矩阵把它
-     * 旋转贴到帧上。水印内容在拍摄期间是冻结的，位图按内容缓存，每帧只是贴图，开销很小。
-     */
+    private data class RowLayout(
+        val row: Row,
+        val lines: List<String>,
+        val height: Float,
+    )
+
+    private data class CardMetrics(
+        val cardWidth: Float,
+        val headerHeight: Float,
+        val rowHeight: Float,
+        val bodyHeight: Float,
+        val footerHeight: Float,
+        val cardHeight: Float,
+        val rows: List<RowLayout>,
+    )
+
     /** 由宿主在启动时注入 Application 上下文，用于解码队徽资源。 */
     @Volatile
     private var appContext: android.content.Context? = null
+
     @Volatile
     private var appPackageName: String = ""
 
@@ -137,8 +162,8 @@ object WatermarkOverlay {
         var minX = corners[0]; var maxX = corners[0]
         var minY = corners[1]; var maxY = corners[1]
         for (i in 2 until corners.size step 2) {
-            minX = kotlin.math.min(minX, corners[i]); maxX = kotlin.math.max(maxX, corners[i])
-            minY = kotlin.math.min(minY, corners[i + 1]); maxY = kotlin.math.max(maxY, corners[i + 1])
+            minX = min(minX, corners[i]); maxX = kotlin.math.max(maxX, corners[i])
+            minY = min(minY, corners[i + 1]); maxY = kotlin.math.max(maxY, corners[i + 1])
         }
         val visible = if (maxX - minX <= 1f || maxY - minY <= 1f) {
             RectF(0f, 0f, uprightWidth.toFloat(), uprightHeight.toFloat())
@@ -197,45 +222,112 @@ object WatermarkOverlay {
     }
 
     private fun drawInArea(canvas: Canvas, model: WatermarkModel, area: RectF) {
-        val width = area.width()
-        if (width <= 0f) return
+        if (area.width() <= 0f || area.height() <= 0f) return
 
         val rows = buildRows(model)
         if (rows.isEmpty() && model.unitTitle.isBlank() && model.department.isBlank()) return
 
-        // 固定比例：信息卡的尺寸只与画面宽度相关，不随横竖屏或分辨率改变，
-        // 保证同一台设备拍出的照片与视频、以及不同机型之间的水印观感一致。
-        val cardWidth = width * CARD_WIDTH_RATIO
-        val rowRatio = ROW_RATIO
-        val marginLeft = width * MARGIN_LEFT_RATIO
-        val marginBottom = width * MARGIN_BOTTOM_RATIO
-        val headerHeight = cardWidth * HEADER_RATIO
-        val footerHeight = if (model.department.isBlank()) 0f else cardWidth * FOOTER_RATIO
-        val rowHeight = cardWidth * rowRatio
-        val bodyHeight = rows.sumOf { (rowHeight * it.valueLines).toDouble() }.toFloat()
-        val cardHeight = headerHeight + bodyHeight + footerHeight
+        // 相机缓冲区可能是 4:3，而成片按 16:9 裁剪；直接在缓冲区底部画，
+        // 预览里完整的卡片到了照片里会被裁掉下半截。这里先把 16:9 安全区
+        // 算出来，卡片贴着安全区底部，照片、视频和预览都能完整看到。
+        val safe = safeArea(area)
 
-        val left = area.left + marginLeft
-        // 卡片贴可见区域底部：竖屏录制时缓冲区底部才是画面底部
-        val top = area.bottom - marginBottom - cardHeight
-        val card = RectF(left, top, left + cardWidth, top + cardHeight)
-
-        drawCard(canvas, card, cardWidth)
-        drawHeader(canvas, model, card, cardWidth, headerHeight)
-        drawBody(canvas, rows, card, cardWidth, headerHeight, rowHeight)
-        if (footerHeight > 0f) {
-            drawFooter(canvas, model, card, cardWidth, headerHeight + bodyHeight, footerHeight)
+        var metrics = measureCard(rows, model, safe.width() * CARD_WIDTH_RATIO)
+        // 所有字段都开、地址和天气又换行时卡片会明显变高；按可见高度兜底
+        // 等比缩小，保证信息完整落在画面内，不被上沿或提示条截断。
+        val maxCardHeight = safe.height() * MAX_CARD_HEIGHT_RATIO
+        if (metrics.cardHeight > maxCardHeight && metrics.cardHeight > 0f) {
+            metrics = measureCard(
+                rows,
+                model,
+                safe.width() * CARD_WIDTH_RATIO * (maxCardHeight / metrics.cardHeight),
+            )
         }
+
+        val cardWidth = metrics.cardWidth
+        val marginLeft = safe.width() * MARGIN_LEFT_RATIO
+        val marginBottom = safe.width() * MARGIN_BOTTOM_RATIO
+        val left = (safe.left + marginLeft).coerceAtLeast(area.left)
+        val top = safe.bottom - marginBottom - metrics.cardHeight
+        val card = RectF(left, top, left + cardWidth, top + metrics.cardHeight)
+
+        drawShadow(canvas, card, cardWidth)
+        drawHeader(canvas, model, card, cardWidth, metrics.headerHeight)
+        drawBodyBackground(canvas, card, cardWidth, metrics)
+        drawBody(canvas, metrics, card)
+        if (metrics.footerHeight > 0f) {
+            drawFooter(canvas, model, card, metrics)
+        }
+    }
+
+    /** 取画面内居中的 16:9 区域：照片、录像与预览三者都能看到的范围。 */
+    private fun safeArea(area: RectF): RectF {
+        val aspect = area.width() / area.height()
+        return if (aspect > TARGET_ASPECT) {
+            val width = area.height() * TARGET_ASPECT
+            RectF(
+                area.centerX() - width / 2f,
+                area.top,
+                area.centerX() + width / 2f,
+                area.bottom,
+            )
+        } else {
+            val height = area.width() / TARGET_ASPECT
+            RectF(
+                area.left,
+                area.centerY() - height / 2f,
+                area.right,
+                area.centerY() + height / 2f,
+            )
+        }
+    }
+
+    /**
+     * 先按卡片宽度算出字号并真实换行，再按实际行数定行高。
+     *
+     * 旧版用字符数阈值预判两行（天气 >18 字、地址 >20 字），即使文字明明
+     * 放得下一行也把行高翻倍，卡片被撑高、信息反而更容易被裁。
+     */
+    private fun measureCard(
+        rows: List<Row>,
+        model: WatermarkModel,
+        requestedWidth: Float,
+    ): CardMetrics {
+        val cardWidth = requestedWidth.coerceAtLeast(1f)
+        val headerHeight = cardWidth * HEADER_RATIO
+        val rowHeight = cardWidth * ROW_RATIO
+        val valueFont = rowHeight * 0.58f
+        val valuePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = TEXT_MAIN
+            textSize = valueFont
+            typeface = Typeface.DEFAULT
+        }
+        val maxValueWidth = cardWidth * (1f - VALUE_LEFT_RATIO - VALUE_RIGHT_PADDING_RATIO)
+        val layouts = rows.map { row ->
+            val lines = wrapText(row.value, valuePaint, maxValueWidth, row.maxLines)
+            RowLayout(row, lines, rowHeight * lines.size)
+        }
+        val bodyHeight = layouts.sumOf { it.height.toDouble() }.toFloat()
+        val footerHeight = if (model.department.isBlank()) 0f else cardWidth * FOOTER_RATIO
+        return CardMetrics(
+            cardWidth = cardWidth,
+            headerHeight = headerHeight,
+            rowHeight = rowHeight,
+            bodyHeight = bodyHeight,
+            footerHeight = footerHeight,
+            cardHeight = headerHeight + bodyHeight + footerHeight,
+            rows = layouts,
+        )
     }
 
     private fun buildRows(model: WatermarkModel): List<Row> {
         val rows = mutableListOf<Row>()
         if (model.showTime) rows.add(Row("拍摄时间", model.dateText))
         if (model.showWeather && model.weather.isNotBlank()) {
-            rows.add(Row("天气", model.weather, valueLines = if (model.weather.length > 18) 2 else 1))
+            rows.add(Row("天气", model.weather, maxLines = 2))
         }
         if (model.showLocation && model.address.isNotBlank()) {
-            rows.add(Row("地点", model.address, valueLines = if (model.address.length > 20) 2 else 1))
+            rows.add(Row("地点", model.address, maxLines = 2))
         }
         if (model.showCoordinates && model.latitude != null && model.longitude != null) {
             rows.add(Row("经度", longitudeText(model)))
@@ -257,19 +349,23 @@ object WatermarkOverlay {
         return "$prefix ${WatermarkModel.dms(lat)}"
     }
 
-    private fun drawCard(canvas: Canvas, card: RectF, cardWidth: Float) {
-        val radius = cardWidth * 0.030f
+    /** 卡片投影；卡面本身是半透明的，投影只负责和背景拉开层次。 */
+    private fun drawShadow(canvas: Canvas, card: RectF, cardWidth: Float) {
+        val radius = cardWidth * CORNER_RATIO
         val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(60, 0, 0, 0)
+            color = Color.argb(52, 0, 0, 0)
         }
         canvas.drawRoundRect(
-            RectF(card.left + cardWidth * 0.004f, card.top + cardWidth * 0.006f, card.right, card.bottom),
+            RectF(
+                card.left + cardWidth * 0.004f,
+                card.top + cardWidth * 0.006f,
+                card.right,
+                card.bottom,
+            ),
             radius,
             radius,
             shadow,
         )
-        val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = CARD_BG }
-        canvas.drawRoundRect(card, radius, radius, background)
     }
 
     private fun drawHeader(
@@ -279,42 +375,87 @@ object WatermarkOverlay {
         cardWidth: Float,
         headerHeight: Float,
     ) {
-        val radius = cardWidth * 0.030f
+        val radius = cardWidth * CORNER_RATIO
         val clip = Path().apply {
             addRoundRect(
-                RectF(card.left, card.top, card.right, card.top + headerHeight + radius),
+                RectF(card.left, card.top, card.right, card.top + headerHeight),
                 floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f),
                 Path.Direction.CW,
             )
         }
         canvas.save()
         canvas.clipPath(clip)
-        val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLUE }
-        canvas.drawRect(card.left, card.top, card.right, card.top + headerHeight, headerPaint)
+        canvas.drawRect(
+            card.left,
+            card.top,
+            card.right,
+            card.top + headerHeight,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLUE },
+        )
         canvas.restore()
 
-        val emblemSize = headerHeight * 0.76f
+        val emblemSize = headerHeight * 0.70f
         val emblemLeft = card.left + headerHeight * 0.10f
         val emblemTop = card.top + (headerHeight - emblemSize) / 2f
         if (model.showLogo) {
-            drawEmblem(canvas, RectF(emblemLeft, emblemTop, emblemLeft + emblemSize, emblemTop + emblemSize))
+            drawEmblem(
+                canvas,
+                RectF(emblemLeft, emblemTop, emblemLeft + emblemSize, emblemTop + emblemSize),
+            )
         }
 
-        val textLeft = if (model.showLogo) emblemLeft + emblemSize + headerHeight * 0.22f else card.left + headerHeight * 0.22f
-        val title = model.unitTitle.ifBlank { "现场影像" }
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = headerHeight * 0.40f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        val textLeft = if (model.showLogo) {
+            // 白底队徽比徽标本体大 5%，留一点余量后再起排
+            emblemLeft + emblemSize * 1.10f + cardWidth * 0.020f
+        } else {
+            card.left + cardWidth * 0.040f
         }
-        val available = card.right - textLeft - headerHeight * 0.20f
-        val shown = if (paint.measureText(title) > available) {
-            TextUtils.ellipsize(title, paint, available, TextUtils.TruncateAt.END).toString()
+        val textRight = card.right - cardWidth * 0.025f
+        val available = (textRight - textLeft).coerceAtLeast(0f)
+        if (available <= 0f) return
+
+        // 抬头字号与正文同级：旧版 0.40×抬头高度会让 13 个字的单位名
+        // 撑满整条蓝带，既压住队徽，也和下方信息头重脚轻。
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = TITLE_TEXT
+            textSize = min(cardWidth * 0.046f, headerHeight * 0.34f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        val title = model.unitTitle.ifBlank { "现场影像" }
+        val measured = titlePaint.measureText(title)
+        val shown = if (measured > available) {
+            TextUtils.ellipsize(title, titlePaint, available, TextUtils.TruncateAt.END).toString()
         } else {
             title
         }
-        val baseline = card.top + headerHeight / 2f - (paint.ascent() + paint.descent()) / 2f
-        canvas.drawText(shown, textLeft, baseline, paint)
+        val shownWidth = if (shown === title) measured else titlePaint.measureText(shown)
+        // 文字在「队徽右侧到卡片右缘」之间居中，与参考图的视觉重心一致
+        val x = if (measured > available) textLeft else textLeft + (available - shownWidth) / 2f
+        val baseline = card.top + headerHeight / 2f -
+            (titlePaint.ascent() + titlePaint.descent()) / 2f
+        canvas.drawText(shown, x, baseline, titlePaint)
+    }
+
+    /** 信息区半透明白底；抬头和底条自己带蓝底，不能先铺一层白再叠蓝，否则透明度叠加会发闷。 */
+    private fun drawBodyBackground(canvas: Canvas, card: RectF, cardWidth: Float, metrics: CardMetrics) {
+        val radius = cardWidth * CORNER_RATIO
+        val top = card.top + metrics.headerHeight
+        val bottom = card.bottom - metrics.footerHeight
+        if (bottom <= top) return
+        val bottomRadius = if (metrics.footerHeight > 0f) 0f else radius
+        val path = Path().apply {
+            addRoundRect(
+                RectF(card.left, top, card.right, bottom),
+                floatArrayOf(
+                    0f, 0f,
+                    0f, 0f,
+                    bottomRadius, bottomRadius,
+                    bottomRadius, bottomRadius,
+                ),
+                Path.Direction.CW,
+            )
+        }
+        canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = CARD_BG })
     }
 
     /**
@@ -331,7 +472,7 @@ object WatermarkOverlay {
             drawEmblemFallback(canvas, box)
             return
         }
-        // 白色圆角底衬托，避免蓝色队徽与蓝色抬头条混在一起
+        // 白色圆角底衬托，避免蓝色队徽与半透明蓝色抬头条混在一起
         val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
         val padding = box.width() * 0.05f
         canvas.drawRoundRect(
@@ -351,6 +492,7 @@ object WatermarkOverlay {
 
     @Volatile
     private var cachedEmblem: Bitmap? = null
+
     @Volatile
     private var emblemLoaded = false
 
@@ -402,76 +544,45 @@ object WatermarkOverlay {
         )
     }
 
-    private fun drawBody(
-        canvas: Canvas,
-        rows: List<Row>,
-        card: RectF,
-        cardWidth: Float,
-        headerHeight: Float,
-        rowHeight: Float,
-    ) {
-        if (rows.isEmpty()) return
-        val labelColumnWidth = cardWidth * LABEL_COLUMN_RATIO
+    private fun drawBody(canvas: Canvas, metrics: CardMetrics, card: RectF) {
+        val layouts = metrics.rows
+        if (layouts.isEmpty()) return
+        val cardWidth = metrics.cardWidth
         val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = TEXT_MAIN
+            textSize = metrics.rowHeight * 0.58f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val valuePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = TEXT_MAIN
+            textSize = metrics.rowHeight * 0.58f
             typeface = Typeface.DEFAULT
         }
         val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(38, 0, 0, 0)
-            strokeWidth = cardWidth * 0.0025f
+            color = DIVIDER
+            strokeWidth = (cardWidth * 0.0022f).coerceAtLeast(1f)
         }
 
-        var cursor = card.top + headerHeight
-        rows.forEachIndexed { index, row ->
-            val height = rowHeight * row.valueLines
-            val centerY = cursor + height / 2f
+        var cursor = card.top + metrics.headerHeight
+        layouts.forEachIndexed { index, layout ->
+            val centerY = cursor + layout.height / 2f
+            drawLabel(canvas, layout.row.label, card, cardWidth, centerY, labelPaint)
 
-            // 标签：两字一行，最多两行，居中对齐
-            val labelLines = splitLabel(row.label)
-            labelPaint.textSize = rowHeight * 0.44f
-            val lineHeight = labelPaint.textSize * 1.16f
-            val labelBlockHeight = lineHeight * labelLines.size
-            var labelY = centerY - labelBlockHeight / 2f + labelPaint.textSize
-            labelLines.forEach { line ->
-                val lineWidth = labelPaint.measureText(line)
-                canvas.drawText(
-                    line,
-                    card.left + (labelColumnWidth - lineWidth) / 2f + cardWidth * 0.012f,
-                    labelY,
-                    labelPaint,
-                )
-                labelY += lineHeight
-            }
+            val baseline = centerY - (labelPaint.ascent() + labelPaint.descent()) / 2f
+            canvas.drawText("：", card.left + cardWidth * COLON_RATIO, baseline, labelPaint)
 
-            // 分隔竖线
-            canvas.drawLine(
-                card.left + labelColumnWidth + cardWidth * 0.014f,
-                cursor + height * 0.18f,
-                card.left + labelColumnWidth + cardWidth * 0.014f,
-                cursor + height * 0.82f,
-                dividerPaint,
-            )
-
-            // 值：按可用宽度自动字号，超长自动缩到两行上限
-            val valueLeft = card.left + labelColumnWidth + cardWidth * 0.032f
-            val maxValueWidth = card.right - valueLeft - cardWidth * 0.022f
-            valuePaint.textSize = rowHeight * 0.55f
-            val lines = wrapText(row.value, valuePaint, maxValueWidth, maxLines = row.valueLines)
-            val valueLineHeight = valuePaint.textSize * 1.24f
-            val valueBlockHeight = valueLineHeight * lines.size
+            // 数值：测量的行数与绘制保持一致，多行时整块垂直居中
+            val valueLineHeight = valuePaint.textSize * 1.20f
+            val valueBlockHeight = valueLineHeight * layout.lines.size
             var valueY = centerY - valueBlockHeight / 2f + valuePaint.textSize
-            lines.forEach { line ->
+            val valueLeft = card.left + cardWidth * VALUE_LEFT_RATIO
+            layout.lines.forEach { line ->
                 canvas.drawText(line, valueLeft, valueY, valuePaint)
                 valueY += valueLineHeight
             }
 
-            cursor += height
-
-            if (index < rows.size - 1) {
+            cursor += layout.height
+            if (index < layouts.size - 1) {
                 canvas.drawLine(
                     card.left + cardWidth * 0.018f,
                     cursor,
@@ -483,22 +594,17 @@ object WatermarkOverlay {
         }
     }
 
-    private fun drawFooter(
-        canvas: Canvas,
-        model: WatermarkModel,
-        card: RectF,
-        cardWidth: Float,
-        bodyBottom: Float,
-        footerHeight: Float,
-    ) {
+    private fun drawFooter(canvas: Canvas, model: WatermarkModel, card: RectF, metrics: CardMetrics) {
+        val cardWidth = metrics.cardWidth
+        val footerHeight = metrics.footerHeight
+        if (footerHeight <= 0f) return
+
         // bodyBottom 是相对卡片顶部的偏移，必须加上 card.top 才是画布坐标。
-        // 漏加这一步会把底条从 y=偏移量 一路铺到卡底，把抬头和信息区整片盖成蓝色；
-        // 而且只有在配置了「拍摄单位」时才复现（footerHeight 为 0 时这段根本不执行）。
-        val top = card.top + bodyBottom
-        val radius = cardWidth * 0.030f
+        val top = card.top + metrics.headerHeight + metrics.bodyHeight
+        val radius = cardWidth * CORNER_RATIO
         val clip = Path().apply {
             addRoundRect(
-                RectF(card.left, top - radius, card.right, card.bottom),
+                RectF(card.left, top, card.right, card.bottom),
                 floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius),
                 Path.Direction.CW,
             )
@@ -514,33 +620,75 @@ object WatermarkOverlay {
         )
         canvas.restore()
 
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = footerHeight * 0.52f
+        // 底条与信息行共用同一套标签列、冒号和数值起点：字号和正文同级，
+        // 不再像旧版那样只有正文的 0.52，远看几乎糊成一条线。
+        val font = min(footerHeight * 0.70f, metrics.rowHeight * 0.58f)
+        val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = FOOTER_LABEL
+            textSize = font
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        val valuePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = FOOTER_VALUE
+            textSize = font
             typeface = Typeface.DEFAULT
         }
-        val labelWidth = paint.measureText("拍摄单位：")
-        val text = "拍摄单位：${model.department}"
-        val available = card.right - card.left - cardWidth * 0.06f
-        val shown = if (paint.measureText(text) > available) {
-            val room = available - labelWidth
-            val dept = TextUtils.ellipsize(
-                model.department,
-                paint,
-                room.coerceAtLeast(0f),
-                TextUtils.TruncateAt.END,
-            ).toString()
-            "拍摄单位：$dept"
-        } else {
-            text
-        }
-        val baseline = top + footerHeight / 2f - (paint.ascent() + paint.descent()) / 2f
-        canvas.drawText(shown, card.left + cardWidth * 0.030f, baseline, paint)
+        val centerY = top + footerHeight / 2f
+        drawLabel(canvas, "拍摄单位", card, cardWidth, centerY, labelPaint)
+
+        val baseline = centerY - (labelPaint.ascent() + labelPaint.descent()) / 2f
+        canvas.drawText("：", card.left + cardWidth * COLON_RATIO, baseline, labelPaint)
+
+        val valueLeft = card.left + cardWidth * VALUE_LEFT_RATIO
+        val available = card.right - valueLeft - cardWidth * VALUE_RIGHT_PADDING_RATIO
+        if (available <= 0f) return
+        val shown = TextUtils.ellipsize(
+            model.department,
+            valuePaint,
+            available,
+            TextUtils.TruncateAt.END,
+        ).toString()
+        canvas.drawText(shown, valueLeft, baseline, valuePaint)
     }
 
-    private fun splitLabel(label: String): List<String> {
-        if (label.length <= 2) return label.map { it.toString() }
-        return listOf(label.substring(0, 2), label.substring(2))
+    /** 标签在固定列内按字符分散对齐（「拍 摄 时 间」「天    气」），单行居中。 */
+    private fun drawLabel(
+        canvas: Canvas,
+        label: String,
+        card: RectF,
+        cardWidth: Float,
+        centerY: Float,
+        paint: TextPaint,
+    ) {
+        if (label.isEmpty()) return
+        val left = card.left + cardWidth * LABEL_LEFT_RATIO
+        val right = card.left + cardWidth * LABEL_RIGHT_RATIO
+        val baseline = centerY - (paint.ascent() + paint.descent()) / 2f
+        val chars = label.toCharArray()
+        if (chars.size == 1) {
+            val width = paint.measureText(label)
+            canvas.drawText(label, (left + right - width) / 2f, baseline, paint)
+            return
+        }
+        val widths = FloatArray(chars.size) { paint.measureText(chars[it].toString()) }
+        val total = widths.sum()
+        val gap = (right - left - total) / (chars.size - 1)
+        if (gap < 0f) {
+            // 标签本身超长时退回左对齐并省略，避免压到数值区
+            val shown = TextUtils.ellipsize(
+                label,
+                paint,
+                right - left,
+                TextUtils.TruncateAt.END,
+            ).toString()
+            canvas.drawText(shown, left, baseline, paint)
+            return
+        }
+        var x = left
+        chars.forEachIndexed { index, char ->
+            canvas.drawText(char.toString(), x, baseline, paint)
+            x += widths[index] + gap
+        }
     }
 
     private fun wrapText(text: String, paint: TextPaint, maxWidth: Float, maxLines: Int): List<String> {

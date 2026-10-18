@@ -426,51 +426,74 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     final onTap = isVideo
         ? _openMedia
         : (hasImage ? () => _openPhotoViewer(_media.path) : null);
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          children: [
-            SizedBox(
-              height: 220,
-              width: double.infinity,
-              child: hasImage
-                  ? Image.file(
-                      File(imagePath),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _previewPlaceholder(isVideo),
-                    )
-                  : _previewPlaceholder(isVideo),
-            ),
-            if (isVideo)
-              Center(
-                child: Container(
-                  width: 64,
-                  height: 64,
-                  decoration: const BoxDecoration(
-                    color: Colors.black54,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: 36,
-                  ),
+    // 核对页要能看见烧进画面的水印，不能用 cover 把下半截裁掉。
+    // 用 16:9 的原比例整张显示（横向最多 220 高，竖屏按容器宽度），
+    // 竖屏和横屏都能完整看到左下角水印，又不会把下方口述区挤出首屏。
+    return Center(
+      child: GestureDetector(
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // 横屏时页面上下被标题栏和底部按钮占得很紧；按屏幕高度收一点，
+              // 保证整张 16:9 画面（含水印）完整落在首屏，不用先滚动才看见。
+              final maxHeight = (MediaQuery.sizeOf(context).height * 0.36)
+                  .clamp(140.0, 220.0)
+                  .toDouble();
+              final width = constraints.maxWidth < maxHeight * 16 / 9
+                  ? constraints.maxWidth
+                  : maxHeight * 16 / 9;
+              return SizedBox(
+                width: width,
+                height: width * 9 / 16,
+                child: Stack(
+                  children: [
+                    if (hasImage)
+                      Container(
+                        color: Colors.black,
+                        width: double.infinity,
+                        height: double.infinity,
+                        child: Image.file(
+                          File(imagePath),
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) =>
+                              _previewPlaceholder(isVideo),
+                        ),
+                      )
+                    else
+                      _previewPlaceholder(isVideo),
+                    if (isVideo)
+                      Center(
+                        child: Container(
+                          width: 64,
+                          height: 64,
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      right: 10,
+                      bottom: 10,
+                      child: _PreviewChip(
+                        text: isVideo ? '播放视频' : '查看原图',
+                        icon: isVideo
+                            ? Icons.play_circle_outline
+                            : Icons.zoom_out_map_rounded,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            Positioned(
-              right: 10,
-              bottom: 10,
-              child: _PreviewChip(
-                text: isVideo ? '播放视频' : '查看原图',
-                icon: isVideo
-                    ? Icons.play_circle_outline
-                    : Icons.zoom_out_map_rounded,
-              ),
-            ),
-          ],
+              );
+            },
+          ),
         ),
       ),
     );

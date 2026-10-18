@@ -371,6 +371,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         ),
       );
       if (saved == true && mounted) {
+        // 核对页的 SnackBar 会跨页留在底部，正好盖住左下角水印；回到取景页
+        // 就收起它，改在右侧控制区显示状态，保证水印始终完整可见。
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         setState(() => _statusText = '已保存到「现场资料」');
       }
     } on PlatformException catch (error) {
@@ -428,6 +431,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       ),
     );
     if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       setState(() => _statusText = '已保存到「现场资料」');
     }
   }

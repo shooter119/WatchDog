@@ -278,7 +278,9 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
   }
 
   Widget _previewCardBody(WatermarkSettings s) {
-    final blue = AppColors.noteInfo;
+    // 原生水印固定用这抹蓝，不跟随 App 双配色切换：成片里的水印要与现场
+    // 惯例一致，预览必须按原生真实观感（半透明蓝条 + 半透明白卡）来画。
+    const watermarkBlue = Color(0xFF3A7AD6);
     final rows = <(String, String)>[
       if (s.showTime) ('拍摄\r\n时间', '2026.10.18 星期日 08:39'),
       if (s.showWeather) ('天气', '晴 21℃ 东南风2级 湿度87%'),
@@ -290,7 +292,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0x9EFFFFFF),
         borderRadius: BorderRadius.circular(5),
         boxShadow: const [
           BoxShadow(
@@ -305,15 +307,15 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            color: blue,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            color: watermarkBlue.withValues(alpha: 0.84),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Row(
               children: [
                 if (s.showLogo)
                   Container(
                     width: 18,
                     height: 18,
-                    margin: const EdgeInsets.only(right: 5),
+                    margin: const EdgeInsets.only(right: 6),
                     padding: const EdgeInsets.all(1),
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -330,10 +332,12 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                 Expanded(
                   child: Text(
                     s.unitTitle,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.94),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -379,10 +383,26 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
             ),
           if (s.department.isNotEmpty)
             Container(
-              color: blue,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              child: Text(
-                '拍摄单位：${s.department}',
+              color: watermarkBlue.withValues(alpha: 0.84),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              // 底条字号与正文一致；只把「拍摄单位：」加粗，与原生底条对应。
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    const TextSpan(
+                      text: '拍摄单位：',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    TextSpan(
+                      text: s.department,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.88),
+                      ),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
