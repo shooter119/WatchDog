@@ -102,7 +102,7 @@ class CameraSession(
             if (disposed) return@addListener
             try {
                 provider = future.get()
-                scheduleRotationUpdate()
+                scheduleRotationUpdate(immediateIfReady = true)
             } catch (error: Exception) {
                 callbacks.onError("provider_failed", error.message ?: "相机初始化失败")
             }
@@ -237,14 +237,38 @@ class CameraSession(
         }
     }
 
-    private fun scheduleRotationUpdate() {
+    private fun isReadyForBind(): Boolean {
+        if (disposed || provider == null || previewView.display == null) return false
+        if (previewView.width <= 0 || previewView.height <= 0) return false
+        if (context.resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE ||
+            previewView.width <= previewView.height) {
+            return false
+        }
+        return true
+    }
+
+    private fun scheduleRotationUpdate(immediateIfReady: Boolean = false) {
         if (disposed) return
         mainHandler.removeCallbacks(updateRotation)
-        mainHandler.postDelayed(updateRotation, 200)
+        if (preview == null) {
+            if (isReadyForBind()) {
+                if (immediateIfReady) {
+                    updateRotation.run()
+                } else {
+                    mainHandler.post(updateRotation)
+                }
+            } else {
+                mainHandler.postDelayed(updateRotation, 50)
+            }
+        } else {
+            if (currentRotation() != lastAppliedRotation) {
+                mainHandler.post(updateRotation)
+            }
+        }
     }
 
     private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-        if (preview == null || currentRotation() != lastAppliedRotation) scheduleRotationUpdate()
+        if (preview == null || currentRotation() != lastAppliedRotation) scheduleRotationUpdate(immediateIfReady = true)
     }
 
     /** 仅真实显示方向变化时更新；普通布局变化不碰已绑定的 UseCase。 */
