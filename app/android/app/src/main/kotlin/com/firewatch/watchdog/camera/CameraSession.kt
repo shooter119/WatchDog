@@ -3,6 +3,8 @@ package com.firewatch.watchdog.camera
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
+import android.view.Surface
 import android.os.Handler
 import android.os.Looper
 import androidx.camera.core.CameraEffect
@@ -51,6 +53,8 @@ class CameraSession(
     private var imageCapture: ImageCapture? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var overlayEffect: OverlayEffect? = null
+    private var preview: Preview? = null
+    private var displayManager: DisplayManager? = null
     private var recording: Recording? = null
     private var recordingStartedAt = 0L
     private var lensFacing = CameraSelector.LENS_FACING_BACK
@@ -141,10 +145,60 @@ class CameraSession(
             .build()
 
         camera = cameraProvider.bindToLifecycle(lifecycleOwner, currentSelector(), group)
+        this.preview = preview
         imageCapture = capture
         videoCapture = video
         overlayEffect = effect
+        // 相机页锁定横屏，但绑定可能发生在旋转完成之前：
+        // 这里按真实显示方向设置目标旋转，并监听后续旋转变化，
+        // 否则会出现预览侧躺、成片方向错误。
+        applyTargetRotation()
+        startDisplayListener()
+        // 页面锁横屏是异步生效的：绑定瞬间 display.rotation 可能还是竖屏值。
+        // 旋转完成后再校正两次，避免预览侧躺。
+        mainHandler.postDelayed({ if (!disposed) applyTargetRotation() }, 300)
+        mainHandler.postDelayed({ if (!disposed) applyTargetRotation() }, 900)
+        previewView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (!disposed) applyTargetRotation()
+        }
         if (torchOn) camera?.cameraControl?.enableTorch(true)
+    }
+
+    /** 把三个 UseCase 的目标旋转统一为当前显示方向。 */
+    private fun applyTargetRotation() {
+        val rotation: Int = previewView.display?.rotation
+            ?: (context as? android.app.Activity)?.windowManager?.defaultDisplay?.rotation
+            ?: Surface.ROTATION_0
+        // 重复设置会触发不必要的重配置，同值直接跳过
+        if (rotation == lastAppliedRotation && preview?.targetRotation == rotation) return
+        lastAppliedRotation = rotation
+        preview?.targetRotation = rotation
+        imageCapture?.targetRotation = rotation
+        videoCapture?.targetRotation = rotation
+    }
+
+    private fun startDisplayListener() {
+        val manager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager ?: return
+        if (displayManager === manager) return
+        stopDisplayListener()
+        displayManager = manager
+        manager.registerDisplayListener(displayListener, mainHandler)
+    }
+
+    private fun stopDisplayListener() {
+        val manager = displayManager ?: return
+        runCatching { manager.unregisterDisplayListener(displayListener) }
+        displayManager = null
+    }
+
+    private var lastAppliedRotation = -1
+
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId == previewView.display?.displayId) applyTargetRotation()
+        }
     }
 
     private fun currentSelector(): CameraSelector =
@@ -250,6 +304,8 @@ class CameraSession(
     fun release() {
         disposed = true
         mainHandler.removeCallbacksAndMessages(null)
+        stopDisplayListener()
+        preview = null
         recording?.stop()
         recording = null
         overlayEffect?.close()

@@ -54,6 +54,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // 现场拍小视频习惯横握手机，固定横屏可以避免成片方向来回翻转，
+    // 也能保证水印版式在成片里始终是横向的。
+    unawaited(
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]),
+    );
     WidgetsBinding.instance.addObserver(this);
     _subscription = CameraBridge.events.listen(_onRecordEvent);
     _bootstrap();
@@ -61,6 +69,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    // 离开相机页恢复为不限制方向，避免影响 App 其余页面
+    unawaited(SystemChrome.setPreferredOrientations(const []));
     WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
     _ticker?.cancel();
@@ -344,6 +354,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       'maxDurationMs': CameraBridge.maxRecordingDuration.inMilliseconds,
     };
 
+    final landscape =
+        MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -353,27 +365,36 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: Column(
-          children: [
-            // 取景区与控制区分开：水印固定在画面左下角，
-            // 若控件浮在画面上就会压住水印，现场核对时反而看不清。
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
+        body: landscape
+            ? Row(
                 children: [
-                  AndroidView(
-                    viewType: CameraBridge.viewType,
-                    creationParams: creationParams,
-                    creationParamsCodec: const StandardMessageCodec(),
-                  ),
-                  _topBar(),
+                  Expanded(child: _preview(creationParams)),
+                  SizedBox(width: 180, child: _bottomBar(vertical: true)),
                 ],
-              ),
+              )
+            : Column(
+                children: [
+                // 取景区与控制区分开：水印固定在画面左下角，
+                // 若控件浮在画面上就会压住水印，现场核对时反而看不清。
+                Expanded(child: _preview(creationParams)),
+                _bottomBar(),
+              ],
             ),
-            _bottomBar(),
-          ],
-        ),
       ),
+    );
+  }
+
+  Widget _preview(Map<String, Object?> creationParams) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        AndroidView(
+          viewType: CameraBridge.viewType,
+          creationParams: creationParams,
+          creationParamsCodec: const StandardMessageCodec(),
+        ),
+        _topBar(),
+      ],
     );
   }
 
@@ -574,20 +595,28 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _bottomBar() {
+  Widget _bottomBar({bool vertical = false}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-      decoration: const BoxDecoration(
-        color: Color(0xFF101419),
-        border: Border(top: BorderSide(color: Color(0xFF2A3542))),
+      padding: vertical
+          ? const EdgeInsets.fromLTRB(8, 24, 8, 24)
+          : const EdgeInsets.fromLTRB(20, 14, 20, 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101419),
+        border: Border(
+          top: vertical ? BorderSide.none : const BorderSide(color: Color(0xFF2A3542)),
+          left: vertical ? const BorderSide(color: Color(0xFF2A3542)) : BorderSide.none,
+        ),
       ),
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: vertical
+              ? MainAxisAlignment.center
+              : MainAxisAlignment.start,
           children: [
-            _modeSwitch(),
+            if (!vertical) _modeSwitch(),
               const SizedBox(height: 14),
               if (_statusText != null)
                 Padding(
@@ -598,25 +627,54 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     textAlign: TextAlign.center,
                   ),
                 ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _roundIcon(
-                    icon: _torch ? Icons.flash_on : Icons.flash_off,
-                    tooltip: '手电筒',
-                    onTap: () {
-                      setState(() => _torch = !_torch);
-                      CameraBridge.setTorch(_torch);
-                    },
-                  ),
-                  _shutter(),
-                  _roundIcon(
-                    icon: Icons.cameraswitch_outlined,
-                    tooltip: '切换镜头',
-                    onTap: (_recording || _starting) ? null : CameraBridge.switchCamera,
-                  ),
-                ],
-              ),
+              if (vertical) ...[
+                _modeSwitch(),
+                const SizedBox(height: 18),
+                _shutter(),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _roundIcon(
+                      icon: _torch ? Icons.flash_on : Icons.flash_off,
+                      tooltip: '手电筒',
+                      onTap: () {
+                        setState(() => _torch = !_torch);
+                        CameraBridge.setTorch(_torch);
+                      },
+                    ),
+                    const SizedBox(width: 12),
+                    _roundIcon(
+                      icon: Icons.cameraswitch_outlined,
+                      tooltip: '切换镜头',
+                      onTap: (_recording || _starting)
+                          ? null
+                          : CameraBridge.switchCamera,
+                    ),
+                  ],
+                ),
+              ] else
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _roundIcon(
+                      icon: _torch ? Icons.flash_on : Icons.flash_off,
+                      tooltip: '手电筒',
+                      onTap: () {
+                        setState(() => _torch = !_torch);
+                        CameraBridge.setTorch(_torch);
+                      },
+                    ),
+                    _shutter(),
+                    _roundIcon(
+                      icon: Icons.cameraswitch_outlined,
+                      tooltip: '切换镜头',
+                      onTap: (_recording || _starting)
+                          ? null
+                          : CameraBridge.switchCamera,
+                    ),
+                  ],
+                ),
           ],
         ),
       ),

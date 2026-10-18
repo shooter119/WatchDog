@@ -165,11 +165,15 @@ object WatermarkOverlay {
         val rows = buildRows(model)
         if (rows.isEmpty() && model.unitTitle.isBlank() && model.department.isBlank()) return
 
-        val cardWidth = width * CARD_WIDTH_RATIO
+        // 横屏成片时画面更矮，信息卡按比例收窄，避免占掉过多画面
+        val landscapeFrame = area.width() > area.height()
+        val cardRatio = if (landscapeFrame) 0.40f else CARD_WIDTH_RATIO
+        val rowRatio = if (landscapeFrame) 0.072f else ROW_RATIO
+        val cardWidth = width * cardRatio
         val margin = width * MARGIN_RATIO
         val headerHeight = cardWidth * HEADER_RATIO
         val footerHeight = if (model.department.isBlank()) 0f else cardWidth * FOOTER_RATIO
-        val rowHeight = cardWidth * ROW_RATIO
+        val rowHeight = cardWidth * rowRatio
         val bodyHeight = rows.sumOf { (rowHeight * it.valueLines).toDouble() }.toFloat()
         val cardHeight = headerHeight + bodyHeight + footerHeight
 
