@@ -94,14 +94,24 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   Future<void> _share(LocalMedia media) async {
     try {
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(media.path)],
-          text: media.transcript.trim(),
-        ),
+        ShareParams(files: [XFile(media.path)], text: media.transcript.trim()),
       );
     } catch (_) {
       _toast('系统分享不可用');
     }
+  }
+
+  Future<void> _saveToGallery(LocalMedia media) async {
+    _toast('正在保存到手机相册…');
+    final uri = await CameraBridge.saveToGallery(media.path);
+    if (!mounted) return;
+    _toast(uri != null ? '已保存到手机相册' : '保存到相册失败，可用「分享」另存');
+  }
+
+  Future<void> _openMedia(LocalMedia media) async {
+    final opened = await CameraBridge.openWithSystem(media.path);
+    if (!mounted) return;
+    if (!opened) _toast('没有可打开该文件的应用');
   }
 
   Future<void> _delete(LocalMedia media) async {
@@ -111,8 +121,14 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
         title: const Text('删除这条现场资料？'),
         content: const Text('文件与已识别文字都会从本机删除，无法恢复。'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
         ],
       ),
     );
@@ -130,7 +146,8 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   Future<void> _review(LocalMedia media) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => MediaReviewPage(controller: widget.controller, media: media),
+        builder: (_) =>
+            MediaReviewPage(controller: widget.controller, media: media),
       ),
     );
     await _load();
@@ -155,7 +172,10 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    // 新的保存结果要立刻可见，不能排在「正在保存…」后面等它自然消失。
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -182,7 +202,8 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   }
 
   Widget _empty() {
-    final hasIncident = (widget.controller.currentIncident?.id ?? '').isNotEmpty;
+    final hasIncident =
+        (widget.controller.currentIncident?.id ?? '').isNotEmpty;
     return ListView(
       padding: const EdgeInsets.all(32),
       children: [
@@ -243,9 +264,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
             contentPadding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
             leading: _thumb(media),
             title: Text(
-              media.isVideo
-                  ? '录像 ${(media.durationMs / 1000).round()}s'
-                  : '照片',
+              media.isVideo ? '录像 ${(media.durationMs / 1000).round()}s' : '照片',
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
             ),
             subtitle: Column(
@@ -281,9 +300,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                 Text(
                   media.hasTranscript
                       ? media.transcript
-                      : (media.address.isNotEmpty
-                            ? media.address
-                            : '未识别到口述内容'),
+                      : (media.address.isNotEmpty ? media.address : '未识别到口述内容'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -300,9 +317,11 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                   case 'review':
                     _review(media);
                   case 'open':
-                    CameraBridge.openWithSystem(media.path);
+                    _openMedia(media);
                   case 'share':
                     _share(media);
+                  case 'save':
+                    _saveToGallery(media);
                   case 'rederive':
                     _rederive(media);
                   case 'attach':
@@ -316,6 +335,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                 if (media.isVideo && !media.hasTranscript)
                   const PopupMenuItem(value: 'rederive', child: Text('重新识别口述')),
                 const PopupMenuItem(value: 'open', child: Text('用其他应用打开')),
+                const PopupMenuItem(value: 'save', child: Text('保存到手机相册')),
                 const PopupMenuItem(value: 'share', child: Text('分享')),
                 if (media.incidentId.isEmpty)
                   const PopupMenuItem(value: 'attach', child: Text('关联到当前警情')),
@@ -330,8 +350,9 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   }
 
   Widget _thumb(LocalMedia media) {
-    final previewPath =
-        media.isVideo ? (media.frames.isNotEmpty ? media.frames.first : null) : media.path;
+    final previewPath = media.isVideo
+        ? (media.frames.isNotEmpty ? media.frames.first : null)
+        : media.path;
     if (previewPath == null || !File(previewPath).existsSync()) {
       return Container(
         width: 52,

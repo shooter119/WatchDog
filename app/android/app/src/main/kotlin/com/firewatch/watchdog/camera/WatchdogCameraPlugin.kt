@@ -67,6 +67,57 @@ class WatchdogCameraPlugin(
                 else -> result.notImplemented()
             }
         }
+        // 媒体通道：抽音轨/抽帧/用系统应用打开/保存到相册。
+        // Dart 端 CameraBridge 的 _mediaChannel 指向这里；此前这些方法误挂在
+        // watchdog/camera 上，导致「用其他应用打开」和视频派生数据静默失败。
+        mediaChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "extractAudioWav" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_path", "缺少视频路径", null)
+                    } else {
+                        worker.execute {
+                            val source = File(path)
+                            val target = File(source.parentFile, "${'$'}{source.nameWithoutExtension}.wav")
+                            val wav = MediaDerivatives.extractWav(source, target)
+                            mainHandler.post { result.success(wav?.absolutePath) }
+                        }
+                    }
+                }
+                "extractFrames" -> {
+                    val path = call.argument<String>("path")
+                    val count = call.argument<Int>("count") ?: 3
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_path", "缺少视频路径", null)
+                    } else {
+                        worker.execute {
+                            val source = File(path)
+                            val dir = File(source.parentFile, "frames_${'$'}{source.nameWithoutExtension}")
+                            val frames = MediaDerivatives.extractFrames(source, dir, count)
+                            mainHandler.post { result.success(frames.map { it.absolutePath }) }
+                        }
+                    }
+                }
+                "openWithSystem" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_path", "缺少文件路径", null)
+                    } else {
+                        openWithSystem(path, result)
+                    }
+                }
+                "saveToGallery" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_path", "缺少文件路径", null)
+                    } else {
+                        saveToGallery(path, result)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
         methodChannel.setMethodCallHandler { call, result ->
             val view = activeView
             when (call.method) {
@@ -120,41 +171,6 @@ class WatchdogCameraPlugin(
                     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                         PackageManager.PERMISSION_GRANTED,
                 )
-                "extractAudioWav" -> {
-                    val path = call.argument<String>("path")
-                    if (path.isNullOrBlank()) {
-                        result.error("invalid_path", "缺少视频路径", null)
-                    } else {
-                        worker.execute {
-                            val source = File(path)
-                            val target = File(source.parentFile, "${'$'}{source.nameWithoutExtension}.wav")
-                            val wav = MediaDerivatives.extractWav(source, target)
-                            mainHandler.post { result.success(wav?.absolutePath) }
-                        }
-                    }
-                }
-                "extractFrames" -> {
-                    val path = call.argument<String>("path")
-                    val count = call.argument<Int>("count") ?: 3
-                    if (path.isNullOrBlank()) {
-                        result.error("invalid_path", "缺少视频路径", null)
-                    } else {
-                        worker.execute {
-                            val source = File(path)
-                            val dir = File(source.parentFile, "frames_${'$'}{source.nameWithoutExtension}")
-                            val frames = MediaDerivatives.extractFrames(source, dir, count)
-                            mainHandler.post { result.success(frames.map { it.absolutePath }) }
-                        }
-                    }
-                }
-                "openWithSystem" -> {
-                    val path = call.argument<String>("path")
-                    if (path.isNullOrBlank()) {
-                        result.error("invalid_path", "缺少文件路径", null)
-                    } else {
-                        openWithSystem(path, result)
-                    }
-                }
                 else -> result.notImplemented()
             }
         }
@@ -178,6 +194,8 @@ class WatchdogCameraPlugin(
     }
 
     private var pendingPermissionResult: MethodChannel.Result? = null
+    private var pendingGalleryResult: MethodChannel.Result? = null
+    private var pendingGalleryPath: String? = null
 
     /**
      * 运行时权限：相机是必需项，麦克风与定位是可选项（拒绝也允许拍摄静音视频/无水印位置）。
@@ -215,10 +233,65 @@ class WatchdogCameraPlugin(
 
     /** 由 MainActivity 转发；返回 true 表示本次结果由相机插件消费。 */
     fun onRequestPermissionsResult(requestCode: Int): Boolean {
+        if (requestCode == GALLERY_PERMISSION_REQUEST_CODE) {
+            val result = pendingGalleryResult
+            val path = pendingGalleryPath
+            pendingGalleryResult = null
+            pendingGalleryPath = null
+            if (result == null) return true
+            if (path != null && granted(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                saveToGallery(path, result)
+            } else {
+                result.error("permission_denied", "没有存储权限，无法保存到手机相册", null)
+            }
+            return true
+        }
         if (requestCode != PERMISSION_REQUEST_CODE) return false
         pendingPermissionResult?.success(currentPermissionState())
         pendingPermissionResult = null
         return true
+    }
+
+    /**
+     * 把私有目录里的拍摄文件导出到系统相册。
+     *
+     * Android 9 及以下需要存储权限：先申请，授权后由
+     * [onRequestPermissionsResult] 继续完成同一笔保存。
+     */
+    private fun saveToGallery(path: String, result: MethodChannel.Result) {
+        val file = File(path)
+        if (!file.isFile) {
+            result.error("not_found", "文件不存在", null)
+            return
+        }
+        if (GallerySaver.needsLegacyStoragePermission() &&
+            !granted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        ) {
+            val activity = context.findActivity()
+            if (activity == null) {
+                result.error("no_activity", "无法申请存储权限", null)
+                return
+            }
+            pendingGalleryResult = result
+            pendingGalleryPath = path
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                GALLERY_PERMISSION_REQUEST_CODE,
+            )
+            return
+        }
+        // 视频可能有几十 MB，拷贝放到工作线程，避免卡住界面。
+        worker.execute {
+            try {
+                val uri = GallerySaver.save(context, file)
+                mainHandler.post { result.success(uri.toString()) }
+            } catch (error: Exception) {
+                mainHandler.post {
+                    result.error("save_failed", error.message ?: "保存到相册失败", null)
+                }
+            }
+        }
     }
 
     /** 用系统默认应用打开媒体文件（播放器/图片查看器），文件通过 FileProvider 临时授权。 */
@@ -272,6 +345,7 @@ class WatchdogCameraPlugin(
         const val LOCATION_CHANNEL = "watchdog/location"
         const val MEDIA_CHANNEL = "watchdog/media"
         private const val PERMISSION_REQUEST_CODE = 4711
+        private const val GALLERY_PERMISSION_REQUEST_CODE = 4712
         private val PERMISSIONS = arrayOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,

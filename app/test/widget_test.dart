@@ -999,6 +999,32 @@ void main() {
       expect(find.text('保存设置'), findsNothing);
     });
 
+    testWidgets('水印设置与单位常用队伍使用统一的设置卡片', (tester) async {
+      final c = _FakeController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(ListView).first;
+
+      await _scrollToVisible(tester, list, find.text('水印设置'));
+      expect(
+        find.ancestor(of: find.text('水印设置'), matching: find.byType(AppCard)),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.videocam_rounded), findsOneWidget);
+
+      await _scrollToVisible(tester, list, find.text('单位常用队伍'));
+      expect(
+        find.ancestor(of: find.text('单位常用队伍'), matching: find.byType(AppCard)),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.local_fire_department_outlined), findsOneWidget);
+    });
+
     testWidgets('现场资料卡在 320dp 大字号下纵向展开并保留数量信息', (tester) async {
       tester.view.physicalSize = const Size(320 * 3, 720 * 3);
       tester.view.devicePixelRatio = 3.0;

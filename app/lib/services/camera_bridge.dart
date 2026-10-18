@@ -156,8 +156,9 @@ class LocationFix {
 /// 调用方据此隐藏入口，避免出现「点了没反应」的按钮。
 class CameraBridge {
   static const MethodChannel _channel = MethodChannel('watchdog/camera');
-  static const MethodChannel _locationChannel =
-      MethodChannel('watchdog/location');
+  static const MethodChannel _locationChannel = MethodChannel(
+    'watchdog/location',
+  );
   static const MethodChannel _mediaChannel = MethodChannel('watchdog/media');
   static const EventChannel _events = EventChannel('watchdog/camera_events');
 
@@ -177,10 +178,11 @@ class CameraBridge {
     _eventStream ??= _events
         .receiveBroadcastStream()
         .where((event) => event is Map)
-        .map((event) => CameraRecordEvent.fromMap(event as Map<Object?, Object?>));
+        .map(
+          (event) => CameraRecordEvent.fromMap(event as Map<Object?, Object?>),
+        );
     return _eventStream!;
   }
-
 
   /// 运行时权限状态。相机为必需项，麦克风与定位为增强项。
   static Future<CameraPermissionState> requestPermissions() async {
@@ -234,10 +236,9 @@ class CameraBridge {
   }
 
   static Future<void> setMaxDuration(Duration duration) async {
-    await _channel.invokeMethod<void>(
-      'setMaxDuration',
-      {'maxDurationMs': duration.inMilliseconds},
-    );
+    await _channel.invokeMethod<void>('setMaxDuration', {
+      'maxDurationMs': duration.inMilliseconds,
+    });
   }
 
   static Future<bool> isRecording() async {
@@ -249,10 +250,9 @@ class CameraBridge {
   /// 抽取音轨并转为 16k 单声道 WAV，供本地 ASR 使用。失败返回 null。
   static Future<String?> extractAudioWav(String videoPath) async {
     try {
-      return await _mediaChannel.invokeMethod<String>(
-        'extractAudioWav',
-        {'path': videoPath},
-      );
+      return await _mediaChannel.invokeMethod<String>('extractAudioWav', {
+        'path': videoPath,
+      });
     } catch (_) {
       return null;
     }
@@ -275,8 +275,28 @@ class CameraBridge {
   }
 
   /// 用系统默认应用打开（播放/查看），文件通过 FileProvider 临时授权。
-  static Future<void> openWithSystem(String path) async {
-    await _mediaChannel.invokeMethod<void>('openWithSystem', {'path': path});
+  ///
+  /// 没有可处理的应用或原生通道不可用时返回 false，调用方可以提示改用分享。
+  static Future<bool> openWithSystem(String path) async {
+    try {
+      await _mediaChannel.invokeMethod<void>('openWithSystem', {'path': path});
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 把本机拍摄文件复制到系统相册（同一文件重复保存会复用原相册项）。
+  ///
+  /// 成功返回相册 Uri；权限被拒或系统相册不可写时返回 null，由界面提示改用分享。
+  static Future<String?> saveToGallery(String path) async {
+    try {
+      return await _mediaChannel.invokeMethod<String>('saveToGallery', {
+        'path': path,
+      });
+    } catch (_) {
+      return null;
+    }
   }
 
   // ---- 定位 ----
@@ -284,7 +304,8 @@ class CameraBridge {
   static Future<bool> hasLocationPermission() async {
     if (!isSupported) return false;
     try {
-      return await _locationChannel.invokeMethod<bool>('hasPermission') ?? false;
+      return await _locationChannel.invokeMethod<bool>('hasPermission') ??
+          false;
     } catch (_) {
       return false;
     }
@@ -296,17 +317,15 @@ class CameraBridge {
   }) async {
     if (!isSupported) return null;
     try {
-      final raw = await _locationChannel.invokeMethod<Object?>(
-        'getLocation',
-        {'timeoutMs': timeout.inMilliseconds},
-      );
+      final raw = await _locationChannel.invokeMethod<Object?>('getLocation', {
+        'timeoutMs': timeout.inMilliseconds,
+      });
       return LocationFix.fromMap(raw);
     } catch (_) {
       return null;
     }
   }
 }
-
 
 /// 相机相关运行时权限状态。
 class CameraPermissionState {

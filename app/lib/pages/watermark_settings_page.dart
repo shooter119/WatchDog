@@ -227,7 +227,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   const SizedBox(height: 18),
                   Text(
                     '水印在按下快门或开始录像那一刻固定，成片中的时间、地址不会随时间跳动。'
-                    '照片与视频只保存在本机，是否分享由你逐次决定。',
+                    '照片与视频默认只保存在本机，可在核对页另存到手机相册；是否分享由你逐次决定。',
                     style: TextStyle(
                       fontSize: 12,
                       color: AppColors.textSecondary,
@@ -311,17 +311,20 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
               children: [
                 if (s.showLogo)
                   Container(
-                    width: 16,
-                    height: 16,
+                    width: 18,
+                    height: 18,
                     margin: const EdgeInsets.only(right: 5),
+                    padding: const EdgeInsets.all(1),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFC8102E),
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(3),
                     ),
-                    child: const Icon(
-                      Icons.shield_outlined,
-                      size: 11,
-                      color: Colors.white,
+                    // 与原生水印使用同一张队徽资源，预览不再用通用盾形图标冒充。
+                    child: Image.asset(
+                      'assets/branding/fire_rescue_badge.png',
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                      semanticLabel: '中国消防救援队徽',
                     ),
                   ),
                 Expanded(

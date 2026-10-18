@@ -152,9 +152,9 @@ Future<List<Object?>> _pumpPageWithResult(
           body: Center(
             child: ElevatedButton(
               onPressed: () async {
-                final result = await Navigator.of(context).push<bool>(
-                  MaterialPageRoute<bool>(builder: (_) => page),
-                );
+                final result = await Navigator.of(
+                  context,
+                ).push<bool>(MaterialPageRoute<bool>(builder: (_) => page));
                 results.add(result);
               },
               child: const Text('打开核对页'),
@@ -214,13 +214,27 @@ Future<void> _settleSnackBar(WidgetTester tester) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  const mediaChannel = MethodChannel('watchdog/media');
+  final mediaCalls = <MethodCall>[];
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    mediaCalls.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(mediaChannel, (call) async {
+          mediaCalls.add(call);
+          if (call.method == 'saveToGallery') {
+            return 'content://media/external/images/media/1';
+          }
+          return null;
+        });
   });
 
   tearDown(() {
     LocalMediaStore.overrideInstance = null;
     debugDefaultTargetPlatformOverride = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(mediaChannel, null);
   });
 
   group('水印相机设置页', () {
@@ -236,6 +250,17 @@ void main() {
       expect(find.text('拍摄人'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsNWidgets(5));
       expect(find.text('未填写单位抬头'), findsOneWidget);
+      // 预览必须使用真实的中国消防救援队徽，而不是通用盾形图标占位。
+      final badge = tester.widget<Image>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Image &&
+              widget.image is AssetImage &&
+              (widget.image as AssetImage).assetName ==
+                  'assets/branding/fire_rescue_badge.png',
+        ),
+      );
+      expect(badge, isNotNull);
 
       // 默认五项全开：预览包含时间、天气、地点与经纬度。
       expect(find.text('拍摄\r\n时间'), findsOneWidget);
@@ -321,7 +346,7 @@ void main() {
       expect(find.text('现场口述（请核对后再使用）'), findsOneWidget);
       expect(find.text('现场明火已扑灭，正在清理余火'), findsOneWidget);
       expect(find.text('照片'), findsOneWidget);
-      expect(find.text('原始文件只保存在本机；只有你核对后的文字会上传'), findsOneWidget);
+      expect(find.text('原始文件只保存在本机，可另存到手机相册；只有你核对后的文字会上传'), findsOneWidget);
       expect(find.text('文件只保存在本机，不会自动上传'), findsNothing);
     });
 
@@ -339,10 +364,7 @@ void main() {
         tester,
         MediaReviewPage(
           controller: controller,
-          media: _media(
-            transcript: '现场有明火 需要支援',
-            segments: const [segment],
-          ),
+          media: _media(transcript: '现场有明火 需要支援', segments: const [segment]),
         ),
       );
 
@@ -369,7 +391,7 @@ void main() {
       await _settleSnackBar(tester);
     });
 
-    testWidgets('没有转写内容时主按钮为「仅保存」，不出现写入警情', (tester) async {
+    testWidgets('没有转写内容时主按钮为「保存并完成」，保存到相册后返回', (tester) async {
       final store = _FakeMediaStore([]);
       LocalMediaStore.overrideInstance = store;
       final controller = AppController()..currentIncident = _incident();
@@ -380,15 +402,73 @@ void main() {
         MediaReviewPage(controller: controller, media: _media()),
       );
 
-      expect(find.text('仅保存'), findsOneWidget);
+      expect(find.text('保存并完成'), findsOneWidget);
       expect(find.text('核对无误，写入警情'), findsNothing);
       expect(find.textContaining('写入警情'), findsNothing);
 
-      await tester.tap(find.text('仅保存'));
+      await tester.tap(find.text('保存并完成'));
       await tester.pumpAndSettle();
       // 保存即完成核对：必须自动回到上级页面，不能停在本页
       expect(find.byType(MediaReviewPage), findsNothing);
       expect(results, [true]);
+      expect(
+        mediaCalls.where((call) => call.method == 'saveToGallery'),
+        isNotEmpty,
+      );
+
+      await _settleSnackBar(tester);
+    });
+
+    testWidgets('「保存到相册」单独生效，成功后按钮变为已保存', (tester) async {
+      final store = _FakeMediaStore([]);
+      LocalMediaStore.overrideInstance = store;
+      final controller = AppController()..currentIncident = _incident();
+      addTearDown(controller.dispose);
+
+      await _pumpPage(
+        tester,
+        MediaReviewPage(controller: controller, media: _media()),
+      );
+
+      await tester.tap(find.text('保存到相册'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已保存到手机相册'), findsOneWidget);
+      expect(find.text('已保存到相册'), findsOneWidget);
+      final call = mediaCalls.singleWhere(
+        (call) => call.method == 'saveToGallery',
+      );
+      expect(call.arguments, {'path': '/tmp/watchdog-test/none.jpg'});
+
+      await _settleSnackBar(tester);
+    });
+
+    testWidgets('相册写入失败时提示改用分享，核对页仍保留', (tester) async {
+      final store = _FakeMediaStore([]);
+      LocalMediaStore.overrideInstance = store;
+      final controller = AppController()..currentIncident = _incident();
+      addTearDown(controller.dispose);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(mediaChannel, (call) async {
+            if (call.method == 'saveToGallery') {
+              throw PlatformException(code: 'save_failed', message: '相册不可写');
+            }
+            return null;
+          });
+
+      await _pumpPage(
+        tester,
+        MediaReviewPage(controller: controller, media: _media()),
+      );
+
+      await tester.tap(find.text('保存到相册'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('保存到相册失败，可用「分享」另存'), findsOneWidget);
+      expect(find.text('保存到相册'), findsOneWidget);
+      expect(find.byType(MediaReviewPage), findsOneWidget);
+
+      await _settleSnackBar(tester);
     });
 
     testWidgets('有文字后按钮切换为写入语义', (tester) async {
@@ -404,7 +484,34 @@ void main() {
       await tester.pump();
 
       expect(find.text('核对无误，写入警情'), findsOneWidget);
-      expect(find.text('仅保存'), findsNothing);
+      expect(find.text('保存并完成'), findsNothing);
+      expect(find.text('保存到相册'), findsOneWidget);
+    });
+
+    testWidgets('有口述但未关联警情时仍可保存完成，文字留在草稿', (tester) async {
+      final store = _FakeMediaStore([]);
+      LocalMediaStore.overrideInstance = store;
+      final controller = AppController();
+      addTearDown(controller.dispose);
+
+      final results = await _pumpPageWithResult(
+        tester,
+        MediaReviewPage(controller: controller, media: _media()),
+      );
+
+      await tester.enterText(find.byType(TextField), '现场已设置警戒');
+      await tester.pump();
+      expect(find.text('保存并完成'), findsOneWidget);
+      expect(find.text('先加入警情才能写入'), findsNothing);
+
+      await tester.tap(find.text('保存并完成'));
+      await tester.pumpAndSettle();
+
+      expect(store.drafts['media-1'], '现场已设置警戒');
+      expect(find.byType(MediaReviewPage), findsNothing);
+      expect(results, [true]);
+
+      await _settleSnackBar(tester);
     });
 
     testWidgets('编辑内容在防抖后实时保存为本机草稿', (tester) async {
@@ -461,6 +568,10 @@ void main() {
 
       expect(api.transcripts, ['现场已设置警戒']);
       expect(store.observationIds['media-1'], 'media-1');
+      expect(
+        mediaCalls.where((call) => call.method == 'saveToGallery'),
+        isNotEmpty,
+      );
       // 写入成功后自动回到上级页面，并回传 true
       expect(find.byType(MediaReviewPage), findsNothing);
       expect(results, [true]);
@@ -524,10 +635,7 @@ void main() {
       await tester.tap(find.text('确认写入'));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('未连接服务器，口述文字已保存在本机草稿，联网后可再写入'),
-        findsOneWidget,
-      );
+      expect(find.text('未连接服务器，口述已存为本机草稿，并已保存到手机相册'), findsOneWidget);
       expect(store.drafts['media-1'], '现场已设置警戒，等待支援');
       // 草稿已落盘，同样返回上级，避免用户以为没保存
       expect(find.byType(MediaReviewPage), findsNothing);
@@ -545,9 +653,11 @@ void main() {
         tester,
         MediaReviewPage(
           controller: controller,
-          media: _media(kind: 'video', durationMs: 8000, frames: const [
-            '/tmp/watchdog-test/frame-1.jpg',
-          ]),
+          media: _media(
+            kind: 'video',
+            durationMs: 8000,
+            frames: const ['/tmp/watchdog-test/frame-1.jpg'],
+          ),
         ),
       );
 
@@ -608,11 +718,7 @@ void main() {
   group('现场资料页', () {
     testWidgets('按 LocalMedia 渲染照片/录像标题、转写摘要与已写入状态', (tester) async {
       final store = _FakeMediaStore([
-        _media(
-          id: 'photo-1',
-          transcript: '现场明火已控制',
-          observationId: 'photo-1',
-        ),
+        _media(id: 'photo-1', transcript: '现场明火已控制', observationId: 'photo-1'),
         _media(id: 'video-1', kind: 'video', durationMs: 12000),
       ]);
       LocalMediaStore.overrideInstance = store;
@@ -683,6 +789,29 @@ void main() {
       expect(store.deletedIds, ['photo-1']);
       expect(find.text('照片'), findsNothing);
       expect(find.text('还没有拍摄现场照片或录像'), findsOneWidget);
+    });
+
+    testWidgets('菜单可把现场资料保存到手机相册', (tester) async {
+      final store = _FakeMediaStore([_media(id: 'photo-1')]);
+      LocalMediaStore.overrideInstance = store;
+      final controller = AppController()..currentIncident = _incident();
+      addTearDown(controller.dispose);
+
+      await _pumpPage(tester, MediaGalleryPage(controller: controller));
+
+      await tester.tap(find.byIcon(Icons.more_vert_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('保存到手机相册'), findsOneWidget);
+      await tester.tap(find.text('保存到手机相册'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已保存到手机相册'), findsOneWidget);
+      expect(
+        mediaCalls.where((call) => call.method == 'saveToGallery'),
+        isNotEmpty,
+      );
+
+      await _settleSnackBar(tester);
     });
 
     testWidgets('清理过期文件前二次确认并显示将删除数量', (tester) async {

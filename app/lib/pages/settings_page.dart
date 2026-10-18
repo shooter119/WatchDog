@@ -706,13 +706,16 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildIdentityCard(),
           const SizedBox(height: 22),
           const SectionTitle(text: '现场资料'),
-          _WatermarkCameraEntry(
+          _SettingsLinkCard(
+            icon: Icons.videocam_rounded,
+            title: '水印设置',
+            subtitle: '配置水印文字和显示字段；拍摄请用首页「水印相机」',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const WatermarkSettingsPage()),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 9),
 
           _buildFieldGrid([
             _SettingsShortcut(
@@ -765,24 +768,20 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ]),
-          const SizedBox(height: 22),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.local_fire_department_outlined),
-            title: const Text('单位常用队伍'),
-            subtitle: const Text('登记名称、别名及启用状态'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: widget.controller.api == null
-                ? null
-                : () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          UnitStationsPage(api: widget.controller.api!),
-                    ),
-                  ),
+          const SizedBox(height: 9),
+          _SettingsLinkCard(
+            icon: Icons.local_fire_department_outlined,
+            title: '单位常用队伍',
+            subtitle: '登记名称、别名及启用状态',
+            enabled: widget.controller.api != null,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => UnitStationsPage(api: widget.controller.api!),
+              ),
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 22),
           const SectionTitle(text: '运行策略'),
           _SettingsAccordion(
             icon: Icons.calculate_outlined,
@@ -1902,50 +1901,58 @@ class _SettingsLinkCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool enabled;
 
   const _SettingsLinkCard({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      child: Row(
-        children: [
-          _SettingsIconBox(icon: icon),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: AppCard(
+        onTap: enabled ? onTap : null,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
+          children: [
+            _SettingsIconBox(icon: icon),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
-                ),
-              ],
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Icon(
-            Icons.arrow_forward_outlined,
-            size: 16,
-            color: AppColors.textTertiary,
-          ),
-        ],
+            Icon(
+              Icons.arrow_forward_outlined,
+              size: 16,
+              color: AppColors.textTertiary,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2106,69 +2113,6 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
               secondChild: const SizedBox(width: double.infinity),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 水印相机在设置里的独立入口。
-/// 单独放一张卡片而不是塞进 2x2 网格：现场高频功能需要一眼看到、按得准。
-class _WatermarkCameraEntry extends StatelessWidget {
-  final VoidCallback onTap;
-  const _WatermarkCameraEntry({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.voice.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.videocam_rounded,
-                  color: AppColors.textPrimary,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '水印设置',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      '配置水印文字和显示字段；拍摄请用首页「水印相机」',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: AppColors.textTertiary),
-            ],
-          ),
         ),
       ),
     );

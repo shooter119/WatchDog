@@ -42,6 +42,7 @@ flutter:
   assets:
     - assets/sounds/
     - assets/branding/fire-control-mark.svg
+    - assets/branding/fire_rescue_badge.png
     - assets/avatars/water-element-avatar-selected.png
 
 dependency_overrides:

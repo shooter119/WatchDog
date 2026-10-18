@@ -42,6 +42,8 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
   bool _busy = false;
   bool _deriving = false;
   bool _submitted = false;
+  bool _gallerySaved = false;
+  bool _galleryBusy = false;
   String _stage = '';
   String? _deriveError;
   int _deriveRun = 0;
@@ -219,9 +221,14 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     }
     final api = widget.controller.api;
     if (api == null) {
+      setState(() => _busy = true);
       await _flushDraft();
+      final gallery = await _saveToGallery(announce: false);
       if (!mounted) return;
-      _toast('未连接服务器，口述文字已保存在本机草稿，联网后可再写入');
+      setState(() => _busy = false);
+      _toast(
+        gallery ? '未连接服务器，口述已存为本机草稿，并已保存到手机相册' : '未连接服务器，口述文字已保存在本机草稿，联网后可再写入',
+      );
       Navigator.of(context).pop(true);
       return;
     }
@@ -239,12 +246,14 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
         observationId: _media.id,
       );
       _savedDraft = text;
+      // 写警情与存相册互不影响：相册失败只提示，不回滚已经写入的警情。
+      final gallery = await _saveToGallery(announce: false);
       if (!mounted) return;
       setState(() {
         _submitted = true;
         _busy = false;
       });
-      _toast('已写入警情，辅助问答会把它作为现场背景');
+      _toast(gallery ? '已写入警情，并保存到手机相册' : '已写入警情；相册保存失败，可用分享另存');
       // 写入成功同样回到上级页面，避免停在本页让人以为还要再点一次。
       Navigator.of(context).pop(true);
     } catch (error) {
@@ -257,11 +266,44 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     }
   }
 
-  Future<void> _saveOnly() async {
+  /// 把拍摄文件导出到系统相册（重复点击复用同一相册项）。
+  Future<bool> _saveToGallery({bool announce = true}) async {
+    if (_galleryBusy) return _gallerySaved;
+    if (_gallerySaved) return true;
+    setState(() => _galleryBusy = true);
+    final uri = await CameraBridge.saveToGallery(_media.path);
+    if (!mounted) return false;
+    setState(() {
+      _galleryBusy = false;
+      _gallerySaved = uri != null;
+    });
+    if (announce) {
+      _toast(uri != null ? '已保存到手机相册' : '保存到相册失败，可用「分享」另存');
+    }
+    return uri != null;
+  }
+
+  /// 完成核对：文件本来就在「现场资料」，再导出一份到系统相册方便长期翻看。
+  Future<void> _completeOnly() async {
+    if (_busy || _galleryBusy) return;
+    setState(() => _busy = true);
+    final gallery = await _saveToGallery(announce: false);
     await _flushDraft();
     if (!mounted) return;
-    // 保存即完成本次核对，回到上级页面；结果回传给上级用于提示，
-    // 不再停在本页只弹一句 toast（现场会以为没保存成功，反复点）。
+    setState(() => _busy = false);
+    _toast(gallery ? '已保存到手机相册，可在「现场资料」补写口述' : '已保存在「现场资料」；相册保存失败，可用分享另存');
+    Navigator.of(context).pop(true);
+  }
+
+  /// 有口述但没有关联警情：允许完成核对，文字留在本机草稿。
+  Future<void> _completeWithoutIncident() async {
+    if (_busy || _galleryBusy) return;
+    setState(() => _busy = true);
+    final gallery = await _saveToGallery(announce: false);
+    await _flushDraft();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _toast(gallery ? '还没有关联警情，口述已存为本机草稿，并已保存到手机相册' : '还没有关联警情，口述已存为本机草稿');
     Navigator.of(context).pop(true);
   }
 
@@ -281,18 +323,13 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
   }
 
   Future<void> _openMedia() async {
-    try {
-      await CameraBridge.openWithSystem(_media.path);
-    } catch (_) {
-      _toast('没有可打开该文件的应用');
-    }
+    final opened = await CameraBridge.openWithSystem(_media.path);
+    if (!opened) _toast('没有可打开该文件的应用');
   }
 
   Future<void> _openPhotoViewer(String path) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => _PhotoViewerPage(path: path),
-      ),
+      MaterialPageRoute<void>(builder: (_) => _PhotoViewerPage(path: path)),
     );
   }
 
@@ -326,7 +363,10 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    // 保存结果立即替换上一条提示，避免排队等待。
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -344,7 +384,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 160),
         children: [
           _mediaPreviewCard(),
           const SizedBox(height: 14),
@@ -380,7 +420,9 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     final isVideo = _media.isVideo;
     final imagePath = isVideo ? _firstFramePath : _media.path;
     final hasImage =
-        imagePath != null && imagePath.isNotEmpty && File(imagePath).existsSync();
+        imagePath != null &&
+        imagePath.isNotEmpty &&
+        File(imagePath).existsSync();
     final onTap = isVideo
         ? _openMedia
         : (hasImage ? () => _openPhotoViewer(_media.path) : null);
@@ -397,7 +439,8 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                   ? Image.file(
                       File(imagePath),
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _previewPlaceholder(isVideo),
+                      errorBuilder: (_, __, ___) =>
+                          _previewPlaceholder(isVideo),
                     )
                   : _previewPlaceholder(isVideo),
             ),
@@ -504,15 +547,12 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                 _media.weather.isEmpty
                     ? _media.address
                     : '${_media.address} · ${_media.weather}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
               ),
             ),
           const SizedBox(height: 6),
           Text(
-            '原始文件只保存在本机；只有你核对后的文字会上传',
+            '原始文件只保存在本机，可另存到手机相册；只有你核对后的文字会上传',
             style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
           ),
         ],
@@ -750,10 +790,14 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
   }
 
   Widget _actionBar() {
+    final canComplete = !_busy && !_galleryBusy && !_deriving && !_submitted;
+    final VoidCallback? primaryAction = !canComplete
+        ? null
+        : (!_hasText
+              ? _completeOnly
+              : (_hasIncident ? _confirmAndSubmit : _completeWithoutIncident));
     final primary = FilledButton.icon(
-      onPressed: _busy || _deriving || _submitted
-          ? null
-          : (!_hasText ? _saveOnly : (_hasIncident ? _confirmAndSubmit : null)),
+      onPressed: primaryAction,
       icon: _busy
           ? const SizedBox(
               width: 16,
@@ -766,17 +810,15 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           : Icon(
               _submitted
                   ? Icons.check_rounded
-                  : (!_hasText
-                        ? Icons.save_outlined
-                        : Icons.check_rounded),
+                  : (_hasText && _hasIncident
+                        ? Icons.check_rounded
+                        : Icons.save_outlined),
               size: 18,
             ),
       label: Text(
         _submitted
             ? '已写入'
-            : (!_hasText
-                  ? '仅保存'
-                  : (_hasIncident ? '核对无误，写入警情' : '先加入警情才能写入')),
+            : (!_hasText ? '保存并完成' : (_hasIncident ? '核对无误，写入警情' : '保存并完成')),
         maxLines: 2,
         textAlign: TextAlign.center,
         overflow: TextOverflow.ellipsis,
@@ -786,6 +828,24 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       onPressed: _busy || _deriving ? null : _share,
       icon: const Icon(Icons.ios_share_rounded, size: 18),
       label: const Text('分享'),
+    );
+    final gallery = OutlinedButton.icon(
+      onPressed: _busy || _galleryBusy || _gallerySaved
+          ? null
+          : () => _saveToGallery(),
+      icon: _galleryBusy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(
+              _gallerySaved
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.photo_library_outlined,
+              size: 18,
+            ),
+      label: Text(_gallerySaved ? '已保存到相册' : '保存到相册'),
     );
     // 大字号下并排按钮会挤压文案，改为上下排列并占满整行。
     final stacked = MediaQuery.textScalerOf(context).scale(1) >= 1.4;
@@ -803,14 +863,23 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                 children: [
                   SizedBox(width: double.infinity, child: primary),
                   const SizedBox(height: 8),
+                  SizedBox(width: double.infinity, child: gallery),
+                  const SizedBox(height: 8),
                   SizedBox(width: double.infinity, child: share),
                 ],
               )
-            : Row(
+            : Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  share,
-                  const SizedBox(width: 10),
-                  Expanded(child: primary),
+                  Row(
+                    children: [
+                      Expanded(child: share),
+                      const SizedBox(width: 10),
+                      Expanded(child: gallery),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(width: double.infinity, child: primary),
                 ],
               ),
       ),
@@ -874,10 +943,7 @@ class _PreviewChip extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: Colors.white),
           const SizedBox(width: 4),
-          Text(
-            text,
-            style: const TextStyle(color: Colors.white, fontSize: 11),
-          ),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 11)),
         ],
       ),
     );
