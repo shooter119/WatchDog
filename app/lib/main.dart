@@ -285,6 +285,22 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
           final startupGateLocked =
               controller.needsAuthentication ||
               controller.needsIncidentSelection;
+          // 水印相机是现场高频操作，放在首页右下角常驻入口，
+          // 不再藏进警情卡的展开工具栏里。
+          final showCameraFab = _tab == 2 && !startupGateLocked;
+          // 悬浮按钮会遮住页面底部内容。竖屏高度富余，直接让出按钮高度，
+          // 避免压住卡片区最后一行（真机曾压住「火场提问」）；
+          // 横屏高度紧张且整页可滚动，保持原高度不做裁切。
+          final isPortrait =
+              MediaQuery.of(context).size.height >= MediaQuery.of(context).size.width;
+          final pageBottomInset = showCameraFab && isPortrait ? 76.0 : 0.0;
+          // 页面区域统一让出悬浮按钮的高度（页面背景连续，视觉上无断层）
+          Widget withCameraFabInset(Widget child) => pageBottomInset == 0
+              ? child
+              : Padding(
+                  padding: EdgeInsets.only(bottom: pageBottomInset),
+                  child: child,
+                );
           final Widget bodyContent = controller.isGuest
               ? Column(
                   children: [
@@ -374,19 +390,20 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                       ),
                     ),
                     Expanded(
-                      child: MediaQuery.removePadding(
-                        context: context,
-                        removeTop: true,
-                        child: IndexedStack(index: _tab, children: pages),
+                      child: withCameraFabInset(
+                        MediaQuery.removePadding(
+                          context: context,
+                          removeTop: true,
+                          child: IndexedStack(index: _tab, children: pages),
+                        ),
                       ),
                     ),
                   ],
                 )
-              : IndexedStack(index: _tab, children: pages);
+              : withCameraFabInset(
+                  IndexedStack(index: _tab, children: pages),
+                );
 
-          // 水印相机是现场高频操作，放在首页右下角常驻入口，
-          // 不再藏进警情卡的展开工具栏里。
-          final showCameraFab = _tab == 2 && !startupGateLocked;
           final appScaffold = Scaffold(
             body: bodyContent,
             floatingActionButton: showCameraFab

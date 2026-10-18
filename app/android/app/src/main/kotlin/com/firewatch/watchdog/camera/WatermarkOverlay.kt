@@ -174,6 +174,11 @@ object WatermarkOverlay {
         cachedKey = null
     }
 
+    /** 在直立坐标系下把水印画满整块画布，用于给已经竖向摆正的位图/照片合成水印。 */
+    fun renderUpright(canvas: Canvas, model: WatermarkModel) {
+        drawInArea(canvas, model, RectF(0f, 0f, canvas.width.toFloat(), canvas.height.toFloat()))
+    }
+
     private fun drawInArea(canvas: Canvas, model: WatermarkModel, area: RectF) {
         val width = area.width()
         if (width <= 0f) return
