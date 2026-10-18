@@ -4,51 +4,89 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 /// 水印内容：拍摄开始时组装一次，原生侧在录制期间冻结不再变更。
+///
+/// 单位抬头与拍摄部门来自「水印设置」，与登录身份解耦：
+/// 换班组、临时支援时改设置即可，不必重新认证。
 class WatermarkPayload {
-  final String unitName;
-  final String incidentName;
+  final String unitTitle;
+  final String department;
+  final String actorName;
   final String address;
   final String weather;
-  final String actorName;
+  final double? latitude;
+  final double? longitude;
   final int timestampMs;
+  final bool showTime;
+  final bool showWeather;
+  final bool showLocation;
+  final bool showCoordinates;
+  final bool showLogo;
 
   const WatermarkPayload({
-    this.unitName = '',
-    this.incidentName = '',
+    this.unitTitle = '',
+    this.department = '',
+    this.actorName = '',
     this.address = '',
     this.weather = '',
-    this.actorName = '',
+    this.latitude,
+    this.longitude,
     this.timestampMs = 0,
+    this.showTime = true,
+    this.showWeather = true,
+    this.showLocation = true,
+    this.showCoordinates = true,
+    this.showLogo = true,
   });
 
   WatermarkPayload copyWith({
-    String? unitName,
-    String? incidentName,
+    String? unitTitle,
+    String? department,
+    String? actorName,
     String? address,
     String? weather,
-    String? actorName,
+    double? latitude,
+    double? longitude,
     int? timestampMs,
+    bool? showTime,
+    bool? showWeather,
+    bool? showLocation,
+    bool? showCoordinates,
+    bool? showLogo,
   }) {
     return WatermarkPayload(
-      unitName: unitName ?? this.unitName,
-      incidentName: incidentName ?? this.incidentName,
+      unitTitle: unitTitle ?? this.unitTitle,
+      department: department ?? this.department,
+      actorName: actorName ?? this.actorName,
       address: address ?? this.address,
       weather: weather ?? this.weather,
-      actorName: actorName ?? this.actorName,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
       timestampMs: timestampMs ?? this.timestampMs,
+      showTime: showTime ?? this.showTime,
+      showWeather: showWeather ?? this.showWeather,
+      showLocation: showLocation ?? this.showLocation,
+      showCoordinates: showCoordinates ?? this.showCoordinates,
+      showLogo: showLogo ?? this.showLogo,
     );
   }
 
   Map<String, Object?> toMap() => {
-        'unitName': unitName,
-        'incidentName': incidentName,
-        'address': address,
-        'weather': weather,
-        'actorName': actorName,
-        'timestampMs': timestampMs == 0
-            ? DateTime.now().millisecondsSinceEpoch
-            : timestampMs,
-      };
+    'unitTitle': unitTitle,
+    'department': department,
+    'actorName': actorName,
+    'address': address,
+    'weather': weather,
+    'latitude': latitude,
+    'longitude': longitude,
+    'timestampMs': timestampMs == 0
+        ? DateTime.now().millisecondsSinceEpoch
+        : timestampMs,
+    'showTime': showTime,
+    'showWeather': showWeather,
+    'showLocation': showLocation,
+    'showCoordinates': showCoordinates,
+    'showLogo': showLogo,
+  };
 }
 
 /// 录制事件：原生侧通过 EventChannel 推回的开始/结束/到达上限/错误。
@@ -138,6 +176,27 @@ class CameraBridge {
         .where((event) => event is Map)
         .map((event) => CameraRecordEvent.fromMap(event as Map<Object?, Object?>));
     return _eventStream!;
+  }
+
+
+  /// 运行时权限：相机为必需项，麦克风与定位为可选项。
+  /// 返回 true 表示相机权限已授予，可以创建预览。
+  static Future<bool> requestPermissions() async {
+    if (!isSupported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('requestPermissions') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> hasCameraPermission() async {
+    if (!isSupported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('hasCameraPermission') ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<String?> takePhoto() {

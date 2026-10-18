@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'pages/camera_page.dart';
 import 'pages/board_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/home_page.dart';
@@ -383,8 +384,23 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                 )
               : IndexedStack(index: _tab, children: pages);
 
+          // 水印相机是现场高频操作，放在首页右下角常驻入口，
+          // 不再藏进警情卡的展开工具栏里。
+          final showCameraFab = _tab == 0 && !startupGateLocked;
           final appScaffold = Scaffold(
             body: bodyContent,
+            floatingActionButton: showCameraFab
+                ? FloatingActionButton.extended(
+                    heroTag: 'watermark-camera',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CameraPage(controller: controller),
+                      ),
+                    ),
+                    icon: const Icon(Icons.videocam_rounded),
+                    label: const Text('水印相机'),
+                  )
+                : null,
             bottomNavigationBar: ExcludeSemantics(
               excluding: startupGateLocked,
               child: IgnorePointer(

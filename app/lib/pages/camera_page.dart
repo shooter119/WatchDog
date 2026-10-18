@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../services/camera_bridge.dart';
 import '../services/media_capture_service.dart';
 import '../services/settings.dart';
+import '../services/watermark_settings.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import 'media_gallery_page.dart';
@@ -40,13 +41,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   Duration _elapsed = Duration.zero;
   Timer? _ticker;
   String? _statusText;
+  bool _permissionsReady = false;
+  bool _permissionDenied = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _subscription = CameraBridge.events.listen(_onRecordEvent);
-    _bootstrapWatermark();
+    _ensurePermissions();
   }
 
   @override
@@ -65,16 +68,41 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
   }
 
+  /// 相机与麦克风必须运行时申请：应用之前只用系统相机拍照，
+  /// 清单里的 CAMERA 权限从未真正被使用过。
+  Future<void> _ensurePermissions() async {
+    final granted = await CameraBridge.requestPermissions();
+    if (!mounted) return;
+    if (!granted) {
+      setState(() {
+        _permissionDenied = true;
+        _permissionsReady = false;
+      });
+      return;
+    }
+    setState(() {
+      _permissionsReady = true;
+      _permissionDenied = false;
+    });
+    await _bootstrapWatermark();
+  }
+
   Future<void> _bootstrapWatermark() async {
+    // 水印参数来自独立的「水印设置」，与登录身份解耦；
+    // 只有未单独配置时才回落到单位名称与实名。
+    final config = await WatermarkSettings.load();
     final unitName = await Settings.unitName;
-    final actorName = await Settings.realName;
-    final incidentName = widget.controller.currentIncident?.title ?? '';
     if (!mounted) return;
     setState(() {
-      _watermark = _watermark.copyWith(
-        unitName: unitName,
-        actorName: actorName,
-        incidentName: incidentName,
+      _watermark = WatermarkPayload(
+        unitTitle: config.unitTitle.isNotEmpty ? config.unitTitle : unitName,
+        department: config.department,
+        actorName: config.actorName,
+        showTime: config.showTime,
+        showWeather: config.showWeather,
+        showLocation: config.showLocation,
+        showCoordinates: config.showCoordinates,
+        showLogo: config.showLogo,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
       );
     });
@@ -93,24 +121,18 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
     if (!mounted) return;
 
-    final address = weather.address?.isNotEmpty == true
-        ? weather.address!
-        : (fix != null ? _coarseCoordinates(fix) : '');
     setState(() {
       _fix = fix;
       _locating = false;
       _watermark = _watermark.copyWith(
-        address: address,
+        address: weather.address?.isNotEmpty == true ? weather.address! : '',
         weather: weather.line ?? '',
+        latitude: fix?.lat,
+        longitude: fix?.lon,
         timestampMs: DateTime.now().millisecondsSinceEpoch,
       );
     });
     await CameraBridge.updateWatermark(_watermark);
-  }
-
-  /// 地址服务不可用时的兜底展示：给出经纬度，至少能定位到大致位置。
-  String _coarseCoordinates(LocationFix fix) {
-    return '${fix.lat.toStringAsFixed(5)}, ${fix.lon.toStringAsFixed(5)}';
   }
 
   void _onRecordEvent(CameraRecordEvent event) {
@@ -253,6 +275,26 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         ),
       );
     }
+    if (_permissionDenied) return _permissionScreen();
+    if (!_permissionsReady) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+              ),
+              SizedBox(height: 12),
+              Text('正在准备相机…', style: TextStyle(color: Colors.white70)),
+            ],
+          ),
+        ),
+      );
+    }
     final creationParams = <String, Object?>{
       'watermark': _watermark.toMap(),
       'maxDurationMs': CameraBridge.maxRecordingDuration.inMilliseconds,
@@ -271,6 +313,48 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           _topBar(),
           _bottomBar(),
         ],
+      ),
+    );
+  }
+
+  Widget _permissionScreen() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded, color: Colors.white),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.no_photography_outlined, size: 48, color: Colors.white54),
+              const SizedBox(height: 16),
+              const Text(
+                '需要相机权限才能拍摄现场资料',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '拍摄内容只保存在本机，不会自动上传',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 22),
+              FilledButton(
+                onPressed: _ensurePermissions,
+                child: const Text('重新授权'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

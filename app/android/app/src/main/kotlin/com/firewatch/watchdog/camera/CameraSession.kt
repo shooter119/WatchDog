@@ -108,18 +108,22 @@ class CameraSession(
             .build()
         val video = VideoCapture.withOutput(recorder)
 
+        // queueDepth = 0：帧到即画、立即合成，不排队。水印绘制是纯 Canvas 同步操作，
+        // 排队只会增加一帧延迟，没有收益。
         val effect = OverlayEffect(
             CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or CameraEffect.IMAGE_CAPTURE,
-            2,
+            0,
             mainHandler,
         ) { error -> callbacks.onError("overlay_failed", error.message ?: "水印渲染失败") }
+        // 回调只负责在 Canvas 上绘制；返回 true 后由 OverlayEffect 自行把 overlay 纹理
+        // 与相机帧混合输出。这里绝不能再调用 drawFrameAsync：
+        // 那会把同一帧二次消费，触发 "Frame is already empty" 崩溃。
         effect.setOnDrawListener { frame ->
             val canvas = frame.overlayCanvas
             if (canvas == null || disposed) {
                 false
             } else {
                 WatermarkOverlay.draw(canvas, watermark)
-                effect.drawFrameAsync(frame.timestampNanos)
                 true
             }
         }

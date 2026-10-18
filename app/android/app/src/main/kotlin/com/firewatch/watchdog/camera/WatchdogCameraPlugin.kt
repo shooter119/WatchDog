@@ -3,12 +3,17 @@ package com.firewatch.watchdog.camera
 import android.content.ClipData
 import android.content.Context
 import android.content.ContextWrapper
+import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import androidx.camera.view.PreviewView
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.LifecycleOwner
 import io.flutter.plugin.common.BinaryMessenger
@@ -107,6 +112,11 @@ class WatchdogCameraPlugin(
                     result.success(null)
                 }
                 "isRecording" -> result.success(view?.session?.isRecording ?: false)
+                "requestPermissions" -> requestRuntimePermissions(result)
+                "hasCameraPermission" -> result.success(
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                        PackageManager.PERMISSION_GRANTED,
+                )
                 "extractAudioWav" -> {
                     val path = call.argument<String>("path")
                     if (path.isNullOrBlank()) {
@@ -164,6 +174,49 @@ class WatchdogCameraPlugin(
         eventSink = null
     }
 
+    private var pendingPermissionResult: MethodChannel.Result? = null
+
+    /**
+     * 运行时权限：相机是必需项，麦克风与定位是可选项（拒绝也允许拍摄静音视频/无水印位置）。
+     * 之前只用系统相机拍照，清单里的 CAMERA 从未真正被申请过。
+     */
+    private fun requestRuntimePermissions(result: MethodChannel.Result) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            result.success(true)
+            return
+        }
+        val activity = context.findActivity()
+        if (activity == null) {
+            result.error("no_activity", "无法获取 Activity", null)
+            return
+        }
+        val wanted = mutableListOf(Manifest.permission.CAMERA)
+        wanted.add(Manifest.permission.RECORD_AUDIO)
+        wanted.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        pendingPermissionResult = result
+        ActivityCompat.requestPermissions(
+            activity,
+            wanted
+                .filter {
+                    ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+                }
+                .toTypedArray(),
+            PERMISSION_REQUEST_CODE,
+        )
+    }
+
+    /** 由 MainActivity 转发；返回 true 表示本次结果由相机插件消费。 */
+    fun onRequestPermissionsResult(requestCode: Int): Boolean {
+        if (requestCode != PERMISSION_REQUEST_CODE) return false
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        pendingPermissionResult?.success(granted)
+        pendingPermissionResult = null
+        return true
+    }
+
     /** 用系统默认应用打开媒体文件（播放器/图片查看器），文件通过 FileProvider 临时授权。 */
     private fun openWithSystem(path: String, result: MethodChannel.Result) {
         val file = File(path)
@@ -214,6 +267,7 @@ class WatchdogCameraPlugin(
         const val VIEW_TYPE = "watchdog/camera_view"
         const val LOCATION_CHANNEL = "watchdog/location"
         const val MEDIA_CHANNEL = "watchdog/media"
+        private const val PERMISSION_REQUEST_CODE = 4711
     }
 }
 
@@ -256,6 +310,12 @@ class CameraPreviewView(
     override fun dispose() {
         session.release()
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private tailrec fun Context.findLifecycleOwner(): LifecycleOwner? = when (this) {

@@ -21,6 +21,7 @@ import 'op_log_page.dart';
 import 'roster_page.dart';
 import 'stats_page.dart';
 import 'unit_stations_page.dart';
+import 'watermark_settings_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
 const appVersion = '1.8.0+70';
@@ -682,7 +683,17 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildIdentityCard(),
           const SizedBox(height: 22),
           const SectionTitle(text: '现场资料'),
-          _buildFieldGrid(
+          _WatermarkCameraEntry(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const WatermarkSettingsPage(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          _buildFieldGrid([
             _SettingsShortcut(
               icon: Icons.group_outlined,
               title: '添加语音热词',
@@ -732,7 +743,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             ),
-          ),
+          ]),
           const SizedBox(height: 22),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -961,16 +972,11 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildFieldGrid(
-    Widget first,
-    Widget second,
-    Widget third,
-    Widget fourth,
-  ) {
+  Widget _buildFieldGrid(List<Widget> entries) {
     final compact =
         MediaQuery.sizeOf(context).width < 400 ||
         MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
-    final cards = [first, second, third, fourth];
+    final cards = entries;
     if (compact) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -989,7 +995,7 @@ class _SettingsPageState extends State<SettingsPage> {
       crossAxisSpacing: 9,
       mainAxisSpacing: 9,
       childAspectRatio: 2.05,
-      children: [first, second, third, fourth],
+      children: cards,
     );
   }
 
@@ -2085,6 +2091,63 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
               secondChild: const SizedBox(width: double.infinity),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 水印相机在设置里的独立入口。
+/// 单独放一张卡片而不是塞进 2x2 网格：现场高频功能需要一眼看到、按得准。
+class _WatermarkCameraEntry extends StatelessWidget {
+  final VoidCallback onTap;
+  const _WatermarkCameraEntry({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.voice.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.videocam_rounded,
+                  color: AppColors.voice,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '水印相机',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      '单位抬头、拍摄单位与显示字段，与登录身份独立',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+            ],
+          ),
         ),
       ),
     );

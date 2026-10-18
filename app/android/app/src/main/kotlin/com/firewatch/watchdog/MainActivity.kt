@@ -228,6 +228,15 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        val handled = cameraPlugin?.onRequestPermissionsResult(requestCode) ?: false
+        if (!handled) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         cameraPlugin?.disposePlugin()
         cameraPlugin = null
