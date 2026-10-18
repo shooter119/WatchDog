@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -98,7 +99,18 @@ class LocalMedia {
 class LocalMediaStore {
   LocalMediaStore._();
 
-  static final LocalMediaStore instance = LocalMediaStore._();
+  /// 仅供测试构造子类替换实现；业务代码始终通过 [instance] 访问。
+  @visibleForTesting
+  LocalMediaStore.forTesting();
+
+  static final LocalMediaStore _defaultInstance = LocalMediaStore._();
+
+  /// 测试钩子：置为非 null 时 [instance] 返回该实现，测试结束需恢复为 null。
+  @visibleForTesting
+  static LocalMediaStore? overrideInstance;
+
+  static LocalMediaStore get instance => overrideInstance ?? _defaultInstance;
+
   static const int retentionDays = 30;
   Database? _db;
 
