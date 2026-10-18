@@ -179,8 +179,8 @@ object WatermarkOverlay {
             moveTo(cx, top)
             lineTo(cx + w * 0.28f, top + h * 0.10f)
             lineTo(cx + w * 0.26f, top + h * 0.42f)
-            quadraticTo(cx + w * 0.24f, top + h * 0.66f, cx, top + h * 0.76f)
-            quadraticTo(cx - w * 0.24f, top + h * 0.66f, cx - w * 0.26f, top + h * 0.42f)
+            quadTo(cx + w * 0.24f, top + h * 0.66f, cx, top + h * 0.76f)
+            quadTo(cx - w * 0.24f, top + h * 0.66f, cx - w * 0.26f, top + h * 0.42f)
             lineTo(cx - w * 0.28f, top + h * 0.10f)
             close()
         }
