@@ -88,6 +88,10 @@ const CFG = {
     baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
     chatModel: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-flash',
+    // 警情文字/图片导入专用模型。这类任务只需要照着原文抄字段，不需要推理；
+    // 带隐式思考的模型会把几千 token 花在思考上（实测单次 20-30 秒），
+    // 换成不带思考的模型约 2 秒，字段召回实测不降。
+    importModel: process.env.IMPORT_MODEL || 'deepseek-chat',
     chatSearch: (process.env.CHAT_SEARCH_ENABLED ?? '1') !== '0',
   },
   calc: {

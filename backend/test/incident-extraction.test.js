@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { extractIncident, validateExtraction, mergeExtractions, normalizeStationName } = require('../src/incident-extraction');
+const { extractIncident, validateExtraction, mergeExtractions, normalizeStationName, IMPORT_INSTRUCTIONS } = require('../src/incident-extraction');
 function sample(overrides = {}) {
   return { raw_text: '某村室外电表箱起火，无人员被困，甲站出动2车10人，同步调派林山专职队。',
     suggested_title: '某村室外电表箱火灾', original_category: '火灾扑救', location: '某村', trapped: '无人员被困',
@@ -55,4 +55,20 @@ test('模型布尔伤亡字段仅按同页明确原文归一化，缺证据保�
   assert.equal(uncertain.trapped,'');assert.equal(uncertain.to_confirm.length,1);
   const result=await extractIncident({apiKey:'test-only',fetchImpl:async()=>({ok:true,json:async()=>({output_text:JSON.stringify(sample({trapped:false}))})})});
   assert.equal(result.trapped,'无人员被困');
+});
+
+test('提示词保留决定召回率的细则，且请求走专用导入模型', async () => {
+  // 这些细则缺失时实测会丢 channels/equipment：模型只抄「互联网对讲机」不抄频道，
+  // 或者把整段装备并成一条。提示词被精简时必须先补测试再改。
+  for (const rule of ['channels', 'equipment', 'contacts', 'to_confirm', '不要解释']) {
+    assert.ok(IMPORT_INSTRUCTIONS.includes(rule), `提示词缺少「${rule}」相关规则`);
+  }
+  let body;
+  await extractIncident({ apiKey: 'k', baseUrl: 'https://example.test', model: '导入模型', text: '甲站出动1车7人',
+    fetchImpl: async (_url, init) => {
+      body = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ output_text: JSON.stringify({ forces: [] }) }) };
+    } });
+  assert.equal(body.model, '导入模型');
+  assert.equal(body.instructions, IMPORT_INSTRUCTIONS);
 });

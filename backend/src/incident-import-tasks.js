@@ -5,6 +5,7 @@ const store = require('./postgres-store');
 const { forceError } = require('./force-fields');
 const { extractIncident, mergeExtractions } = require('./incident-extraction');
 const repo = require('./incident-import-repository');
+const logger = require('./logger');
 
 const TEMP_DIR = path.resolve(process.env.WATCHDOG_DATA_DIR || path.join(__dirname, '..', 'data'), 'private-import-images');
 const MAX_AGE = 24 * 60 * 60 * 1000;
@@ -100,6 +101,7 @@ async function cancelTask(scope) {
   return { ok:true };
 }
 const controllers = new Map();
+const SLOW_PAGE_MS = 8000;
 async function claimTask() {
   return store.transaction(async () => {
     const result = await store.query("SELECT * FROM incident_imports WHERE status='queued' AND expires_at>$1 ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1", [Date.now()]);
@@ -133,12 +135,21 @@ async function runTask(task, config, extract = extractIncident) {
           if (controller.signal.aborted) throw forceError('任务超时','IMPORT_TIMEOUT',504);
           const current = await store.query('SELECT status,generation FROM incident_imports WHERE id=$1', [task.id]);
           if (current.rows[0]?.status !== 'processing' || current.rows[0]?.generation !== task.generation) { controller.abort(); return; }
-          const options = { apiKey:config.apiKey,baseUrl:config.baseUrl,model:config.chatModel,text:page.text,signal:controller.signal };
+          // 导入用专门的模型（默认 deepseek-chat）。辅助问答用的 chatModel 可能带
+          // 隐式思考，同一份通报实测 22-30 秒、输出 5000-7000 tokens，其中真正
+          // 的 JSON 只有 500 左右；换成不带思考的模型后约 2 秒，字段召回不降。
+          const options = { apiKey:config.apiKey,baseUrl:config.baseUrl,model:config.importModel || config.chatModel,text:page.text,signal:controller.signal };
           if (page.file_path) {
             const image = await fs.readFile(page.file_path);
             options.imageDataUrl = `data:${page.mime};base64,${image.toString('base64')}`;
           }
+          const pageStartedAt = Date.now();
           page.result = await extract(options);
+          page.duration_ms = Date.now() - pageStartedAt;
+          // 导入是后台任务，请求日志只记写操作，慢在这里只能靠这条记录发现。
+          if (page.duration_ms > SLOW_PAGE_MS) {
+            logger.warn(`incident_import_slow duration_ms=${page.duration_ms} model=${options.model} page=${page.index}`);
+          }
           if (page.text) page.result.raw_text = page.text;
           page.status='succeeded'; page.error_code=null;
         } catch (error) {

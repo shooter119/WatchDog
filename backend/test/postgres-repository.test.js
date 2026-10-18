@@ -244,6 +244,27 @@ test('多页任务保留成功页、失败页可重试，取消任务阻止迟�
   assert.equal((await db.listIncidentForces(incident.id)).length,0);
 });
 
+test('导入任务使用专用模型，避免把隐式思考算进等待时间',async()=>{
+  // 每个用例用独立单位：导入有「单单位 60 秒内最多 3 次」的频率限制
+  const run=async(unit,config,text)=>{
+    await seedUnit(unit);
+    const incident=await db.createIncident({unitId:unit,createdAt:11500});
+    const task=await importTasks.createTask({unitId:unit,incidentId:incident.id,actorId:'model-actor',actorName:'测试员',text});
+    const claimed=await importTasks.claimTask();
+    const seen=[];
+    await importTasks.runTask(claimed,config,async(options)=>{
+      seen.push(options.model);
+      return validateExtraction({raw_text:text});
+    });
+    assert.ok(task.id);
+    return seen;
+  };
+  // 配了专用模型就用专用模型：导入只需照抄原文，不该为隐式思考等二三十秒
+  assert.deepEqual(await run('unit-model-a',{apiKey:'k',baseUrl:'u',chatModel:'通用模型',importModel:'导入模型'},'甲站出动1车7人'),['导入模型']);
+  // 没配专用模型时回落到通用问答模型，不能因此不跑
+  assert.deepEqual(await run('unit-model-b',{apiKey:'k',baseUrl:'u',chatModel:'通用模型'},'乙站出动2车9人'),['通用模型']);
+});
+
 test('力量显式合并采用确认数量且可幂等重放，不相加',async()=>{
   const incident=await db.createIncident({unitId:'unit-test',createdAt:12000});
   const a=await db.upsertIncidentForce({incidentId:incident.id,stationName:'甲队简称',vehicleCount:1,personnelCount:7});
