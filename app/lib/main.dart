@@ -435,7 +435,12 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                     heroTag: 'watermark-camera',
                     backgroundColor: AppColors.voice,
                     foregroundColor: Colors.white,
-                    elevation: 3,
+                    // 去掉按钮自带的投影：浅色页面上它只是一块灰色底，
+                    // 橙色底 + 白色图标文字已经足够区分，不需要再加一层。
+                    elevation: 0,
+                    focusElevation: 0,
+                    hoverElevation: 0,
+                    highlightElevation: 0,
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => CameraPage(controller: controller),
