@@ -100,7 +100,10 @@ object WatermarkOverlay {
     @Volatile
     private var appPackageName: String = ""
 
+    // 不同会话有各自的 GL 线程；缓存、Paint 与位图回收共用对象锁，
+    // 防止旧会话关闭或快速切镜头时与新会话 draw 并发。
     /** 新会话开始时复位释放标记，返回本次会话的代际号。 */
+    @Synchronized
     fun resetForNewSession(): Int {
         released = false
         generation += 1
@@ -126,6 +129,7 @@ object WatermarkOverlay {
      */
     private var generation = 0
 
+    @Synchronized
     fun draw(canvas: Canvas, frame: Frame, model: WatermarkModel) {
         if (released) return
         val buffer = frame.size
@@ -212,6 +216,7 @@ object WatermarkOverlay {
     }
 
     /** 释放缓存位图；会话结束时调用，避免长时间占用内存。 */
+    @Synchronized
     fun release(sessionGeneration: Int) {
         // 过期会话的释放任务直接忽略：新会话可能已经在用这份缓存了
         if (sessionGeneration != generation) return

@@ -1,17 +1,26 @@
 package com.firewatch.watchdog.camera
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.hardware.display.DisplayManager
 import android.view.Surface
 import android.os.Handler
+import android.os.HandlerThread
+import android.view.View
+import android.util.Log
 import android.os.Looper
 import androidx.camera.core.CameraEffect
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceProcessor
+import androidx.camera.core.SurfaceRequest
+import androidx.camera.core.SurfaceOutput
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.effects.OverlayEffect
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -53,13 +62,17 @@ class CameraSession(
     private var imageCapture: ImageCapture? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var overlayEffect: OverlayEffect? = null
+    private var effectLifetime: EffectLifetime? = null
     private var preview: Preview? = null
     private var displayManager: DisplayManager? = null
     private var recording: Recording? = null
     private var lensFacing = CameraSelector.LENS_FACING_BACK
+    @Volatile
     private var sessionGeneration = 0
     private var torchOn = false
+    @Volatile
     private var disposed = false
+    private var started = false
 
     /** 当前生效的水印；录制开始时冻结时间戳并保持不变。 */
     @Volatile
@@ -80,12 +93,16 @@ class CameraSession(
     }
 
     fun start() {
+        if (started || disposed) return
+        started = true
+        previewView.addOnLayoutChangeListener(layoutListener)
+        startDisplayListener()
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             if (disposed) return@addListener
             try {
                 provider = future.get()
-                bind()
+                scheduleRotationUpdate()
             } catch (error: Exception) {
                 callbacks.onError("provider_failed", error.message ?: "相机初始化失败")
             }
@@ -94,16 +111,22 @@ class CameraSession(
 
     private fun bind() {
         val cameraProvider = provider ?: return
-        cameraProvider.unbindAll()
+        if (disposed) return
+        val oldUseCases = listOfNotNull(this.preview, imageCapture, videoCapture)
+        retireEffect()
+        if (oldUseCases.isNotEmpty()) cameraProvider.unbind(*oldUseCases.toTypedArray())
+        val rotation = currentRotation()
 
         // 预览、照片、录像统一 16:9：三者共用同一个 OverlayEffect，
         // 若宽高比不同（例如照片 4:3、录像 16:9），水印在成片里会被裁掉边缘。
         val preview = Preview.Builder()
+            .setTargetRotation(rotation)
             .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
             .build().also {
             it.surfaceProvider = previewView.surfaceProvider
         }
         val capture = ImageCapture.Builder()
+            .setTargetRotation(rotation)
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
             .build()
@@ -115,18 +138,29 @@ class CameraSession(
                 ),
             )
             .build()
-        val video = VideoCapture.withOutput(recorder)
+        val video = VideoCapture.Builder(recorder)
+            .setTargetRotation(rotation)
+            .build()
 
         // 每次进相机页都是一次新会话：复位释放标记并索取代际号，
         // 防止上一会话的后台释放任务误伤本次会话的水印缓存。
         sessionGeneration = WatermarkOverlay.resetForNewSession()
         // queueDepth = 0：帧到即画、立即合成，不排队。水印绘制是纯 Canvas 同步操作，
         // 排队只会增加一帧延迟，没有收益。
+        // Handler 是 CameraX 的 GL 执行线程，而非 UI 通知线程。每个 effect 独占
+        // 一条线程，避免旧 effect 的 close 清除新 effect 的 current EGLContext。
+        val glThread = HandlerThread("watchdog-camera-gl").apply { start() }
+        val lifetime = EffectLifetime(glThread)
+        effectLifetime = lifetime
         val effect = OverlayEffect(
             CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or CameraEffect.IMAGE_CAPTURE,
             0,
-            mainHandler,
-        ) { error -> callbacks.onError("overlay_failed", error.message ?: "水印渲染失败") }
+            Handler(glThread.looper),
+        ) { error ->
+            mainHandler.post {
+                if (!disposed) callbacks.onError("overlay_failed", error.message ?: "水印渲染失败")
+            }
+        }
         // 回调只负责在 Canvas 上绘制；返回 true 后由 OverlayEffect 自行把 overlay 纹理
         // 与相机帧混合输出。这里绝不能再调用 drawFrameAsync：
         // 那会把同一帧二次消费，触发 "Frame is already empty" 崩溃。
@@ -140,40 +174,83 @@ class CameraSession(
             }
         }
 
+        val delegate = checkNotNull(effect.surfaceProcessor)
+        // 跟踪 effect 真正接收的输入 surface。三路 UseCase 可能被 StreamSharing
+        // 包成内部 UseCase，直接读 Preview/VideoCapture 的 SessionConfig 会漏掉它。
+        val processor = object : SurfaceProcessor {
+            override fun onInputSurface(request: SurfaceRequest) {
+                if (lifetime.closing) {
+                    request.willNotProvideSurface()
+                    return
+                }
+                trackInputSurface(lifetime, request)
+                delegate.onInputSurface(request)
+            }
+
+            override fun onOutputSurface(output: SurfaceOutput) {
+                if (lifetime.closing) output.close() else delegate.onOutputSurface(output)
+            }
+        }
+        val trackedEffect = object : CameraEffect(
+            effect.targets, effect.transformation, effect.outputOption,
+            effect.executor, processor, effect.errorListener,
+        ) {}
         val group = UseCaseGroup.Builder()
             .addUseCase(preview)
             .addUseCase(capture)
             .addUseCase(video)
-            .addEffect(effect)
+            .addEffect(trackedEffect)
             .build()
 
-        camera = cameraProvider.bindToLifecycle(lifecycleOwner, currentSelector(), group)
         this.preview = preview
         imageCapture = capture
         videoCapture = video
         overlayEffect = effect
-        // 相机页锁定横屏，但绑定可能发生在旋转完成之前：
-        // 这里按真实显示方向设置目标旋转，并监听后续旋转变化，
-        // 否则会出现预览侧躺、成片方向错误。
-        applyTargetRotation()
-        startDisplayListener()
-        // 页面锁横屏是异步生效的：绑定瞬间 display.rotation 可能还是竖屏值。
-        // 旋转完成后再校正两次，避免预览侧躺。
-        mainHandler.postDelayed({ if (!disposed) applyTargetRotation() }, 300)
-        mainHandler.postDelayed({ if (!disposed) applyTargetRotation() }, 900)
-        previewView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            if (!disposed) applyTargetRotation()
+        lastAppliedRotation = rotation
+        try {
+            camera = cameraProvider.bindToLifecycle(lifecycleOwner, currentSelector(), group)
+        } catch (error: Exception) {
+            retireEffect()
+            throw error
         }
         if (torchOn) camera?.cameraControl?.enableTorch(true)
     }
 
-    /** 把三个 UseCase 的目标旋转统一为当前显示方向。 */
+    private fun currentRotation(): Int = previewView.display?.rotation ?: Surface.ROTATION_0
+
+    // 初始 attach/layout 与显示旋转只共用一个可取消任务；布局稳定后才首次绑定。
+    // 不再在 bind 完成后立即改 targetRotation，也不再用 300/900ms 定时补偿。
+    private val updateRotation = Runnable {
+        if (!disposed && provider != null && previewView.display != null &&
+            previewView.width > 0 && previewView.height > 0) {
+            // 此页面锁横屏。竖屏分支的 PlatformView 会在旋转时被替换，
+            // 不为这个即将销毁的视图创建短命的 effect / EGLContext。
+            if (preview == null && (context.resources.configuration.orientation !=
+                    Configuration.ORIENTATION_LANDSCAPE || previewView.width <= previewView.height)) {
+                return@Runnable
+            }
+            try {
+                if (preview == null) bind() else applyTargetRotation()
+            } catch (error: Exception) {
+                callbacks.onError("bind_failed", error.message ?: "相机初始化失败")
+            }
+        }
+    }
+
+    private fun scheduleRotationUpdate() {
+        if (disposed) return
+        mainHandler.removeCallbacks(updateRotation)
+        mainHandler.postDelayed(updateRotation, 200)
+    }
+
+    private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        if (preview == null || currentRotation() != lastAppliedRotation) scheduleRotationUpdate()
+    }
+
+    /** 仅真实显示方向变化时更新；普通布局变化不碰已绑定的 UseCase。 */
     private fun applyTargetRotation() {
-        val rotation: Int = previewView.display?.rotation
-            ?: (context as? android.app.Activity)?.windowManager?.defaultDisplay?.rotation
-            ?: Surface.ROTATION_0
-        // 重复设置会触发不必要的重配置，同值直接跳过
-        if (rotation == lastAppliedRotation && preview?.targetRotation == rotation) return
+        val rotation = currentRotation()
+        if (rotation == lastAppliedRotation) return
         lastAppliedRotation = rotation
         preview?.targetRotation = rotation
         imageCapture?.targetRotation = rotation
@@ -200,7 +277,8 @@ class CameraSession(
         override fun onDisplayAdded(displayId: Int) = Unit
         override fun onDisplayRemoved(displayId: Int) = Unit
         override fun onDisplayChanged(displayId: Int) {
-            if (displayId == previewView.display?.displayId) applyTargetRotation()
+            if (displayId == previewView.display?.displayId &&
+                currentRotation() != lastAppliedRotation) scheduleRotationUpdate()
         }
     }
 
@@ -309,17 +387,14 @@ class CameraSession(
      * 两条约束：
      * 1. 只解绑本会话自己的 UseCase。`ProcessCameraProvider` 是进程级单例，
      *    用 unbindAll() 会误伤紧接着重进页面时新会话刚绑好的用例。
-     * 2. `OverlayEffect.close()` 要等 GL 队列排空，耗时随分辨率上升（4K 可达数秒），
-     *    必须丢到后台线程，否则离开相机页时系统返回键会输入超时（ANR）。
+     * 2. effect 的 close 与绘制在所属 GL 线程串行执行，不能阻塞主线程。
      */
     fun release() {
         if (disposed) return
         disposed = true
         mainHandler.removeCallbacksAndMessages(null)
         stopDisplayListener()
-
-        val effect = overlayEffect
-        overlayEffect = null
+        previewView.removeOnLayoutChangeListener(layoutListener)
         val cameraProvider = provider
         val useCases = listOfNotNull(preview, imageCapture, videoCapture)
         preview = null
@@ -331,15 +406,66 @@ class CameraSession(
         recording?.stop()
         recording = null
 
-        useCases.forEach { useCase ->
-            if (cameraProvider != null) runCatching { cameraProvider.unbind(useCase) }
+        retireEffect()
+        if (cameraProvider != null && useCases.isNotEmpty()) {
+            runCatching { cameraProvider.unbind(*useCases.toTypedArray()) }
         }
+    }
 
-        releaseExecutor.execute {
-            runCatching { effect?.close() }
-            // 先关 effect 再回收水印位图：close() 返回后 GL 队列已排空，
-            // 位图不会再被绘制线程引用。代际号保证快速重进页面时不会误伤新会话。
-            WatermarkOverlay.release(sessionGeneration)
+    private class EffectLifetime(val thread: HandlerThread) {
+        // 以下状态只在本 effect 的 GL 线程读写。
+        val terminations = mutableListOf<ListenableFuture<Void>>()
+        var closing = false
+        var barrierAvailable = true
+    }
+
+    @SuppressLint("RestrictedApi")
+    private fun trackInputSurface(lifetime: EffectLifetime, request: SurfaceRequest) {
+        // 依赖 CameraX 1.6.2 的 SurfaceRequest.getDeferrableSurface() 与
+        // DeferrableSurface.getTerminationFuture()；升级 CameraX 时必须回归此屏障。
+        try {
+            lifetime.terminations.add(request.deferrableSurface.terminationFuture)
+        } catch (error: Exception) {
+            lifetime.barrierAvailable = false
+            Log.w("WatchdogCamera", "Surface termination barrier unavailable; delaying GL quit", error)
+        } catch (error: LinkageError) {
+            lifetime.barrierAvailable = false
+            Log.w("WatchdogCamera", "CameraX termination API changed; delaying GL quit", error)
+        }
+    }
+
+    /** close 在 GL 线程执行；等相机交回所有输入 surface，再退出线程。 */
+    private fun retireEffect() {
+        val effect = overlayEffect
+        val lifetime = effectLifetime ?: return
+        val generation = sessionGeneration
+        overlayEffect = null
+        effectLifetime = null
+        val handler = Handler(lifetime.thread.looper)
+        handler.post {
+            lifetime.closing = true
+            try {
+                effect?.close()
+            } finally {
+                WatermarkOverlay.release(generation)
+                if (!lifetime.barrierAvailable) {
+                    handler.postDelayed({ lifetime.thread.quitSafely() }, 1_000)
+                } else if (lifetime.terminations.isEmpty()) {
+                    lifetime.thread.quitSafely()
+                } else {
+                    var remaining = lifetime.terminations.size
+                    val executor = java.util.concurrent.Executor { handler.post(it) }
+                    lifetime.terminations.forEach { future ->
+                        future.addListener({
+                            remaining -= 1
+                            if (remaining == 0) {
+                                // 先消费同一次终止触发的 texture / surface 回收回调。
+                                handler.post { lifetime.thread.quitSafely() }
+                            }
+                        }, executor)
+                    }
+                }
+            }
         }
     }
 
@@ -357,15 +483,4 @@ class CameraSession(
     private fun mediaRoot(): File =
         context.getExternalFilesDir(null) ?: context.filesDir
 
-    private companion object {
-        /**
-         * 关闭 effect 要等 GL 队列排空，4K 帧下是几百毫秒到数秒级的活，
-         * 绝不能放在主线程，否则离开相机页时系统返回键会输入超时（ANR 现场实测）。
-         * 进程内共享一条守护线程即可：释放任务本身极少且彼此独立。
-         */
-        val releaseExecutor: java.util.concurrent.ExecutorService =
-            java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
-                Thread(runnable, "watchdog-camera-release").apply { isDaemon = true }
-            }
-    }
 }
