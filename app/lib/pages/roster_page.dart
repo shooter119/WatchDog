@@ -331,7 +331,7 @@ class _RosterPageState extends State<RosterPage>
             const SizedBox(height: 18),
             Text(
               isFirefighter ? '暂无消防员，先添加几人吧' : '暂无专业术语',
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
@@ -339,7 +339,7 @@ class _RosterPageState extends State<RosterPage>
             ),
             const SizedBox(height: 4),
             if (!isFirefighter)
-              const Text(
+              Text(
                 '例如：空气呼吸器、水枪阵地、破拆工具',
                 style: TextStyle(color: AppColors.textTertiary, fontSize: 12.5),
               ),
@@ -390,7 +390,7 @@ class _RosterPageState extends State<RosterPage>
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15.5,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
@@ -400,7 +400,7 @@ class _RosterPageState extends State<RosterPage>
               ),
               if (source != 'builtin')
                 IconButton(
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.delete_outline,
                     color: AppColors.alarm,
                     size: 21,
@@ -475,7 +475,7 @@ class _RosterPageState extends State<RosterPage>
                         ),
                         child: Text(
                           member.stationName,
-                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
                         ),
                       ),
                     ],
@@ -488,7 +488,7 @@ class _RosterPageState extends State<RosterPage>
                       if (member.phone.isNotEmpty) '电话: ${member.phone}',
                       if (member.applyReason.isNotEmpty) member.applyReason,
                     ].join(' · '),
-                    style: const TextStyle(fontSize: 11.5, color: AppColors.textTertiary),
+                    style: TextStyle(fontSize: 11.5, color: AppColors.textTertiary),
                   ),
                 ],
               ],
@@ -513,7 +513,7 @@ class _RosterPageState extends State<RosterPage>
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
               minimumSize: const Size(56, 32),
             ),
-            child: const Text('驳回', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            child: Text('驳回', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
           ),
         ],
       ),
@@ -542,7 +542,7 @@ class _TabLabel extends StatelessWidget {
           ),
           child: Text(
             '$count',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
               color: AppColors.textSecondary,
@@ -608,7 +608,7 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '每行一个姓名，支持粘贴 Excel 姓名列；\n整表复制时自动取每行第一个单元格。\n重复姓名自动跳过。',
             style: TextStyle(
               color: AppColors.textSecondary,

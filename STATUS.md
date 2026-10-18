@@ -8,10 +8,11 @@
 | --- | --- |
 | 后端 | ✅ Express + 标准 PostgreSQL 17；业务数据、永久审计和实时 Outbox 同事务提交，LISTEN/NOTIFY 唤醒多实例 WebSocket；单位隔离、版本冲突、幂等和离线补传已实现 |
 | App | ✅ Flutter；默认进入语音处置页，支持警情选择/新建、改名、参战力量维护和归档复盘入口 |
+| 界面外观 | ✅ 两套亮色配色「昼白 / 暖砂」，设置内即时切换；仅存本机、不同步服务器 |
 | 归档复盘 | ✅ 12 小时无业务活动自动归档；归档列表可改名，详情展示参战力量快照和晚到早事件时间线 |
 | 离线现场操作 | ✅ 进退场、压力复核和随手记使用本地 SQLite 队列，重启后保留，恢复网络后按操作 ID 幂等补传 |
-| 后端测试 | ✅ `npm test`：166 个用例通过（含两实例 WebSocket 验收） |
-| App 检查 | ✅ `flutter analyze` 通过，`flutter test`：233 个用例通过 |
+| 后端测试 | ✅ `npm test`：168 个用例（CI 门禁基线；含两实例 WebSocket 验收） |
+| App 检查 | ✅ `flutter analyze` 通过，`flutter test`：270 个用例通过 |
 | Android | ✅ 集中开发 Android，正式签名链路已配置 |
 | iOS | ⏸ 暂缓 |
 

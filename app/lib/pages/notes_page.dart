@@ -94,7 +94,7 @@ class _NotesPageState extends State<NotesPage> {
         focusElevation: 4,
         hoverElevation: 4,
         highlightElevation: 2,
-        shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
+        shape: CircleBorder(side: BorderSide(color: AppColors.border)),
         child: const Icon(Icons.add_rounded, size: 30),
       ),
     );
@@ -159,7 +159,7 @@ class _NotesPageState extends State<NotesPage> {
           color: AppColors.textTertiary.withValues(alpha: 0.5),
         ),
         const SizedBox(height: 16),
-        const Center(
+        Center(
           child: Text(
             '还没有日志记录',
             style: TextStyle(
@@ -170,7 +170,7 @@ class _NotesPageState extends State<NotesPage> {
           ),
         ),
         const SizedBox(height: 8),
-        const Center(
+        Center(
           child: Text(
             '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右下角加号手动记录',
             textAlign: TextAlign.center,
@@ -222,7 +222,7 @@ class _NotesPageState extends State<NotesPage> {
                   children: [
                     Text(
                       note == null ? '手动记录' : '编辑日志',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
@@ -232,7 +232,7 @@ class _NotesPageState extends State<NotesPage> {
                       const SizedBox(height: 6),
                       Text(
                         _fmtFullTime(note.createdAt),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: AppColors.textTertiary,
                         ),
@@ -384,10 +384,10 @@ class _NotesPageState extends State<NotesPage> {
 /// 橙=出水/注意，灰=其他；不随分类数量增加新装饰色）
 class NoteColor {
   NoteColor._();
-  static const Color red = AppColors.alarm;
-  static const Color blue = AppColors.noteInfo;
-  static const Color orange = AppColors.noteWater;
-  static const Color gray = AppColors.noteNeutral;
+  static Color get red => AppColors.alarm;
+  static Color get blue => AppColors.noteInfo;
+  static Color get orange => AppColors.noteWater;
+  static Color get gray => AppColors.noteNeutral;
 
   static Color of(String? category) => switch (category) {
     NoteCategory.abnormal => red,
@@ -490,7 +490,7 @@ class _TimelineNoteCard extends StatelessWidget {
                             note.author.isEmpty ? '匿名' : note.author,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.right,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppColors.textTertiary,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -500,7 +500,7 @@ class _TimelineNoteCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         Text(
                           _time,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textTertiary,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -512,7 +512,7 @@ class _TimelineNoteCard extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       note.text,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 15,
                         height: 1.5,

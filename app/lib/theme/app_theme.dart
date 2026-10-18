@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_palette.dart';
 import 'app_widgets.dart';
 
 /// 全局字体统一配置：中文优先 PingFang SC，缺失时依次回退
@@ -10,82 +11,92 @@ class AppFonts {
   static const List<String> fallback = ['Noto Sans CJK SC', 'Microsoft YaHei'];
 }
 
-ThemeData buildAppTheme() {
+ThemeData? _cachedTheme;
+String? _cachedPaletteId;
+
+/// 构建主题。
+///
+/// 调色板默认取 `AppColors.palette`（由 `ThemeController` 维护），也可显式
+/// 传入用于测试/预览。`ThemeData` 与 [AppColors] 必须来自**同一个** palette
+/// 实例，否则 `Theme.of(context)` 与直读 token 会出现两套颜色。
+///
+/// 结果按 palette.id 记忆化：`fromSeed` 与十余个子主题不该在每次重建时重跑。
+ThemeData buildAppTheme([AppPalette? palette]) {
+  final p = palette ?? AppColors.palette;
+  if (_cachedTheme != null && _cachedPaletteId == p.id) return _cachedTheme!;
+
   final scheme =
       ColorScheme.fromSeed(
-        seedColor: AppColors.actionPrimary,
+        seedColor: p.actionPrimary,
         brightness: Brightness.light,
-        surface: AppColors.surface,
+        surface: p.surface,
       ).copyWith(
-        primary: AppColors.actionPrimary,
-        onPrimary: Colors.white,
-        secondary: AppColors.caution,
-        onSecondary: AppColors.textPrimary,
-        onSurface: AppColors.textPrimary,
-        surface: AppColors.surface,
-        surfaceContainerHighest: AppColors.surfaceSubtle,
-        outline: AppColors.border,
+        primary: p.actionPrimary,
+        onPrimary: p.onPrimary,
+        secondary: p.caution,
+        onSecondary: p.textPrimary,
+        onSurface: p.textPrimary,
+        surface: p.surface,
+        surfaceContainerHighest: p.surfaceSubtle,
+        outline: p.border,
       );
 
-  return ThemeData(
+  final theme = ThemeData(
     useMaterial3: true,
     splashFactory: InkRipple.splashFactory,
     colorScheme: scheme,
-    scaffoldBackgroundColor: AppColors.background,
+    scaffoldBackgroundColor: p.background,
     fontFamily: AppFonts.family,
     fontFamilyFallback: AppFonts.fallback,
-    appBarTheme: const AppBarTheme(
-      backgroundColor: AppColors.surface,
-      foregroundColor: AppColors.textPrimary,
+    appBarTheme: AppBarTheme(
+      backgroundColor: p.surface,
+      foregroundColor: p.textPrimary,
       elevation: 0,
       centerTitle: false,
       surfaceTintColor: Colors.transparent,
       titleTextStyle: TextStyle(
-        color: AppColors.textPrimary,
+        color: p.textPrimary,
         fontSize: 20,
         fontWeight: FontWeight.w800,
       ),
     ),
-    tabBarTheme: const TabBarThemeData(
-      labelColor: AppColors.textPrimary,
-      unselectedLabelColor: AppColors.textTertiary,
-      indicatorColor: AppColors.actionPrimary,
-      dividerColor: AppColors.border,
+    tabBarTheme: TabBarThemeData(
+      labelColor: p.textPrimary,
+      unselectedLabelColor: p.textTertiary,
+      indicatorColor: p.actionPrimary,
+      dividerColor: p.border,
       indicatorSize: TabBarIndicatorSize.label,
-      labelStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-      unselectedLabelStyle: TextStyle(
+      labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      unselectedLabelStyle: const TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w500,
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.surface,
+      fillColor: p.surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      labelStyle: const TextStyle(color: AppColors.textSecondary),
-      hintStyle: TextStyle(color: AppColors.textTertiary, fontSize: 13),
-      prefixIconColor: AppColors.textTertiary,
-      suffixIconColor: AppColors.textTertiary,
+      labelStyle: TextStyle(color: p.textSecondary),
+      hintStyle: TextStyle(color: p.textTertiary, fontSize: 13),
+      prefixIconColor: p.textTertiary,
+      suffixIconColor: p.textTertiary,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.border),
+        borderSide: BorderSide(color: p.border),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(color: AppColors.border),
+        borderSide: BorderSide(color: p.border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: const BorderSide(
-          color: AppColors.actionPrimary,
-          width: 1.5,
-        ),
+        borderSide: BorderSide(color: p.actionPrimary, width: 1.5),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: AppColors.actionPrimary,
-        foregroundColor: Colors.white,
+        backgroundColor: p.actionPrimary,
+        foregroundColor: p.onPrimary,
         minimumSize: const Size(48, 52),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
@@ -100,7 +111,7 @@ ThemeData buildAppTheme() {
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
-        foregroundColor: AppColors.actionPrimary,
+        foregroundColor: p.actionPrimary,
         textStyle: const TextStyle(
           fontFamily: AppFonts.family,
           fontFamilyFallback: AppFonts.fallback,
@@ -110,27 +121,29 @@ ThemeData buildAppTheme() {
       ),
     ),
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppColors.actionPrimary,
-      contentTextStyle: const TextStyle(color: Colors.white),
+      backgroundColor: p.actionPrimary,
+      contentTextStyle: TextStyle(color: p.onPrimary),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ),
-    dialogTheme: const DialogThemeData(
-      backgroundColor: AppColors.surface,
+    dialogTheme: DialogThemeData(
+      backgroundColor: p.surface,
       titleTextStyle: TextStyle(
-        color: AppColors.textPrimary,
+        color: p.textPrimary,
         fontSize: 18,
         fontWeight: FontWeight.w700,
       ),
       contentTextStyle: TextStyle(
-        color: AppColors.textSecondary,
+        color: p.textSecondary,
         fontSize: 15,
         height: 1.4,
       ),
     ),
-    dividerTheme: const DividerThemeData(color: AppColors.border),
-    progressIndicatorTheme: const ProgressIndicatorThemeData(
-      color: AppColors.actionPrimary,
-    ),
+    dividerTheme: DividerThemeData(color: p.border),
+    progressIndicatorTheme: ProgressIndicatorThemeData(color: p.actionPrimary),
   );
+
+  _cachedTheme = theme;
+  _cachedPaletteId = p.id;
+  return theme;
 }

@@ -26,13 +26,7 @@ class AssistantAvatar extends StatelessWidget {
         color: AppColors.avatarBackdrop,
         shape: BoxShape.circle,
         border: Border.all(color: AppColors.avatarBackdrop),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A2D7F86),
-            blurRadius: 10,
-            offset: Offset(0, 3),
-          ),
-        ],
+        boxShadow: AppColors.palette.cardShadow,
       ),
       child: ClipOval(
         child: ColoredBox(

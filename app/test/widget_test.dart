@@ -2754,9 +2754,11 @@ void main() {
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       final settingsList = find.byType(ListView).first;
+      // 设置页分区较多，逐个滚动到位再断言，避免新增区块后互相挤出视口。
+      await _scrollToVisible(tester, settingsList, find.text('计算参数'));
+      expect(find.text('计算参数'), findsOneWidget);
       await _scrollToVisible(tester, settingsList, find.text('服务连接'));
       expect(find.text('服务连接'), findsOneWidget);
-      expect(find.text('计算参数'), findsOneWidget);
     });
 
     testWidgets('辅助页系统返回键回到来源页', (tester) async {

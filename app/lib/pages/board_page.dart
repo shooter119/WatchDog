@@ -107,7 +107,7 @@ class _BoardPageState extends State<BoardPage> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Text(
                 widget.controller.syncError!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11.5,
                   color: AppColors.alarm,
                   height: 1.3,
@@ -159,8 +159,11 @@ class _BoardPageState extends State<BoardPage> {
     if (!mounted) return;
     if (widget.controller.syncError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('同步失败，当前使用本地数据'),
+        SnackBar(
+          content: Text(
+            '同步失败，当前使用本地数据',
+            style: TextStyle(color: AppColors.textPrimary),
+          ),
           backgroundColor: AppColors.caution,
         ),
       );
@@ -288,7 +291,7 @@ class _OverviewBanner extends StatelessWidget {
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: 11,
             letterSpacing: 0.5,
@@ -334,17 +337,17 @@ class _DangerAlertBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(
+          Icon(
             Icons.warning_amber_rounded,
-            color: Colors.white,
+            color: AppColors.textPrimary,
             size: 20,
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               '${entries.length} 人需要关注 · 最早到期 ${_fmtRemaining(earliest.remainingMs)}',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: AppColors.textPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
                 height: 1.3,
@@ -392,7 +395,7 @@ class _EmptyBoard extends StatelessWidget {
                 color: AppColors.surface,
                 border: Border.all(color: AppColors.border),
               ),
-              child: const Column(
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
@@ -419,7 +422,7 @@ class _EmptyBoard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const Text(
+          Text(
             '暂无人员在场',
             style: TextStyle(
               color: AppColors.textPrimary,
@@ -428,7 +431,7 @@ class _EmptyBoard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '按住底部语音按钮登记进场',
             style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
           ),
@@ -502,6 +505,8 @@ class _EntryCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: s.color,
         borderRadius: BorderRadius.circular(AppRadius.lg),
+        // 报警卡用更亮的描边 + 同色辉光把注意力拉满；提醒卡次之；
+        // 普通卡走调色板阴影，切主题时跟着一起变。
         border: Border.all(
           color: status == 'alarm'
               ? Colors.white.withValues(alpha: 0.95)
@@ -519,16 +524,12 @@ class _EntryCard extends StatelessWidget {
             )
           else if (status == 'warn')
             BoxShadow(
-              color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+              color: AppColors.caution.withValues(alpha: 0.3),
               blurRadius: 10,
               offset: const Offset(0, 3),
             )
           else
-            const BoxShadow(
-              color: Colors.black12,
-              blurRadius: 6,
-              offset: Offset(0, 2),
-            ),
+            ...AppShadow.card,
         ],
       ),
       child: GestureDetector(

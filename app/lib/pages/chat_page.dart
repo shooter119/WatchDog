@@ -808,7 +808,7 @@ class ChatPageState extends State<ChatPage> {
             width: double.infinity,
             color: AppColors.surface,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: const Text(
+            child: Text(
               '水元素建议仅供参考，现场以指挥员口令和现行规程为准。',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
@@ -921,7 +921,7 @@ class ChatPageState extends State<ChatPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               _error!,
-              style: const TextStyle(fontSize: 12, color: AppColors.alarm),
+              style: TextStyle(fontSize: 12, color: AppColors.alarm),
             ),
           ),
         if (_recording || (_processing && _transcript != null))
@@ -975,7 +975,7 @@ class ChatPageState extends State<ChatPage> {
           Expanded(
             child: Text(
               hasText ? text : '正在识别语音…',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 height: 1.45,
                 color: AppColors.textPrimary,
@@ -1007,10 +1007,10 @@ class ChatPageState extends State<ChatPage> {
                   color: AppColors.avatarBackdrop,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
-                child: const Text(
+                child: Text(
                   '现场安全 · 快速研判',
                   style: TextStyle(
-                    color: Color(0xFF236A72),
+                    color: AppColors.textSecondary,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.3,
@@ -1023,7 +1023,7 @@ class ChatPageState extends State<ChatPage> {
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 '火场里遇到困难，按住底部语音按钮说话，\n或在这里输入问题，我来帮你支招。',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -1049,7 +1049,7 @@ class ChatPageState extends State<ChatPage> {
             child: Text(
               _error!,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, color: AppColors.alarm),
+              style: TextStyle(fontSize: 12, color: AppColors.alarm),
             ),
           ),
       ],
@@ -1137,7 +1137,7 @@ class _MessageBubble extends StatelessWidget {
                             fontSize: 15,
                             height: 1.5,
                             color: isUser
-                                ? Colors.white
+                                ? AppColors.onPrimary
                                 : AppColors.textPrimary,
                           ),
                         )
@@ -1147,38 +1147,38 @@ class _MessageBubble extends StatelessWidget {
                               MarkdownStyleSheet.fromTheme(
                                 Theme.of(context),
                               ).copyWith(
-                                p: const TextStyle(
+                                p: TextStyle(
                                   fontSize: 15,
                                   height: 1.5,
                                   color: AppColors.textPrimary,
                                 ),
-                                h1: const TextStyle(
+                                h1: TextStyle(
                                   fontSize: 17,
                                   height: 1.4,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.textPrimary,
                                 ),
-                                h2: const TextStyle(
+                                h2: TextStyle(
                                   fontSize: 16,
                                   height: 1.4,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.textPrimary,
                                 ),
-                                h3: const TextStyle(
+                                h3: TextStyle(
                                   fontSize: 15,
                                   height: 1.4,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.textPrimary,
                                 ),
-                                strong: const TextStyle(
+                                strong: TextStyle(
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.textPrimary,
                                 ),
-                                em: const TextStyle(
+                                em: TextStyle(
                                   fontStyle: FontStyle.italic,
                                   color: AppColors.textPrimary,
                                 ),
-                                blockquote: const TextStyle(
+                                blockquote: TextStyle(
                                   fontSize: 14,
                                   height: 1.5,
                                   color: AppColors.textSecondary,
@@ -1187,19 +1187,19 @@ class _MessageBubble extends StatelessWidget {
                                   color: AppColors.surfaceSubtle.withValues(
                                     alpha: 0.6,
                                   ),
-                                  border: const Border(
+                                  border: Border(
                                     left: BorderSide(
                                       color: AppColors.border,
                                       width: 3,
                                     ),
                                   ),
                                 ),
-                                listBullet: const TextStyle(
+                                listBullet: TextStyle(
                                   fontSize: 15,
                                   height: 1.5,
                                   color: AppColors.textSecondary,
                                 ),
-                                code: const TextStyle(
+                                code: TextStyle(
                                   fontSize: 13,
                                   fontFamily: 'Menlo',
                                   color: AppColors.textPrimary,
@@ -1237,7 +1237,7 @@ class _MessageBubble extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.north_east_rounded,
                                 size: 15,
                                 color: AppColors.voice,
@@ -1246,7 +1246,7 @@ class _MessageBubble extends StatelessWidget {
                               Flexible(
                                 child: Text(
                                   followUpLabel,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
                                     color: AppColors.textPrimary,
@@ -1287,7 +1287,7 @@ class _MessageBubble extends StatelessWidget {
                         const SizedBox(width: 3),
                         Text(
                           timeText,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10.5,
                             color: AppColors.textTertiary,
                           ),
@@ -1310,7 +1310,7 @@ class _ThinkingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
@@ -1350,13 +1350,10 @@ class _VisionCallout extends StatelessWidget {
               color: AppColors.voice.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
-            child: const Icon(
-              Icons.camera_alt_outlined,
-              color: AppColors.voice,
-            ),
+            child: Icon(Icons.camera_alt_outlined, color: AppColors.voice),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1383,10 +1380,7 @@ class _VisionCallout extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: AppColors.textTertiary,
-          ),
+          Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary),
         ],
       ),
     );
@@ -1410,7 +1404,7 @@ class _SampleQuestion extends StatelessWidget {
         },
         child: Row(
           children: [
-            const Icon(
+            Icon(
               Icons.chat_bubble_outline_rounded,
               size: 17,
               color: AppColors.voice,
@@ -1421,7 +1415,7 @@ class _SampleQuestion extends StatelessWidget {
                 text,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
                   height: 1.25,
                   color: AppColors.textSecondary,
@@ -1430,7 +1424,7 @@ class _SampleQuestion extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(
+            Icon(
               Icons.arrow_forward_rounded,
               size: 17,
               color: AppColors.textTertiary,

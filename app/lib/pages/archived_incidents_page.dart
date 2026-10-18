@@ -129,7 +129,7 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
                     ),
                   ),
                   if (_incidents.isEmpty)
-                    const SliverFillRemaining(
+                    SliverFillRemaining(
                       hasScrollBody: false,
                       child: Center(
                         child: Text(
@@ -186,14 +186,14 @@ class _ArchiveSummary extends StatelessWidget {
             color: AppColors.voice.withValues(alpha: .14),
             borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.inventory_2_outlined,
             color: AppColors.voice,
             size: 22,
           ),
         ),
         const SizedBox(width: 12),
-        const Expanded(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -214,7 +214,7 @@ class _ArchiveSummary extends StatelessWidget {
           children: [
             Text(
               '$count',
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 28,
                 height: 1,
@@ -222,7 +222,7 @@ class _ArchiveSummary extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               '份档案',
               style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
             ),
@@ -262,7 +262,7 @@ class _ArchivedIncidentCard extends StatelessWidget {
                   color: AppColors.surfaceSubtle,
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.local_fire_department_outlined,
                   size: 19,
                   color: AppColors.textPrimary,
@@ -289,7 +289,7 @@ class _ArchivedIncidentCard extends StatelessWidget {
                           : incident.number,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textTertiary,
                         fontSize: 11,
                       ),
@@ -303,7 +303,7 @@ class _ArchivedIncidentCard extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.edit_outlined, size: 19),
               ),
-              const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              Icon(Icons.chevron_right, color: AppColors.textTertiary),
             ],
           ),
           const SizedBox(height: 10),
@@ -394,13 +394,9 @@ class _MetaTag extends StatelessWidget {
 class _StatItem extends StatelessWidget {
   final String label;
   final String value;
-  final Color color;
+  final Color? color;
 
-  const _StatItem({
-    required this.label,
-    required this.value,
-    this.color = AppColors.textPrimary,
-  });
+  const _StatItem({required this.label, required this.value, this.color});
 
   @override
   Widget build(BuildContext context) => Expanded(
@@ -410,7 +406,7 @@ class _StatItem extends StatelessWidget {
         Text(
           value,
           style: TextStyle(
-            color: color,
+            color: color ?? AppColors.textPrimary,
             fontSize: 18,
             height: 1,
             fontWeight: FontWeight.w800,
@@ -419,7 +415,7 @@ class _StatItem extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(color: AppColors.textTertiary, fontSize: 11),
+          style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
         ),
       ],
     ),
@@ -560,14 +556,14 @@ class _IncidentIdentity extends StatelessWidget {
                 color: AppColors.voice.withValues(alpha: .14),
                 borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.fact_check_outlined,
                 color: AppColors.voice,
                 size: 19,
               ),
             ),
             const SizedBox(width: 10),
-            const Expanded(
+            Expanded(
               child: Text(
                 '归档档案',
                 style: TextStyle(
@@ -594,7 +590,7 @@ class _IncidentIdentity extends StatelessWidget {
         const SizedBox(height: 5),
         Text(
           incident.number,
-          style: const TextStyle(color: AppColors.textTertiary, fontSize: 12),
+          style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
         ),
         const SizedBox(height: 14),
         Row(
@@ -664,14 +660,14 @@ class _ArchiveMetric extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(color: AppColors.textTertiary, fontSize: 11),
+          style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
         ),
         const SizedBox(height: 4),
         Text(
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textPrimary,
             fontSize: 12,
             fontWeight: FontWeight.w700,
@@ -697,12 +693,12 @@ class _UnresolvedBanner extends StatelessWidget {
     ),
     child: Row(
       children: [
-        const Icon(Icons.warning_amber_rounded, color: AppColors.caution),
+        Icon(Icons.warning_amber_rounded, color: AppColors.caution),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             '归档时有 $count 名人员未确认离场',
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -737,7 +733,7 @@ class _DetailSectionTitle extends StatelessWidget {
       const Spacer(),
       Text(
         trailing,
-        style: const TextStyle(color: AppColors.textTertiary, fontSize: 11),
+        style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
       ),
     ],
   );
@@ -752,7 +748,7 @@ class _ForceSnapshot extends StatelessWidget {
   Widget build(BuildContext context) => AppCard(
     padding: EdgeInsets.zero,
     child: forces.isEmpty
-        ? const Padding(
+        ? Padding(
             padding: EdgeInsets.all(16),
             child: Text(
               '未登记参战力量',
@@ -773,7 +769,7 @@ class _ForceSnapshot extends StatelessWidget {
                           color: AppColors.surfaceSubtle,
                           borderRadius: BorderRadius.circular(AppRadius.sm),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.local_fire_department_outlined,
                           size: 17,
                           color: AppColors.textPrimary,
@@ -799,7 +795,7 @@ class _ForceSnapshot extends StatelessWidget {
                       const SizedBox(width: 12),
                       Text(
                         forces[i].personnelLabel,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -824,7 +820,7 @@ class _TimelineCard extends StatelessWidget {
   Widget build(BuildContext context) => AppCard(
     padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
     child: events.isEmpty
-        ? const Padding(
+        ? Padding(
             padding: EdgeInsets.only(bottom: 6),
             child: Text(
               '暂无事件记录',
@@ -906,7 +902,7 @@ class _TimelineEvent extends StatelessWidget {
               children: [
                 Text(
                   _archiveTime(event.occurredAt, withSeconds: true),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textTertiary,
                     fontSize: 11,
                     fontFeatures: [FontFeature.tabularFigures()],
@@ -915,7 +911,7 @@ class _TimelineEvent extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   event.text,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 14,
                     height: 1.35,
@@ -929,13 +925,13 @@ class _TimelineEvent extends StatelessWidget {
                     if (event.actorName?.isNotEmpty == true)
                       Text(
                         event.actorName!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 11,
                         ),
                       ),
                     if (event.source == 'offline')
-                      const Text(
+                      Text(
                         '离线补传',
                         style: TextStyle(
                           color: AppColors.caution,
@@ -944,7 +940,7 @@ class _TimelineEvent extends StatelessWidget {
                         ),
                       ),
                     if (event.revisionOf != null)
-                      const Text(
+                      Text(
                         '修订记录',
                         style: TextStyle(
                           color: AppColors.textTertiary,

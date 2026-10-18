@@ -11,8 +11,10 @@ import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/storage_service.dart';
+import '../services/theme_controller.dart';
 import '../services/update_service.dart';
 import '../state/app_controller.dart';
+import '../theme/app_palette.dart';
 import '../theme/app_widgets.dart';
 import '../theme/fire_control_logo.dart';
 import 'about_page.dart';
@@ -241,10 +243,7 @@ class _SettingsPageState extends State<SettingsPage> {
               if (sizeText.isNotEmpty)
                 Text(
                   '安装包大小：$sizeText',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textTertiary,
-                  ),
+                  style: TextStyle(fontSize: 13, color: AppColors.textTertiary),
                 ),
               const SizedBox(height: 10),
               Flexible(
@@ -344,13 +343,10 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: 10),
               Text(
                 '$v%',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '下载中请保持应用在前台',
                 style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
               ),
@@ -640,6 +636,33 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
+  Widget _buildAppearanceCard() {
+    // 选中态直接从 ThemeController 读：不建本地副本，避免两处状态不一致。
+    // 只切换配色，不进入自动保存链路，也不写 settings_modified_at。
+    final currentId = ThemeController.instance.currentId;
+    return AppCard(
+      padding: EdgeInsets.all(12),
+      child: Row(
+        children: [
+          for (final palette in AppPalette.values) ...[
+            Expanded(
+              child: _ThemeOption(
+                palette: palette,
+                selected: palette.id == currentId,
+                onTap: () {
+                  ThemeController.instance.select(palette);
+                  setState(() {});
+                },
+              ),
+            ),
+            if (palette.id != AppPalette.values.last.id)
+              const SizedBox(width: 10),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final entries = widget.controller.entries;
@@ -782,6 +805,9 @@ class _SettingsPageState extends State<SettingsPage> {
             child: _buildAlertBody(),
           ),
           const SizedBox(height: 22),
+          const SectionTitle(text: '界面外观'),
+          _buildAppearanceCard(),
+          const SizedBox(height: 22),
           const SectionTitle(text: '连接与维护'),
           _SettingsAccordion(
             icon: Icons.dns_outlined,
@@ -806,14 +832,14 @@ class _SettingsPageState extends State<SettingsPage> {
             children: [
               Text(
                 '火场智控 v$_displayVersion',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textTertiary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '一线消防员开发 · 开源项目',
                 style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
               ),
@@ -886,7 +912,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   color: AppColors.surfaceSubtle,
                   borderRadius: BorderRadius.circular(13),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.person_outline,
                   size: 24,
                   color: AppColors.textPrimary,
@@ -899,7 +925,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     Text(
                       name,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
@@ -918,7 +944,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             color: AppColors.caution.withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(AppRadius.pill),
                           ),
-                          child: const Text(
+                          child: Text(
                             '单位',
                             style: TextStyle(
                               color: AppColors.textSecondary,
@@ -931,7 +957,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         Expanded(
                           child: Text(
                             unitName,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppColors.textPrimary,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -1065,10 +1091,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         SwitchListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: const Icon(
-            Icons.cloud_outlined,
-            color: AppColors.textSecondary,
-          ),
+          secondary: Icon(Icons.cloud_outlined, color: AppColors.textSecondary),
           title: const Text(
             '联网语音识别',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
@@ -1091,7 +1114,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const Divider(height: 1, indent: 14, endIndent: 14),
         SwitchListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: const Icon(
+          secondary: Icon(
             Icons.shield_outlined,
             color: AppColors.textSecondary,
           ),
@@ -1123,7 +1146,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         SwitchListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: const Icon(
+          secondary: Icon(
             Icons.volume_up_outlined,
             color: AppColors.textSecondary,
           ),
@@ -1145,7 +1168,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const Divider(height: 1, indent: 14, endIndent: 14),
         SwitchListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: const Icon(
+          secondary: Icon(
             Icons.notifications_none_outlined,
             color: AppColors.textSecondary,
           ),
@@ -1167,7 +1190,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const Divider(height: 1, indent: 14, endIndent: 14),
         SwitchListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: const Icon(
+          secondary: Icon(
             Icons.light_mode_outlined,
             color: AppColors.textSecondary,
           ),
@@ -1189,7 +1212,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const Divider(height: 1, indent: 14, endIndent: 14),
         SwitchListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: const Icon(
+          secondary: Icon(
             Icons.shield_moon_outlined,
             color: AppColors.textSecondary,
           ),
@@ -1206,7 +1229,7 @@ class _SettingsPageState extends State<SettingsPage> {
           onChanged: _toggleKeepAlive,
         ),
         if (!_keepAlive)
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Text(
               '开启时请允许通知与电池白名单，否则保活可能被系统中断',
@@ -1254,7 +1277,7 @@ class _SettingsPageState extends State<SettingsPage> {
           leading: Icon(icon, color: AppColors.caution, size: 20),
           title: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               color: AppColors.textSecondary,
               fontWeight: FontWeight.w700,
@@ -1329,7 +1352,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+          Icon(Icons.chevron_right, color: AppColors.textTertiary),
         ],
       ),
     );
@@ -1376,7 +1399,7 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             Text(
               pct == null ? '正在下载本地语音模型…' : '正在下载本地语音模型… $pct%',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
@@ -1393,7 +1416,7 @@ class _SettingsPageState extends State<SettingsPage> {
       );
     }
     if (installed == null) {
-      return const ListTile(
+      return ListTile(
         dense: true,
         leading: Icon(
           Icons.cloud_download_outlined,
@@ -1409,12 +1432,12 @@ class _SettingsPageState extends State<SettingsPage> {
     if (installed) {
       return ListTile(
         dense: true,
-        leading: const Icon(
+        leading: Icon(
           Icons.check_circle_outline,
           color: AppColors.safe,
           size: 20,
         ),
-        title: const Text(
+        title: Text(
           '本地语音模型已就绪（离线可用）',
           style: TextStyle(
             fontSize: 14,
@@ -1438,13 +1461,13 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.offline_bolt_outlined,
                 color: AppColors.caution,
                 size: 20,
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Text(
                   '本地 ASR 主模型未下载（约 75MB；另有可选的 9.8MB 降噪模型）\n下载后断网也能语音录入',
                   style: TextStyle(
@@ -1460,7 +1483,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 8),
             Text(
               _downloadError!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 color: AppColors.alarm,
                 fontWeight: FontWeight.w600,
@@ -1495,7 +1518,7 @@ class _SaveStatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (state) {
       _SaveState.idle => const SizedBox.shrink(),
-      _SaveState.saving => const Row(
+      _SaveState.saving => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
@@ -1514,7 +1537,7 @@ class _SaveStatusBadge extends StatelessWidget {
           ),
         ],
       ),
-      _SaveState.saved => const Row(
+      _SaveState.saved => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.check_circle_outline, size: 14, color: AppColors.safe),
@@ -1529,7 +1552,7 @@ class _SaveStatusBadge extends StatelessWidget {
           ),
         ],
       ),
-      _SaveState.failed => const Row(
+      _SaveState.failed => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.error_outline, size: 14, color: AppColors.alarm),
@@ -1560,7 +1583,7 @@ class _GroupLabel extends StatelessWidget {
       padding: const EdgeInsets.only(top: 4, bottom: 10),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppColors.textSecondary,
           fontSize: 12,
           fontWeight: FontWeight.w700,
@@ -1582,7 +1605,7 @@ class _SettingsEyebrow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           color: AppColors.textTertiary,
           fontSize: 11,
           fontWeight: FontWeight.w800,
@@ -1619,7 +1642,7 @@ class _SettingsHero extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadius.lg),
       child: Container(
         padding: const EdgeInsets.all(18),
-        decoration: const BoxDecoration(color: AppColors.actionPrimary),
+        decoration: BoxDecoration(color: AppColors.heroBackground),
         child: Stack(
           clipBehavior: Clip.hardEdge,
           children: [
@@ -1633,7 +1656,7 @@ class _SettingsHero extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: AppColors.heroOnDarkBorder),
-                    boxShadow: const [
+                    boxShadow: [
                       BoxShadow(
                         color: AppColors.heroOnDarkRing,
                         blurRadius: 0,
@@ -1655,13 +1678,13 @@ class _SettingsHero extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const FireControlLogo(
+                    FireControlLogo(
                       size: 38,
                       background: AppColors.heroOnDark,
                       foreground: AppColors.actionPrimary,
                     ),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1726,7 +1749,7 @@ class _SettingsHero extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 26),
-                const Text(
+                Text(
                   '当前警情',
                   style: TextStyle(color: AppColors.heroLabel, fontSize: 11),
                 ),
@@ -1735,7 +1758,7 @@ class _SettingsHero extends StatelessWidget {
                   title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.heroOnDark,
                     fontSize: 16,
                     height: 1.25,
@@ -1747,7 +1770,7 @@ class _SettingsHero extends StatelessWidget {
                   subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.heroMuted,
                     fontSize: 11,
                     height: 1.4,
@@ -1844,7 +1867,7 @@ class _SettingsShortcut extends StatelessWidget {
                   overflow: compact
                       ? TextOverflow.visible
                       : TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textPrimary,
@@ -1857,16 +1880,13 @@ class _SettingsShortcut extends StatelessWidget {
                   overflow: compact
                       ? TextOverflow.visible
                       : TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: AppColors.textTertiary,
-                  ),
+                  style: TextStyle(fontSize: 10, color: AppColors.textTertiary),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 5),
-          const Icon(
+          Icon(
             Icons.arrow_forward_outlined,
             size: 15,
             color: AppColors.textTertiary,
@@ -1915,15 +1935,12 @@ class _SettingsLinkCard extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textTertiary,
-                  ),
+                  style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
                 ),
               ],
             ),
           ),
-          const Icon(
+          Icon(
             Icons.arrow_forward_outlined,
             size: 16,
             color: AppColors.textTertiary,
@@ -1946,7 +1963,7 @@ class _SyncNotice extends StatelessWidget {
         color: AppColors.safe.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(Icons.sync_outlined, size: 17, color: AppColors.online),
@@ -2009,7 +2026,7 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          side: const BorderSide(color: AppColors.border),
+          side: BorderSide(color: AppColors.border),
         ),
         child: Column(
           children: [
@@ -2051,7 +2068,7 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                                 widget.summary,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10,
                                   color: AppColors.textTertiary,
                                 ),
@@ -2120,14 +2137,14 @@ class _WatermarkCameraEntry extends StatelessWidget {
                   color: AppColors.voice.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.videocam_rounded,
                   color: AppColors.textPrimary,
                   size: 22,
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2149,7 +2166,97 @@ class _WatermarkCameraEntry extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              Icon(Icons.chevron_right, color: AppColors.textTertiary),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 配色选项：四色预览 + 名称 + 选中态。
+/// 预览色来自该 palette 自身（而不是当前主题），方便直接比较两套方案。
+class _ThemeOption extends StatelessWidget {
+  final AppPalette palette;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemeOption({
+    required this.palette,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${palette.label}配色${selected ? '，已选中' : ''}',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: AnimatedContainer(
+          duration: disableAnimations
+              ? Duration.zero
+              : const Duration(milliseconds: 150),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(
+              color: selected ? palette.actionPrimary : palette.border,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  for (final color in [
+                    palette.background,
+                    palette.surfaceSubtle,
+                    palette.actionPrimary,
+                    palette.voice,
+                  ])
+                    Container(
+                      width: 16,
+                      height: 16,
+                      margin: const EdgeInsets.only(right: 4),
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: palette.border),
+                      ),
+                    ),
+                  const Spacer(),
+                  if (selected)
+                    Icon(
+                      Icons.check_circle,
+                      size: 16,
+                      color: palette.actionPrimary,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                palette.label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: palette.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                palette.id == 'daylight' ? '高可视亮色' : '暖纸陶土',
+                style: TextStyle(fontSize: 10, color: palette.textTertiary),
+              ),
             ],
           ),
         ),

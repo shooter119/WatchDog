@@ -93,7 +93,7 @@ class _HeroCard extends StatelessWidget {
         children: [
           const FireControlLogo(size: 64),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             '火场智控',
             style: TextStyle(
               fontSize: 18,
@@ -102,7 +102,7 @@ class _HeroCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             '一款由消防员开发、给消防员用的 App',
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -129,7 +129,7 @@ class _SectionCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Text(
         body,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           color: AppColors.textSecondary,
           height: 1.65,
@@ -238,7 +238,7 @@ class _FeaturesCard extends StatelessWidget {
                       children: [
                         Text(
                           item.$2,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
                             color: AppColors.textPrimary,
@@ -247,7 +247,7 @@ class _FeaturesCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           item.$3,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12.5,
                             color: AppColors.textTertiary,
                             height: 1.45,

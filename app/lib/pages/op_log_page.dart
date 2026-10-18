@@ -75,7 +75,7 @@ class _OpLogPageState extends State<OpLogPage> {
                   _buildSyncCard(svc),
                   const SizedBox(height: 12),
                   if (groups.isEmpty)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 120),
                       child: Column(
                         children: [
@@ -146,7 +146,7 @@ class _OpLogPageState extends State<OpLogPage> {
                     svc.pendingCount > 0
                         ? '待上传 ${svc.pendingCount} 条'
                         : '已全部上传',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       color: AppColors.textTertiary,
                     ),
@@ -161,7 +161,7 @@ class _OpLogPageState extends State<OpLogPage> {
               IconButton(
                 onPressed: _clear,
                 tooltip: '清空本地日志',
-                icon: const Icon(
+                icon: Icon(
                   Icons.delete_outline,
                   size: 20,
                   color: AppColors.textTertiary,
@@ -174,16 +174,12 @@ class _OpLogPageState extends State<OpLogPage> {
               padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.error_outline,
-                    size: 14,
-                    color: AppColors.caution,
-                  ),
+                  Icon(Icons.error_outline, size: 14, color: AppColors.caution),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       '上次同步失败：$err',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         color: AppColors.caution,
                       ),
@@ -306,7 +302,7 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                           children: [
                             Text(
                               g.summary,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.textPrimary,
@@ -316,7 +312,7 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                             Text(
                               '${_fmtDateTime(g.first.ts)} · ${g.entries.length} 步'
                               '${hasProblem ? ' · ${g.problemCount} 处异常' : ''}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11.5,
                                 color: AppColors.textTertiary,
                               ),
@@ -394,7 +390,7 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                     const Spacer(),
                     Text(
                       _fmtTime(e.ts),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         color: AppColors.textTertiary,
                       ),
@@ -404,7 +400,7 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                 const SizedBox(height: 2),
                 Text(
                   e.msg,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     color: AppColors.textPrimary,
                     height: 1.4,
@@ -421,7 +417,7 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                     ),
                     child: Text(
                       _prettyJson(e.data!),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         height: 1.45,
                         color: AppColors.textSecondary,

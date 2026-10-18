@@ -16,6 +16,7 @@ import 'services/app_data_epoch.dart';
 import 'services/local_asr_service.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/op_log_service.dart';
+import 'services/theme_controller.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_widgets.dart';
@@ -51,27 +52,28 @@ void main() {
 
       // 新协议首次启动必须先停止旧保活、清理旧会话/离线队列/模型缓存，
       // 再创建控制器，避免旧状态在新 WebSocket 会话建立前短暂泄漏。
-      unawaited(
-        ensureAppDataEpoch()
-            .then<void>((_) {
-              runApp(const WatchDogApp());
-            })
-            .catchError((error, stack) {
-              diagnostics.recordUncaught(
-                error,
-                stack,
-                source: 'data_epoch_reset',
-              );
-              // 清理失败不把用户卡在黑屏；控制器仍会要求重新认证。
-              runApp(const WatchDogApp());
-            }),
-      );
+      unawaited(_bootstrapApp(diagnostics));
     },
     (error, stack) {
       // 兜住 runApp/Zone 内未处理的同步和异步异常。
       diagnostics.recordUncaught(error, stack, source: 'zone_error');
     },
   );
+}
+
+/// 启动链：数据纪元清理 → 主题偏好加载 → runApp。
+///
+/// 三步必须串行：主题在 runApp 之前读取，首帧就是正确配色，
+/// 不会先白后暖；任何一步失败只降级，不能把用户卡在黑屏。
+Future<void> _bootstrapApp(DiagnosticLogService diagnostics) async {
+  try {
+    await ensureAppDataEpoch();
+  } catch (error, stack) {
+    // 清理失败不阻断启动；控制器仍会要求重新认证。
+    diagnostics.recordUncaught(error, stack, source: 'data_epoch_reset');
+  }
+  await ThemeController.instance.load();
+  runApp(const WatchDogApp());
 }
 
 class WatchDogApp extends StatefulWidget {
@@ -250,11 +252,33 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // 切换主题 = 换一个 palette 实例 + 重建 MaterialApp，因此监听必须包在
+    // MaterialApp 外层；写成 child: 只会构建一次，切换会完全失效。
+    return ListenableBuilder(
+      listenable: ThemeController.instance,
+      builder: (context, _) {
+        assert(
+          AppColors.palette.id == ThemeController.instance.currentId,
+          'AppColors 与 ThemeController 必须来自同一 palette',
+        );
+        return _buildScaffold(context);
+      },
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context) {
     return MaterialApp(
       title: '火场智控',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
-      home: AnimatedBuilder(
+      // 默认 200ms 的 Theme 渐变会与瞬切的 AppColors 并存，出现两套配色。
+      themeAnimationDuration: Duration.zero,
+      // 换主题时按 palette 换 key 强制重建整棵页面树：在 build 里读 AppColors
+      // 的 const 组件会被 Flutter 的 identical 短路跳过，留下旧色。
+      // 代价是切主题会重置页面滚动位置与未提交输入，可接受。
+      home: KeyedSubtree(
+        key: ValueKey(ThemeController.instance.currentId),
+        child: AnimatedBuilder(
         animation: controller,
         builder: (context, _) {
           final pages = [
@@ -503,6 +527,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
             ),
           );
         },
+        ),
       ),
     );
   }
@@ -560,7 +585,7 @@ class _BottomNav extends StatelessWidget {
         return Container(
           key: const Key('bottom-nav-surface'),
           height: 68 + safeBottom,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: AppColors.surface,
             border: Border(top: BorderSide(color: AppColors.border)),
           ),
@@ -639,7 +664,7 @@ class _BottomNav extends StatelessWidget {
       return Container(
         key: const Key('bottom-nav-surface'),
         padding: EdgeInsets.only(bottom: safeBottom + keyboardInset),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.surface,
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
@@ -677,7 +702,7 @@ class _BottomNav extends StatelessWidget {
       key: const Key('bottom-nav-surface'),
       height: 68 + safeBottom,
       // 普通警情处置页的麦克风是底部主操作，不再用顶部灰色横线切割它。
-      decoration: const BoxDecoration(color: AppColors.surface),
+      decoration: BoxDecoration(color: AppColors.surface),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -793,7 +818,7 @@ class _ChatActionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
@@ -855,7 +880,7 @@ class _TextInputToggle extends StatelessWidget {
     final icon = textMode ? Icons.mic_rounded : Icons.keyboard_alt_outlined;
     final label = textMode ? '语音' : '文字';
     final disableAnimations = MediaQuery.of(context).disableAnimations;
-    const color = AppColors.textTertiary;
+    final color = AppColors.textTertiary;
     return Semantics(
       label: textMode ? '切换为语音输入' : '切换为文字输入',
       button: true,
@@ -883,7 +908,7 @@ class _TextInputToggle extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10.5,
                     height: 1.1,
                     fontWeight: FontWeight.w400,

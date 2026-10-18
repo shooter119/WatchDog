@@ -8,18 +8,22 @@ import 'app_widgets.dart';
 /// without adding an SVG runtime dependency to the offline fireground app.
 class FireControlLogo extends StatelessWidget {
   final double size;
-  final Color background;
-  final Color foreground;
+  final Color? background;
+  final Color? foreground;
 
   const FireControlLogo({
     super.key,
     required this.size,
-    this.background = AppColors.actionPrimary,
-    this.foreground = Colors.white,
+    this.background,
+    this.foreground,
   });
 
   @override
   Widget build(BuildContext context) {
+    // 颜色在 build 期解析：默认值不能写成构造参数默认值，否则会被
+    // 编译期常量固化，切换主题后 logo 不跟着变。
+    final background = this.background ?? AppColors.actionPrimary;
+    final foreground = this.foreground ?? AppColors.onPrimary;
     return Semantics(
       label: '火场智控标志',
       image: true,

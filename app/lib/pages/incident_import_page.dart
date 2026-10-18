@@ -685,10 +685,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                     onChanged: (v) => setDialog(() => saveCommon = v == true),
                   ),
                   if (validation != null)
-                    Text(
-                      validation!,
-                      style: const TextStyle(color: AppColors.alarm),
-                    ),
+                    Text(validation!, style: TextStyle(color: AppColors.alarm)),
                 ],
               ),
             ),
@@ -781,7 +778,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                   _poll();
                 },
         ),
-      const Text(
+      Text(
         '导入资料将由当前配置的云端AI处理。请核对识别结果后再应用。',
         style: TextStyle(color: AppColors.textSecondary, height: 1.5),
       ),
@@ -800,7 +797,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       if (_images.isNotEmpty) ...[
         Text(
           '已选${_images.length}/9张 · 长按拖动排序',
-          style: const TextStyle(color: AppColors.textSecondary),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         SizedBox(
           height: 310,
@@ -849,10 +846,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                               : () => setState(() => _images.removeAt(index)),
                           icon: const Icon(Icons.close),
                         ),
-                        const Icon(
-                          Icons.drag_handle,
-                          color: AppColors.textTertiary,
-                        ),
+                        Icon(Icons.drag_handle, color: AppColors.textTertiary),
                       ],
                     ),
                   ),
@@ -926,7 +920,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
         onPressed: _busy ? null : _cancelTask,
         child: const Text('取消本次导入'),
       ),
-      const Text(
+      Text(
         '可返回现场继续工作，稍后从导入入口恢复任务。',
         style: TextStyle(color: AppColors.textTertiary),
       ),
@@ -959,7 +953,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       children: [
         Text(
           '更新目标：${_currentIncident.displayName}',
-          style: const TextStyle(color: AppColors.textSecondary),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 12),
         if (multiple)
@@ -1012,7 +1006,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
             _fields['location']!.text.isEmpty
                 ? '地点待补充'
                 : _fields['location']!.text,
-            style: const TextStyle(color: AppColors.textSecondary),
+            style: TextStyle(color: AppColors.textSecondary),
           ),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
@@ -1041,7 +1035,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                   ),
                 ),
               if (_draftDetails['specific_type_inferred'] == true)
-                const Text(
+                Text(
                   '具体类型由描述推断，请核对。',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
@@ -1069,7 +1063,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                 icon: const Icon(Icons.edit_outlined, size: 19),
               ),
             ),
-          const Text(
+          Text(
             '通报出动／调派不代表到场，不计入个人进场记录。',
             style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
           ),
@@ -1217,10 +1211,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _error!,
-                      style: const TextStyle(color: AppColors.alarm),
-                    ),
+                    Text(_error!, style: TextStyle(color: AppColors.alarm)),
                     if (_error!.contains('权限'))
                       TextButton(
                         onPressed: StorageService.openAppSettings,

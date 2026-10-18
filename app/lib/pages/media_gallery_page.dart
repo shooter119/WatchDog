@@ -187,7 +187,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
       padding: const EdgeInsets.all(32),
       children: [
         const SizedBox(height: 60),
-        const Icon(
+        Icon(
           Icons.photo_library_outlined,
           size: 42,
           color: AppColors.textSecondary,
@@ -196,7 +196,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
         Text(
           hasIncident ? '还没有拍摄现场照片或录像' : '还没有当前警情',
           textAlign: TextAlign.center,
-          style: const TextStyle(color: AppColors.textSecondary),
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         const SizedBox(height: 6),
         Text(
@@ -204,7 +204,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
               ? '在首页警情卡点「水印相机」拍摄，文件会保存在这台设备上'
               : '先加入或新建警情，拍摄的现场资料会归到当前警情下',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ],
     );
@@ -219,7 +219,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
       itemBuilder: (context, index) {
         if (_unlinked.isNotEmpty) {
           if (index == 0) {
-            return const Padding(
+            return Padding(
               padding: EdgeInsets.only(top: 4, bottom: 2),
               child: Text(
                 '未关联警情（加入警情后可关联并写入记录）',
@@ -252,7 +252,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (media.observationId.isNotEmpty)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(bottom: 2),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -286,7 +286,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                             : '未识别到口述内容'),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
                   ),

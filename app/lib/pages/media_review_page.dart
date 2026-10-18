@@ -467,13 +467,13 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               ),
               if (_submitted) ...[
                 const SizedBox(width: 8),
-                const Icon(
+                Icon(
                   Icons.check_circle_rounded,
                   size: 16,
                   color: AppColors.online,
                 ),
                 const SizedBox(width: 4),
-                const Flexible(
+                Flexible(
                   child: Text(
                     '已写入警情',
                     maxLines: 1,
@@ -490,7 +490,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           const SizedBox(height: 8),
           Text(
             _timeText,
-            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
           if (_media.address.isNotEmpty)
             Padding(
@@ -499,14 +499,14 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                 _media.weather.isEmpty
                     ? _media.address
                     : '${_media.address} · ${_media.weather}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   color: AppColors.textSecondary,
                 ),
               ),
             ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '原始文件只保存在本机；只有你核对后的文字会上传',
             style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
           ),
@@ -534,10 +534,10 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           Text(
             _stage.isEmpty ? '正在处理…' : _stage,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             '识别在本机完成，不上传音频',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
@@ -567,7 +567,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 2),
                 child: Icon(
                   Icons.error_outline_rounded,
@@ -579,7 +579,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               Expanded(
                 child: Text(
                   _deriveError!,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     color: AppColors.textPrimary,
                     height: 1.4,
@@ -636,7 +636,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             style: const TextStyle(fontSize: 14, height: 1.5),
             decoration: InputDecoration(
               hintText: '没有识别到口述内容时，可以在这里手动补写',
-              hintStyle: const TextStyle(color: AppColors.textSecondary),
+              hintStyle: TextStyle(color: AppColors.textSecondary),
               filled: true,
               fillColor: AppColors.surfaceSubtle,
               border: OutlineInputBorder(
@@ -648,7 +648,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           ),
           if (segments.isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Text(
+            Text(
               '按住片段可删除误识别内容，删除后可撤销',
               style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
             ),
@@ -675,7 +675,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                       ),
                       child: Text(
                         '${_formatOffset(segment.startMs)}  ${segment.text}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textSecondary,
                         ),

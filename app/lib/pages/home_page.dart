@@ -725,7 +725,7 @@ class HomePageState extends State<HomePage> {
                         color: AppColors.caution.withValues(alpha: 0.16),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.exit_to_app_rounded,
                         color: AppColors.caution,
                         size: 26,
@@ -757,7 +757,7 @@ class HomePageState extends State<HomePage> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.groups_rounded,
                         color: AppColors.textPrimary,
                         size: 24,
@@ -1587,7 +1587,7 @@ class HomePageState extends State<HomePage> {
       final goAuth = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Row(
+          title: Row(
             children: [
               Icon(Icons.lock_outline_rounded, color: AppColors.voice),
               SizedBox(width: 8),
@@ -1900,7 +1900,7 @@ class HomePageState extends State<HomePage> {
               Text(
                 '最终采用本次输入：${vehicles.trim().isEmpty ? '车辆待补充' : '$vehicles车'}，${people.trim().isEmpty ? '人数待补充' : '$people人'}。不累加原数量。',
               ),
-              const Text(
+              Text(
                 '源记录将合并到目标记录，保留目标名称及合并历史。',
                 style: TextStyle(color: AppColors.textSecondary),
               ),
@@ -1954,7 +1954,7 @@ class HomePageState extends State<HomePage> {
           children: [
             _PulseMic(intensity: _amp),
             const SizedBox(height: 24),
-            const Text(
+            Text(
               '请清晰说出：姓名 + 气瓶压力',
               style: TextStyle(
                 color: AppColors.textSecondary,
@@ -1963,7 +1963,7 @@ class HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '或：出火场人员姓名',
               style: TextStyle(color: AppColors.textTertiary, fontSize: 14),
             ),
@@ -1982,7 +1982,7 @@ class HomePageState extends State<HomePage> {
                 child: Text(
                   _transcript!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 17,
                     height: 1.45,
@@ -2010,7 +2010,7 @@ class HomePageState extends State<HomePage> {
               const SizedBox(height: 10),
               Text(
                 '已录入 ${_peopleEditors.length} 人，本次语音将追加到名单',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.voice,
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -2032,10 +2032,7 @@ class HomePageState extends State<HomePage> {
               child: CircularProgressIndicator(strokeWidth: 3),
             ),
             const SizedBox(height: 18),
-            const Text(
-              '语音转文字中…',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
+            Text('语音转文字中…', style: TextStyle(color: AppColors.textSecondary)),
           ],
         ),
       );
@@ -2054,16 +2051,12 @@ class HomePageState extends State<HomePage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.error_outline,
-                color: AppColors.caution,
-                size: 36,
-              ),
+              Icon(Icons.error_outline, color: AppColors.caution, size: 36),
               const SizedBox(height: 12),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
@@ -2117,7 +2110,7 @@ class HomePageState extends State<HomePage> {
                       decoration: BoxDecoration(
                         color: AppColors.surface,
                         borderRadius: BorderRadius.circular(AppRadius.md),
-                        border: const Border.fromBorderSide(
+                        border: Border.fromBorderSide(
                           BorderSide(color: AppColors.border),
                         ),
                       ),
@@ -2132,14 +2125,14 @@ class HomePageState extends State<HomePage> {
                               Container(
                                 width: 30,
                                 height: 30,
-                                decoration: const BoxDecoration(
+                                decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   color: AppColors.voice,
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.mic_rounded,
                                   size: 17,
-                                  color: Colors.white,
+                                  color: AppColors.onPrimary,
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -2147,7 +2140,7 @@ class HomePageState extends State<HomePage> {
                                 child: Text(
                                   '按住下方按钮说话',
                                   softWrap: true,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: AppColors.textPrimary,
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
@@ -2249,7 +2242,7 @@ class HomePageState extends State<HomePage> {
                   children: [
                     Icon(Icons.graphic_eq, size: 16, color: AppColors.voice),
                     const SizedBox(width: 6),
-                    const Text(
+                    Text(
                       '转写结果',
                       style: TextStyle(
                         color: AppColors.textTertiary,
@@ -2262,7 +2255,7 @@ class HomePageState extends State<HomePage> {
                 const SizedBox(height: 8),
                 Text(
                   _transcript!,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 17,
                     height: 1.4,
                     color: AppColors.textPrimary,
@@ -2276,19 +2269,19 @@ class HomePageState extends State<HomePage> {
             AppCard(
               padding: const EdgeInsets.all(16),
               color: AppColors.safe.withValues(alpha: 0.10),
-              side: const BorderSide(color: AppColors.safe, width: 1),
+              side: BorderSide(color: AppColors.safe, width: 1),
               child: Column(
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.logout, color: AppColors.safe),
+                      Icon(Icons.logout, color: AppColors.safe),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           _parsed!.people.isEmpty
                               ? '识别为全员离场指令，正在等待确认'
                               : '识别为出火场指令：${_parsed!.people.map((p) => p.name).join('、')}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: AppColors.textPrimary,
@@ -2314,7 +2307,7 @@ class HomePageState extends State<HomePage> {
             AppCard(
               child: Column(
                 children: [
-                  const Text(
+                  Text(
                     '未识别到人员信息，请重新语音输入',
                     textAlign: TextAlign.center,
                     style: TextStyle(
@@ -2397,17 +2390,13 @@ class HomePageState extends State<HomePage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.fact_check_outlined,
-                size: 16,
-                color: AppColors.voice,
-              ),
+              Icon(Icons.fact_check_outlined, size: 16, color: AppColors.voice),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   '确认名单（${_peopleEditors.length} 人）：请下滑核对后一次性确认',
                   softWrap: true,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textTertiary,
                     fontSize: 12,
                     letterSpacing: 0.5,
@@ -2493,7 +2482,7 @@ class HomePageState extends State<HomePage> {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: const Border.fromBorderSide(
+          border: Border.fromBorderSide(
             BorderSide(color: AppColors.border),
           ),
           boxShadow: AppShadow.card,
@@ -2507,7 +2496,7 @@ class HomePageState extends State<HomePage> {
                 Container(
                   width: 32,
                   height: 32,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: AppColors.voice,
                   ),
@@ -2524,7 +2513,7 @@ class HomePageState extends State<HomePage> {
                     children: [
                       Row(
                         children: [
-                          const Flexible(
+                          Flexible(
                             child: Text(
                               '按住下方按钮说话',
                               style: TextStyle(
@@ -2547,7 +2536,7 @@ class HomePageState extends State<HomePage> {
                             ),
                             child: Text(
                               '在场${activeEntries.length}人',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppColors.voice,
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -2557,7 +2546,7 @@ class HomePageState extends State<HomePage> {
                         ],
                       ),
                       const SizedBox(height: 2),
-                      const Text(
+                      Text(
                         '空呼倒计时监护中 · 报数/出场/记录',
                         style: TextStyle(
                           color: AppColors.textTertiary,
@@ -2603,7 +2592,7 @@ class HomePageState extends State<HomePage> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.warning_amber_rounded,
                       size: 15,
                       color: AppColors.alarm,
@@ -2612,7 +2601,7 @@ class HomePageState extends State<HomePage> {
                     Expanded(
                       child: Text(
                         '${dangerEntries.length} 名队员气瓶已进入警报或预警，请注意！',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.alarm,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -2675,7 +2664,7 @@ class HomePageState extends State<HomePage> {
                           children: [
                             Text(
                               e.name,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
                                 color: AppColors.textPrimary,
@@ -2700,7 +2689,7 @@ class HomePageState extends State<HomePage> {
                                 ),
                                 Text(
                                   '${(e.pressureMpa ?? 0).toStringAsFixed(1)} MPa',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 10.5,
                                     color: AppColors.textTertiary,
                                     fontFeatures: [FontFeature.tabularFigures()],
@@ -2709,7 +2698,7 @@ class HomePageState extends State<HomePage> {
                               ],
                             ),
                             const SizedBox(width: 8),
-                            const Icon(
+                            Icon(
                               Icons.chevron_right_rounded,
                               size: 18,
                               color: AppColors.textTertiary,
@@ -2726,7 +2715,7 @@ class HomePageState extends State<HomePage> {
             Container(
               padding: const EdgeInsets.symmetric(vertical: 4),
               alignment: Alignment.center,
-              child: const Text(
+              child: Text(
                 '长按底部橙色按钮，可直接报数复核或登记出场',
                 style: TextStyle(
                   color: AppColors.textTertiary,
@@ -2813,7 +2802,7 @@ class HomePageState extends State<HomePage> {
       child: Text(
         message,
         textAlign: TextAlign.center,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 13,
           color: AppColors.alarm,
           fontWeight: FontWeight.w700,
@@ -2838,7 +2827,7 @@ class HomePageState extends State<HomePage> {
       borderRadius: BorderRadius.circular(AppRadius.sm),
       border: Border.all(color: AppColors.caution.withValues(alpha: 0.4)),
     );
-    final style = const TextStyle(
+    final style = TextStyle(
       fontSize: 13,
       color: AppColors.textSecondary,
       fontWeight: FontWeight.w600,
@@ -2874,13 +2863,13 @@ class HomePageState extends State<HomePage> {
             decoration: boxStyle,
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.gas_meter_outlined,
                   size: 16,
                   color: AppColors.textTertiary,
                 ),
                 const SizedBox(width: 6),
-                const Text(
+                Text(
                   '容量',
                   style: TextStyle(
                     fontSize: 12.5,
@@ -2898,7 +2887,7 @@ class HomePageState extends State<HomePage> {
                       decimal: true,
                     ),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary,
@@ -2914,7 +2903,7 @@ class HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Text(
+                Text(
                   'L',
                   style: TextStyle(
                     fontSize: 12.5,
@@ -2937,7 +2926,7 @@ class HomePageState extends State<HomePage> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: boxStyle,
-            child: const Text(
+            child: Text(
               '未识别到气瓶压力，请手动填写（如 20）',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -2985,7 +2974,7 @@ class HomePageState extends State<HomePage> {
                 child: Text(
                   label,
                   softWrap: true,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
@@ -2997,7 +2986,7 @@ class HomePageState extends State<HomePage> {
           const SizedBox(height: 5),
           Text(
             example,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               height: 1.4,
               color: AppColors.textSecondary,
@@ -3059,14 +3048,11 @@ class _IndexBadge extends StatelessWidget {
       width: 24,
       height: 24,
       alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.voice,
-      ),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.voice),
       child: Text(
         '${index + 1}',
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: AppColors.onPrimary,
           fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
@@ -3103,11 +3089,7 @@ class _PulseMic extends StatelessWidget {
               width: 2,
             ),
           ),
-          child: const Icon(
-            Icons.mic_rounded,
-            size: 46,
-            color: AppColors.voice,
-          ),
+          child: Icon(Icons.mic_rounded, size: 46, color: AppColors.voice),
         ),
       ),
     );
@@ -3133,7 +3115,7 @@ class _IncidentPicker extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
+          Row(
             children: [
               SizedBox(
                 width: 4,
@@ -3153,14 +3135,14 @@ class _IncidentPicker extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '加入后，现场记录都会归入这份档案。',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 12),
           Expanded(
             child: isEmpty
-                ? const Center(
+                ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -3191,7 +3173,7 @@ class _IncidentPicker extends StatelessWidget {
                 : ListView.separated(
                     padding: EdgeInsets.zero,
                     itemCount: activeIncidents.length,
-                    separatorBuilder: (_, __) => const Divider(
+                    separatorBuilder: (_, __) => Divider(
                       height: 1,
                       indent: 12,
                       endIndent: 12,
@@ -3236,7 +3218,7 @@ class _IncidentPicker extends StatelessWidget {
                                         hasManualTitle
                                             ? '${incident.number} · 处置中'
                                             : '处置中',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: AppColors.voice,
                                           fontSize: 13,
                                           fontWeight: FontWeight.w700,
@@ -3285,7 +3267,7 @@ class _IncidentPicker extends StatelessWidget {
               label: const Text('新建警情'),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.voice,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.onPrimary,
                 minimumSize: const Size.fromHeight(50),
               ),
             )
@@ -3296,7 +3278,7 @@ class _IncidentPicker extends StatelessWidget {
               label: const Text('新建警情'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.voice,
-                side: const BorderSide(color: AppColors.voice),
+                side: BorderSide(color: AppColors.voice),
                 minimumSize: const Size.fromHeight(50),
               ),
             ),
@@ -3304,10 +3286,7 @@ class _IncidentPicker extends StatelessWidget {
           Center(
             child: Text(
               isEmpty ? '系统将自动生成临时名称' : '新建后可补充中文名称',
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ),
         ],
@@ -3388,61 +3367,61 @@ class _TaskBarState extends State<_TaskBar> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                        Text(
-                          widget.incident.displayName,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
+                          Text(
+                            widget.incident.displayName,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          [
-                            if ((widget.incident.info['original_category']
-                                        as String?)
-                                    ?.isNotEmpty ==
-                                true)
-                              widget.incident.info['original_category']
-                                  as String,
-                            widget.forces.isEmpty
-                                ? '力量待登记'
-                                : '${widget.forces.length}支队伍',
-                          ].join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
+                          const SizedBox(height: 4),
+                          Text(
+                            [
+                              if ((widget.incident.info['original_category']
+                                          as String?)
+                                      ?.isNotEmpty ==
+                                  true)
+                                widget.incident.info['original_category']
+                                    as String,
+                              widget.forces.isEmpty
+                                  ? '力量待登记'
+                                  : '${widget.forces.length}支队伍',
+                            ].join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _expanded ? '收起' : '展开',
-                    style: const TextStyle(
-                      fontSize: 12,
+                    const SizedBox(width: 8),
+                    Text(
+                      _expanded ? '收起' : '展开',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
                       color: AppColors.textSecondary,
                     ),
-                  ),
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 20,
-                    color: AppColors.textSecondary,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
-      if (_expanded) ...[
+        if (_expanded) ...[
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.schedule_outlined,
                 size: 14,
                 color: AppColors.textTertiary,
@@ -3451,10 +3430,7 @@ class _TaskBarState extends State<_TaskBar> {
               Expanded(
                 child: Text(
                   widget.incident.number,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textTertiary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -3477,10 +3453,7 @@ class _TaskBarState extends State<_TaskBar> {
               ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ],
           const SizedBox(height: 8),
@@ -3528,15 +3501,12 @@ class _TaskBarState extends State<_TaskBar> {
               ),
               Text(
                 '${widget.forces.length}支队伍',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textTertiary,
-                ),
+                style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
               ),
             ],
           ),
           if (widget.forces.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 1),
               child: Text(
                 '尚未登记参战力量',
@@ -3678,11 +3648,11 @@ class _ForceRow extends StatelessWidget {
                 width: 32,
                 height: 32,
                 alignment: Alignment.center,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   color: AppColors.surfaceSubtle,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.local_shipping_outlined,
                   size: 19,
                   color: AppColors.textSecondary,
@@ -3709,7 +3679,7 @@ class _ForceRow extends StatelessWidget {
                             : force.deploymentStatus == 'dispatched'
                             ? '通报已调派'
                             : '来自通报'} · 到场未确认',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textTertiary,
                         ),

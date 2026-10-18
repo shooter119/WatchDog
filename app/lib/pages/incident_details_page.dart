@@ -142,12 +142,12 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
             ),
             const SizedBox(height: 16),
             if (_detail?['offline'] == true)
-              const Text(
+              Text(
                 '当前显示本机缓存，联网后刷新可获取最新资料。',
                 style: TextStyle(color: AppColors.textSecondary),
               ),
             if (_error != null) ...[
-              Text(_error!, style: const TextStyle(color: AppColors.alarm)),
+              Text(_error!, style: TextStyle(color: AppColors.alarm)),
               TextButton(onPressed: _load, child: const Text('重新读取')),
             ],
             if (_detail == null && _error == null)
@@ -160,14 +160,14 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
                     contentPadding: EdgeInsets.zero,
                     title: Text(
                       field.value,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),
                     ),
                     subtitle: SelectableText(
                       data[field.key].toString(),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         color: AppColors.textPrimary,
                       ),

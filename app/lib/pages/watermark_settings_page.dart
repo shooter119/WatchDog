@@ -151,7 +151,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
             : ListView(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
                 children: [
-                  const Text(
+                  Text(
                     '修改后请点右上角保存，下次拍摄生效。离开时会提醒未保存的修改。',
                     style: TextStyle(color: AppColors.textSecondary),
                   ),
@@ -228,7 +228,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   Text(
                     '水印在按下快门或开始录像那一刻固定，成片中的时间、地址不会随时间跳动。'
                     '照片与视频只保存在本机，是否分享由你逐次决定。',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       color: AppColors.textSecondary,
                       height: 1.6,
@@ -278,7 +278,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
   }
 
   Widget _previewCardBody(WatermarkSettings s) {
-    const blue = AppColors.noteInfo;
+    final blue = AppColors.noteInfo;
     final rows = <(String, String)>[
       if (s.showTime) ('拍摄\r\n时间', '2026.10.18 星期日 08:39'),
       if (s.showWeather) ('天气', '晴 21℃ 东南风2级 湿度87%'),
@@ -408,16 +408,16 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
           helperText: helper,
           helperMaxLines: 6,
           hintMaxLines: 4,
-          helperStyle: const TextStyle(color: AppColors.textSecondary),
+          helperStyle: TextStyle(color: AppColors.textSecondary),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.textSecondary),
+            borderSide: BorderSide(color: AppColors.textSecondary),
           ),
           filled: true,
           fillColor: AppColors.surface,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.border),
+            borderSide: BorderSide(color: AppColors.border),
           ),
         ),
       ),
@@ -439,7 +439,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       activeTrackColor: AppColors.voice,
       inactiveThumbColor: AppColors.textSecondary,
       inactiveTrackColor: AppColors.surface,
-      trackOutlineColor: const WidgetStatePropertyAll(AppColors.textSecondary),
+      trackOutlineColor: WidgetStatePropertyAll(AppColors.textSecondary),
       onChanged: _saving ? null : onChanged,
     );
   }

@@ -87,7 +87,7 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
               children: [
                 _buildHeader(context, e.name, current),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   '选择当前气瓶压力读数，系统将自动估算实测消耗率并修正剩余时间',
                   style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
                 ),
@@ -126,22 +126,22 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                     ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppRadius.md),
-                      borderSide: const BorderSide(color: AppColors.border),
+                      borderSide: BorderSide(color: AppColors.border),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppRadius.md),
-                      borderSide: const BorderSide(color: AppColors.border),
+                      borderSide: BorderSide(color: AppColors.border),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppRadius.md),
-                      borderSide: const BorderSide(
+                      borderSide: BorderSide(
                         color: AppColors.actionPrimary,
                         width: 2,
                       ),
                     ),
-                    labelStyle: const TextStyle(color: AppColors.textTertiary),
-                    hintStyle: const TextStyle(color: AppColors.textTertiary),
-                    suffixStyle: const TextStyle(
+                    labelStyle: TextStyle(color: AppColors.textTertiary),
+                    hintStyle: TextStyle(color: AppColors.textTertiary),
+                    suffixStyle: TextStyle(
                       color: AppColors.textSecondary,
                       fontWeight: FontWeight.w700,
                     ),
@@ -155,12 +155,12 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                         ? null
                         : _submit,
                     icon: _submitting
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: AppColors.onPrimary,
                             ),
                           )
                         : Icon(Icons.speed, color: fg),
@@ -174,7 +174,7 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.actionPrimary,
                       disabledBackgroundColor: AppColors.surfaceSubtle,
-                      foregroundColor: Colors.white,
+                      foregroundColor: AppColors.onPrimary,
                       disabledForegroundColor: AppColors.textTertiary
                           .withValues(alpha: 0.6),
                       textStyle: const TextStyle(
@@ -213,7 +213,7 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
             ),
             child: Text(
               '初始 $current MPa',
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -286,7 +286,7 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                 color: disabled
                     ? AppColors.textTertiary.withValues(alpha: 0.3)
                     : selected
-                    ? Colors.white
+                    ? AppColors.onPrimary
                     : AppColors.textPrimary,
               ),
             ),

@@ -134,10 +134,10 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+            icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
             onPressed: () => Navigator.pop(context),
           ),
-          const Text(
+          Text(
             '人员详情',
             style: TextStyle(
               fontSize: 17,
@@ -169,10 +169,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       decoration: BoxDecoration(
         color: s.color,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.4),
-          width: 1,
-        ),
+        border: Border.all(color: s.fg.withValues(alpha: 0.4), width: 1),
         boxShadow: AppShadow.card,
       ),
       child: Row(
@@ -239,7 +236,8 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final textScale = MediaQuery.textScalerOf(context).scale(1);
-          final accessibleLayout = constraints.maxWidth < 300 || textScale > 1.25;
+          final accessibleLayout =
+              constraints.maxWidth < 300 || textScale > 1.25;
           final details = Wrap(
             alignment: WrapAlignment.center,
             spacing: 16,
@@ -252,7 +250,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                   const SizedBox(width: 5),
                   Text(
                     '${e.durationMin} 分钟上限',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 13,
                     ),
@@ -267,7 +265,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                     const SizedBox(width: 5),
                     Text(
                       '${e.pressureMpa} MPa',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 13,
                       ),
@@ -289,12 +287,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '剩余时间',
-                style: TextStyle(
-                  color: AppColors.textTertiary,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
               ),
               const SizedBox(height: 2),
               Text(
@@ -369,11 +364,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         '气瓶压力',
         e.pressureMpa != null ? '${e.pressureMpa} MPa' : '--',
       ),
-      _infoTile(
-        Icons.local_fire_department_outlined,
-        '气瓶容量',
-        '$volume L',
-      ),
+      _infoTile(Icons.local_fire_department_outlined, '气瓶容量', '$volume L'),
       _infoTile(Icons.water_drop_outlined, '消耗率', '$consumption L/min'),
       _infoTile(
         Icons.local_fire_department_outlined,
@@ -428,10 +419,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
                 label,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textTertiary,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
               ),
             ),
           ],
@@ -440,7 +428,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
         Text(
           value,
           softWrap: true,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 15.5,
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
@@ -461,7 +449,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
             children: [
               Icon(Icons.graphic_eq, size: 15, color: AppColors.voice),
               const SizedBox(width: 6),
-              const Text(
+              Text(
                 '原始语音转写',
                 style: TextStyle(
                   color: AppColors.textTertiary,
@@ -474,7 +462,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           const SizedBox(height: 8),
           Text(
             raw,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               height: 1.4,
               color: AppColors.textPrimary,
@@ -498,16 +486,12 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
               color: AppColors.surface,
               border: Border.all(color: AppColors.border),
             ),
-            child: const Icon(
-              Icons.logout,
-              size: 42,
-              color: AppColors.textTertiary,
-            ),
+            child: Icon(Icons.logout, size: 42, color: AppColors.textTertiary),
           ),
           const SizedBox(height: 20),
           Text(
             name == null ? '该记录已不存在' : '「$name」已出火场',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
               color: AppColors.textSecondary,

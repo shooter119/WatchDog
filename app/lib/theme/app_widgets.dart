@@ -2,56 +2,80 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'app_palette.dart';
 import 'nav_icons.dart';
 
 /// ============================================================
-/// 设计 Token —— 高可视亮色 High-Vis Light（UI 规范 V0.1）
+/// 颜色门面 —— 界面只从这里取色
+///
+/// 具体色值由 [AppPalette] 提供；切换主题时整个调色板实例替换，
+/// 因此页面代码无需感知主题，只需保证取色发生在 `build` 期间。
+/// `AppColors.use` 只允许 `ThemeController` 调用；测试用 `reset()`。
 /// ============================================================
 
 class AppColors {
   AppColors._();
 
+  static AppPalette _palette = AppPalette.daylight;
+
+  static AppPalette get palette => _palette;
+
+  static void use(AppPalette palette) => _palette = palette;
+
+  /// 测试复位：静态状态不能跨用例泄漏。
+  static void reset() => _palette = AppPalette.daylight;
+
   // 背景与表面
-  static const background = Color(0xFFF2F4F7); // color.background.primary
-  static const surface = Color(0xFFFFFFFF); // color.surface.primary
-  static const surfaceSubtle = Color(0xFFE8ECF1); // color.surface.subtle
-  static const avatarBackdrop = Color(0xFFDDF3F5); // 水元素头像透明区承载底色
-  static const border = Color(0xFFD7DDE5); // color.border.default
+  static Color get background => _palette.background;
+  static Color get surface => _palette.surface;
+  static Color get surfaceSubtle => _palette.surfaceSubtle;
+  static Color get avatarBackdrop => _palette.avatarBackdrop;
+  static Color get border => _palette.border;
 
   // 文字
-  static const textPrimary = Color(0xFF111111); // color.text.primary
-  static const textSecondary = Color(0xFF4B5563); // color.text.secondary
-  static const textTertiary = Color(0xFF6B7280); // color.text.tertiary
+  static Color get textPrimary => _palette.textPrimary;
+  static Color get textSecondary => _palette.textSecondary;
+  static Color get textTertiary => _palette.textTertiary;
 
   // 状态（只承担状态语义，不做普通装饰）
-  static const safe = Color(0xFF32C943); // color.status.safe
-  static const caution = Color(0xFFFFB000); // color.status.caution
-  static const alarm = Color(0xFFF5222D); // color.status.alarm
-  static const timeout = Color(0xFFC90016); // color.status.timeout
+  static Color get safe => _palette.safe;
+  static Color get caution => _palette.caution;
+  static Color get alarm => _palette.alarm;
+  static Color get timeout => _palette.timeout;
 
   // 动作
-  static const voice = Color(0xFFFF9500); // color.action.voice
-  static const actionPrimary = Color(0xFF111111); // color.action.primary
-  static const onStatus = Color(0xFFFFFFFF); // 红色卡片上的倒计时与按钮文字
+  /// 语音入口（麦克风按钮、录音态），图形专用。
+  static Color get voice => _palette.voice;
+  static Color get actionPrimary => _palette.actionPrimary;
+
+  /// 深色底（actionPrimary/voice/alarm）上的文字与图标。
+  static Color get onPrimary => _palette.onPrimary;
+
+  /// 整块状态色卡片上的倒计时与按钮文字。
+  static Color get onStatus => _palette.onStatus;
 
   // 连接
-  static const online = Color(0xFF20A83A); // color.connection.online
+  static Color get online => _palette.online;
 
   // 页面语义色：页面只引用这些 token，不自行散落颜色字面量
-  static const noteInfo = Color(0xFF2F6FED);
-  static const noteWater = caution;
-  static const noteNeutral = textTertiary;
-  static const rankGold = Color(0xFFF5B301);
-  static const rankSilver = Color(0xFF9AA5B1);
-  static const rankBronze = Color(0xFFB77B4A);
-  static const heroMuted = Color(0xFFA9B1BD);
-  static const heroActive = Color(0xFFC5F4CC);
-  static const heroInactive = Color(0xFFBFC7D2);
-  static const heroLabel = Color(0xFF9BA5B2);
-  static const heroOnDark = Color(0xFFFFFFFF);
-  static const heroOnDarkBorder = Color(0x3DFFFFFF);
-  static const heroOnDarkRing = Color(0x0AFFFFFF);
-  static const heroOnDarkRingFaint = Color(0x08FFFFFF);
+  static Color get noteInfo => _palette.noteInfo;
+  static Color get noteWater => _palette.caution;
+  static Color get noteNeutral => _palette.textTertiary;
+  static Color get rankGold => _palette.rankGold;
+  static Color get rankSilver => _palette.rankSilver;
+  static Color get rankBronze => _palette.rankBronze;
+
+  // 设置页深色大卡
+  /// 深色大卡背景，与 actionPrimary 解耦：主色变陶土红时整卡不跟着变红。
+  static Color get heroBackground => _palette.heroBackground;
+  static Color get heroMuted => _palette.heroMuted;
+  static Color get heroActive => _palette.heroActive;
+  static Color get heroInactive => _palette.heroInactive;
+  static Color get heroLabel => _palette.heroLabel;
+  static Color get heroOnDark => _palette.heroOnDark;
+  static Color get heroOnDarkBorder => _palette.heroOnDarkBorder;
+  static Color get heroOnDarkRing => _palette.heroOnDarkRing;
+  static Color get heroOnDarkRingFaint => _palette.heroOnDarkRingFaint;
 }
 
 /// 8px 基础间距系统（space.1~space.10）
@@ -77,15 +101,11 @@ class AppRadius {
   static const pill = 999.0;
 }
 
-/// 克制阴影
+/// 克制阴影（随主题走：暖砂用暖褐投影，避免冷黑压在暖纸上发脏）
 class AppShadow {
   AppShadow._();
-  static const card = [
-    BoxShadow(color: Color(0x14111111), blurRadius: 8, offset: Offset(0, 2)),
-  ];
-  static const float = [
-    BoxShadow(color: Color(0x29111111), blurRadius: 16, offset: Offset(0, 6)),
-  ];
+  static List<BoxShadow> get card => AppColors.palette.cardShadow;
+  static List<BoxShadow> get float => AppColors.palette.floatShadow;
 }
 
 /// 字级层级（type.display.xl ~ type.caption）
@@ -146,28 +166,28 @@ class EntryStatus {
   const EntryStatus(this.color, this.label, this.icon, this.danger, this.fg);
 
   static EntryStatus of(String status) => switch (status) {
-    'normal' => const EntryStatus(
+    'normal' => EntryStatus(
       AppColors.safe,
       '安全',
       Icons.check_circle,
       false,
       AppColors.textPrimary,
     ),
-    'warn' => const EntryStatus(
+    'warn' => EntryStatus(
       AppColors.caution,
       '注意',
       Icons.warning_amber_rounded,
       false,
       AppColors.textPrimary,
     ),
-    'alarm' => const EntryStatus(
+    'alarm' => EntryStatus(
       AppColors.alarm,
       '报警',
       Icons.notifications_active,
       true,
       AppColors.onStatus,
     ),
-    _ => const EntryStatus(
+    _ => EntryStatus(
       AppColors.timeout,
       '超时',
       Icons.timer_off_outlined,
@@ -207,7 +227,7 @@ class AppCard extends StatelessWidget {
         color: color ?? AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radius),
-          side: side ?? const BorderSide(color: AppColors.border, width: 1),
+          side: side ?? BorderSide(color: AppColors.border, width: 1),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -318,7 +338,7 @@ class SectionTitle extends StatelessWidget {
                 Flexible(
                   child: Text(
                     text,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -340,20 +360,22 @@ class SectionTitle extends StatelessWidget {
 /// 大号等宽倒计时数字（MM:SS，超时后按需显示文案）
 class CountdownText extends StatelessWidget {
   final int ms;
-  final Color color;
+  final Color? color;
   final double size;
   final String? timeoutText; // 超时后显示的替代文案
 
   const CountdownText({
     super.key,
     required this.ms,
-    this.color = AppColors.textPrimary,
+    this.color,
     this.size = 56,
     this.timeoutText,
   });
 
   @override
   Widget build(BuildContext context) {
+    // 默认色在 build 期解析，否则 const 默认参数会把主题色固化在编译期。
+    final color = this.color ?? AppColors.textPrimary;
     if (ms <= 0 && timeoutText != null) {
       return Text(
         timeoutText!,
@@ -570,7 +592,7 @@ class ConnectionStatus extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textSecondary,
             fontSize: 11,
             fontWeight: FontWeight.w600,

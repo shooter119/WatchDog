@@ -152,7 +152,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
+          Text(
             '本单位成员均可新增。已有队伍的名称、别名和停用由管理员维护；修改不影响历史警情。',
             style: TextStyle(color: AppColors.textSecondary, height: 1.5),
           ),
@@ -160,10 +160,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                _error!,
-                style: const TextStyle(color: AppColors.alarm),
-              ),
+              child: Text(_error!, style: TextStyle(color: AppColors.alarm)),
             ),
           for (final station in _stations)
             ListTile(

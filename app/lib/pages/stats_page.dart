@@ -155,7 +155,7 @@ class _StatsPageState extends State<StatsPage> {
                                     const SizedBox(width: 4),
                                     Text(
                                       _sortByDuration ? '按总时长' : '按次数',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: AppColors.textTertiary,
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
@@ -170,7 +170,7 @@ class _StatsPageState extends State<StatsPage> {
                       ),
                     ),
                     if (people.isEmpty)
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.symmetric(vertical: 40),
                         child: Center(
                           child: Text(
@@ -322,7 +322,7 @@ class _SummaryCard extends StatelessWidget {
             value,
             maxLines: compact ? null : 1,
             overflow: compact ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
@@ -333,7 +333,7 @@ class _SummaryCard extends StatelessWidget {
             label,
             maxLines: compact ? null : 1,
             overflow: compact ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, color: AppColors.textTertiary),
+            style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
           ),
         ],
       ),
@@ -397,7 +397,7 @@ class _PersonRow extends StatelessWidget {
               Text(
                 '${person.count} 次 · ${_fmt(person.totalMs)}',
                 softWrap: true,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
@@ -406,10 +406,7 @@ class _PersonRow extends StatelessWidget {
               Text(
                 '平均 ${_fmt(person.avgMs)}',
                 softWrap: true,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textTertiary,
-                ),
+                style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
               ),
             ],
           );
@@ -426,7 +423,7 @@ class _PersonRow extends StatelessWidget {
                       Text(
                         person.name,
                         softWrap: true,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: AppColors.textPrimary,
@@ -449,7 +446,7 @@ class _PersonRow extends StatelessWidget {
                   person.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,

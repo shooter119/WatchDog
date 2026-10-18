@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../theme/app_palette.dart';
 import 'secure_store.dart';
 
 class Settings {
@@ -73,6 +74,7 @@ class Settings {
   static const _kPendingAppStationName = 'pending_app_station_name';
   static const _kPendingAppPhone = 'pending_app_phone';
   static const _kPendingAppSubmittedAt = 'pending_app_submitted_at';
+  static const _kAppTheme = 'app_theme';
 
   static bool _isLocalHost(String host) => const {
     'localhost',
@@ -373,6 +375,25 @@ class Settings {
     } else {
       await SecureStore.write(_kUnitCode, value);
     }
+  }
+
+  /// 当前设备的外观配色；属于设备级体验偏好：
+  ///
+  /// - **不进入** [syncKeys]/[toSyncMap]：后端 `USER_SETTING_KEYS` 白名单不含
+  ///   该键，且 PUT 只接受 number/boolean，加进去会被静默丢弃（不是 409）。
+  /// - 非法或空值归一化为默认方案并写回，避免脏数据导致无主题。
+  /// - 数据纪元重置执行 `sp.clear()` 后会回落默认，属预期行为。
+  static Future<String> get appThemeId async {
+    final sp = await SharedPreferences.getInstance();
+    final raw = sp.getString(_kAppTheme);
+    final id = AppPalette.byId(raw).id;
+    if (raw != id) await sp.setString(_kAppTheme, id);
+    return id;
+  }
+
+  static Future<void> setAppThemeId(String id) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kAppTheme, AppPalette.byId(id).id);
   }
 
   static Future<String> get unitName async {

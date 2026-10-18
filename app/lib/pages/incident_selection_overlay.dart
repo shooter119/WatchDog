@@ -339,7 +339,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                           color: AppColors.voice.withValues(alpha: 0.13),
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.verified_user_outlined,
                           color: AppColors.voice,
                           size: 26,
@@ -349,7 +349,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
+                          children: [
                             Text(
                               '先完成用户认证',
                               style: TextStyle(
@@ -382,7 +382,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                           color: AppColors.voice.withValues(alpha: 0.13),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.verified_user_outlined,
                           color: AppColors.voice,
                           size: 15,
@@ -462,10 +462,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   Text(
                     _error!,
                     key: const Key('auth-error'),
-                    style: const TextStyle(
-                      color: AppColors.alarm,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: AppColors.alarm, fontSize: 13),
                   ),
                 ],
               ],
@@ -476,12 +473,12 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           key: const Key('auth-submit'),
           onPressed: _busy ? null : _authenticate,
           icon: _busy
-              ? const SizedBox(
+              ? SizedBox(
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: AppColors.onPrimary,
                   ),
                 )
               : const Icon(Icons.arrow_forward_rounded),
@@ -489,7 +486,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           style: FilledButton.styleFrom(
             minimumSize: Size.fromHeight(hasKeyboard ? 40 : 50),
             backgroundColor: AppColors.voice,
-            foregroundColor: Colors.white,
+            foregroundColor: AppColors.onPrimary,
           ),
         ),
         if (widget.onEnterGuestMode != null) ...[
@@ -507,7 +504,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         ],
         if (!hasKeyboard) ...[
           const SizedBox(height: 8),
-          const Text(
+          Text(
             '首次认证成功后，本机将记住当前单位和姓名。',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
@@ -544,7 +541,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -594,7 +591,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   ),
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   '💡 站长在手机 App【设置-队伍成员】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
                   style: TextStyle(
                     color: AppColors.textTertiary,
@@ -644,7 +641,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   await Settings.clearPendingApplication();
                   if (mounted) setState(() => _pendingApp = null);
                 },
-          child: const Text('撤销申请并重新填写', style: TextStyle(color: AppColors.textSecondary)),
+          child: Text('撤销申请并重新填写', style: TextStyle(color: AppColors.textSecondary)),
         ),
       ],
     );
@@ -654,7 +651,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+        Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
         Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
       ],
     );
@@ -739,14 +736,14 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                             14,
                                           ),
                                         ),
-                                        child: const Icon(
+                                        child: Icon(
                                           Icons.local_fire_department_outlined,
                                           color: AppColors.voice,
                                           size: 26,
                                         ),
                                       ),
                                       const SizedBox(width: 12),
-                                      const Expanded(
+                                      Expanded(
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
@@ -774,7 +771,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                   ),
                                   if (widget.loading) ...[
                                     const SizedBox(height: 14),
-                                    const Row(
+                                    Row(
                                       children: [
                                         SizedBox(
                                           width: 14,
@@ -798,8 +795,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                     const SizedBox(height: 12),
                                     Text(
                                       _error!,
-                                      key: const Key('incident-selection-error'),
-                                      style: const TextStyle(
+                                      key: const Key(
+                                        'incident-selection-error',
+                                      ),
+                                      style: TextStyle(
                                         color: AppColors.alarm,
                                         fontSize: 13,
                                       ),
@@ -835,7 +834,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                     style: FilledButton.styleFrom(
                                       minimumSize: const Size.fromHeight(52),
                                       backgroundColor: AppColors.voice,
-                                      foregroundColor: Colors.white,
+                                      foregroundColor: AppColors.onPrimary,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -844,7 +843,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                         ? '当前没有进行中的警情，可以创建一份新的现场档案。'
                                         : '如果列表中没有目标警情，也可以新建一份现场档案。',
                                     textAlign: TextAlign.center,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: AppColors.textTertiary,
                                       fontSize: 12,
                                     ),
@@ -891,7 +890,7 @@ class _EmptyIncidentState extends StatelessWidget {
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '如果你是第一位到达的用户，可以新建警情。',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
@@ -934,7 +933,7 @@ class _IncidentOption extends StatelessWidget {
                   color: AppColors.voice.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.local_fire_department_outlined,
                   color: AppColors.voice,
                   size: 22,
@@ -958,7 +957,7 @@ class _IncidentOption extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       hasManualTitle ? '${incident.number} · 处置中' : '处置中',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.voice,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
