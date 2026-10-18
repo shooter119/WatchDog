@@ -1,6 +1,6 @@
 const { forceError } = require('./force-fields');
 function redact(value) { return String(value || '').replace(/(?:\+?86[-\s]?)?1[3-9](?:[-\s]?\d){9}/g,'[联系方式已省略]').replace(/(?<!\d)(?:0\d{2,3}[-\s]?)?\d{3,4}[-\s]?\d{4}(?!\d)/g,'[联系方式已省略]'); }
-function buildContext(incident,detail,forces) {
+function buildContext(incident,detail,forces,observations=[]) {
   if(!detail?.version) return null;
   const data=detail.data || {};
   const fields=['original_category','level','specific_type','place_type','location','situation','trapped','injured','hazardous_materials','received_at'];
@@ -9,6 +9,13 @@ function buildContext(incident,detail,forces) {
     risks:(data.risks||[]).map(redact),to_confirm:(data.to_confirm||[]).map(redact),
     equipment:(data.equipment||[]).map(redact),channels:(data.channels||[]).map(redact),
     forces:forces.map((f)=>({name:redact(f.station_name),vehicles:f.vehicle_count_known===false?null:f.vehicle_count,personnel:f.personnel_count_known===false?null:f.personnel_count,status:f.deployment_status||'unknown'})),
+    // 现场口述：通讯员拍摄水印视频时口述的内容，已人工核对原文。
+    // 只取最近若干条并截断，避免把整段对话塞进上下文。
+    observations:(observations||[]).slice(0,5).map((o)=>({
+      at:Number(o.captured_at)||null,
+      source:String(o.source_type||'video'),
+      text:redact(o.transcript).slice(0,300),
+    })).filter((o)=>o.text),
   };
 }
 async function loadContext(req,db) {
@@ -18,7 +25,16 @@ async function loadContext(req,db) {
   if(!incident) throw forceError('警情不存在','IMPORT_NOT_FOUND',404);
   const detail=await require('./incident-import-repository').details(req.unit.id,id);
   const forces=await db.listIncidentForces(id);
-  return buildContext(incident,detail,forces);
+  let observations=[];
+  if(typeof db.listIncidentObservations==='function'){
+    try{
+      observations=await db.listIncidentObservations({incidentId:id,limit:5});
+    }catch(_){
+      // 口述记录属于增强信息，读取失败不能影响问答主流程
+      observations=[];
+    }
+  }
+  return buildContext(incident,detail,forces,observations);
 }
 function contextInstruction(context) {
   if(!context) return '';

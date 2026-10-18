@@ -1,9 +1,15 @@
 package com.firewatch.watchdog.camera
 
+import android.content.ClipData
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import androidx.camera.view.PreviewView
+import androidx.core.content.FileProvider
 import androidx.lifecycle.LifecycleOwner
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
@@ -11,6 +17,8 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
+import java.io.File
+import java.util.concurrent.Executors
 
 /**
  * Flutter 与水印相机之间的桥。
@@ -27,6 +35,9 @@ class WatchdogCameraPlugin(
     private val methodChannel = MethodChannel(messenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(messenger, EVENT_CHANNEL)
     private val locationChannel = MethodChannel(messenger, LOCATION_CHANNEL)
+    private val mediaChannel = MethodChannel(messenger, MEDIA_CHANNEL)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val worker = Executors.newSingleThreadExecutor()
     private var eventSink: EventChannel.EventSink? = null
     private var activeView: CameraPreviewView? = null
 
@@ -96,6 +107,41 @@ class WatchdogCameraPlugin(
                     result.success(null)
                 }
                 "isRecording" -> result.success(view?.session?.isRecording ?: false)
+                "extractAudioWav" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_path", "缺少视频路径", null)
+                    } else {
+                        worker.execute {
+                            val source = File(path)
+                            val target = File(source.parentFile, "${'$'}{source.nameWithoutExtension}.wav")
+                            val wav = MediaDerivatives.extractWav(source, target)
+                            mainHandler.post { result.success(wav?.absolutePath) }
+                        }
+                    }
+                }
+                "extractFrames" -> {
+                    val path = call.argument<String>("path")
+                    val count = call.argument<Int>("count") ?: 3
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_path", "缺少视频路径", null)
+                    } else {
+                        worker.execute {
+                            val source = File(path)
+                            val dir = File(source.parentFile, "frames_${'$'}{source.nameWithoutExtension}")
+                            val frames = MediaDerivatives.extractFrames(source, dir, count)
+                            mainHandler.post { result.success(frames.map { it.absolutePath }) }
+                        }
+                    }
+                }
+                "openWithSystem" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("invalid_path", "缺少文件路径", null)
+                    } else {
+                        openWithSystem(path, result)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -105,6 +151,8 @@ class WatchdogCameraPlugin(
         eventChannel.setStreamHandler(null)
         methodChannel.setMethodCallHandler(null)
         locationChannel.setMethodCallHandler(null)
+        mediaChannel.setMethodCallHandler(null)
+        worker.shutdownNow()
         activeView = null
     }
 
@@ -114,6 +162,37 @@ class WatchdogCameraPlugin(
 
     override fun onCancel(arguments: Any?) {
         eventSink = null
+    }
+
+    /** 用系统默认应用打开媒体文件（播放器/图片查看器），文件通过 FileProvider 临时授权。 */
+    private fun openWithSystem(path: String, result: MethodChannel.Result) {
+        val file = File(path)
+        if (!file.isFile) {
+            result.error("not_found", "文件不存在", null)
+            return
+        }
+        try {
+            val uri: Uri = FileProvider.getUriForFile(
+                context,
+                "${'$'}{context.packageName}.ota_update_provider",
+                file,
+            )
+            val mime = when (file.extension.lowercase()) {
+                "mp4" -> "video/mp4"
+                "jpg", "jpeg" -> "image/jpeg"
+                "wav" -> "audio/wav"
+                else -> "*/*"
+            }
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                clipData = ClipData.newRawUri("watchdog-media", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            result.success(null)
+        } catch (error: Exception) {
+            result.error("open_failed", error.message ?: "无法打开文件", null)
+        }
     }
 
     private fun emit(event: Map<String, Any?>) {
@@ -134,6 +213,7 @@ class WatchdogCameraPlugin(
         const val EVENT_CHANNEL = "watchdog/camera_events"
         const val VIEW_TYPE = "watchdog/camera_view"
         const val LOCATION_CHANNEL = "watchdog/location"
+        const val MEDIA_CHANNEL = "watchdog/media"
     }
 }
 

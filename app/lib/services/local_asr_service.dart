@@ -749,6 +749,102 @@ class LocalAsrService {
     }
   }
 
+  /// 带时间戳的本地识别：用于水印视频的口述内容，便于把文字定位回画面时刻。
+  /// 与 [transcribe] 共用同一识别器与串行队列，不会并发持有 native 实例。
+  Future<LocalAsrResult> transcribeDetailed(
+    Uint8List wavBytes, {
+    List<String> hotwords = const [],
+  }) {
+    if (_disposed) {
+      return Future<LocalAsrResult>.error(StateError('本地语音识别服务已释放'));
+    }
+    final future = _transcriptionQueue.then(
+      (_) => _transcribeDetailedInternal(wavBytes, hotwords: hotwords),
+    );
+    _transcriptionQueue = future.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return future;
+  }
+
+  Future<LocalAsrResult> _transcribeDetailedInternal(
+    Uint8List wavBytes, {
+    required List<String> hotwords,
+  }) async {
+    if (_disposed) throw StateError('本地语音识别服务已释放');
+    await _ensureInitialized(hotwords: hotwords);
+    if (_disposed) throw StateError('本地语音识别服务已释放');
+    final recognizer = _recognizer!;
+
+    final wave = _parseWav(wavBytes);
+    final stream = recognizer.createStream();
+    try {
+      var samples = wave.samples;
+      final denoiser = _denoiser;
+      if (denoiser != null && samples.isNotEmpty) {
+        final denoised = denoiser.run(
+          samples: samples,
+          sampleRate: wave.sampleRate,
+        );
+        if (denoised.samples.isNotEmpty) samples = denoised.samples;
+      }
+      stream.acceptWaveform(samples: samples, sampleRate: wave.sampleRate);
+      recognizer.decode(stream);
+      final result = recognizer.getResult(stream);
+      return LocalAsrResult(
+        text: result.text.trim(),
+        segments: _buildSegments(result.tokens, result.timestamps),
+      );
+    } finally {
+      stream.free();
+    }
+  }
+
+  /// 把子词 token 按标点与长度切成可读片段，时间取片段首尾 token 的秒级时间戳。
+  List<LocalAsrSegment> _buildSegments(
+    List<String> tokens,
+    List<double> timestamps,
+  ) {
+    if (tokens.isEmpty) return const [];
+    const pauseTokens = {'，', '。', '；', '！', '？', '、', ',', '.', ';', '!', '?'};
+    final segments = <LocalAsrSegment>[];
+    final buffer = StringBuffer();
+    var startMs = 0;
+    var lastEndMs = 0;
+    var charCount = 0;
+
+    for (var i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
+      if (buffer.isEmpty) {
+        startMs = i < timestamps.length ? (timestamps[i] * 1000).round() : lastEndMs;
+      }
+      buffer.write(token);
+      charCount += token.length;
+      lastEndMs = i < timestamps.length
+          ? (timestamps[i] * 1000).round()
+          : lastEndMs;
+      final isPause = pauseTokens.contains(token);
+      if (isPause || charCount >= 24) {
+        final text = buffer.toString().trim();
+        if (text.isNotEmpty) {
+          segments.add(
+            LocalAsrSegment(text: text, startMs: startMs, endMs: lastEndMs),
+          );
+        }
+        buffer.clear();
+        charCount = 0;
+      }
+    }
+    final rest = buffer.toString().trim();
+    if (rest.isNotEmpty) {
+      segments.add(
+        LocalAsrSegment(text: rest, startMs: startMs, endMs: lastEndMs),
+      );
+    }
+    return segments;
+  }
+
   Future<void> _ensureInitialized({required List<String> hotwords}) async {
     final signature = _signatureFor(hotwords);
     while (true) {
@@ -1095,4 +1191,45 @@ class InsufficientStorageException implements Exception {
 
   @override
   String toString() => userMessage;
+}
+
+
+/// 本地识别的一段文本及其在音频中的时间范围。
+class LocalAsrSegment {
+  final String text;
+  final int startMs;
+  final int endMs;
+
+  const LocalAsrSegment({
+    required this.text,
+    required this.startMs,
+    required this.endMs,
+  });
+
+  Map<String, Object?> toJson() => {
+    'text': text,
+    'startMs': startMs,
+    'endMs': endMs,
+  };
+
+  static LocalAsrSegment? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final text = raw['text'] as String?;
+    if (text == null || text.isEmpty) return null;
+    return LocalAsrSegment(
+      text: text,
+      startMs: (raw['startMs'] as num?)?.toInt() ?? 0,
+      endMs: (raw['endMs'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// 本地识别结果：全文 + 分段时间戳。
+class LocalAsrResult {
+  final String text;
+  final List<LocalAsrSegment> segments;
+
+  const LocalAsrResult({required this.text, this.segments = const []});
+
+  static const LocalAsrResult empty = LocalAsrResult(text: '');
 }

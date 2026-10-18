@@ -5,9 +5,12 @@ import 'package:flutter/services.dart';
 
 import '../models/models.dart';
 import '../services/camera_bridge.dart';
+import '../services/media_capture_service.dart';
 import '../services/settings.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+import 'media_gallery_page.dart';
+import 'media_review_page.dart';
 
 /// 水印相机页。
 ///
@@ -132,6 +135,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           _statusText = event.autoStopped ? '已录制满 60 秒，自动保存' : '视频已保存到本机';
         });
         _afterCapture();
+        final path = event.path;
+        if (path != null) _openReviewForVideo(path, event.durationMs ?? 0);
         break;
       case 'reached_limit':
         setState(() => _statusText = '已达 60 秒上限，正在保存…');
@@ -156,6 +161,35 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     CameraBridge.updateWatermark(_watermark);
   }
 
+  /// 录像结束后先入库，再进入核对页；识别与抽帧在核对页里带进度完成。
+  Future<void> _openReviewForVideo(String path, int durationMs) async {
+    final media = await MediaCaptureService.registerVideo(
+      incidentId: widget.controller.currentIncident?.id ?? '',
+      path: path,
+      durationMs: durationMs,
+      watermark: _watermark,
+      fix: _fix,
+    );
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MediaReviewPage(
+          controller: widget.controller,
+          media: media,
+          deriving: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openGallery() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MediaGalleryPage(controller: widget.controller),
+      ),
+    );
+  }
+
   Future<void> _takePhoto() async {
     if (_capturing || _recording) return;
     setState(() => _capturing = true);
@@ -164,6 +198,21 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() => _statusText = path == null ? '拍照失败' : '照片已保存到本机');
       _afterCapture();
+      if (path != null) {
+        final media = await MediaCaptureService.registerPhoto(
+          incidentId: widget.controller.currentIncident?.id ?? '',
+          path: path,
+          watermark: _watermark,
+          fix: _fix,
+        );
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                MediaReviewPage(controller: widget.controller, media: media),
+          ),
+        );
+      }
     } on PlatformException catch (error) {
       if (!mounted) return;
       setState(() => _statusText = error.message ?? '拍照失败');
@@ -243,6 +292,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 tooltip: '关闭',
               ),
               const Spacer(),
+              IconButton(
+                tooltip: '现场资料',
+                onPressed: _recording ? null : _openGallery,
+                icon: const Icon(Icons.photo_library_outlined, color: Colors.white),
+              ),
               if (_recording)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

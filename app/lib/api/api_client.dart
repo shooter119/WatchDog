@@ -688,6 +688,32 @@ class ApiClient {
     return CalcConfig.fromJson(body as Map<String, dynamic>);
   }
 
+  /// 把人工核对后的口述内容写入警情，供辅助问答作为现场背景引用。
+  Future<void> createIncidentObservation({
+    required String transcript,
+    required String sourceType,
+    required int capturedAt,
+    String mediaRef = '',
+    Map<String, Object?> structured = const {},
+  }) async {
+    final res = await _client
+        .post(
+          _uri('/api/incident-observations'),
+          headers: {..._headers, 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'transcript': transcript,
+            'source_type': sourceType,
+            'captured_at': capturedAt,
+            'media_ref': mediaRef,
+            'structured': structured,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode == 201 || res.statusCode == 200) return;
+    final body = _decodeJson(res, fallback: '保存口述记录失败');
+    throw _apiException(res, body: body, fallback: '保存口述记录失败');
+  }
+
   /// 水印相机的地址与天气。服务端按网格与城市缓存，客户端每次拍摄前查询一次即可。
   /// 上游不可用时返回降级结果而不是抛错：拍摄流程不能因此中断。
   Future<WeatherInfo> fetchWeather({

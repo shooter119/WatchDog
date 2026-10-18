@@ -120,6 +120,7 @@ class CameraBridge {
   static const MethodChannel _channel = MethodChannel('watchdog/camera');
   static const MethodChannel _locationChannel =
       MethodChannel('watchdog/location');
+  static const MethodChannel _mediaChannel = MethodChannel('watchdog/media');
   static const EventChannel _events = EventChannel('watchdog/camera_events');
 
   /// 单段视频上限：60 秒（产品约定），与原生侧默认值保持一致。
@@ -172,6 +173,41 @@ class CameraBridge {
 
   static Future<bool> isRecording() async {
     return await _channel.invokeMethod<bool>('isRecording') ?? false;
+  }
+
+  // ---- 视频派生数据（全部本机处理，视频不出设备）----
+
+  /// 抽取音轨并转为 16k 单声道 WAV，供本地 ASR 使用。失败返回 null。
+  static Future<String?> extractAudioWav(String videoPath) async {
+    try {
+      return await _mediaChannel.invokeMethod<String>(
+        'extractAudioWav',
+        {'path': videoPath},
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 均匀抽帧，返回 JPEG 路径列表；数量默认 3，最多 6。
+  static Future<List<String>> extractFrames(
+    String videoPath, {
+    int count = 3,
+  }) async {
+    try {
+      final result = await _mediaChannel.invokeMethod<List<Object?>>(
+        'extractFrames',
+        {'path': videoPath, 'count': count},
+      );
+      return result?.whereType<String>().toList() ?? const [];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 用系统默认应用打开（播放/查看），文件通过 FileProvider 临时授权。
+  static Future<void> openWithSystem(String path) async {
+    await _mediaChannel.invokeMethod<void>('openWithSystem', {'path': path});
   }
 
   // ---- 定位 ----

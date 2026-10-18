@@ -722,6 +722,36 @@ async function createNote({ id, scene = 'default', text, category = '其他', au
   return insertOne('notes', { id, scene, text, category, author, created_at: now, updated_at: now });
 }
 
+async function listIncidentObservations({ incidentId = '', limit = 20 } = {}) {
+  if (!incidentId) return [];
+  return db.select('incident_observations', {
+    filters: { incident_id: incidentId },
+    order: 'captured_at.desc',
+    limit: limitOf(limit, 20, 100),
+  });
+}
+
+async function createIncidentObservation({
+  id, incidentId, unitId, sourceType = 'video', capturedAt = Date.now(),
+  transcript = '', structured = {}, status = 'confirmed', mediaRef = '',
+  createdBy = '', createdAt = Date.now(),
+} = {}) {
+  const now = Number(createdAt) || Date.now();
+  return insertOne('incident_observations', {
+    id,
+    incident_id: incidentId,
+    unit_id: unitId,
+    source_type: sourceType,
+    captured_at: Number(capturedAt) || now,
+    transcript: String(transcript || ''),
+    structured: structured || {},
+    status,
+    media_ref: mediaRef,
+    created_by: createdBy,
+    created_at: now,
+  });
+}
+
 async function createNoteWithEvent({ note, event, activityAt = null } = {}) {
   return db.transaction(async () => {
     const created = await createNote(note);
@@ -1363,7 +1393,8 @@ module.exports = {
   getEntry, createEntry, createEntryWithEvent, markExited, markExitedIfActive, exitEntryWithEvent, updatePressureWithEvent, findActiveByName, updateEntry, addPressureSample,
   lastPressureSample, listPressureSamples, listFirefighters, addFirefighter, removeFirefighter,
   listHotwords, addHotword, removeHotword, purgeOldExited, addLog, addLogs, listLogs, clearLogs,
-  purgeOldLogs, purgeOldSyncEvents, listNotes, getNote, createNote, createNoteWithEvent, updateNote, updateNoteWithEvent, deleteNote, deleteNoteWithEvent, purgeOldNotes,
+  purgeOldLogs, purgeOldSyncEvents, listNotes, getNote, createNote, createNoteWithEvent,
+  listIncidentObservations, createIncidentObservation, updateNote, updateNoteWithEvent, deleteNote, deleteNoteWithEvent, purgeOldNotes,
   listChatMessages, createChatMessage, clearChatMessages, purgeOldChatMessages, getUserSettings,
   saveUserSettings, ready,
 };

@@ -36,6 +36,16 @@ function transaction(callback) {
   }
 }
 
+function safeParseJsonObject(value) {
+  if (value && typeof value === 'object') return value;
+  try {
+    const parsed = JSON.parse(value || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
 function limitOf(value, fallback, maximum) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -178,6 +188,22 @@ CREATE TABLE IF NOT EXISTS pressure_samples (
   reported_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_samples_entry ON pressure_samples(entry_id, reported_at);
+
+CREATE TABLE IF NOT EXISTS incident_observations (
+  id TEXT PRIMARY KEY,
+  incident_id TEXT NOT NULL,
+  unit_id TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'video',
+  captured_at INTEGER NOT NULL,
+  transcript TEXT NOT NULL DEFAULT '',
+  structured TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'confirmed',
+  media_ref TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_incident_observations_incident
+  ON incident_observations(incident_id, captured_at DESC);
 
 CREATE TABLE IF NOT EXISTS notes (
   id TEXT PRIMARY KEY,
@@ -1028,6 +1054,36 @@ function createNote({ id, scene = 'default', text, category = '其他', author =
   return getNote(id);
 }
 
+function listIncidentObservations({ incidentId = '', limit = 20 } = {}) {
+  if (!incidentId) return [];
+  const rows = db
+    .prepare(
+      'SELECT * FROM incident_observations WHERE incident_id = ? ORDER BY captured_at DESC LIMIT ?'
+    )
+    .all(incidentId, limitOf(limit, 20, 100));
+  return rows.map((row) => ({
+    ...row,
+    structured: safeParseJsonObject(row.structured),
+  }));
+}
+
+function createIncidentObservation({
+  id, incidentId, unitId, sourceType = 'video', capturedAt = Date.now(),
+  transcript = '', structured = {}, status = 'confirmed', mediaRef = '',
+  createdBy = '', createdAt = Date.now(),
+} = {}) {
+  const now = Number(createdAt) || Date.now();
+  db.prepare(
+    `INSERT INTO incident_observations
+       (id, incident_id, unit_id, source_type, captured_at, transcript, structured, status, media_ref, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id, incidentId, unitId, sourceType, Number(capturedAt) || now, String(transcript || ''),
+    JSON.stringify(structured || {}), status, mediaRef, createdBy, now,
+  );
+  return db.prepare('SELECT * FROM incident_observations WHERE id = ?').get(id);
+}
+
 function createNoteWithEvent({ note, event, activityAt = null } = {}) {
   return transaction(() => {
     const created = createNote(note);
@@ -1596,6 +1652,8 @@ module.exports = {
   listNotes,
   getNote,
   createNote,
+  listIncidentObservations,
+  createIncidentObservation,
   createNoteWithEvent,
   updateNote,
   updateNoteWithEvent,

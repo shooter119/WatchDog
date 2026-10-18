@@ -3157,6 +3157,58 @@ function cleanCategory(c) {
   return NOTE_CATEGORIES.includes(v) ? v : '其他';
 }
 
+// 现场口述记录：水印视频/照片的语音内容，经人工核对后由客户端提交。
+// 只存文字与元数据；媒体文件留在拍摄设备本地，服务端不接收原图与原视频。
+app.get('/api/incident-observations', async (req, res, next) => {
+  try {
+    const incident = await requireIncident(req, res);
+    if (!incident) return;
+    const limit = Number(req.query.limit) || 20;
+    const rows = await db.listIncidentObservations({ incidentId: incident.id, limit });
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/incident-observations', async (req, res, next) => {
+  try {
+    const incident = await requireIncident(req, res, { active: true });
+    if (!incident) return;
+    const body = req.body || {};
+    const transcript = String(body.transcript || '').trim();
+    if (!transcript) {
+      return res.status(400).json({ error: '缺少口述内容', code: 'TRANSCRIPT_REQUIRED' });
+    }
+    if (transcript.length > 4000) {
+      return res.status(400).json({ error: '口述内容过长（最多 4000 字）', code: 'TRANSCRIPT_TOO_LONG' });
+    }
+    const sourceType = ['video', 'photo', 'audio'].includes(String(body.source_type))
+      ? String(body.source_type)
+      : 'video';
+    const capturedAt = Number(body.captured_at) || Date.now();
+    if (capturedAt > Date.now() + 60 * 1000) {
+      return res.status(400).json({ error: '拍摄时间不能晚于当前时间', code: 'CAPTURED_AT_INVALID' });
+    }
+    const created = await db.createIncidentObservation({
+      id: crypto.randomUUID(),
+      incidentId: incident.id,
+      unitId: req.unit?.id || '',
+      sourceType,
+      capturedAt,
+      transcript,
+      structured: body.structured && typeof body.structured === 'object' ? body.structured : {},
+      status: body.status === 'proposed' ? 'proposed' : 'confirmed',
+      mediaRef: String(body.media_ref || '').slice(0, 200),
+      createdBy: deviceKey(req),
+      createdAt: Date.now(),
+    });
+    res.status(201).json(created);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/notes', async (req, res) => {
   const incident = await requireIncident(req, res);
   if (!incident) return;

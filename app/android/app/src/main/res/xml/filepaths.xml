@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="internal_apk_storage" path="ota_update/" />
+    <!-- 水印相机的照片与录像：分享或系统播放器读取时临时授权 -->
+    <external-files-path name="media" path="." />
 </paths>

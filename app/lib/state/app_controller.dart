@@ -11,6 +11,7 @@ import '../services/chat_history.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/foreground_keep_alive.dart';
 import '../services/local_asr_service.dart';
+import '../services/media_capture_service.dart';
 import '../services/local_parser.dart';
 import '../services/op_log_service.dart';
 import '../services/offline_queue.dart';
@@ -195,9 +196,20 @@ class AppController extends ChangeNotifier {
     return future;
   }
 
+  /// 清理超过保留期的本机照片与录像（默认 30 天）。
+  Future<void> _purgeExpiredMedia() async {
+    try {
+      await MediaCaptureService.purgeExpired();
+    } catch (_) {
+      // 清理属于维护任务，失败留到下次启动再试
+    }
+  }
+
   Future<void> _initInternal() async {
     // 诊断日志独立于核心同步链路，初始化失败也不能阻塞 App 启动。
     unawaited(DiagnosticLogService.instance.init());
+    // 现场媒体按保留期自动清理；失败不影响启动。
+    unawaited(_purgeExpiredMedia());
     // 先建立 API 客户端。首次安装必须先完成单位认证，认证前不拉取业务数据。
     await refreshConfig();
     if (_disposed) return;
@@ -2313,6 +2325,24 @@ class AppController extends ChangeNotifier {
   /// 实时云端会话失败后的本地识别入口，避免回退时再次请求云端。
   Future<String> transcribeAudioLocal(Uint8List bytes, {String? opId}) async {
     return _localTranscribe(bytes, opId: opId);
+  }
+
+  /// 水印视频口述识别：复用与实时录音相同的热词注入与串行队列，
+  /// 额外返回分段毫秒时间戳，用于把文字定位回视频画面。
+  Future<LocalAsrResult> transcribeMediaAudio(
+    Uint8List wavBytes, {
+    String? opId,
+  }) async {
+    final asr = localAsr;
+    if (asr == null) throw StateError('未配置本地语音识别');
+    final hotwords = [..._rosterNames, ..._hotwordTerms];
+    OpLogService.instance.record(
+      opId ?? '',
+      'media_asr_hotwords',
+      '现场口述识别热词 ${hotwords.length} 个',
+      data: {'count': hotwords.length, 'sample': hotwords.take(8).toList()},
+    );
+    return asr.transcribeDetailed(wavBytes, hotwords: hotwords);
   }
 
   Future<String> _localTranscribe(Uint8List bytes, {String? opId}) async {
