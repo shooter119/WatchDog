@@ -14,6 +14,7 @@ const logger = require('./logger');
 const { createDatabaseReadiness } = require('./database-readiness');
 const { parseAllowedHosts, isHostAllowed } = require('./network-policy');
 const { MinuteRateLimiter } = require('./rate-limiter');
+const weather = require('./weather');
 
 // PostgreSQL 初始化是网络依赖，不能阻塞端口监听等待完成；探活在初始化期间
 // 仍可返回数据库状态，便于任意支持长连接的平台进行编排。
@@ -77,8 +78,7 @@ if (process.env.NODE_ENV === 'production' && SESSION_AUTH_REQUIRED && !MEMBER_AU
 }
 
 const CFG = {
-  asr: {
-    appId: process.env.VOLC_APP_KEY || process.env.VOLC_APP_ID || '',
+  asr: {    appId: process.env.VOLC_APP_KEY || process.env.VOLC_APP_ID || '',
     accessToken: process.env.VOLC_ACCESS_TOKEN || '',
     resourceId: process.env.VOLC_RESOURCE_ID || 'volc.bigasr.sauc.duration',
   },
@@ -96,6 +96,10 @@ const CFG = {
     consumptionLpm: Number(process.env.CONSUMPTION_LPM || 80),
     warnMin: Number(process.env.WARN_MIN || 10),
     alarmMin: Number(process.env.ALARM_MIN || 5),
+  },
+  // 高德 Web 服务：仅用于水印相机的地址与天气，Key 不下发到客户端
+  amap: {
+    key: process.env.AMAP_KEY || '',
   },
 };
 
@@ -1055,8 +1059,42 @@ app.get('/api/config', async (req, res) => {
     calc: CFG.calc,
     asrConfigured: !!CFG.asr.appId,
     llmConfigured: !!CFG.llm.apiKey,
+    weatherConfigured: !!CFG.amap.key,
     unit: req.unit || null,
   });
+});
+
+// 水印相机的地址与天气。Key 仅存服务端；上游失败时返回降级结果，
+// 由客户端决定水印上只显示已有字段，不阻断拍摄。
+app.get('/api/weather', async (req, res) => {
+  if (!req.unit) {
+    return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  }
+  if (!CFG.amap.key) {
+    return res.status(503).json({ error: '地址与天气服务未配置', code: 'AMAP_NOT_CONFIGURED' });
+  }
+  const lat = Number(req.query.lat);
+  const lon = Number(req.query.lon);
+  if (!weather.validCoord(lat, lon)) {
+    return res.status(400).json({ error: '坐标格式错误', code: 'COORD_INVALID' });
+  }
+  if (upstreamRateLimited(req, 'weather', 60)) {
+    return res.status(429).json({ error: '地址天气查询过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
+  }
+  try {
+    const result = await weather.lookup({ lat, lon, key: CFG.amap.key });
+    res.json({
+      address: result.address,
+      adcode: result.adcode,
+      city: result.city,
+      weather: result.weather,
+      line: weather.weatherLine(result.weather),
+      degraded: result.degraded,
+    });
+  } catch (e) {
+    logger.error('weather_lookup_failed', e?.code || 'unknown');
+    res.status(502).json({ error: '地址与天气服务暂时不可用', code: 'AMAP_UPSTREAM_FAILED' });
+  }
 });
 
 const authFailureBuckets = new Map();
