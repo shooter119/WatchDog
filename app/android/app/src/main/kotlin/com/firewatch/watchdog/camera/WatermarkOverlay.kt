@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.TextPaint
@@ -131,6 +132,8 @@ object WatermarkOverlay {
 
     @Synchronized
     fun draw(canvas: Canvas, frame: Frame, model: WatermarkModel) {
+        // overlayCanvas 会复用旧像素；每帧只清空独立透明水印层，不触碰相机底图。
+        canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
         if (released) return
         val buffer = frame.size
         if (buffer.width <= 0 || buffer.height <= 0) return
