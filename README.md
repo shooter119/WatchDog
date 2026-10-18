@@ -59,3 +59,9 @@
 项目网站：<https://fireman119.xyz>，用于介绍项目背景、现场使用方式和开源仓库。
 
 本地开发与测试方式请参考各子项目目录中的说明，以及 GitHub Actions 中的自动化检查配置。
+
+## 开源许可
+
+本项目以 **MIT 许可证**开源，详见 [LICENSE](LICENSE)。你可以自由使用、修改、分发本项目的代码，包括商业用途，只需保留版权声明与许可声明。
+
+第三方组件（Flutter、sherpa-onnx、PostgreSQL、Caddy 及各 Dart/Node 依赖）遵循各自的原始许可证，完整清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。新增依赖需确认与本项目 MIT 许可证兼容；引入 GPL/AGPL 等强著佐权组件会改变分发条款，需显式评审。

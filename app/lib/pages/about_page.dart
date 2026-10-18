@@ -54,10 +54,18 @@ class AboutPage extends StatelessWidget {
           SectionTitle(text: '关于这个项目'),
           _SectionCard(
             body:
-                '由一线消防员在工作之余开发，后端和 App 全部开源。联网时语音识别通过后端代理豆包实时流式 ASR，语义理解用 DeepSeek；'
+                '由一线消防员在工作之余开发，后端和 App 全部开源，以 MIT 许可证发布。联网时语音识别通过后端代理豆包实时流式 ASR，语义理解用 DeepSeek；'
                 '云端异常或断网时自动切到本机 sherpa-onnx 识别和规则解析，两套兜底都备着，火场无信号也能用。\n\n'
                 '我们不是软件公司，就是一群想让安全员轻松一点的战友。如果你的队伍也用得上，欢迎提需求、提 bug——'
                 '每一个意见，都可能救下一个兄弟。项目网站：fireman119.xyz。',
+          ),
+          SizedBox(height: 18),
+          SectionTitle(text: '开源许可'),
+          _SectionCard(
+            body:
+                '本项目以 MIT 许可证开源：你可以自由使用、修改和分发，包括商业用途，只需保留版权声明与许可声明。\n\n'
+                '第三方组件各自遵循其原始许可：本地语音识别使用 sherpa-onnx（Apache-2.0），界面与基础能力依赖 Flutter 生态（BSD/MIT/Apache-2.0）。'
+                '完整清单见仓库根目录的 THIRD_PARTY_NOTICES.md。',
           ),
           SizedBox(height: 18),
           SectionTitle(text: '后端部署'),
