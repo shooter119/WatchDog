@@ -1,13 +1,16 @@
 package com.firewatch.watchdog.camera
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.TextPaint
 import android.text.TextUtils
+import androidx.camera.effects.Frame
 import kotlin.math.min
 
 /**
@@ -31,12 +34,14 @@ import kotlin.math.min
  */
 object WatermarkOverlay {
 
-    private const val CARD_WIDTH_RATIO = 0.58f
+    private const val CARD_WIDTH_RATIO = 0.52f
     private const val MARGIN_RATIO = 0.026f
-    private const val HEADER_RATIO = 0.150f // 相对卡片宽度
-    private const val FOOTER_RATIO = 0.092f
-    private const val ROW_RATIO = 0.104f
+    private const val HEADER_RATIO = 0.135f // 相对卡片宽度
+    private const val FOOTER_RATIO = 0.078f
+    private const val ROW_RATIO = 0.082f
     private const val LABEL_COLUMN_RATIO = 0.175f
+
+    private val DEBUG_LOG = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val BLUE = Color.rgb(42, 114, 212)
     private val CARD_BG = Color.WHITE
@@ -49,10 +54,113 @@ object WatermarkOverlay {
         val valueLines: Int = 1,
     )
 
-    fun draw(canvas: Canvas, model: WatermarkModel) {
-        val width = canvas.width
-        val height = canvas.height
-        if (width <= 0 || height <= 0) return
+    /**
+     * 在相机帧上绘制水印。
+     *
+     * 坐标系问题：OverlayEffect 回调拿到的 Canvas 是**传感器缓冲区坐标**（通常是横向
+     * 1280×960），而预览要按 rotationDegrees 旋转后才竖屏显示。直接在缓冲区坐标里排版，
+     * 水印会整体转 90° 甚至倒置。
+     *
+     * 做法：先在「直立坐标系」渲染成一张位图（排版逻辑因此保持直观），再用矩阵把它
+     * 旋转贴到帧上。水印内容在拍摄期间是冻结的，位图按内容缓存，每帧只是贴图，开销很小。
+     */
+    private var cachedBitmap: Bitmap? = null
+    private var cachedKey: String? = null
+
+    fun draw(canvas: Canvas, frame: Frame, model: WatermarkModel) {
+        val buffer = frame.size
+        if (buffer.width <= 0 || buffer.height <= 0) return
+        val rotation = ((frame.rotationDegrees % 360) + 360) % 360
+        val uprightWidth = if (rotation % 180 == 0) buffer.width else buffer.height
+        val uprightHeight = if (rotation % 180 == 0) buffer.height else buffer.width
+        if (uprightWidth <= 0 || uprightHeight <= 0) return
+
+        // 直立 → 缓冲区 的变换矩阵。
+        // 实测 rotationDegrees 是「缓冲区需要顺时针转多少度才直立」，
+        // 而这里是从直立坐标往缓冲区贴图，方向相反，必须用 360 - rotation。
+        val uprightToBuffer = (360 - rotation) % 360
+        val matrix = Matrix()
+        matrix.setRotate(uprightToBuffer.toFloat())
+        when (uprightToBuffer) {
+            90 -> matrix.postTranslate(buffer.width.toFloat(), 0f)
+            180 -> matrix.postTranslate(buffer.width.toFloat(), buffer.height.toFloat())
+            270 -> matrix.postTranslate(0f, buffer.height.toFloat())
+        }
+        if (frame.isMirroring) matrix.postScale(-1f, 1f, uprightWidth / 2f, uprightHeight / 2f)
+
+        // 缓冲区里的裁剪框 → 直立坐标（预览实际可见的范围）
+        val inverse = Matrix()
+        if (!matrix.invert(inverse)) return
+        val crop = frame.cropRect
+        val corners = floatArrayOf(
+            crop.left.toFloat(), crop.top.toFloat(),
+            crop.right.toFloat(), crop.top.toFloat(),
+            crop.left.toFloat(), crop.bottom.toFloat(),
+            crop.right.toFloat(), crop.bottom.toFloat(),
+        )
+        inverse.mapPoints(corners)
+        var minX = corners[0]; var maxX = corners[0]
+        var minY = corners[1]; var maxY = corners[1]
+        for (i in 2 until corners.size step 2) {
+            minX = kotlin.math.min(minX, corners[i]); maxX = kotlin.math.max(maxX, corners[i])
+            minY = kotlin.math.min(minY, corners[i + 1]); maxY = kotlin.math.max(maxY, corners[i + 1])
+        }
+        val visible = if (maxX - minX <= 1f || maxY - minY <= 1f) {
+            RectF(0f, 0f, uprightWidth.toFloat(), uprightHeight.toFloat())
+        } else {
+            RectF(
+                minX.coerceAtLeast(0f),
+                minY.coerceAtLeast(0f),
+                maxX.coerceAtMost(uprightWidth.toFloat()),
+                maxY.coerceAtMost(uprightHeight.toFloat()),
+            )
+        }
+
+        val key = buildString {
+            append(uprightWidth).append('x').append(uprightHeight)
+            append('|').append(visible)
+            append('|').append(model.hashCode())
+        }
+        val bitmap = if (key == cachedKey && cachedBitmap != null) {
+            cachedBitmap!!
+        } else {
+            val fresh = Bitmap.createBitmap(
+                uprightWidth,
+                uprightHeight,
+                Bitmap.Config.ARGB_8888,
+            )
+            drawInArea(Canvas(fresh), model, visible)
+            cachedBitmap?.recycle()
+            cachedBitmap = fresh
+            cachedKey = key
+            fresh
+        }
+
+        if (DEBUG_LOG.compareAndSet(false, true)) {
+            android.util.Log.d(
+                "WMWatermark",
+                "buffer=" + buffer.width + "x" + buffer.height +
+                    " rot=" + rotation +
+                    " upright=" + uprightWidth + "x" + uprightHeight +
+                    " crop=" + frame.cropRect +
+                    " mirror=" + frame.isMirroring +
+                    " visible=" + visible,
+            )
+        }
+
+        canvas.drawBitmap(bitmap, matrix, null)
+    }
+
+    /** 释放缓存位图；会话结束时调用，避免长时间占用内存。 */
+    fun release() {
+        cachedBitmap?.recycle()
+        cachedBitmap = null
+        cachedKey = null
+    }
+
+    private fun drawInArea(canvas: Canvas, model: WatermarkModel, area: RectF) {
+        val width = area.width()
+        if (width <= 0f) return
 
         val rows = buildRows(model)
         if (rows.isEmpty() && model.unitTitle.isBlank() && model.department.isBlank()) return
@@ -65,8 +173,9 @@ object WatermarkOverlay {
         val bodyHeight = rows.sumOf { (rowHeight * it.valueLines).toDouble() }.toFloat()
         val cardHeight = headerHeight + bodyHeight + footerHeight
 
-        val left = margin
-        val top = height - margin - cardHeight
+        val left = area.left + margin
+        // 卡片贴可见区域底部：竖屏录制时缓冲区底部才是画面底部
+        val top = area.bottom - margin - cardHeight
         val card = RectF(left, top, left + cardWidth, top + cardHeight)
 
         drawCard(canvas, card, cardWidth)

@@ -123,7 +123,7 @@ class CameraSession(
             if (canvas == null || disposed) {
                 false
             } else {
-                WatermarkOverlay.draw(canvas, watermark)
+                WatermarkOverlay.draw(canvas, frame, watermark)
                 true
             }
         }
@@ -249,6 +249,7 @@ class CameraSession(
         recording = null
         overlayEffect?.close()
         overlayEffect = null
+        WatermarkOverlay.release()
         provider?.unbindAll()
         provider = null
         imageCapture = null

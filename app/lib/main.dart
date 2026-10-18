@@ -386,7 +386,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 
           // 水印相机是现场高频操作，放在首页右下角常驻入口，
           // 不再藏进警情卡的展开工具栏里。
-          final showCameraFab = _tab == 0 && !startupGateLocked;
+          final showCameraFab = _tab == 2 && !startupGateLocked;
           final appScaffold = Scaffold(
             body: bodyContent,
             floatingActionButton: showCameraFab

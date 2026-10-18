@@ -279,7 +279,9 @@ class CameraPreviewView(
 ) : PlatformView {
 
     private val previewView = PreviewView(context).apply {
-        scaleType = PreviewView.ScaleType.FILL_CENTER
+        // 用 FIT_CENTER 而不是 FILL_CENTER：取景画面与录制文件必须一致，
+        // 否则预览里看不到的边角会出现在成片里，水印位置会对不上。
+        scaleType = PreviewView.ScaleType.FIT_CENTER
         implementationMode = PreviewView.ImplementationMode.COMPATIBLE
     }
 
