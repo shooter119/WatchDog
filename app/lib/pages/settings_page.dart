@@ -686,9 +686,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _WatermarkCameraEntry(
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => const WatermarkSettingsPage(),
-              ),
+              MaterialPageRoute(builder: (_) => const WatermarkSettingsPage()),
             ),
           ),
           const SizedBox(height: 10),
@@ -2124,7 +2122,7 @@ class _WatermarkCameraEntry extends StatelessWidget {
                 ),
                 child: const Icon(
                   Icons.videocam_rounded,
-                  color: AppColors.voice,
+                  color: AppColors.textPrimary,
                   size: 22,
                 ),
               ),
@@ -2134,13 +2132,19 @@ class _WatermarkCameraEntry extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '水印相机',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                      '水印设置',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     SizedBox(height: 3),
                     Text(
-                      '单位抬头、拍摄单位与显示字段，与登录身份独立',
-                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      '配置水印文字和显示字段；拍摄请用首页「水印相机」',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/watermark_settings.dart';
+import '../services/settings.dart';
 import '../theme/app_widgets.dart';
 
 /// 水印相机设置。
@@ -20,6 +21,45 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
   final _actor = TextEditingController();
   WatermarkSettings _settings = WatermarkSettings.defaults;
   bool _loading = true;
+  bool _dirty = false;
+  bool _saving = false;
+  String _unitName = '';
+
+  void _changed() => setState(() => _dirty = true);
+
+  Future<void> _leave() async {
+    if (_saving) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('水印设置尚未保存'),
+        content: const Text('保存后下次拍摄生效，是否保存本次修改？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('继续编辑'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'discard'),
+            child: const Text('放弃修改'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('保存并离开'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'save') {
+      await _save();
+      if (_dirty || !mounted) return;
+    }
+    setState(() => _dirty = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop();
+    });
+  }
 
   @override
   void initState() {
@@ -37,8 +77,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
 
   Future<void> _load() async {
     final settings = await WatermarkSettings.load();
+    final unitName = await Settings.unitName;
     if (!mounted) return;
     setState(() {
+      _unitName = unitName;
       _settings = settings;
       _unitTitle.text = settings.unitTitle;
       _department.text = settings.department;
@@ -53,9 +95,24 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       department: _department.text.trim(),
       actorName: _actor.text.trim(),
     );
-    await WatermarkSettings.save(next);
+    setState(() => _saving = true);
+    try {
+      await WatermarkSettings.save(next);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('保存失败，请重试')));
+      }
+      return;
+    }
     if (!mounted) return;
-    setState(() => _settings = next);
+    setState(() {
+      _settings = next;
+      _dirty = false;
+      _saving = false;
+    });
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('水印设置已保存，下次拍摄生效')));
@@ -63,87 +120,131 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('水印相机'),
-        actions: [
-          TextButton(onPressed: _loading ? null : _save, child: const Text('保存')),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
-              children: [
-                _previewCard(),
-                const SizedBox(height: 18),
-                const _GroupTitle('水印内容'),
-                _textField(
-                  controller: _unitTitle,
-                  label: '单位抬头',
-                  hint: '例如：浙江总队衢州市消防救援支队',
-                  helper: '留空则使用当前登录单位名称',
-                ),
-                _textField(
-                  controller: _department,
-                  label: '拍摄单位',
-                  hint: '例如：衢州市消防救援支队通信保障分队',
-                  helper: '留空则水印底部不显示这一行',
-                ),
-                _textField(
-                  controller: _actor,
-                  label: '拍摄人',
-                  hint: '留空则不显示',
-                  helper: '不需要署名时留空即可，不影响其他字段',
-                ),
-                const SizedBox(height: 18),
-                const _GroupTitle('显示字段'),
-                _switchTile(
-                  title: '拍摄时间',
-                  subtitle: '精确到分钟并带星期',
-                  value: _settings.showTime,
-                  onChanged: (v) => setState(() => _settings = _settings.copyWith(showTime: v)),
-                ),
-                _switchTile(
-                  title: '天气',
-                  subtitle: '天气现象、气温、风向风力与湿度',
-                  value: _settings.showWeather,
-                  onChanged: (v) => setState(() => _settings = _settings.copyWith(showWeather: v)),
-                ),
-                _switchTile(
-                  title: '地点',
-                  subtitle: '由定位反查的中文地址',
-                  value: _settings.showLocation,
-                  onChanged: (v) => setState(() => _settings = _settings.copyWith(showLocation: v)),
-                ),
-                _switchTile(
-                  title: '经纬度',
-                  subtitle: '按度分显示，如 东经 118°22′',
-                  value: _settings.showCoordinates,
-                  onChanged: (v) =>
-                      setState(() => _settings = _settings.copyWith(showCoordinates: v)),
-                ),
-                _switchTile(
-                  title: '左侧标识',
-                  subtitle: '关闭后只保留文字，适合不对外发布的内部记录',
-                  value: _settings.showLogo,
-                  onChanged: (v) => setState(() => _settings = _settings.copyWith(showLogo: v)),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  '水印在按下快门或开始录像那一刻固定，成片中的时间、地址不会随时间跳动。'
-                  '照片与视频只保存在本机，是否分享由你逐次决定。',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textTertiary, height: 1.6),
-                ),
-              ],
+    return PopScope(
+      canPop: !_dirty && !_saving,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _leave();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: const Text('水印设置'),
+          leading: BackButton(
+            onPressed: () {
+              if (_saving) return;
+              if (_dirty) {
+                _leave();
+              } else {
+                Navigator.of(context).maybePop();
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: _loading || _saving ? null : _save,
+              child: const Text('保存'),
             ),
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
+                children: [
+                  const Text(
+                    '修改后请点右上角保存，下次拍摄生效。离开时会提醒未保存的修改。',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 12),
+                  _previewCard(),
+                  const SizedBox(height: 18),
+                  const SectionTitle(text: '水印内容'),
+                  _textField(
+                    controller: _unitTitle,
+                    label: '单位抬头',
+                    hint: '例如：浙江总队衢州市消防救援支队',
+                    helper: '水印顶部蓝条的单位名称；留空使用当前登录单位名称',
+                  ),
+                  _textField(
+                    controller: _department,
+                    label: '拍摄单位',
+                    hint: '例如：衢州市消防救援支队通信保障分队',
+                    helper: '水印底部蓝条的拍摄班组或部门；留空不显示',
+                  ),
+                  _textField(
+                    controller: _actor,
+                    label: '拍摄人',
+                    hint: '留空则不显示',
+                    helper: '水印正文中的人员署名；留空不显示，不改变登录姓名',
+                  ),
+                  const SizedBox(height: 18),
+                  const SectionTitle(text: '显示字段'),
+                  _switchTile(
+                    title: '拍摄时间',
+                    subtitle: '精确到分钟并带星期',
+                    value: _settings.showTime,
+                    onChanged: (v) => setState(() {
+                      _dirty = true;
+                      _settings = _settings.copyWith(showTime: v);
+                    }),
+                  ),
+                  _switchTile(
+                    title: '天气',
+                    subtitle: '天气现象、气温、风向风力与湿度',
+                    value: _settings.showWeather,
+                    onChanged: (v) => setState(() {
+                      _dirty = true;
+                      _settings = _settings.copyWith(showWeather: v);
+                    }),
+                  ),
+                  _switchTile(
+                    title: '地点',
+                    subtitle: '由定位反查的中文地址',
+                    value: _settings.showLocation,
+                    onChanged: (v) => setState(() {
+                      _dirty = true;
+                      _settings = _settings.copyWith(showLocation: v);
+                    }),
+                  ),
+                  _switchTile(
+                    title: '经纬度',
+                    subtitle: '按度分显示，如 东经 118°22′',
+                    value: _settings.showCoordinates,
+                    onChanged: (v) => setState(() {
+                      _dirty = true;
+                      _settings = _settings.copyWith(showCoordinates: v);
+                    }),
+                  ),
+                  _switchTile(
+                    title: '左侧标识',
+                    subtitle: '关闭后只保留文字，适合不对外发布的内部记录',
+                    value: _settings.showLogo,
+                    onChanged: (v) => setState(() {
+                      _dirty = true;
+                      _settings = _settings.copyWith(showLogo: v);
+                    }),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    '水印在按下快门或开始录像那一刻固定，成片中的时间、地址不会随时间跳动。'
+                    '照片与视频只保存在本机，是否分享由你逐次决定。',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                      height: 1.6,
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 
   Widget _previewCard() {
     final preview = _settings.copyWith(
-      unitTitle: _unitTitle.text.trim().isEmpty ? '单位抬头（未填写）' : _unitTitle.text.trim(),
+      unitTitle: _unitTitle.text.trim().isEmpty
+          ? _unitName
+          : _unitTitle.text.trim(),
       department: _department.text.trim(),
       actorName: _actor.text.trim(),
     );
@@ -159,30 +260,15 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
         children: [
           const Text('效果预览', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
-          AspectRatio(
-            aspectRatio: 4 / 3,
-            child: ClipRRect(
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF8FA6B8), Color(0xFF43535F)],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 10,
-                    bottom: 10,
-                    child: _previewCardBody(preview),
-                  ),
-                ],
+              gradient: const LinearGradient(
+                colors: [Color(0xFF8FA6B8), Color(0xFF43535F)],
               ),
             ),
+            child: _previewCardBody(preview),
           ),
         ],
       ),
@@ -190,7 +276,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
   }
 
   Widget _previewCardBody(WatermarkSettings s) {
-    const blue = Color(0xFF2A72D4);
+    const blue = AppColors.noteInfo;
     final rows = <(String, String)>[
       if (s.showTime) ('拍摄\r\n时间', '2026.10.18 星期日 08:39'),
       if (s.showWeather) ('天气', '晴 21℃ 东南风2级 湿度87%'),
@@ -200,12 +286,16 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       if (s.actorName.isNotEmpty) ('拍摄人', s.actorName),
     ];
     return Container(
-      width: 190,
+      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(5),
         boxShadow: const [
-          BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2)),
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
@@ -226,16 +316,18 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                       color: const Color(0xFFC8102E),
                       borderRadius: BorderRadius.circular(3),
                     ),
-                    child: const Icon(Icons.shield_outlined, size: 11, color: Colors.white),
+                    child: const Icon(
+                      Icons.shield_outlined,
+                      size: 11,
+                      color: Colors.white,
+                    ),
                   ),
                 Expanded(
                   child: Text(
-                    s.unitTitle.isEmpty ? '单位抬头' : s.unitTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    s.unitTitle,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 8.5,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -250,12 +342,12 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   SizedBox(
-                    width: 26,
+                    width: 48,
                     child: Text(
                       row.$1,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        fontSize: 7,
+                        fontSize: 12,
                         height: 1.15,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF1A1A1A),
@@ -271,9 +363,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   Expanded(
                     child: Text(
                       row.$2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 7.5, color: Color(0xFF1A1A1A)),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF1A1A1A),
+                      ),
                     ),
                   ),
                 ],
@@ -285,9 +378,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               child: Text(
                 '拍摄单位：${s.department}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 7.5),
+                style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
         ],
@@ -305,11 +396,21 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
         controller: controller,
-        onChanged: (_) => setState(() {}),
+        enabled: !_saving,
+        onChanged: (_) => _changed(),
+        minLines: 1,
+        maxLines: null,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           helperText: helper,
+          helperMaxLines: 6,
+          hintMaxLines: 4,
+          helperStyle: const TextStyle(color: AppColors.textSecondary),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.textSecondary),
+          ),
           filled: true,
           fillColor: AppColors.surface,
           border: OutlineInputBorder(
@@ -332,25 +433,12 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       title: Text(title, style: const TextStyle(fontSize: 14)),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
       value: value,
-      onChanged: onChanged,
+      activeThumbColor: AppColors.textPrimary,
+      activeTrackColor: AppColors.voice,
+      inactiveThumbColor: AppColors.textSecondary,
+      inactiveTrackColor: AppColors.surface,
+      trackOutlineColor: const WidgetStatePropertyAll(AppColors.textSecondary),
+      onChanged: _saving ? null : onChanged,
     );
   }
-}
-
-class _GroupTitle extends StatelessWidget {
-  final String text;
-  const _GroupTitle(this.text);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      text,
-      style: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-        color: AppColors.textSecondary,
-      ),
-    ),
-  );
 }
