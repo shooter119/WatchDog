@@ -358,12 +358,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       );
       if (!mounted) return;
       setState(() => _statusText = '照片已保存');
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
+      final saved = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
           builder: (_) =>
               MediaReviewPage(controller: widget.controller, media: media),
         ),
       );
+      if (saved == true && mounted) {
+        setState(() => _statusText = '已保存到「现场资料」');
+      }
     } on PlatformException catch (error) {
       if (!mounted) return;
       setState(() => _statusText = error.message ?? '拍照失败');
@@ -409,8 +412,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       fix: _fix,
     );
     if (!mounted || !review) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
         builder: (_) => MediaReviewPage(
           controller: widget.controller,
           media: media,
@@ -418,6 +421,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         ),
       ),
     );
+    if (saved == true && mounted) {
+      setState(() => _statusText = '已保存到「现场资料」');
+    }
   }
 
   Future<void> _handleClose(BuildContext context) async {

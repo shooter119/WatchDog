@@ -222,6 +222,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       await _flushDraft();
       if (!mounted) return;
       _toast('未连接服务器，口述文字已保存在本机草稿，联网后可再写入');
+      Navigator.of(context).pop(true);
       return;
     }
     setState(() => _busy = true);
@@ -244,6 +245,8 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
         _busy = false;
       });
       _toast('已写入警情，辅助问答会把它作为现场背景');
+      // 写入成功同样回到上级页面，避免停在本页让人以为还要再点一次。
+      Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) return;
       // 失败时内容仍保留在本机草稿里，用户重进页面不会丢。
@@ -257,7 +260,9 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
   Future<void> _saveOnly() async {
     await _flushDraft();
     if (!mounted) return;
-    _toast('已保存在本机，可稍后在「现场资料」里补写口述');
+    // 保存即完成本次核对，回到上级页面；结果回传给上级用于提示，
+    // 不再停在本页只弹一句 toast（现场会以为没保存成功，反复点）。
+    Navigator.of(context).pop(true);
   }
 
   Future<void> _share() async {

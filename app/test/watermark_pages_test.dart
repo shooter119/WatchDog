@@ -139,6 +139,36 @@ Incident _incident({String id = 'incident-1', String? title}) {
   );
 }
 
+Future<List<Object?>> _pumpPageWithResult(
+  WidgetTester tester,
+  Widget page,
+) async {
+  final results = <Object?>[];
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: buildAppTheme(),
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () async {
+                final result = await Navigator.of(context).push<bool>(
+                  MaterialPageRoute<bool>(builder: (_) => page),
+                );
+                results.add(result);
+              },
+              child: const Text('打开核对页'),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('打开核对页'));
+  await tester.pumpAndSettle();
+  return results;
+}
+
 Future<void> _pumpPage(WidgetTester tester, Widget page) async {
   await tester.pumpWidget(MaterialApp(theme: buildAppTheme(), home: page));
   await tester.pumpAndSettle();
@@ -345,7 +375,7 @@ void main() {
       final controller = AppController()..currentIncident = _incident();
       addTearDown(controller.dispose);
 
-      await _pumpPage(
+      final results = await _pumpPageWithResult(
         tester,
         MediaReviewPage(controller: controller, media: _media()),
       );
@@ -356,9 +386,9 @@ void main() {
 
       await tester.tap(find.text('仅保存'));
       await tester.pumpAndSettle();
-      expect(find.text('已保存在本机，可稍后在「现场资料」里补写口述'), findsOneWidget);
-
-      await _settleSnackBar(tester);
+      // 保存即完成核对：必须自动回到上级页面，不能停在本页
+      expect(find.byType(MediaReviewPage), findsNothing);
+      expect(results, [true]);
     });
 
     testWidgets('有文字后按钮切换为写入语义', (tester) async {
@@ -403,7 +433,7 @@ void main() {
         ..api = api;
       addTearDown(controller.dispose);
 
-      await _pumpPage(
+      final results = await _pumpPageWithResult(
         tester,
         MediaReviewPage(
           controller: controller,
@@ -431,14 +461,9 @@ void main() {
 
       expect(api.transcripts, ['现场已设置警戒']);
       expect(store.observationIds['media-1'], 'media-1');
-      expect(find.text('已写入'), findsOneWidget);
-      final writtenButton = tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.text('已写入'),
-          matching: find.byWidgetPredicate((widget) => widget is FilledButton),
-        ),
-      );
-      expect(writtenButton.onPressed, isNull);
+      // 写入成功后自动回到上级页面，并回传 true
+      expect(find.byType(MediaReviewPage), findsNothing);
+      expect(results, [true]);
 
       await _settleSnackBar(tester);
     });
@@ -452,7 +477,7 @@ void main() {
         ..api = api;
       addTearDown(controller.dispose);
 
-      await _pumpPage(
+      final results = await _pumpPageWithResult(
         tester,
         MediaReviewPage(
           controller: controller,
@@ -470,6 +495,9 @@ void main() {
       expect(find.textContaining('写入失败'), findsOneWidget);
       expect(store.drafts['media-1'], '现场已设置警戒，等待支援');
       expect(find.text('已写入'), findsNothing);
+      // 写入失败必须留在核对页，不能把用户带回上级还以为写成功了
+      expect(find.byType(MediaReviewPage), findsOneWidget);
+      expect(results, isEmpty);
 
       await _settleSnackBar(tester);
     });
@@ -480,7 +508,7 @@ void main() {
       final controller = AppController()..currentIncident = _incident();
       addTearDown(controller.dispose);
 
-      await _pumpPage(
+      final results = await _pumpPageWithResult(
         tester,
         MediaReviewPage(
           controller: controller,
@@ -501,6 +529,9 @@ void main() {
         findsOneWidget,
       );
       expect(store.drafts['media-1'], '现场已设置警戒，等待支援');
+      // 草稿已落盘，同样返回上级，避免用户以为没保存
+      expect(find.byType(MediaReviewPage), findsNothing);
+      expect(results, [true]);
 
       await _settleSnackBar(tester);
     });
