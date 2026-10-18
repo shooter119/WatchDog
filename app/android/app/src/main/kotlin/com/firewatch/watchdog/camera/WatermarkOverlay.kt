@@ -75,6 +75,13 @@ object WatermarkOverlay {
     @Volatile
     private var appPackageName: String = ""
 
+    /** 新会话开始时复位释放标记，返回本次会话的代际号。 */
+    fun resetForNewSession(): Int {
+        released = false
+        generation += 1
+        return generation
+    }
+
     fun install(context: android.content.Context) {
         appContext = context.applicationContext
         appPackageName = context.packageName
@@ -83,7 +90,19 @@ object WatermarkOverlay {
     private var cachedBitmap: Bitmap? = null
     private var cachedKey: String? = null
 
+    /** 会话释放后置位：绘制线程可能还会再来一帧，禁止再碰位图缓存。 */
+    @Volatile
+    private var released = false
+
+    /**
+     * 会话代际。快速退出再进入时，上一会话的后台释放任务可能在新会话已经开始
+     * 绘制之后才执行；带上代际号后，过期的释放任务会被丢弃，不会把新会话的
+     * 位图缓存回收掉（那会让重进页面后水印直接消失）。
+     */
+    private var generation = 0
+
     fun draw(canvas: Canvas, frame: Frame, model: WatermarkModel) {
+        if (released) return
         val buffer = frame.size
         if (buffer.width <= 0 || buffer.height <= 0) return
         val rotation = ((frame.rotationDegrees % 360) + 360) % 360
@@ -168,7 +187,10 @@ object WatermarkOverlay {
     }
 
     /** 释放缓存位图；会话结束时调用，避免长时间占用内存。 */
-    fun release() {
+    fun release(sessionGeneration: Int) {
+        // 过期会话的释放任务直接忽略：新会话可能已经在用这份缓存了
+        if (sessionGeneration != generation) return
+        released = true
         cachedBitmap?.recycle()
         cachedBitmap = null
         cachedKey = null

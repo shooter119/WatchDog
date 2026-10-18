@@ -57,6 +57,7 @@ class CameraSession(
     private var displayManager: DisplayManager? = null
     private var recording: Recording? = null
     private var lensFacing = CameraSelector.LENS_FACING_BACK
+    private var sessionGeneration = 0
     private var torchOn = false
     private var disposed = false
 
@@ -116,6 +117,9 @@ class CameraSession(
             .build()
         val video = VideoCapture.withOutput(recorder)
 
+        // 每次进相机页都是一次新会话：复位释放标记并索取代际号，
+        // 防止上一会话的后台释放任务误伤本次会话的水印缓存。
+        sessionGeneration = WatermarkOverlay.resetForNewSession()
         // queueDepth = 0：帧到即画、立即合成，不排队。水印绘制是纯 Canvas 同步操作，
         // 排队只会增加一帧延迟，没有收益。
         val effect = OverlayEffect(
@@ -299,21 +303,44 @@ class CameraSession(
         if (autoStopped) callbacks.onRecordingEvent(mapOf("type" to "reached_limit"))
     }
 
+    /**
+     * 释放会话。必须在主线程调用，但自身不允许做重活。
+     *
+     * 两条约束：
+     * 1. 只解绑本会话自己的 UseCase。`ProcessCameraProvider` 是进程级单例，
+     *    用 unbindAll() 会误伤紧接着重进页面时新会话刚绑好的用例。
+     * 2. `OverlayEffect.close()` 要等 GL 队列排空，耗时随分辨率上升（4K 可达数秒），
+     *    必须丢到后台线程，否则离开相机页时系统返回键会输入超时（ANR）。
+     */
     fun release() {
+        if (disposed) return
         disposed = true
         mainHandler.removeCallbacksAndMessages(null)
         stopDisplayListener()
-        preview = null
-        recording?.stop()
-        recording = null
-        overlayEffect?.close()
+
+        val effect = overlayEffect
         overlayEffect = null
-        WatermarkOverlay.release()
-        provider?.unbindAll()
-        provider = null
+        val cameraProvider = provider
+        val useCases = listOfNotNull(preview, imageCapture, videoCapture)
+        preview = null
         imageCapture = null
         videoCapture = null
         camera = null
+        provider = null
+
+        recording?.stop()
+        recording = null
+
+        useCases.forEach { useCase ->
+            if (cameraProvider != null) runCatching { cameraProvider.unbind(useCase) }
+        }
+
+        releaseExecutor.execute {
+            runCatching { effect?.close() }
+            // 先关 effect 再回收水印位图：close() 返回后 GL 队列已排空，
+            // 位图不会再被绘制线程引用。代际号保证快速重进页面时不会误伤新会话。
+            WatermarkOverlay.release(sessionGeneration)
+        }
     }
 
     private fun hasAudioPermission(): Boolean =
@@ -329,4 +356,16 @@ class CameraSession(
     /** 与 Flutter 侧约定的媒体根目录：应用私有外部目录，卸载即清理，不参与系统相册。 */
     private fun mediaRoot(): File =
         context.getExternalFilesDir(null) ?: context.filesDir
+
+    private companion object {
+        /**
+         * 关闭 effect 要等 GL 队列排空，4K 帧下是几百毫秒到数秒级的活，
+         * 绝不能放在主线程，否则离开相机页时系统返回键会输入超时（ANR 现场实测）。
+         * 进程内共享一条守护线程即可：释放任务本身极少且彼此独立。
+         */
+        val releaseExecutor: java.util.concurrent.ExecutorService =
+            java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+                Thread(runnable, "watchdog-camera-release").apply { isDaemon = true }
+            }
+    }
 }
