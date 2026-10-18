@@ -65,6 +65,33 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 从上级页面推入相机页，用于验证关闭按钮确实回到主界面。
+  Future<void> pushedPage(WidgetTester tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<bool>(
+                    builder: (_) => CameraPage(controller: controller),
+                  ),
+                ),
+                child: const Text('打开相机'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开相机'));
+    await tester.pumpAndSettle();
+  }
+
   setUp(() {
     calls = [];
     permission = true;
@@ -238,6 +265,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(calls, isNot(contains('startRecording')));
     expect(find.textContaining('200 MB'), findsOneWidget);
+  });
+
+  cameraTestWidgets('点关闭按钮回到上级页面', (tester) async {
+    await pushedPage(tester);
+    expect(find.byType(CameraPage), findsOneWidget);
+
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CameraPage), findsNothing);
+    expect(find.text('打开相机'), findsOneWidget);
+  });
+
+  cameraTestWidgets('系统返回键同样回到上级页面', (tester) async {
+    await pushedPage(tester);
+    expect(find.byType(CameraPage), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CameraPage), findsNothing);
+    expect(find.text('打开相机'), findsOneWidget);
   });
 
   cameraTestWidgets('权限引导有可调用的系统设置入口和用途说明', (tester) async {

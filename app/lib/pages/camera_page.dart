@@ -74,6 +74,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   bool _saveWithoutReview = false;
   bool _stateUnknown = false;
   bool _screenHeld = false;
+
+  /// 已确认可以离开：置位后放开 PopScope，再执行真正的 pop。
+  bool _leaving = false;
+
+  /// 关闭流程进行中（含录像确认弹窗），防止连点叉/返回键触发多次 pop。
+  bool _closing = false;
   String? _statusText;
 
   @override
@@ -427,9 +433,20 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _handleClose(BuildContext context) async {
+    if (_closing || _leaving) return;
+    _closing = true;
     final navigator = Navigator.of(context);
-    if (await _confirmLeave()) {
-      if (mounted) navigator.maybePop();
+    try {
+      if (!await _confirmLeave()) return;
+      if (!mounted) return;
+      // PopScope 默认 canPop=false 用于拦截系统返回并先做录像确认；
+      // 确认完成后必须显式放开并直接 pop，不能再用 maybePop
+      //（那会被自己的 PopScope 拦住，表现为点叉无反应）。
+      setState(() => _leaving = true);
+      navigator.pop();
+    } finally {
+      // 退出成功后页面即销毁；被取消（正在拍照/仍录像）时允许再次尝试。
+      if (!_leaving) _closing = false;
     }
   }
 
@@ -528,7 +545,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final landscape =
         MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
     return PopScope(
-      canPop: false,
+      canPop: _leaving,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         // 路由已在退场流程中，直接用外层 context 的 Navigator 实例
