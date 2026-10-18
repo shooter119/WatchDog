@@ -47,6 +47,8 @@ class WatchdogCameraPlugin(
     private var activeView: CameraPreviewView? = null
 
     fun register() {
+        // 队徽资源在原生侧解码，注入 Application 上下文即可，不持有 Activity
+        WatermarkOverlay.install(context)
         eventChannel.setStreamHandler(this)
         locationChannel.setMethodCallHandler { call, result ->
             when (call.method) {

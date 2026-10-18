@@ -34,11 +34,11 @@ import kotlin.math.min
  */
 object WatermarkOverlay {
 
-    private const val CARD_WIDTH_RATIO = 0.52f
-    private const val MARGIN_RATIO = 0.026f
-    private const val HEADER_RATIO = 0.135f // 相对卡片宽度
-    private const val FOOTER_RATIO = 0.078f
-    private const val ROW_RATIO = 0.082f
+    private const val CARD_WIDTH_RATIO = 0.50f
+    private const val MARGIN_RATIO = 0.018f
+    private const val HEADER_RATIO = 0.078f // 相对卡片宽度
+    private const val FOOTER_RATIO = 0.062f
+    private const val ROW_RATIO = 0.058f
     private const val LABEL_COLUMN_RATIO = 0.175f
 
     private val DEBUG_LOG = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -64,6 +64,17 @@ object WatermarkOverlay {
      * 做法：先在「直立坐标系」渲染成一张位图（排版逻辑因此保持直观），再用矩阵把它
      * 旋转贴到帧上。水印内容在拍摄期间是冻结的，位图按内容缓存，每帧只是贴图，开销很小。
      */
+    /** 由宿主在启动时注入 Application 上下文，用于解码队徽资源。 */
+    @Volatile
+    private var appContext: android.content.Context? = null
+    @Volatile
+    private var appPackageName: String = ""
+
+    fun install(context: android.content.Context) {
+        appContext = context.applicationContext
+        appPackageName = context.packageName
+    }
+
     private var cachedBitmap: Bitmap? = null
     private var cachedKey: String? = null
 
@@ -165,11 +176,10 @@ object WatermarkOverlay {
         val rows = buildRows(model)
         if (rows.isEmpty() && model.unitTitle.isBlank() && model.department.isBlank()) return
 
-        // 横屏成片时画面更矮，信息卡按比例收窄，避免占掉过多画面
-        val landscapeFrame = area.width() > area.height()
-        val cardRatio = if (landscapeFrame) 0.40f else CARD_WIDTH_RATIO
-        val rowRatio = if (landscapeFrame) 0.072f else ROW_RATIO
-        val cardWidth = width * cardRatio
+        // 固定比例：信息卡的尺寸只与画面宽度相关，不随横竖屏或分辨率改变，
+        // 保证同一台设备拍出的照片与视频、以及不同机型之间的水印观感一致。
+        val cardWidth = width * CARD_WIDTH_RATIO
+        val rowRatio = ROW_RATIO
         val margin = width * MARGIN_RATIO
         val headerHeight = cardWidth * HEADER_RATIO
         val footerHeight = if (model.department.isBlank()) 0f else cardWidth * FOOTER_RATIO
@@ -255,18 +265,18 @@ object WatermarkOverlay {
         canvas.drawRect(card.left, card.top, card.right, card.top + headerHeight, headerPaint)
         canvas.restore()
 
-        val emblemSize = headerHeight * 0.72f
-        val emblemLeft = card.left + headerHeight * 0.16f
+        val emblemSize = headerHeight * 0.92f
+        val emblemLeft = card.left + headerHeight * 0.10f
         val emblemTop = card.top + (headerHeight - emblemSize) / 2f
         if (model.showLogo) {
             drawEmblem(canvas, RectF(emblemLeft, emblemTop, emblemLeft + emblemSize, emblemTop + emblemSize))
         }
 
-        val textLeft = if (model.showLogo) emblemLeft + emblemSize + headerHeight * 0.16f else card.left + headerHeight * 0.22f
+        val textLeft = if (model.showLogo) emblemLeft + emblemSize + headerHeight * 0.22f else card.left + headerHeight * 0.22f
         val title = model.unitTitle.ifBlank { "现场影像" }
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            textSize = headerHeight * 0.40f
+            textSize = headerHeight * 0.44f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         val available = card.right - textLeft - headerHeight * 0.20f
@@ -279,11 +289,68 @@ object WatermarkOverlay {
         canvas.drawText(shown, textLeft, baseline, paint)
     }
 
-    /** 通用盾形标识：不复制任何官方徽标，单位可在后续版本替换为自有图片。 */
+    /**
+     * 绘制中国消防救援队徽。
+     *
+     * 徽标来源：Wikimedia Commons「CHINA FIRE AND RESCUE badge.svg」，标注 Public domain
+     * （中华人民共和国官方标志不受著作权保护）。资源放在 res/drawable-nodpi/，
+     * 不按屏幕密度缩放，保证水印内尺寸只由版式比例决定。
+     * 解码失败时回落到红底盾形占位，不阻断拍摄。
+     */
     private fun drawEmblem(canvas: Canvas, box: RectF) {
+        val badge = emblemBitmap()
+        if (badge == null) {
+            drawEmblemFallback(canvas, box)
+            return
+        }
+        // 白色圆角底衬托，避免蓝色队徽与蓝色抬头条混在一起
+        val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+        val padding = box.width() * 0.03f
+        canvas.drawRoundRect(
+            RectF(box.left - padding, box.top - padding, box.right + padding, box.bottom + padding),
+            box.width() * 0.08f,
+            box.width() * 0.08f,
+            background,
+        )
+        // 队徽原始比例 960:1073，按高度适配并水平居中
+        val targetHeight = box.height()
+        val targetWidth = targetHeight * (badge.width.toFloat() / badge.height.toFloat())
+        val left = box.centerX() - targetWidth / 2f
+        val src = android.graphics.Rect(0, 0, badge.width, badge.height)
+        val dst = RectF(left, box.top, left + targetWidth, box.top + targetHeight)
+        canvas.drawBitmap(badge, src, dst, Paint(Paint.FILTER_BITMAP_FLAG))
+    }
+
+    @Volatile
+    private var cachedEmblem: Bitmap? = null
+    @Volatile
+    private var emblemLoaded = false
+
+    private fun emblemBitmap(): Bitmap? {
+        if (emblemLoaded) return cachedEmblem
+        synchronized(this) {
+            if (!emblemLoaded) {
+                cachedEmblem = try {
+                    val res = appContext?.resources
+                    if (res == null) null else {
+                        android.graphics.BitmapFactory.decodeResource(
+                            res,
+                            res.getIdentifier("fire_rescue_badge", "drawable", appPackageName),
+                        )
+                    }
+                } catch (_: Throwable) {
+                    null
+                }
+                emblemLoaded = true
+            }
+        }
+        return cachedEmblem
+    }
+
+    /** 资源缺失时的占位：红底白色盾形，保证水印结构完整。 */
+    private fun drawEmblemFallback(canvas: Canvas, box: RectF) {
         val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = EMBLEM_RED }
         canvas.drawRoundRect(box, box.width() * 0.14f, box.width() * 0.14f, background)
-
         val shield = Path().apply {
             val w = box.width()
             val h = box.height()
@@ -297,25 +364,13 @@ object WatermarkOverlay {
             lineTo(cx - w * 0.28f, top + h * 0.10f)
             close()
         }
-        val shieldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            style = Paint.Style.STROKE
-            strokeWidth = box.width() * 0.045f
-        }
-        canvas.drawPath(shield, shieldPaint)
-
-        val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-        val barWidth = box.width() * 0.075f
-        canvas.drawRoundRect(
-            RectF(
-                box.centerX() - barWidth / 2f,
-                box.top + box.height() * 0.34f,
-                box.centerX() + barWidth / 2f,
-                box.top + box.height() * 0.62f,
-            ),
-            barWidth / 2f,
-            barWidth / 2f,
-            barPaint,
+        canvas.drawPath(
+            shield,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                style = Paint.Style.STROKE
+                strokeWidth = box.width() * 0.045f
+            },
         )
     }
 
@@ -349,7 +404,7 @@ object WatermarkOverlay {
 
             // 标签：两字一行，最多两行，居中对齐
             val labelLines = splitLabel(row.label)
-            labelPaint.textSize = rowHeight * 0.30f
+            labelPaint.textSize = rowHeight * 0.38f
             val lineHeight = labelPaint.textSize * 1.16f
             val labelBlockHeight = lineHeight * labelLines.size
             var labelY = centerY - labelBlockHeight / 2f + labelPaint.textSize
@@ -376,7 +431,7 @@ object WatermarkOverlay {
             // 值：按可用宽度自动字号，超长自动缩到两行上限
             val valueLeft = card.left + labelColumnWidth + cardWidth * 0.032f
             val maxValueWidth = card.right - valueLeft - cardWidth * 0.022f
-            valuePaint.textSize = rowHeight * 0.335f
+            valuePaint.textSize = rowHeight * 0.50f
             val lines = wrapText(row.value, valuePaint, maxValueWidth, maxLines = row.valueLines)
             val valueLineHeight = valuePaint.textSize * 1.24f
             val valueBlockHeight = valueLineHeight * lines.size
@@ -429,7 +484,7 @@ object WatermarkOverlay {
 
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
-            textSize = footerHeight * 0.46f
+            textSize = footerHeight * 0.52f
             typeface = Typeface.DEFAULT
         }
         val labelWidth = paint.measureText("拍摄单位：")

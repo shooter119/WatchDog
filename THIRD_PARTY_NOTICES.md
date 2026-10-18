@@ -30,6 +30,12 @@ App 直接依赖的 Dart 包均为宽松许可证（BSD / MIT / Apache-2.0），
 `backend/package.json` 中列出的 Node.js 依赖均为 MIT 或 Apache-2.0 许可证，可通过
 `npm ls --all` 查看完整依赖树。
 
+## 图像素材
+
+| 素材 | 用途 | 来源与许可 |
+|---|---|---|
+| 中国消防救援队徽（`app/android/.../res/drawable-nodpi/fire_rescue_badge.png`） | 水印相机信息卡左侧标识 | Wikimedia Commons `CHINA FIRE AND RESCUE badge.svg`，标注 **Public domain**（中华人民共和国官方标志不受著作权保护）。原图为 SVG，本项目使用其 960px 光栅化版本并缩放至 384px |
+
 ## 参考与致谢
 
 相机与水印功能的实现思路参考了开源社区的通用做法（CameraX `camera-effects` 的 `OverlayEffect`
