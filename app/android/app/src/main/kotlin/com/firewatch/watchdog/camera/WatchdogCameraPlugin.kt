@@ -79,7 +79,7 @@ class WatchdogCameraPlugin(
                     } else {
                         worker.execute {
                             val source = File(path)
-                            val target = File(source.parentFile, "${'$'}{source.nameWithoutExtension}.wav")
+                            val target = File(source.parentFile, "${source.nameWithoutExtension}.wav")
                             val wav = MediaDerivatives.extractWav(source, target)
                             mainHandler.post { result.success(wav?.absolutePath) }
                         }
@@ -93,7 +93,7 @@ class WatchdogCameraPlugin(
                     } else {
                         worker.execute {
                             val source = File(path)
-                            val dir = File(source.parentFile, "frames_${'$'}{source.nameWithoutExtension}")
+                            val dir = File(source.parentFile, "frames_${source.nameWithoutExtension}")
                             val frames = MediaDerivatives.extractFrames(source, dir, count)
                             mainHandler.post { result.success(frames.map { it.absolutePath }) }
                         }
