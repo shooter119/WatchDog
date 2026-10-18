@@ -2,6 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
+
+import '../services/screen_on.dart';
+import '../services/storage_service.dart';
 
 import '../models/models.dart';
 import '../services/camera_bridge.dart';
@@ -15,6 +19,21 @@ import '../services/media_capture_service.dart';
 
 /// 拍摄模式：拍照 / 录像分开，避免同一个快门同时承担点击与长按
 /// —— 戴厚手套时一次迟疑的按压会被误判成录像。
+/// Shared capture rules keep freshness and storage decisions independently testable.
+class CameraFlowPolicy {
+  static bool locationExpired(
+    LocationFix? fix,
+    DateTime? received,
+    DateTime now,
+  ) =>
+      fix == null ||
+      received == null ||
+      fix.ageMs + now.difference(received).inMilliseconds > 300000;
+  static int minimumBytes(bool video) => (video ? 200 : 20) * 1024 * 1024;
+  static Duration elapsed(DateTime started, DateTime now) =>
+      now.isBefore(started) ? Duration.zero : now.difference(started);
+}
+
 enum _CaptureMode { photo, video }
 
 /// 水印相机页。
@@ -49,6 +68,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   _CaptureMode _mode = _CaptureMode.photo;
   Duration _elapsed = Duration.zero;
   Timer? _ticker;
+  DateTime? _recordingStarted;
+  DateTime? _fixReceived;
+  Future<void>? _locationWork;
+  bool _saveWithoutReview = false;
+  bool _stateUnknown = false;
+  bool _screenHeld = false;
   String? _statusText;
 
   @override
@@ -74,15 +99,66 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
     _ticker?.cancel();
+    if (_screenHeld) unawaited(ScreenOn.setKeepScreenOn(false));
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 切后台/锁屏时主动结束录制：原生侧 Finalize 仍会落盘，
-    // 我们的订阅在后台可能收不到事件，由恢复时的补登记兜底。
-    if (state != AppLifecycleState.resumed && _recording) {
-      CameraBridge.stopRecording();
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.hidden) &&
+        (_recording || _starting)) {
+      _saveWithoutReview = true;
+      unawaited(_stopRecording());
+    }
+    if (state == AppLifecycleState.resumed) {
+      if (_permissionDenied) unawaited(_bootstrap());
+      if (_stateUnknown) unawaited(_reconcileRecording());
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    try {
+      unawaited(HapticFeedback.mediumImpact());
+      await CameraBridge.stopRecording();
+    } catch (_) {
+      await _reconcileRecording();
+    }
+  }
+
+  void _announce(String message) {
+    unawaited(
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        message,
+        Directionality.of(context),
+      ),
+    );
+  }
+
+  Future<void> _reconcileRecording([String? message]) async {
+    try {
+      final active = await CameraBridge.isRecording();
+      if (!mounted) return;
+      setState(() {
+        _recording = active;
+        if (active) _mode = _CaptureMode.video;
+        _starting = false;
+        _stateUnknown = false;
+        _statusText = active
+            ? '${message ?? '录制异常'}，仍在录像，请点击停止'
+            : '${message ?? '录制已结束'}，请到现场资料检查文件';
+      });
+      if (!active) _ticker?.cancel();
+      _screenHeld = active;
+      await ScreenOn.setKeepScreenOn(active);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _stateUnknown = true;
+        _starting = false;
+        _statusText = '无法确认录制状态，请点击“重试确认”；确认前请勿退出';
+      });
     }
   }
 
@@ -123,10 +199,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     await _resolveLocation();
   }
 
-  Future<void> _resolveLocation() async {
-    if (!_permissions.location) return;
-    setState(() => _locating = true);
-    final fix = await CameraBridge.currentLocation();
+  Future<void> _resolveLocation() => _locationWork ??= _fetchLocation()
+      .whenComplete(() => _locationWork = null);
+
+  Future<void> _fetchLocation() async {
+    setState(() => _locating = _permissions.location);
+    var fix = _permissions.location
+        ? await CameraBridge.currentLocation()
+        : null;
+    final received = DateTime.now();
+    if (fix != null && fix.ageMs > 300000) fix = null;
     if (!mounted) return;
 
     WeatherInfo weather = WeatherInfo.empty;
@@ -137,8 +219,18 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _fix = fix;
+      _fixReceived = received;
       _locating = false;
-      _watermark = _watermark.copyWith(
+      _watermark = WatermarkPayload(
+        unitTitle: _watermark.unitTitle,
+        department: _watermark.department,
+        actorName: _watermark.actorName,
+        timestampMs: _watermark.timestampMs,
+        showTime: _watermark.showTime,
+        showWeather: _watermark.showWeather,
+        showLocation: _watermark.showLocation,
+        showCoordinates: _watermark.showCoordinates,
+        showLogo: _watermark.showLogo,
         address: weather.address?.isNotEmpty == true ? weather.address! : '',
         weather: weather.line ?? '',
         latitude: fix?.lat,
@@ -150,6 +242,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   /// 拍摄前刷新水印快照：这是「照片上的时间」与「入库时间」一致的唯一保证。
   Future<WatermarkPayload> _snapshotWatermark() async {
+    if (!_permissions.location ||
+        CameraFlowPolicy.locationExpired(_fix, _fixReceived, DateTime.now())) {
+      if (mounted && _permissions.location) {
+        setState(() => _statusText = '定位更新中');
+      }
+      await _resolveLocation();
+      if (mounted) {
+        setState(() => _statusText = _fix == null ? '定位不可用，水印不含地点与坐标' : null);
+      }
+    }
     final snapshot = _watermark.copyWith(
       timestampMs: DateTime.now().millisecondsSinceEpoch,
     );
@@ -166,42 +268,81 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           _recording = true;
           _starting = false;
           _elapsed = Duration.zero;
+          _recordingStarted = DateTime.now();
           _statusText = null;
         });
+        _screenHeld = true;
+        unawaited(ScreenOn.setKeepScreenOn(true));
+        unawaited(HapticFeedback.mediumImpact());
+        _announce('开始录像');
+        if (_saveWithoutReview) unawaited(_stopRecording());
         _ticker?.cancel();
         _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
           if (!mounted) return;
-          setState(() => _elapsed += const Duration(milliseconds: 200));
+          setState(
+            () => _elapsed = CameraFlowPolicy.elapsed(
+              _recordingStarted!,
+              DateTime.now(),
+            ),
+          );
         });
         break;
       case 'stopped':
+        _stateUnknown = false;
         _ticker?.cancel();
+        unawaited(ScreenOn.setKeepScreenOn(false));
+        _screenHeld = false;
+        _announce('录像已停止，视频已保存');
         setState(() {
           _recording = false;
           _starting = false;
-          _statusText = event.autoStopped ? '已录满 60 秒，自动保存' : '视频已保存到本机';
+          _statusText = _saveWithoutReview
+              ? '视频已保存，可到现场资料查看'
+              : (event.autoStopped ? '已录满 60 秒，自动保存' : '视频已保存到本机');
         });
         final path = event.path;
         if (path != null) _openReviewForVideo(path, event.durationMs ?? 0);
         break;
       case 'reached_limit':
+        _announce('已达 60 秒上限，正在保存');
         setState(() => _statusText = '已达 60 秒上限，正在保存…');
         break;
       case 'error':
-        _ticker?.cancel();
-        setState(() {
-          _recording = false;
-          _starting = false;
-          _statusText = event.message ?? '录制失败';
-        });
+        unawaited(_reconcileRecording(event.message));
         break;
     }
   }
 
+  Future<bool> _checkStorage(bool video) async {
+    final bytes = await StorageService.availableBytes();
+    if (!mounted) return false;
+    if (bytes == null || bytes < CameraFlowPolicy.minimumBytes(video)) {
+      setState(
+        () => _statusText = bytes == null
+            ? '无法检查存储空间，请重试后拍摄'
+            : '存储空间不足，请清理至少 ${video ? 200 : 20} MB 后重试',
+      );
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _toggleTorch() async {
+    if (_capturing || _starting) return;
+    try {
+      await CameraBridge.setTorch(!_torch);
+      if (mounted) setState(() => _torch = !_torch);
+      await HapticFeedback.selectionClick();
+    } catch (_) {
+      if (mounted) setState(() => _statusText = '手电筒切换失败，请重试');
+    }
+  }
+
   Future<void> _takePhoto() async {
-    if (_capturing || _recording || _starting) return;
+    if (_capturing || _recording || _starting || _stateUnknown) return;
     setState(() => _capturing = true);
     try {
+      if (!await _checkStorage(false)) return;
       final snapshot = await _snapshotWatermark();
       final path = await CameraBridge.takePhoto();
       if (!mounted) return;
@@ -232,16 +373,21 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _toggleRecording() async {
-    if (_starting) return;
+    if (_starting || _capturing || _stateUnknown) return;
     if (_recording) {
-      await CameraBridge.stopRecording();
+      await _stopRecording();
       return;
     }
     setState(() {
       _starting = true;
+      _saveWithoutReview = false;
       _statusText = null;
     });
     try {
+      if (!await _checkStorage(true)) {
+        if (mounted) setState(() => _starting = false);
+        return;
+      }
       await _snapshotWatermark();
       await CameraBridge.startRecording();
     } on PlatformException catch (error) {
@@ -254,6 +400,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _openReviewForVideo(String path, int durationMs) async {
+    final review = !_saveWithoutReview;
     final media = await MediaCaptureService.registerVideo(
       incidentId: widget.controller.currentIncident?.id ?? '',
       path: path,
@@ -261,7 +408,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       watermark: _watermark,
       fix: _fix,
     );
-    if (!mounted) return;
+    if (!mounted || !review) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MediaReviewPage(
@@ -290,6 +437,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   /// 退出前确认：录像中必须先停下来并等文件落盘，否则会出现找不到的孤儿文件。
   Future<bool> _confirmLeave() async {
+    if (_capturing) {
+      setState(() => _statusText = '正在保存照片，请稍候');
+      return false;
+    }
+    if (_stateUnknown) {
+      await _reconcileRecording();
+      return false;
+    }
     if (!_recording && !_starting) return true;
     final leave = await showDialog<bool>(
       context: context,
@@ -297,18 +452,25 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         title: const Text('正在录像'),
         content: const Text('退出会结束并保存这段视频。确定退出吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('继续录制')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('结束并退出')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('继续录制'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('结束并退出'),
+          ),
         ],
       ),
     );
     if (leave != true) return false;
-    await CameraBridge.stopRecording();
+    _saveWithoutReview = true;
+    await _stopRecording();
     // 等待 stopped 事件完成入库，最多 3 秒
     for (var i = 0; i < 30 && _recording; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
-    return true;
+    return !_recording && !_starting;
   }
 
   String get _timerText {
@@ -339,7 +501,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  color: Colors.white,
+                ),
               ),
               SizedBox(height: 12),
               Text('正在准备相机…', style: TextStyle(color: Colors.white70)),
@@ -369,17 +534,17 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             ? Row(
                 children: [
                   Expanded(child: _preview(creationParams)),
-                  SizedBox(width: 180, child: _bottomBar(vertical: true)),
+                  SizedBox(width: 220, child: _bottomBar(vertical: true)),
                 ],
               )
             : Column(
                 children: [
-                // 取景区与控制区分开：水印固定在画面左下角，
-                // 若控件浮在画面上就会压住水印，现场核对时反而看不清。
-                Expanded(child: _preview(creationParams)),
-                _bottomBar(),
-              ],
-            ),
+                  // 取景区与控制区分开：水印固定在画面左下角，
+                  // 若控件浮在画面上就会压住水印，现场核对时反而看不清。
+                  Expanded(child: _preview(creationParams)),
+                  _bottomBar(),
+                ],
+              ),
       ),
     );
   }
@@ -412,41 +577,61 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       body: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 36),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.no_photography_outlined, size: 48, color: Colors.white54),
-              const SizedBox(height: 16),
-              const Text(
-                '需要相机权限才能拍摄现场资料',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '拍摄内容只保存在本机，不会自动上传',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              const SizedBox(height: 22),
-              FilledButton(
-                onPressed: () async {
-                  final state = await CameraBridge.requestPermissions();
-                  if (!mounted) return;
-                  if (state.camera) {
-                    setState(() {
-                      _permissions = state;
-                      _permissionDenied = false;
-                      _ready = true;
-                    });
-                    await _loadWatermark();
-                  } else {
-                    await CameraBridge.openSystemSettings();
-                  }
-                },
-                child: const Text('重新授权'),
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.no_photography_outlined,
+                  size: 48,
+                  color: Colors.white54,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  '需要相机权限才能拍摄现场资料',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '拍摄内容只保存在本机，不会自动上传',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '麦克风用于记录现场口述；定位用于在水印标注拍摄地点。未授权时不会填入推测位置。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70),
+                ),
+                TextButton(
+                  onPressed: CameraBridge.openSystemSettings,
+                  child: const Text('去系统设置'),
+                ),
+                const SizedBox(height: 22),
+                FilledButton(
+                  onPressed: () async {
+                    final state = await CameraBridge.requestPermissions();
+                    if (!mounted) return;
+                    if (state.camera) {
+                      setState(() {
+                        _permissions = state;
+                        _permissionDenied = false;
+                        _ready = true;
+                      });
+                      await _loadWatermark();
+                    } else {
+                      await CameraBridge.openSystemSettings();
+                    }
+                  },
+                  child: const Text('重新授权'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -475,11 +660,17 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   const Spacer(),
                   IconButton(
                     tooltip: '现场资料',
-                    onPressed: _recording ? null : _openGallery,
-                    icon: const Icon(Icons.photo_library_outlined, color: Colors.white),
+                    onPressed:
+                        (_recording || _capturing || _starting || _stateUnknown)
+                        ? null
+                        : _openGallery,
+                    icon: const Icon(
+                      Icons.photo_library_outlined,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(width: 4),
-                  _permissionBadges(),
+                  Flexible(child: _permissionBadges()),
                 ],
               ),
             ),
@@ -487,7 +678,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xE6B26B00),
                   borderRadius: BorderRadius.circular(8),
@@ -501,15 +695,24 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: const Color(0xCCD32029),
+                    color: _elapsed.inSeconds >= 50
+                        ? const Color(0xFFE65100)
+                        : const Color(0xCCD32029),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.fiber_manual_record, size: 12, color: Colors.white),
+                      const Icon(
+                        Icons.fiber_manual_record,
+                        size: 12,
+                        color: Colors.white,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         '$_timerText · 剩 ${(60 - _elapsed.inSeconds).clamp(0, 60)}s',
@@ -534,17 +737,21 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   Widget _permissionBadges() {
     final badges = <Widget>[];
     if (!_permissions.microphone) {
-      badges.add(_badge('麦克风未授权', Icons.mic_off_rounded, () => _requestAgain()));
+      badges.add(
+        _badge('麦克风未授权', Icons.mic_off_rounded, () => _requestAgain()),
+      );
     }
     if (!_permissions.location) {
-      badges.add(_badge('定位未授权', Icons.location_off_rounded, () => _requestAgain()));
+      badges.add(
+        _badge('定位未授权', Icons.location_off_rounded, () => _requestAgain()),
+      );
+    } else if (_locating) {
+      badges.add(_badge('定位更新中', Icons.location_searching_rounded, null));
     } else if (!_permissions.preciseLocation) {
       badges.add(_badge('粗略定位', Icons.location_searching_rounded, null));
-    } else if (_locating) {
-      badges.add(_badge('定位中', Icons.location_searching_rounded, null));
     }
     if (badges.isEmpty) return const SizedBox.shrink();
-    return Row(mainAxisSize: MainAxisSize.min, children: badges);
+    return Wrap(alignment: WrapAlignment.end, children: badges);
   }
 
   Widget _badge(String label, IconData icon, VoidCallback? onTap) {
@@ -564,7 +771,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             children: [
               Icon(icon, size: 13, color: Colors.white70),
               const SizedBox(width: 4),
-              Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white70, fontSize: 11),
+              ),
             ],
           ),
         ),
@@ -576,7 +786,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final state = await CameraBridge.requestPermissions();
     if (!mounted) return;
     setState(() => _permissions = state);
-    if (state.location && _fix == null) await _resolveLocation();
+    if (!state.location || _fix == null) await _resolveLocation();
   }
 
   Widget _roundIcon({
@@ -604,19 +814,29 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       decoration: BoxDecoration(
         color: const Color(0xFF101419),
         border: Border(
-          top: vertical ? BorderSide.none : const BorderSide(color: Color(0xFF2A3542)),
-          left: vertical ? const BorderSide(color: Color(0xFF2A3542)) : BorderSide.none,
+          top: vertical
+              ? BorderSide.none
+              : const BorderSide(color: Color(0xFF2A3542)),
+          left: vertical
+              ? const BorderSide(color: Color(0xFF2A3542))
+              : BorderSide.none,
         ),
       ),
       child: SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: vertical
-              ? MainAxisAlignment.center
-              : MainAxisAlignment.start,
-          children: [
-            if (!vertical) _modeSwitch(),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: vertical
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
+            children: [
+              if (_stateUnknown)
+                TextButton(
+                  onPressed: _reconcileRecording,
+                  child: const Text('重试确认'),
+                ),
+              if (!vertical) _modeSwitch(),
               const SizedBox(height: 14),
               if (_statusText != null)
                 Padding(
@@ -637,17 +857,18 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   children: [
                     _roundIcon(
                       icon: _torch ? Icons.flash_on : Icons.flash_off,
-                      tooltip: '手电筒',
-                      onTap: () {
-                        setState(() => _torch = !_torch);
-                        CameraBridge.setTorch(_torch);
-                      },
+                      tooltip: _torch ? '关闭手电筒' : '打开手电筒',
+                      onTap: (_capturing || _starting) ? null : _toggleTorch,
                     ),
                     const SizedBox(width: 12),
                     _roundIcon(
                       icon: Icons.cameraswitch_outlined,
                       tooltip: '切换镜头',
-                      onTap: (_recording || _starting)
+                      onTap:
+                          (_recording ||
+                              _starting ||
+                              _capturing ||
+                              _stateUnknown)
                           ? null
                           : CameraBridge.switchCamera,
                     ),
@@ -659,23 +880,25 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   children: [
                     _roundIcon(
                       icon: _torch ? Icons.flash_on : Icons.flash_off,
-                      tooltip: '手电筒',
-                      onTap: () {
-                        setState(() => _torch = !_torch);
-                        CameraBridge.setTorch(_torch);
-                      },
+                      tooltip: _torch ? '关闭手电筒' : '打开手电筒',
+                      onTap: (_capturing || _starting) ? null : _toggleTorch,
                     ),
                     _shutter(),
                     _roundIcon(
                       icon: Icons.cameraswitch_outlined,
                       tooltip: '切换镜头',
-                      onTap: (_recording || _starting)
+                      onTap:
+                          (_recording ||
+                              _starting ||
+                              _capturing ||
+                              _stateUnknown)
                           ? null
                           : CameraBridge.switchCamera,
                     ),
                   ],
                 ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -686,37 +909,44 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     Widget item(_CaptureMode mode, String label, IconData icon) {
       final selected = _mode == mode;
       return Expanded(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: (_recording || _starting)
-              ? null
-              : () => setState(() => _mode = mode),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            height: 40,
-            margin: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: selected ? const Color(0xFF2A3542) : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: 16,
-                  color: selected ? AppColors.voice : Colors.white54,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                    color: selected ? Colors.white : Colors.white54,
+        child: Semantics(
+          button: true,
+          label: '$label模式',
+          value: selected ? '已选择' : '未选择',
+          selected: selected,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: (_recording || _starting || _capturing || _stateUnknown)
+                ? null
+                : () => setState(() => _mode = mode),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              constraints: const BoxConstraints(minHeight: 48),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              margin: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: selected ? const Color(0xFF2A3542) : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 16,
+                    color: selected ? AppColors.voice : Colors.white54,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                      color: selected ? Colors.white : Colors.white54,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -741,15 +971,15 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   Widget _shutter() {
     final video = _mode == _CaptureMode.video;
-    final busy = _capturing || _starting;
+    final busy = _capturing || _starting || _stateUnknown;
     final active = video && _recording;
     return Semantics(
       button: true,
+      enabled: !busy,
+      value: busy ? '处理中' : (active ? '录制中' : '就绪'),
       label: video ? (active ? '停止录像' : '开始录像') : '拍照',
       child: GestureDetector(
-        onTap: busy
-            ? null
-            : (video ? _toggleRecording : _takePhoto),
+        onTap: busy ? null : (video ? _toggleRecording : _takePhoto),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -762,7 +992,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 color: active ? const Color(0xFFD32029) : Colors.white,
                 border: Border.all(color: Colors.white70, width: 4),
                 boxShadow: const [
-                  BoxShadow(color: Color(0x66000000), blurRadius: 10, offset: Offset(0, 3)),
+                  BoxShadow(
+                    color: Color(0x66000000),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
                 ],
               ),
               child: Icon(
