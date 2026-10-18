@@ -198,14 +198,14 @@ void main() {
       _useTallViewport(tester);
       await _pumpPage(tester, const WatermarkSettingsPage());
 
-      expect(find.text('水印相机'), findsOneWidget);
+      expect(find.text('水印设置'), findsOneWidget);
       expect(find.text('效果预览'), findsOneWidget);
       expect(find.byType(TextField), findsNWidgets(3));
       expect(find.text('单位抬头'), findsOneWidget);
       expect(find.text('拍摄单位'), findsOneWidget);
       expect(find.text('拍摄人'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsNWidgets(5));
-      expect(find.text('单位抬头（未填写）'), findsOneWidget);
+      expect(find.text('未填写单位抬头'), findsOneWidget);
 
       // 默认五项全开：预览包含时间、天气、地点与经纬度。
       expect(find.text('拍摄\r\n时间'), findsOneWidget);

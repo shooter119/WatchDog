@@ -242,8 +242,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
 
   Widget _previewCard() {
     final preview = _settings.copyWith(
+      // 留空时回落到真实的单位名称；两者都没有时给明确占位，
+      // 不能留一片空白让人以为预览坏了。
       unitTitle: _unitTitle.text.trim().isEmpty
-          ? _unitName
+          ? (_unitName.trim().isEmpty ? '未填写单位抬头' : _unitName.trim())
           : _unitTitle.text.trim(),
       department: _department.text.trim(),
       actorName: _actor.text.trim(),
