@@ -9,10 +9,16 @@ plugins {
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
-if (!keystorePropertiesFile.exists()) {
+// 只有真正打 release 包时才要求签名配置：开源贡献者跑 debug / 测试不该被
+// 私有 keystore 拦住，否则 clone 下来连单元测试都编译不了。
+val buildingRelease = gradle.startParameter.taskNames.any {
+    it.contains("Release", ignoreCase = true) || it.contains("bundle", ignoreCase = true)
+}
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(keystorePropertiesFile.inputStream())
+} else if (buildingRelease) {
     throw GradleException("Release signing configuration is required: android/key.properties is missing")
 }
-keystoreProperties.load(keystorePropertiesFile.inputStream())
 
 fun requiredSigningProperty(name: String): String =
     keystoreProperties.getProperty(name)
@@ -44,11 +50,13 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.create("release") {
-                keyAlias = requiredSigningProperty("keyAlias")
-                keyPassword = requiredSigningProperty("keyPassword")
-                storeFile = file(requiredSigningProperty("storeFile"))
-                storePassword = requiredSigningProperty("storePassword")
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.create("release") {
+                    keyAlias = requiredSigningProperty("keyAlias")
+                    keyPassword = requiredSigningProperty("keyPassword")
+                    storeFile = file(requiredSigningProperty("storeFile"))
+                    storePassword = requiredSigningProperty("storePassword")
+                }
             }
             isMinifyEnabled = true
             isShrinkResources = true
