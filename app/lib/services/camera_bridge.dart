@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// 水印内容：拍摄开始时组装一次，原生侧在录制期间冻结不再变更。
@@ -165,7 +165,10 @@ class CameraBridge {
   static const Duration maxRecordingDuration = Duration(seconds: 60);
   static const String viewType = 'watchdog/camera_view';
 
-  static bool get isSupported => Platform.isAndroid;
+  /// 用 [defaultTargetPlatform] 而非 dart:io 判断，便于测试覆盖非 Android 分支；
+  /// 生产环境两者在 Android 上等价，Web 端始终视为不支持。
+  static bool get isSupported =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   static Stream<CameraRecordEvent>? _eventStream;
 
