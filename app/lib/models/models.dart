@@ -713,3 +713,40 @@ class CalcConfig {
       10 /
       (consumptionLpm ?? this.consumptionLpm);
 }
+
+/// 水印相机使用的地址与天气（服务端代理高德，Key 不下发客户端）。
+class WeatherInfo {
+  final String? address;
+  final String? city;
+  final String? weatherText;
+  final String? temperature;
+  final String? humidity;
+  final String? line;
+  final bool degraded;
+
+  const WeatherInfo({
+    this.address,
+    this.city,
+    this.weatherText,
+    this.temperature,
+    this.humidity,
+    this.line,
+    this.degraded = false,
+  });
+
+  static const WeatherInfo empty = WeatherInfo(degraded: true);
+
+  factory WeatherInfo.fromJson(Map<String, dynamic> json) {
+    final weather = json['weather'];
+    final map = weather is Map ? weather : const <String, dynamic>{};
+    return WeatherInfo(
+      address: (json['address'] as String?)?.trim(),
+      city: (json['city'] as String?)?.trim(),
+      weatherText: (map['text'] as String?)?.trim(),
+      temperature: map['temperature']?.toString(),
+      humidity: map['humidity']?.toString(),
+      line: (json['line'] as String?)?.trim(),
+      degraded: json['degraded'] == true,
+    );
+  }
+}

@@ -688,6 +688,26 @@ class ApiClient {
     return CalcConfig.fromJson(body as Map<String, dynamic>);
   }
 
+  /// 水印相机的地址与天气。服务端按网格与城市缓存，客户端每次拍摄前查询一次即可。
+  /// 上游不可用时返回降级结果而不是抛错：拍摄流程不能因此中断。
+  Future<WeatherInfo> fetchWeather({
+    required double lat,
+    required double lon,
+  }) async {
+    try {
+      final query = 'lat=${lat.toStringAsFixed(5)}&lon=${lon.toStringAsFixed(5)}';
+      final res = await _client
+          .get(_uri('/api/weather?$query'), headers: _headers)
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 503) return WeatherInfo.empty;
+      final body = _decodeJson(res, fallback: '获取地址天气失败');
+      if (res.statusCode != 200 || body is! Map) return WeatherInfo.empty;
+      return WeatherInfo.fromJson(body.cast<String, dynamic>());
+    } catch (_) {
+      return WeatherInfo.empty;
+    }
+  }
+
   /// 拉取智能体问答历史（旧→新，供聊天室恢复上下文）
   Future<List<ChatMessage>> fetchChatMessages() async {
     final res = await _client

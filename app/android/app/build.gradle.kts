@@ -68,6 +68,16 @@ kotlin {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+
+    // 水印相机：CameraX 1.6.2 起 camera-effects 为稳定版，
+    // OverlayEffect 可把 Canvas 绘制的水印直接烧进预览、照片与录像。
+    val cameraX = "1.6.2"
+    implementation("androidx.camera:camera-core:$cameraX")
+    implementation("androidx.camera:camera-camera2:$cameraX")
+    implementation("androidx.camera:camera-lifecycle:$cameraX")
+    implementation("androidx.camera:camera-video:$cameraX")
+    implementation("androidx.camera:camera-view:$cameraX")
+    implementation("androidx.camera:camera-effects:$cameraX")
 }
 
 flutter {

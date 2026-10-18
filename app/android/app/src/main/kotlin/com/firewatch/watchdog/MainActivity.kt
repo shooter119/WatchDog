@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.core.content.FileProvider
+import com.firewatch.watchdog.camera.WatchdogCameraPlugin
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -18,9 +19,19 @@ class MainActivity : FlutterActivity() {
     private val channelName = "watchdog/screen"
     private val alarmChannelName = "watchdog/alarm"
     private val storageChannelName = "watchdog/storage"
+    private var cameraPlugin: WatchdogCameraPlugin? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // 水印相机：原生预览视图 + 拍照/录像/录制事件通道
+        val camera = WatchdogCameraPlugin(this, flutterEngine.dartExecutor.binaryMessenger)
+        camera.register()
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            WatchdogCameraPlugin.VIEW_TYPE,
+            camera.PreviewFactory(),
+        )
+        cameraPlugin = camera
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             when (call.method) {
                 "keepScreenOn" -> {
@@ -215,6 +226,12 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        cameraPlugin?.disposePlugin()
+        cameraPlugin = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     private fun downloadedUpdateFile(filename: String?): File? {

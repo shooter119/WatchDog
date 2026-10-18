@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'camera_page.dart';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -1316,6 +1317,7 @@ class HomePageState extends State<HomePage> {
                   forces: widget.controller.forces,
                   onRename: _renameIncident,
                   onAddForce: () => _editForce(),
+                  onCamera: _openCamera,
                   onImageImport: () => _openImport(true),
                   onTextImport: () => _openImport(false),
                   onDetails: _openDetails,
@@ -1569,6 +1571,15 @@ class HomePageState extends State<HomePage> {
         ).showSnackBar(SnackBar(content: Text('删除参战力量失败：$e')));
       }
     }
+  }
+
+  /// 打开水印相机。纯本地功能：游客也可使用，仅在未认证时水印缺少单位信息。
+  Future<void> _openCamera() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CameraPage(controller: widget.controller),
+      ),
+    );
   }
 
   Future<void> _openImport(bool fromImages) async {
@@ -3310,6 +3321,7 @@ class _TaskBar extends StatefulWidget {
   final List<IncidentForce> forces;
   final VoidCallback onRename;
   final VoidCallback onAddForce;
+  final VoidCallback onCamera;
   final VoidCallback onImageImport;
   final VoidCallback onTextImport;
   final VoidCallback onDetails;
@@ -3323,6 +3335,7 @@ class _TaskBar extends StatefulWidget {
     required this.forces,
     required this.onRename,
     required this.onAddForce,
+    required this.onCamera,
     required this.onImageImport,
     required this.onTextImport,
     required this.onDetails,
@@ -3482,6 +3495,12 @@ class _TaskBarState extends State<_TaskBar> {
                   label: '登记力量',
                   icon: Icons.group_add_outlined,
                   onTap: widget.onAddForce,
+                ),
+                const SizedBox(height: 18, child: VerticalDivider(width: 1)),
+                _IncidentAction(
+                  label: '水印相机',
+                  icon: Icons.videocam_outlined,
+                  onTap: widget.onCamera,
                 ),
                 const SizedBox(height: 18, child: VerticalDivider(width: 1)),
                 _IncidentAction(
