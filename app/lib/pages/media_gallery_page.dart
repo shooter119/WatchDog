@@ -22,6 +22,7 @@ class MediaGalleryPage extends StatefulWidget {
 
 class _MediaGalleryPageState extends State<MediaGalleryPage> {
   List<LocalMedia> _items = const [];
+  List<LocalMedia> _unlinked = const [];
   bool _loading = true;
 
   @override
@@ -35,11 +36,25 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
     final items = incidentId.isEmpty
         ? const <LocalMedia>[]
         : await LocalMediaStore.instance.listForIncident(incidentId);
+    // 未关联警情的文件单独一栏，避免它们永远消失
+    final unlinked = await LocalMediaStore.instance.listUnlinked();
     if (!mounted) return;
     setState(() {
       _items = items;
+      _unlinked = unlinked;
       _loading = false;
     });
+  }
+
+  Future<void> _attach(LocalMedia media) async {
+    final incidentId = widget.controller.currentIncident?.id ?? '';
+    if (incidentId.isEmpty) {
+      _toast('请先加入或新建警情');
+      return;
+    }
+    await LocalMediaStore.instance.attachToIncident(media.id, incidentId);
+    await _load();
+    _toast('已关联到当前警情');
   }
 
   Future<void> _purge() async {
@@ -119,7 +134,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
-              child: _items.isEmpty ? _empty() : _list(),
+              child: (_items.isEmpty && _unlinked.isEmpty) ? _empty() : _list(),
             ),
     );
   }
@@ -147,12 +162,28 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   }
 
   Widget _list() {
+    final all = [..._items, ..._unlinked];
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-      itemCount: _items.length,
+      itemCount: all.length + (_unlinked.isNotEmpty ? 1 : 0),
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
-        final media = _items[index];
+        if (_unlinked.isNotEmpty) {
+          if (index == 0) {
+            return const Padding(
+              padding: EdgeInsets.only(top: 4, bottom: 2),
+              child: Text(
+                '未关联警情（加入警情后可关联并写入记录）',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            );
+          }
+        }
+        final media = all[index - (_unlinked.isNotEmpty ? 1 : 0)];
         return Container(
           decoration: BoxDecoration(
             color: AppColors.surface,
@@ -186,15 +217,19 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                     CameraBridge.openWithSystem(media.path);
                   case 'share':
                     _share(media);
+                  case 'attach':
+                    _attach(media);
                   case 'delete':
                     _delete(media);
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'review', child: Text('查看与核对')),
-                PopupMenuItem(value: 'open', child: Text('用其他应用打开')),
-                PopupMenuItem(value: 'share', child: Text('分享')),
-                PopupMenuItem(value: 'delete', child: Text('删除')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'review', child: Text('查看与核对')),
+                const PopupMenuItem(value: 'open', child: Text('用其他应用打开')),
+                const PopupMenuItem(value: 'share', child: Text('分享')),
+                if (media.incidentId.isEmpty)
+                  const PopupMenuItem(value: 'attach', child: Text('关联到当前警情')),
+                const PopupMenuItem(value: 'delete', child: Text('删除')),
               ],
             ),
             onTap: () => _review(media),

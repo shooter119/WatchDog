@@ -92,16 +92,21 @@ class CameraSession(
         val cameraProvider = provider ?: return
         cameraProvider.unbindAll()
 
-        val preview = Preview.Builder().build().also {
+        // 预览、照片、录像统一 16:9：三者共用同一个 OverlayEffect，
+        // 若宽高比不同（例如照片 4:3、录像 16:9），水印在成片里会被裁掉边缘。
+        val preview = Preview.Builder()
+            .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
+            .build().also {
             it.surfaceProvider = previewView.surfaceProvider
         }
         val capture = ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
             .build()
         val recorder = Recorder.Builder()
             .setQualitySelector(
                 QualitySelector.fromOrderedList(
-                    listOf(Quality.FHD, Quality.HD, Quality.SD),
+                    listOf(Quality.FHD, Quality.HD),
                     androidx.camera.video.FallbackStrategy.lowerQualityOrHigherThan(Quality.SD),
                 ),
             )

@@ -196,6 +196,15 @@ class AppController extends ChangeNotifier {
     return future;
   }
 
+  /// 补登记异常退出时没来得及入库的拍摄文件。
+  Future<void> _recoverMediaFiles() async {
+    try {
+      await MediaCaptureService.recoverOrphanedFiles();
+    } catch (_) {
+      // 恢复属于兜底逻辑，失败不影响启动
+    }
+  }
+
   /// 清理超过保留期的本机照片与录像（默认 30 天）。
   Future<void> _purgeExpiredMedia() async {
     try {
@@ -208,8 +217,9 @@ class AppController extends ChangeNotifier {
   Future<void> _initInternal() async {
     // 诊断日志独立于核心同步链路，初始化失败也不能阻塞 App 启动。
     unawaited(DiagnosticLogService.instance.init());
-    // 现场媒体按保留期自动清理；失败不影响启动。
+    // 现场媒体按保留期自动清理；并补登记上次异常退出遗留的拍摄文件。
     unawaited(_purgeExpiredMedia());
+    unawaited(_recoverMediaFiles());
     // 先建立 API 客户端。首次安装必须先完成单位认证，认证前不拉取业务数据。
     await refreshConfig();
     if (_disposed) return;

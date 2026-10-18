@@ -113,6 +113,7 @@ class WatchdogCameraPlugin(
                 }
                 "isRecording" -> result.success(view?.session?.isRecording ?: false)
                 "requestPermissions" -> requestRuntimePermissions(result)
+                "permissionState" -> result.success(currentPermissionState())
                 "hasCameraPermission" -> result.success(
                     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                         PackageManager.PERMISSION_GRANTED,
@@ -181,38 +182,39 @@ class WatchdogCameraPlugin(
      * 之前只用系统相机拍照，清单里的 CAMERA 从未真正被申请过。
      */
     private fun requestRuntimePermissions(result: MethodChannel.Result) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            result.success(true)
-            return
-        }
         val activity = context.findActivity()
         if (activity == null) {
             result.error("no_activity", "无法获取 Activity", null)
             return
         }
-        val wanted = mutableListOf(Manifest.permission.CAMERA)
-        wanted.add(Manifest.permission.RECORD_AUDIO)
-        wanted.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        val missing = PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) {
+            result.success(currentPermissionState())
+            return
+        }
         pendingPermissionResult = result
-        ActivityCompat.requestPermissions(
-            activity,
-            wanted
-                .filter {
-                    ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-                }
-                .toTypedArray(),
-            PERMISSION_REQUEST_CODE,
-        )
+        // Android 12+ 要求 ACCESS_FINE_LOCATION 与 ACCESS_COARSE_LOCATION 同批申请，
+        // 只请求 FINE 会被系统静默忽略，导致地址/天气永远取不到。
+        ActivityCompat.requestPermissions(activity, missing.toTypedArray(), PERMISSION_REQUEST_CODE)
     }
+
+    private fun currentPermissionState(): Map<String, Boolean> = mapOf(
+        "camera" to granted(Manifest.permission.CAMERA),
+        "microphone" to granted(Manifest.permission.RECORD_AUDIO),
+        "location" to (granted(Manifest.permission.ACCESS_FINE_LOCATION) ||
+            granted(Manifest.permission.ACCESS_COARSE_LOCATION)),
+        "preciseLocation" to granted(Manifest.permission.ACCESS_FINE_LOCATION),
+    )
+
+    private fun granted(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     /** 由 MainActivity 转发；返回 true 表示本次结果由相机插件消费。 */
     fun onRequestPermissionsResult(requestCode: Int): Boolean {
         if (requestCode != PERMISSION_REQUEST_CODE) return false
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-        pendingPermissionResult?.success(granted)
+        pendingPermissionResult?.success(currentPermissionState())
         pendingPermissionResult = null
         return true
     }
@@ -268,6 +270,12 @@ class WatchdogCameraPlugin(
         const val LOCATION_CHANNEL = "watchdog/location"
         const val MEDIA_CHANNEL = "watchdog/media"
         private const val PERMISSION_REQUEST_CODE = 4711
+        private val PERMISSIONS = arrayOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
     }
 }
 

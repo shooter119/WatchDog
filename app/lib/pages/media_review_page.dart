@@ -91,6 +91,11 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       _toast('口述内容为空，没有可写入的现场记录');
       return;
     }
+    final incidentId = widget.controller.currentIncident?.id ?? '';
+    if (incidentId.isEmpty) {
+      _toast('还没有关联警情，先加入或新建警情才能写入');
+      return;
+    }
     final api = widget.controller.api;
     if (api == null) {
       _toast('未连接服务器，当前仅保存在本机');
@@ -176,6 +181,8 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 120),
         children: [
+          if (_previewPath != null) _previewCard(_previewPath!),
+          if (_previewPath != null) const SizedBox(height: 14),
           _infoCard(),
           const SizedBox(height: 14),
           if (_deriving) _derivingCard(),
@@ -189,6 +196,49 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
         ],
       ),
       bottomNavigationBar: _actionBar(),
+    );
+  }
+
+  bool get _hasIncident =>
+      (widget.controller.currentIncident?.id ?? '').isNotEmpty;
+
+  String? get _previewPath {
+    if (!_media.isVideo) {
+      return File(_media.path).existsSync() ? _media.path : null;
+    }
+    for (final frame in _media.frames) {
+      if (File(frame).existsSync()) return frame;
+    }
+    return null;
+  }
+
+  Widget _previewCard(String path) {
+    return GestureDetector(
+      onTap: _openMedia,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          children: [
+            Image.file(
+              File(path),
+              height: 180,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                height: 180,
+                color: AppColors.surfaceSubtle,
+                child: const Icon(Icons.image_not_supported_outlined),
+              ),
+            ),
+            if (_media.isVideo)
+              const Positioned(
+                right: 10,
+                bottom: 10,
+                child: _VideoChip(),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -427,7 +477,9 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             const SizedBox(width: 10),
             Expanded(
               child: FilledButton.icon(
-                onPressed: _busy || _deriving || _submitted ? null : _submit,
+                onPressed: _busy || _deriving || _submitted || !_hasIncident
+                    ? null
+                    : _submit,
                 icon: _busy
                     ? const SizedBox(
                         width: 16,
@@ -438,11 +490,39 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                         ),
                       )
                     : const Icon(Icons.check_rounded, size: 18),
-                label: Text(_submitted ? '已写入' : '核对无误，写入警情'),
+                label: Text(
+                  _submitted
+                      ? '已写入'
+                      : (_hasIncident ? '核对无误，写入警情' : '先加入警情才能写入'),
+                ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 视频预览角标，提示这一帧来自录像首帧。
+class _VideoChip extends StatelessWidget {
+  const _VideoChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.play_circle_outline, size: 14, color: Colors.white),
+          SizedBox(width: 4),
+          Text('点击播放', style: TextStyle(color: Colors.white, fontSize: 11)),
+        ],
       ),
     );
   }

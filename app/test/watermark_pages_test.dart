@@ -60,6 +60,10 @@ class _FakeMediaStore extends LocalMediaStore {
   final List<String> deletedIds = [];
 
   @override
+  @override
+  Future<List<LocalMedia>> listUnlinked() async => const [];
+
+  @override
   Future<List<LocalMedia>> listForIncident(String incidentId) async =>
       items.where((item) => item.incidentId == incidentId).toList();
 
@@ -238,7 +242,7 @@ void main() {
     });
 
     testWidgets('口述为空时提示且不写入', (tester) async {
-      final controller = AppController();
+      final controller = AppController()..currentIncident = _incident();
       addTearDown(controller.dispose);
 
       await _pumpPage(
@@ -257,7 +261,7 @@ void main() {
     });
 
     testWidgets('api 为空时提示仅本地保存', (tester) async {
-      final controller = AppController();
+      final controller = AppController()..currentIncident = _incident();
       addTearDown(controller.dispose);
 
       await _pumpPage(

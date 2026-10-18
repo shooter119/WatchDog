@@ -181,6 +181,50 @@ class LocalMediaStore {
     );
   }
 
+  Future<Set<String>> allPaths() async {
+    final db = await _database;
+    final rows = await db.query('local_media', columns: ['path']);
+    return rows
+        .map((row) => (row['path'] as String?) ?? '')
+        .where((path) => path.isNotEmpty)
+        .toSet();
+  }
+
+  /// 未关联警情的媒体：没有当前警情时拍摄的文件，避免它们在资料页里消失。
+  Future<List<LocalMedia>> listUnlinked() async {
+    final db = await _database;
+    final rows = await db.query(
+      'local_media',
+      where: "incident_id = ''",
+      orderBy: 'captured_at DESC',
+    );
+    return rows.map(LocalMedia.fromRow).toList(growable: false);
+  }
+
+  Future<void> attachToIncident(String id, String incidentId) async {
+    final db = await _database;
+    await db.update(
+      'local_media',
+      {'incident_id': incidentId},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> insertRecovered(LocalMedia media) async {
+    final db = await _database;
+    // 同路径已存在时不重复登记
+    final existing = await db.query(
+      'local_media',
+      columns: ['id'],
+      where: 'path = ?',
+      whereArgs: [media.path],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) return;
+    await insert(media);
+  }
+
   Future<List<LocalMedia>> listForIncident(String incidentId) async {
     final db = await _database;
     final rows = await db.query(

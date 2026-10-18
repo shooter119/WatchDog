@@ -182,24 +182,31 @@ class CameraBridge {
   }
 
 
-  /// 运行时权限：相机为必需项，麦克风与定位为可选项。
-  /// 返回 true 表示相机权限已授予，可以创建预览。
-  static Future<bool> requestPermissions() async {
-    if (!isSupported) return false;
+  /// 运行时权限状态。相机为必需项，麦克风与定位为增强项。
+  static Future<CameraPermissionState> requestPermissions() async {
+    if (!isSupported) return CameraPermissionState.denied;
     try {
-      return await _channel.invokeMethod<bool>('requestPermissions') ?? false;
+      final raw = await _channel.invokeMethod<Object?>('requestPermissions');
+      return CameraPermissionState.fromMap(raw);
     } catch (_) {
-      return false;
+      return CameraPermissionState.denied;
     }
   }
 
-  static Future<bool> hasCameraPermission() async {
-    if (!isSupported) return false;
+  static Future<CameraPermissionState> permissionState() async {
+    if (!isSupported) return CameraPermissionState.denied;
     try {
-      return await _channel.invokeMethod<bool>('hasCameraPermission') ?? false;
+      final raw = await _channel.invokeMethod<Object?>('permissionState');
+      return CameraPermissionState.fromMap(raw);
     } catch (_) {
-      return false;
+      return CameraPermissionState.denied;
     }
+  }
+
+  static Future<void> openSystemSettings() async {
+    try {
+      await _channel.invokeMethod<void>('openAppSettings');
+    } catch (_) {}
   }
 
   static Future<String?> takePhoto() {
@@ -297,5 +304,39 @@ class CameraBridge {
     } catch (_) {
       return null;
     }
+  }
+}
+
+
+/// 相机相关运行时权限状态。
+class CameraPermissionState {
+  final bool camera;
+  final bool microphone;
+  final bool location;
+  final bool preciseLocation;
+
+  const CameraPermissionState({
+    required this.camera,
+    required this.microphone,
+    required this.location,
+    required this.preciseLocation,
+  });
+
+  static const CameraPermissionState denied = CameraPermissionState(
+    camera: false,
+    microphone: false,
+    location: false,
+    preciseLocation: false,
+  );
+
+  static CameraPermissionState fromMap(Object? raw) {
+    if (raw is! Map) return denied;
+    bool flag(String key) => raw[key] == true;
+    return CameraPermissionState(
+      camera: flag('camera'),
+      microphone: flag('microphone'),
+      location: flag('location'),
+      preciseLocation: flag('preciseLocation'),
+    );
   }
 }

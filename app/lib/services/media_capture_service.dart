@@ -1,5 +1,8 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 import '../state/app_controller.dart';
 import 'camera_bridge.dart';
 import 'local_media_store.dart';
@@ -127,5 +130,76 @@ class MediaCaptureService {
       }
     }
     return paths.length;
+  }
+
+  /// 补登记孤儿文件。
+  ///
+  /// 录像结束的那一瞬间如果界面被关闭、进程被回收或订阅已取消，原生侧仍会把文件
+  /// 写完，但 Dart 收不到 stopped 事件，数据库里就没有这条记录 —— 用户会「拍了却找不到」。
+  /// 启动时扫一遍拍摄目录，把数据库里不存在的文件补登记为未关联记录，至少可见可分享。
+  static Future<int> recoverOrphanedFiles() async {
+    if (!Platform.isAndroid) return 0;
+    try {
+      final base = await getExternalStorageDirectory();
+      if (base == null) return 0;
+      final dir = Directory(p.join(base.path, 'capture'));
+      if (!dir.existsSync()) return 0;
+
+      final known = await LocalMediaStore.instance.allPaths();
+      var recovered = 0;
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+        final name = p.basename(entity.path);
+        final lower = name.toLowerCase();
+        final isPhoto = lower.endsWith('.jpg') || lower.endsWith('.jpeg');
+        final isVideo = lower.endsWith('.mp4');
+        if (!isPhoto && !isVideo) continue;
+        if (known.contains(entity.path)) continue;
+
+        // 文件名形如 IMG_20261018_161039_160.jpg，时间可直接从名字复原
+        final stamp = _timestampFromName(name) ?? entity.statSync().modified.millisecondsSinceEpoch;
+        await LocalMediaStore.instance.insertRecovered(
+          LocalMedia(
+            id: LocalMediaStore.newId(),
+            incidentId: '',
+            kind: isVideo ? 'video' : 'photo',
+            path: entity.path,
+            durationMs: 0,
+            capturedAt: stamp,
+            lat: null,
+            lon: null,
+            address: '',
+            weather: '',
+            transcript: '',
+            segments: const [],
+            frames: const [],
+            observationId: '',
+          ),
+        );
+        recovered++;
+      }
+      return recovered;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static int? _timestampFromName(String name) {
+    final match = RegExp(r'_(\d{8})_(\d{6})_').firstMatch(name);
+    if (match == null) return null;
+    final date = match.group(1)!;
+    final time = match.group(2)!;
+    try {
+      return DateTime(
+        int.parse(date.substring(0, 4)),
+        int.parse(date.substring(4, 6)),
+        int.parse(date.substring(6, 8)),
+        int.parse(time.substring(0, 2)),
+        int.parse(time.substring(2, 4)),
+        int.parse(time.substring(4, 6)),
+      ).millisecondsSinceEpoch;
+    } catch (_) {
+      return null;
+    }
   }
 }

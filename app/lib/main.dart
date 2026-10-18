@@ -392,13 +392,19 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
             floatingActionButton: showCameraFab
                 ? FloatingActionButton.extended(
                     heroTag: 'watermark-camera',
+                    backgroundColor: AppColors.voice,
+                    foregroundColor: Colors.white,
+                    elevation: 3,
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => CameraPage(controller: controller),
                       ),
                     ),
                     icon: const Icon(Icons.videocam_rounded),
-                    label: const Text('水印相机'),
+                    label: const Text(
+                      '水印相机',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
                   )
                 : null,
             bottomNavigationBar: ExcludeSemantics(
