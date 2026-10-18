@@ -174,11 +174,6 @@ object WatermarkOverlay {
         cachedKey = null
     }
 
-    /** 在直立坐标系下把水印画满整块画布，用于给已经竖向摆正的位图/照片合成水印。 */
-    fun renderUpright(canvas: Canvas, model: WatermarkModel) {
-        drawInArea(canvas, model, RectF(0f, 0f, canvas.width.toFloat(), canvas.height.toFloat()))
-    }
-
     private fun drawInArea(canvas: Canvas, model: WatermarkModel, area: RectF) {
         val width = area.width()
         if (width <= 0f) return
@@ -474,10 +469,14 @@ object WatermarkOverlay {
         bodyBottom: Float,
         footerHeight: Float,
     ) {
+        // bodyBottom 是相对卡片顶部的偏移，必须加上 card.top 才是画布坐标。
+        // 漏加这一步会把底条从 y=偏移量 一路铺到卡底，把抬头和信息区整片盖成蓝色；
+        // 而且只有在配置了「拍摄单位」时才复现（footerHeight 为 0 时这段根本不执行）。
+        val top = card.top + bodyBottom
         val radius = cardWidth * 0.030f
         val clip = Path().apply {
             addRoundRect(
-                RectF(card.left, bodyBottom - radius, card.right, card.bottom),
+                RectF(card.left, top - radius, card.right, card.bottom),
                 floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius),
                 Path.Direction.CW,
             )
@@ -486,7 +485,7 @@ object WatermarkOverlay {
         canvas.clipPath(clip)
         canvas.drawRect(
             card.left,
-            bodyBottom,
+            top,
             card.right,
             card.bottom,
             Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BLUE },
@@ -513,7 +512,7 @@ object WatermarkOverlay {
         } else {
             text
         }
-        val baseline = bodyBottom + footerHeight / 2f - (paint.ascent() + paint.descent()) / 2f
+        val baseline = top + footerHeight / 2f - (paint.ascent() + paint.descent()) / 2f
         canvas.drawText(shown, card.left + cardWidth * 0.030f, baseline, paint)
     }
 
