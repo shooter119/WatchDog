@@ -674,6 +674,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 ],
               ),
             ),
+            if (!unlinked)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _incidentChip(unlinked),
+                ),
+              ),
             if (unlinked)
               Container(
                 width: double.infinity,
@@ -729,6 +737,46 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 当前警情标签：拍摄时始终能看到自己正在为哪一场警情留证。
+  /// 水印卡片本身不放警情字段（会让信息卡过高），放在取景页顶部即可。
+  Widget _incidentChip(bool unlinked) {
+    final title = widget.controller.currentIncident?.title ?? '';
+    final label = unlinked || title.isEmpty ? '未关联警情' : title;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: unlinked ? const Color(0xFFB26B00) : Colors.white24,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.local_fire_department_outlined,
+            size: 13,
+            color: unlinked ? const Color(0xFFFFB84D) : Colors.white70,
+          ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: unlinked ? const Color(0xFFFFD9A3) : Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
