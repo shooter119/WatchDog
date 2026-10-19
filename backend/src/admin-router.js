@@ -13,7 +13,7 @@ const wrap = (handler) => (req, res, next) => Promise.resolve(handler(req, res))
   next(error);
 });
 
-function createAdminRouter(auth, { origin = 'https://fireman119.xyz' } = {}) {
+function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, files } = {}) {
   const router = express.Router();
   const limiter = new MinuteRateLimiter();
   router.use((req, res, next) => {
@@ -43,7 +43,7 @@ function createAdminRouter(auth, { origin = 'https://fireman119.xyz' } = {}) {
     return res.json({ member: result.member, csrf: result.csrf });
   }));
   router.use((req, res, next) => {
-    auth.session(cookie(req, SESSION), req.get('X-CSRF-Token'), !['GET', 'HEAD'].includes(req.method), req.path !== '/me')
+    auth.session(cookie(req, SESSION), req.get('X-CSRF-Token'), !['GET', 'HEAD'].includes(req.method), req.path !== '/me' && req.get('X-Admin-Poll') !== '1')
       .then((member) => { req.admin = member; next(); })
       .catch((error) => error.status
         ? res.status(error.status).json({ code: error.code }) : next(error));
@@ -60,7 +60,9 @@ function createAdminRouter(auth, { origin = 'https://fireman119.xyz' } = {}) {
     res.json({ ok: true });
   }));
   router.get('/members', wrap(async (req, res) => res.json({ members: await auth.listMembers(req.admin.id) })));
+  router.get('/units', wrap(async (req, res) => res.json({ units: await auth.listUnits(req.admin.id) })));
   router.get('/audit', wrap(async (req, res) => res.json({ events: await auth.listAudit(req.admin.id, req.query.offset) })));
+  if (sites && files) router.use('/key-sites', require('./key-site-routes').createKeySiteAdminRouter(sites, files));
   return router;
 }
 

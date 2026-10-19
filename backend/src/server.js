@@ -233,6 +233,8 @@ app.use(async (req, res, next) => {
 // 不在这里把旧数据强行归属到当前认证单位。
 // Mount browser authentication before App authentication: App tokens never authorize /api/admin.
 let adminAuth = null;
+let keySites = null;
+let keySiteFiles = null;
 app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
   setHeaders: (res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -241,7 +243,10 @@ app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
 }));
 if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER || (process.env.NODE_ENV === 'test' ? 'sqlite' : 'postgres')).toLowerCase())) {
   adminAuth = require('./admin-auth').createAdminAuth(require('./postgres-store'));
-  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth));
+  keySites = require('./key-sites').createKeySites(require('./postgres-store'), adminAuth);
+  keySiteFiles = require('./key-site-files').createKeySiteFiles(require('./postgres-store'), keySites, adminAuth);
+  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, { sites: keySites, files: keySiteFiles }));
+  if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteFiles.startWorker(error => logger.warn(`key_site_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
 }
 app.use(async (req, res, next) => {
   if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply') return next();
@@ -303,6 +308,7 @@ app.use(async (req, res, next) => {
 });
 
 if (adminAuth) app.use('/api/admin-app', require('./admin-router').createAdminAppRouter(adminAuth));
+if (keySites) app.use('/api/key-sites', require('./key-site-routes').createKeySiteAppRouter(keySites, keySiteFiles));
 
 // Maps inherit the same session and unit authentication as business APIs.
 app.use('/api/maps', require('./orthomaps').createOrthomapRouter(

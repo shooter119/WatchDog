@@ -3,6 +3,10 @@ FROM ${NODE_IMAGE}
 
 WORKDIR /app
 
+# Private document conversion and CJK rendering; credentials stay in the service environment.
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils libreoffice-writer fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev
 

@@ -12,8 +12,8 @@ function createAdminAuth(store, now = Date.now) {
     [crypto.randomUUID(), actor, action, target, now()],
   );
   async function identity(memberId) {
-    return (await query(`SELECT m.id, m.unit_id, m.real_name, m.role AS unit_role, g.role AS admin_role
-      FROM unit_members m JOIN admin_grants g ON g.member_id=m.id
+    return (await query(`SELECT m.id, m.unit_id, u.name AS unit_name, m.real_name, m.role AS unit_role, g.role AS admin_role
+      FROM unit_members m JOIN units u ON u.id=m.unit_id JOIN admin_grants g ON g.member_id=m.id
       WHERE m.id=$1 AND m.status='active' AND m.review_status='approved'
       AND (g.role='platform_admin' OR m.role IN ('manager','admin'))`, [memberId]))[0];
   }
@@ -108,9 +108,13 @@ function createAdminAuth(store, now = Date.now) {
   }
   async function listAudit(actorId, offset = 0) {
     if ((await requireIdentity(actorId)).admin_role !== 'platform_admin') fail('ADMIN_FORBIDDEN');
-    return query('SELECT * FROM admin_audit ORDER BY created_at DESC,id LIMIT 100 OFFSET $1',
+    return query('SELECT a.*,m.real_name AS actor_name FROM admin_audit a LEFT JOIN unit_members m ON m.id=a.actor_id ORDER BY a.created_at DESC,a.id LIMIT 100 OFFSET $1',
       [Math.max(0, Math.min(1000000, Number.parseInt(offset, 10) || 0))]);
   }
-  return { identity, requireIdentity, setGrant, challenge, confirm, claim, session, logout, audit, listMembers, listAudit };
+  async function listUnits(actorId) {
+    const member = await requireIdentity(actorId);
+    return query('SELECT id,name FROM units WHERE $1::boolean OR id=$2 ORDER BY name', [member.admin_role === 'platform_admin', member.unit_id]);
+  }
+  return { identity, requireIdentity, setGrant, challenge, confirm, claim, session, logout, audit, listMembers, listAudit, listUnits };
 }
 module.exports = { createAdminAuth, hash };
