@@ -973,8 +973,8 @@ void main() {
       final list = find.byType(ListView).first;
       expect(find.text('我的身份'), findsOneWidget);
       expect(find.text('未选择单位'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('添加语音热词'));
-      expect(find.text('添加语音热词'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('人员与语音热词'));
+      expect(find.text('人员与语音热词'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('归档警情'));
       expect(find.text('归档警情'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('数据统计'));
@@ -1017,7 +1017,7 @@ void main() {
         find.ancestor(of: find.text('水印设置'), matching: find.byType(AppCard)),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.videocam_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.branding_watermark_outlined), findsOneWidget);
 
       await _scrollToVisible(tester, list, find.text('单位常用队伍'));
       expect(
@@ -1040,9 +1040,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
-      await _scrollToVisible(tester, list, find.text('添加语音热词'));
+      await _scrollToVisible(tester, list, find.text('人员与语音热词'));
 
-      const labels = ['未认证', '水印设置', '添加语音热词'];
+      const labels = ['未认证', '水印设置', '人员与语音热词'];
       for (final label in labels) {
         final card = find
             .ancestor(of: find.text(label), matching: find.byType(AppCard))
@@ -1079,8 +1079,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
-      await _scrollToVisible(tester, list, find.text('添加语音热词'));
-      final subtitle = find.text('补充本单位的姓名或专业词汇');
+      await _scrollToVisible(tester, list, find.text('人员与语音热词'));
+      final subtitle = find.text('队员名单审批与语音热词');
       expect(subtitle, findsOneWidget);
       expect(tester.getSize(subtitle).height, greaterThan(40));
       expect(tester.takeException(), isNull);
@@ -1177,6 +1177,53 @@ void main() {
       final aboutList = find.byType(Scrollable).first;
       await _scrollToVisible(tester, aboutList, find.text('它能帮你什么'));
       expect(find.text('它能帮你什么'), findsOneWidget);
+    });
+
+    testWidgets('游客模式下 Hero 卡如实显示单机演练与仅本机保存', (tester) async {
+      final c = _FakeController()..fakeIsGuest = true;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('单机演练 · 仅本机保存'), findsOneWidget);
+      expect(find.text('现场协同正常'), findsNothing);
+    });
+
+    testWidgets('同步异常时 Hero 卡如实提示错误信息', (tester) async {
+      final c = _FakeController();
+      c.currentIncident = const Incident(
+        id: 'inc-1',
+        number: 'INC-1',
+        title: '测试火情',
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+      c.syncError = '网络连接超时';
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('同步异常 · 网络连接超时'), findsOneWidget);
+    });
+
+    testWidgets('设置页跳页入口统一使用 chevron_right 图标且无 arrow_forward_outlined', (tester) async {
+      final c = _FakeController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // 不应再出现细长箭头 Icons.arrow_forward_outlined
+      expect(find.byIcon(Icons.arrow_forward_outlined), findsNothing);
     });
   });
 

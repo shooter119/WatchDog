@@ -700,6 +700,7 @@ class _SettingsPageState extends State<SettingsPage> {
             incident: widget.controller.currentIncident,
             connected: connected,
             syncError: widget.controller.syncError,
+            isGuest: widget.controller.isGuest,
           ),
           const SizedBox(height: 22),
           const SectionTitle(text: '我的身份'),
@@ -707,9 +708,9 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 22),
           const SectionTitle(text: '现场资料'),
           _SettingsLinkCard(
-            icon: Icons.videocam_rounded,
+            icon: Icons.branding_watermark_outlined,
             title: '水印设置',
-            subtitle: '配置水印文字和显示字段；拍摄请用首页「水印相机」',
+            subtitle: '配置拍摄水印，拍摄请用首页水印相机',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const WatermarkSettingsPage()),
@@ -720,10 +721,11 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildFieldGrid([
             _SettingsShortcut(
               icon: Icons.group_outlined,
-              title: '添加语音热词',
+              title: '人员与语音热词',
               subtitle: widget.controller.pendingMemberCount > 0
                   ? '有 ${widget.controller.pendingMemberCount} 名新队员待审批'
-                  : '补充本单位的姓名或专业词汇',
+                  : '队员名单审批与语音热词',
+              badge: widget.controller.pendingMemberCount > 0,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -811,7 +813,11 @@ class _SettingsPageState extends State<SettingsPage> {
           _SettingsAccordion(
             icon: Icons.dns_outlined,
             title: '服务连接',
-            summary: '标准 PostgreSQL 后端 · 设置可同步',
+            summary: widget.controller.isGuest
+                ? '单机演练 · 仅本机保存'
+                : connected
+                    ? '现场协同服务器 · 连接正常'
+                    : '现场协同服务器 · 等待连接',
             child: _buildServerBody(),
           ),
           const SizedBox(height: 9),
@@ -832,7 +838,7 @@ class _SettingsPageState extends State<SettingsPage> {
               Text(
                 '火场智控 v$_displayVersion',
                 style: TextStyle(
-                  color: AppColors.textTertiary,
+                  color: AppColors.textSecondary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -840,7 +846,7 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(height: 4),
               Text(
                 '一线消防员开发 · 开源项目',
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
             ],
           ),
@@ -851,7 +857,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   String get _calculationSummary {
     if (_volume.text.isEmpty || _full.text.isEmpty) return '正在读取参数…';
-    return '${_volume.text} L · ${_full.text} MPa · 提醒 ${_warn.text} min / 报警 ${_alarm.text} min';
+    return '${_volume.text} L · ${_full.text} MPa\n提醒 ${_warn.text} 分钟 · 报警 ${_alarm.text} 分钟';
   }
 
   String get _alertSummary {
@@ -932,14 +938,14 @@ class _SettingsPageState extends State<SettingsPage> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.caution.withValues(alpha: 0.16),
+                          color: AppColors.surfaceSubtle,
                           borderRadius: BorderRadius.circular(AppRadius.pill),
                         ),
                         child: Text(
                           '单位',
                           style: TextStyle(
                             color: AppColors.textSecondary,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -1292,7 +1298,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _field(
           _server,
           '服务器地址',
-          '默认使用本地 PostgreSQL 后端（Android 模拟器：10.0.2.2:3000）',
+          '现场协同服务器地址（Android 模拟器：10.0.2.2:3000）',
           keyboard: TextInputType.url,
           focusNode: _serverFocus,
         ),
@@ -1307,16 +1313,16 @@ class _SettingsPageState extends State<SettingsPage> {
     final Color subtitleColor;
     if (pending != null) {
       subtitle = '发现新版本 ${pending.tagName}，点击更新';
-      subtitleColor = AppColors.caution;
+      subtitleColor = AppColors.textSecondary;
     } else if (widget.controller.updateCheckError != null) {
       subtitle = '检查更新失败，点击重试';
       subtitleColor = AppColors.alarm;
     } else if (widget.controller.updateCheckDone) {
       subtitle = '已是最新版本';
-      subtitleColor = AppColors.textTertiary;
+      subtitleColor = AppColors.textSecondary;
     } else {
-      subtitle = '从 ALI 更新服务器获取最新版本';
-      subtitleColor = AppColors.textTertiary;
+      subtitle = '从协同更新服务器获取最新版本';
+      subtitleColor = AppColors.textSecondary;
     }
     return AppCard(
       onTap: _checkingUpdate ? null : _checkUpdate,
@@ -1341,14 +1347,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 3),
                 Text(
                   subtitle,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 11, color: subtitleColor),
                 ),
               ],
             ),
           ),
-          Icon(Icons.chevron_right, color: AppColors.textTertiary),
+          Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
         ],
       ),
     );
@@ -1602,7 +1608,7 @@ class _SettingsEyebrow extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(
-          color: AppColors.textTertiary,
+          color: AppColors.textSecondary,
           fontSize: 11,
           fontWeight: FontWeight.w800,
           letterSpacing: 1.4,
@@ -1616,11 +1622,13 @@ class _SettingsHero extends StatelessWidget {
   final Incident? incident;
   final bool connected;
   final String? syncError;
+  final bool isGuest;
 
   const _SettingsHero({
     required this.incident,
     required this.connected,
     required this.syncError,
+    this.isGuest = false,
   });
 
   @override
@@ -1628,11 +1636,18 @@ class _SettingsHero extends StatelessWidget {
     final active = incident?.isActive == true;
     final title = active ? incident!.displayName : '暂无处置警情';
     final status = active ? '处置中' : '待命';
-    final subtitle = !connected
-        ? '本地数据 · ${syncError ?? '等待网络恢复'}'
-        : active
-        ? '已加入警情 · 现场协同正常'
-        : '请选择或新建警情后开始处置';
+    final String subtitle;
+    if (isGuest) {
+      subtitle = '单机演练 · 仅本机保存';
+    } else if (syncError != null && syncError!.isNotEmpty) {
+      subtitle = '同步异常 · $syncError';
+    } else if (!connected) {
+      subtitle = '本地数据 · 等待网络恢复';
+    } else if (active) {
+      subtitle = '已加入警情 · 现场协同正常';
+    } else {
+      subtitle = '请选择或新建警情后开始处置';
+    }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -1829,12 +1844,14 @@ class _SettingsShortcut extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool badge;
 
   const _SettingsShortcut({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.badge = false,
   });
 
   @override
@@ -1848,11 +1865,9 @@ class _SettingsShortcut extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 44),
         child: Row(
-          crossAxisAlignment: compact
-              ? CrossAxisAlignment.start
-              : CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _SettingsIconBox(icon: icon),
+            _SettingsIconBox(icon: icon, badge: badge),
             const SizedBox(width: 11),
             Expanded(
               child: Column(
@@ -1874,10 +1889,8 @@ class _SettingsShortcut extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     subtitle,
-                    maxLines: compact ? 3 : 1,
-                    overflow: compact
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
+                    maxLines: compact ? 2 : 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 11,
                       color: AppColors.textTertiary,
@@ -1888,8 +1901,8 @@ class _SettingsShortcut extends StatelessWidget {
             ),
             const SizedBox(width: 5),
             Icon(
-              Icons.arrow_forward_outlined,
-              size: 15,
+              Icons.chevron_right,
+              size: 20,
               color: AppColors.textTertiary,
             ),
           ],
@@ -1924,6 +1937,7 @@ class _SettingsLinkCard extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _SettingsIconBox(icon: icon),
               const SizedBox(width: 11),
@@ -1942,7 +1956,7 @@ class _SettingsLinkCard extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
@@ -1953,8 +1967,8 @@ class _SettingsLinkCard extends StatelessWidget {
                 ),
               ),
               Icon(
-                Icons.arrow_forward_outlined,
-                size: 16,
+                Icons.chevron_right,
+                size: 20,
                 color: AppColors.textTertiary,
               ),
             ],
@@ -1981,16 +1995,16 @@ class _SyncNotice extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(Icons.sync_outlined, size: 17, color: AppColors.online),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           Expanded(
             child: Text.rich(
               TextSpan(
                 children: [
                   TextSpan(
-                    text: '个人设置同步已开启\n',
+                    text: '现场协同同步已开启\n',
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  TextSpan(text: '本机修改优先保存，联网后自动同步。'),
+                  TextSpan(text: '本机修改优先保存，联网后自动与现场协同服务器同步。'),
                 ],
               ),
               style: TextStyle(
@@ -2081,7 +2095,7 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                               const SizedBox(height: 3),
                               Text(
                                 widget.summary,
-                                maxLines: 1,
+                                maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 11,
@@ -2096,6 +2110,7 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                           _expanded
                               ? Icons.keyboard_arrow_up_rounded
                               : Icons.keyboard_arrow_down_rounded,
+                          size: 20,
                           color: AppColors.textTertiary,
                         ),
                       ],
