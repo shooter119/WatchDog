@@ -973,8 +973,8 @@ void main() {
       final list = find.byType(ListView).first;
       expect(find.text('我的身份'), findsOneWidget);
       expect(find.text('未选择单位'), findsOneWidget);
-      await _scrollToVisible(tester, list, find.text('人员与语音热词'));
-      expect(find.text('人员与语音热词'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('人员与热词'));
+      expect(find.text('人员与热词'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('归档警情'));
       expect(find.text('归档警情'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('数据统计'));
@@ -1040,9 +1040,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
-      await _scrollToVisible(tester, list, find.text('人员与语音热词'));
+      await _scrollToVisible(tester, list, find.text('人员与热词'));
 
-      const labels = ['未认证', '水印设置', '人员与语音热词'];
+      const labels = ['未认证', '水印设置', '人员与热词'];
       for (final label in labels) {
         final card = find
             .ancestor(of: find.text(label), matching: find.byType(AppCard))
@@ -1079,10 +1079,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
-      await _scrollToVisible(tester, list, find.text('人员与语音热词'));
-      final subtitle = find.text('队员名单审批与语音热词');
+      await _scrollToVisible(tester, list, find.text('人员与热词'));
+      final subtitle = find.text('名单审批与热词');
       expect(subtitle, findsOneWidget);
-      expect(tester.getSize(subtitle).height, greaterThan(40));
+      expect(tester.getSize(subtitle).height, greaterThan(25));
       expect(tester.takeException(), isNull);
     });
 

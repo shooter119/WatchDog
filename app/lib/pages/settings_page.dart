@@ -721,10 +721,10 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildFieldGrid([
             _SettingsShortcut(
               icon: Icons.group_outlined,
-              title: '人员与语音热词',
+              title: '人员与热词',
               subtitle: widget.controller.pendingMemberCount > 0
-                  ? '有 ${widget.controller.pendingMemberCount} 名新队员待审批'
-                  : '队员名单审批与语音热词',
+                  ? '${widget.controller.pendingMemberCount} 名队员待审批'
+                  : '名单审批与热词',
               badge: widget.controller.pendingMemberCount > 0,
               onTap: () => Navigator.push(
                 context,
