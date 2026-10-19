@@ -28,7 +28,7 @@ import 'unit_stations_page.dart';
 import 'watermark_settings_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.8.1+71';
+const appVersion = '1.8.2+90';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
