@@ -88,7 +88,7 @@ $('load-members').onclick = async () => {
 $('load-audit').onclick = async () => {
   try {
     const result = await api('/audit', undefined, 'GET'); $('audit').replaceChildren();
-    const actions = { admin_initialized: '平台管理员初始化', grant_set: '更新后台授权', grant_revoked: '撤销后台授权', login_confirmed: '确认网页登录', login_cancelled: '取消网页登录', login: '后台登录', logout: '退出当前会话', logout_all: '退出全部会话', key_site_created: '新建重点单位', key_site_updated: '更新单位档案', key_site_owner_changed: '调整维护归属', key_site_disabled: '停用单位', key_site_enabled: '恢复单位', key_site_draft_saved: '保存资料草稿', key_site_draft_discarded: '放弃资料草稿', key_site_published: '发布资料版本', key_site_uploaded: '上传资料附件', key_site_task_retried: '重试处理任务' };
+    const actions = { admin_initialized: '平台管理员初始化', grant_set: '更新后台授权', grant_revoked: '撤销后台授权', login_confirmed: '确认网页登录', login_cancelled: '取消网页登录', login: '后台登录', logout: '退出当前会话', logout_all: '退出全部会话', key_site_created: '新建重点单位', key_site_updated: '更新单位档案', key_site_owner_changed: '调整维护归属', key_site_disabled: '停用单位', key_site_enabled: '恢复单位', key_site_draft_saved: '保存资料草稿', key_site_draft_discarded: '放弃资料草稿', key_site_published: '发布资料版本', key_site_uploaded: '上传资料附件', key_site_task_retried: '重试处理任务', key_site_ai_requested: '请求AI资料整理', key_site_ai_retried: '重试AI失败页面', key_site_ai_cancelled: '放弃AI整理任务', key_site_ai_applied: '人工核对采用AI条目' };
     for (const event of result.events) $('audit').append(textNode('p', `${new Date(Number(event.created_at)).toLocaleString()} · ${actions[event.action] || '资料管理操作'} · 操作者 ${event.actor_name || '服务器私有初始化'}`));
   } catch (error) { $('error').textContent = error.message; }
 };

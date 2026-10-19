@@ -5,12 +5,19 @@ const wrap = handler => (req, res, next) => Promise.resolve(handler(req, res)).c
   next(err);
 });
 
-function createKeySiteAdminRouter(sites, files) {
+function createKeySiteAdminRouter(sites, files, ai) {
   const router = express.Router();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: files.limits.fileBytes, files: 1, fields: 2, parts: 3 } }).single('file');
   let uploading = 0;
   router.use((req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
-  router.get('/limits', (req, res) => res.json({ limits: files.limits }));
+  router.get('/limits', (req, res) => res.json({ limits: files.limits, aiAvailable: ai?.available() || false }));
+  if (ai) {
+    router.get('/tasks/:taskId', wrap(async (req, res) => res.json(await ai.read(req.admin.id, req.params.taskId))));
+    router.post('/:id/attachments/:attachmentId/ai', wrap(async (req, res) => res.status(201).json(await ai.create(req.admin.id, req.params.id, req.params.attachmentId, req.body.pages))));
+    router.post('/tasks/:taskId/ai-retry', wrap(async (req, res) => res.json(await ai.retry(req.admin.id, req.params.taskId, req.body.pages))));
+    router.post('/tasks/:taskId/ai-cancel', wrap(async (req, res) => res.json(await ai.cancel(req.admin.id, req.params.taskId))));
+    router.post('/tasks/:taskId/ai-apply', wrap(async (req, res) => res.json(await ai.apply(req.admin.id, req.params.taskId, req.body))));
+  }
   router.get('/duplicates', wrap(async (req, res) => res.json({ sites: await sites.duplicates(req.admin.id, req.query) })));
   router.get('/', wrap(async (req, res) => res.json(await sites.list(req.admin.id, req.query, true))));
   router.post('/', wrap(async (req, res) => res.status(201).json(await sites.create(req.admin.id, req.body))));
@@ -45,6 +52,7 @@ function attachmentRouter(sites, files, admin) {
   const send = (kind, params = () => []) => wrap(async (req, res) => {
     const attachment = await files.attachmentFor(admin ? req.admin.id : req.auth?.memberId,
       req.params.id, req.params.attachmentId, req.params.version, admin);
+    if (kind === 'source' && !admin) return res.status(403).json({ code: 'KEY_SITE_SOURCE_PRIVATE', error: '原始上传文件仅维护人员可下载，请阅读已发布的正式附件' });
     let file;
     try { file = await files.filePath(attachment, kind, params(req)); }
     catch (err) {

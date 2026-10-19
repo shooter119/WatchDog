@@ -27,7 +27,7 @@ jobs:
           --health-retries=5
     env:
       # 通过 npm test 运行时摘要校验；新增测试后只允许提高此基线。
-      MIN_BACKEND_TESTS: '232'
+      MIN_BACKEND_TESTS: '248'
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/watchdog_test
     steps:
       - name: Checkout

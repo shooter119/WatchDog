@@ -14,19 +14,7 @@ const shape = require('../src/key-site-content');
 const { createKeySiteFiles, inspectDocx } = require('../src/key-site-files');
 const reject = (fn, code) => assert.rejects(fn, { code });
 
-function pdfBuffer(pages = 1) {
-  const objects = [null, '<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${Array.from({ length: pages }, (_, i) => `${3 + i * 2} 0 R`).join(' ')}] /Count ${pages} >>`];
-  for (let i = 0; i < pages; i++) {
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents ${4 + i * 2} 0 R >>`);
-    const text = `BT /F1 20 Tf 20 100 Td (SYNTHETIC TEST PAGE ${i + 1}) Tj ET`;
-    objects.push(`<< /Length ${text.length} >>\nstream\n${text}\nendstream`);
-  }
-  let document = '%PDF-1.4\n'; const offsets = [0];
-  for (let i = 1; i < objects.length; i++) { offsets.push(Buffer.byteLength(document)); document += `${i} 0 obj\n${objects[i]}\nendobj\n`; }
-  const start = Buffer.byteLength(document);
-  document += `xref\n0 ${objects.length}\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
-  return Buffer.from(document);
-}
+const { pdfBuffer } = require('./helpers/key-site-fixtures');
 async function docxBuffer(extra = {}) {
   const zip = new (require('yazl').ZipFile)();
   const files = {
@@ -173,11 +161,19 @@ test('PDF和DOCX真实转换成可阅读页，原件保留，来源可追溯', a
   const pdf = await files.upload('manager', site.id, 'plans', { originalname: '合成预案.pdf', buffer: pdfBuffer(2) });
   const ready = await finishAttachment(pdf.id); assert.equal(ready.status, 'ready'); assert.equal(ready.metadata.pages, 2);
   const page = await files.filePath(ready, 'page', [2]); assert.ok((await sharp(page).metadata()).width > 0);
+  assert.ok((await sharp(page).stats()).channels.some(channel => channel.min < 200 && channel.max > 240));
   const original = await fs.readFile(await files.filePath(ready, 'source')); assert.deepEqual(original, pdfBuffer(2));
   const docx = await files.upload('manager', site.id, 'plans', { originalname: '合成文档.docx', buffer: await docxBuffer() });
   const converted = await finishAttachment(docx.id); assert.equal(converted.status, 'ready');
   assert.equal((await fs.readFile(await files.filePath(converted, 'pdf'))).subarray(0,5).toString(), '%PDF-');
   assert.equal((await fs.readFile(await files.filePath(converted, 'source'))).subarray(0,2).toString(), 'PK');
+  const content = shape.emptyContent(); content.plans.push({ title:'合成预案阅读', sources:[{attachmentId:pdf.id,page:2},{attachmentId:docx.id,page:1}] });
+  await save(site,content); await publish(site);
+  const prefix = `/api/key-sites/${site.id}/versions/1/attachments`;
+  const formal = await request(`${prefix}/${docx.id}/document.pdf`,{session:null,member:'reader'});
+  assert.equal(formal.status,200); assert.match(formal.headers.get('content-type'),/application\/pdf/);
+  assert.equal((await request(`${prefix}/${docx.id}/source`,{session:null,member:'reader'})).status,403);
+  assert.equal((await request(`${prefix}/${pdf.id}/pages/2.jpg`,{session:null,member:'reader'})).status,200);
 });
 
 test('文件伪装、旧DOC、DOCX宏和外部模板、页数及像素上限均拒绝', async () => {
@@ -208,6 +204,7 @@ test('草稿原件、跨单位附件、其他版本附件与游客读取均在HT
   const blankSource = shape.emptyContent(); blankSource.cards.push({ title: '甲二版', sources: [] }); await save(a, blankSource); await publish(a);
   const prefix = `/api/key-sites/${a.id}/versions`;
   assert.equal((await request(`${prefix}/1/attachments/${uploaded.id}/pages/1.jpg`, { session: null, member: 'reader' })).status, 200);
+  assert.equal((await request(`${prefix}/1/attachments/${uploaded.id}/source`, { session: null, member: 'reader' })).status, 403);
   assert.equal((await request(`${prefix}/2/attachments/${uploaded.id}/source`, { session: null, member: 'reader' })).status, 404);
   assert.equal((await request(`${prefix}/1/attachments/${uploaded.id}/source`, { session: null })).status, 401);
   assert.equal((await request(`/api/admin/key-sites/${a.id}`, { session: null, member: 'reader' })).status, 401);
@@ -264,5 +261,5 @@ test('多页PDF地图独立切片，第二页来源与瓦片不串页', async ()
   const response = await request(`/api/key-sites/${site.id}/versions/1/attachments/${uploaded.id}/maps/2/tiles/0/0/0.jpg`, { session: null, member: 'reader' });
   assert.equal(response.status, 200);
   const wrong = shape.emptyContent(); wrong.cards = content.maps; await save(site, wrong);
-  await reject(() => publish(site), 'KEY_SITE_SOURCE_INVALID');
+  assert.equal((await publish(site)).version, 2); // An explicit source may support multiple module types.
 });

@@ -92,6 +92,7 @@ const CFG = {
     // 带隐式思考的模型会把几千 token 花在思考上（实测单次 20-30 秒），
     // 换成不带思考的模型约 2 秒，字段召回实测不降。
     importModel: process.env.IMPORT_MODEL || 'deepseek-chat',
+    keySiteModel: process.env.KEY_SITE_AI_MODEL || process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-flash',
     chatSearch: (process.env.CHAT_SEARCH_ENABLED ?? '1') !== '0',
   },
   calc: {
@@ -245,8 +246,10 @@ if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER ||
   adminAuth = require('./admin-auth').createAdminAuth(require('./postgres-store'));
   keySites = require('./key-sites').createKeySites(require('./postgres-store'), adminAuth);
   keySiteFiles = require('./key-site-files').createKeySiteFiles(require('./postgres-store'), keySites, adminAuth);
-  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, { sites: keySites, files: keySiteFiles }));
+  const keySiteAI = require('./key-site-ai').createKeySiteAI(require('./postgres-store'), keySites, keySiteFiles, adminAuth, CFG.llm);
+  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, { sites: keySites, files: keySiteFiles, ai: keySiteAI }));
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteFiles.startWorker(error => logger.warn(`key_site_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
+  if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteAI.startWorker(error => logger.warn(`key_site_ai_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
 }
 app.use(async (req, res, next) => {
   if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply') return next();

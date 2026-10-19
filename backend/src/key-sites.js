@@ -91,7 +91,10 @@ function createKeySites(store, auth, now = Date.now) {
     const data = (await query('SELECT * FROM key_site_drafts WHERE site_id=$1', [id]))[0];
     return { site: await site(id), draft: data,
       attachments: await query('SELECT * FROM key_site_attachments WHERE site_id=$1 ORDER BY created_at,id', [id]),
-      tasks: await query('SELECT * FROM key_site_tasks WHERE site_id=$1 ORDER BY created_at DESC LIMIT 100', [id]) };
+      tasks: await query(`SELECT id,site_id,attachment_id,kind,status,generation,attempts,error_code,draft_revision,created_at,updated_at,
+        CASE WHEN kind='ai' THEN jsonb_array_length(result->'pages') END AS page_count,
+        CASE WHEN kind='ai' THEN (SELECT count(*)::int FROM jsonb_array_elements(result->'pages') p WHERE p->>'status'='succeeded') END AS completed_pages
+        FROM key_site_tasks WHERE site_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100`, [id]) };
   }
   async function saveDraft(memberId, id, input) {
     const data = shape.content(input.content);
@@ -131,8 +134,8 @@ function createKeySites(store, auth, now = Date.now) {
         if (module === 'maps' && entry.sources.length !== 1) fail('每张地图须指定一份已切片的来源附件及页码', 'KEY_SITE_SOURCE_INVALID', 400);
         for (const source of entry.sources) {
           const attachment = byId.get(source.attachmentId);
-          if (attachment.module !== module || (source.page && source.page > Number(attachment.metadata.pages || 1))
-            || (module === 'maps' && !attachment.metadata.map)) fail('来源模块、页码或地图切片不匹配', 'KEY_SITE_SOURCE_INVALID', 400);
+          if ((source.page && source.page > Number(attachment.metadata.pages || 1))
+            || (module === 'maps' && !attachment.metadata.map)) fail('来源页码或地图切片不匹配', 'KEY_SITE_SOURCE_INVALID', 400);
         }
       }
       const version = (await query(`INSERT INTO key_site_versions(id,site_id,version,profile,content,attachment_ids,published_by,published_at)

@@ -176,7 +176,7 @@ function createKeySiteFiles(store, sites, auth, { root = path.resolve(process.en
     reserve((await fs.stat(path.join(output, 'original.pdf'))).size);
     for (let page = 1; page <= pages; page++) {
       signal?.throwIfAborted();
-      const scale = attachment.module === 'maps' ? Math.min(6000, Math.floor(Math.sqrt(caps.pixels))) : 2000;
+      const scale = Math.min(attachment.module === 'maps' ? 6000 : 2000, Math.floor(Math.sqrt(caps.pixels)));
       await command('pdftoppm', ['-f', String(page), '-l', String(page), '-singlefile', '-scale-to', String(scale), '-jpeg', pdf, path.join(output, `page-${page}`)], signal);
       reserve((await fs.stat(path.join(output, `page-${page}.jpg`))).size);
       if (attachment.module === 'maps') {

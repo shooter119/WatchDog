@@ -13,7 +13,7 @@ const wrap = (handler) => (req, res, next) => Promise.resolve(handler(req, res))
   next(error);
 });
 
-function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, files } = {}) {
+function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, files, ai } = {}) {
   const router = express.Router();
   const limiter = new MinuteRateLimiter();
   router.use((req, res, next) => {
@@ -62,7 +62,7 @@ function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, fil
   router.get('/members', wrap(async (req, res) => res.json({ members: await auth.listMembers(req.admin.id) })));
   router.get('/units', wrap(async (req, res) => res.json({ units: await auth.listUnits(req.admin.id) })));
   router.get('/audit', wrap(async (req, res) => res.json({ events: await auth.listAudit(req.admin.id, req.query.offset) })));
-  if (sites && files) router.use('/key-sites', require('./key-site-routes').createKeySiteAdminRouter(sites, files));
+  if (sites && files) router.use('/key-sites', require('./key-site-routes').createKeySiteAdminRouter(sites, files, ai));
   return router;
 }
 
