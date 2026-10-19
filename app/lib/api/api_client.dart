@@ -94,6 +94,24 @@ class ApiClient {
     return uri;
   }
 
+  Future<List<Map<String, dynamic>>> fetchMaps() async {
+    final response = await _client
+        .get(_uri('/api/maps'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(response, fallback: '获取地图失败');
+    if (response.statusCode != 200) {
+      throw _apiException(response, body: body, fallback: '获取地图失败');
+    }
+    return (body['maps'] as List).cast<Map<String, dynamic>>();
+  }
+
+  // URLs contain no credentials. Each tile uses the current session headers.
+  String mapTileUrl(String id, int z, int x, int y) => _uri(
+    '/api/maps/${Uri.encodeComponent(id)}/tiles/$z/$x/$y.jpg',
+  ).replace(queryParameters: {'unit': unitId}).toString();
+
+  Map<String, String> mapTileHeaders() => _headers;
+
   /// 实时 ASR 代理使用同一认证头，但通过 WebSocket 协议连接。
   Uri realtimeAsrUri() {
     return realtimeAsrUris().first;

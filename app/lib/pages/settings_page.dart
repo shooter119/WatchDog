@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'orthomap_page.dart';
+
 import '../models/models.dart';
 import '../services/alarm_service.dart';
 import '../services/foreground_keep_alive.dart';
@@ -707,6 +709,18 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildIdentityCard(),
           const SizedBox(height: 22),
           const SectionTitle(text: '现场资料'),
+          _SettingsLinkCard(
+            icon: Icons.map_outlined,
+            title: '现场地图',
+            subtitle: '查看单位正射影像，支持缩放和拖动',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OrthomapPage(controller: widget.controller),
+              ),
+            ),
+          ),
+          const SizedBox(height: 9),
           _SettingsLinkCard(
             icon: Icons.branding_watermark_outlined,
             title: '水印设置',

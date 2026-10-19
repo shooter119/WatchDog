@@ -290,6 +290,11 @@ app.use(async (req, res, next) => {
   }
 });
 
+// Maps inherit the same session and unit authentication as business APIs.
+app.use('/api/maps', require('./orthomaps').createOrthomapRouter(
+  process.env.WATCHDOG_MAP_DIR || path.join(__dirname, '..', 'data', 'orthomaps'),
+));
+
 function hashSessionToken(token) {
   return crypto.createHash('sha256').update(String(token || '')).digest('hex');
 }
