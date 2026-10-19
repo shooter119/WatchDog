@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>火场智控 · 资料管理</title>
+<link rel="stylesheet" href="/admin/style.css">
+<body>
+<header><strong>火场智控 <span>资料管理</span></strong><span>重点单位资料库</span></header>
+<main>
+<section id="login" class="login">
+  <div><p class="eyebrow">WATCHDOG / 资料工作台</p><h1>让现场资料，<br>在需要时触手可及。</h1><p>使用 App 扫码，在手机上核对身份并确认登录。<br>只有获得后台授权的有效成员可以进入。</p><ol><li>打开火场智控 App「设置」</li><li>点击用户信息中的「扫一扫」</li><li>核对本人身份，确认网页登录</li></ol></div>
+  <article><h2>扫码登录</h2><div id="qr" aria-label="登录二维码"></div><p id="login-state" role="status">正在生成二维码…</p><button id="refresh">刷新二维码</button><p class="muted">二维码两分钟内有效，请勿转发。</p></article>
+</section>
+<section id="workspace" hidden><p class="eyebrow">管理工作台</p><h1 id="welcome"></h1><p id="identity"></p><div class="actions"><button id="logout">退出当前会话</button><button id="logout-all">退出全部后台会话</button></div><section id="platform" hidden><h2>后台授权</h2><p>单位管理角色与后台授权独立。开通前请核对成员姓名及所属消防单位。</p><button id="load-members">加载成员</button><div id="members"></div><h2>操作审计</h2><button id="load-audit">加载最新记录</button><div id="audit"></div></section><p>资料维护功能将随阶段验收开放。</p></section>
+<p id="error" role="alert"></p>
+</main><footer>资料经人工核对发布后，向全平台已认证有效成员共享。</footer>
+<script src="/admin/app.js" defer></script>
+</body></html>

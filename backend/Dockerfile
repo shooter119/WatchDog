@@ -8,6 +8,7 @@ RUN npm ci --omit=dev
 
 COPY --chown=node:node src ./src
 COPY --chown=node:node migrations ./migrations
+COPY --chown=node:node admin ./admin
 COPY --chown=node:node models ./models
 
 # Private, short-lived import images must survive container recreation.

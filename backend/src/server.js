@@ -231,6 +231,18 @@ app.use(async (req, res, next) => {
 
 // 单位认证由数据库中的 units 记录驱动。未归属历史警情不属于任何普通单位，
 // 不在这里把旧数据强行归属到当前认证单位。
+// Mount browser authentication before App authentication: App tokens never authorize /api/admin.
+let adminAuth = null;
+app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+  },
+}));
+if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER || (process.env.NODE_ENV === 'test' ? 'sqlite' : 'postgres')).toLowerCase())) {
+  adminAuth = require('./admin-auth').createAdminAuth(require('./postgres-store'));
+  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth));
+}
 app.use(async (req, res, next) => {
   if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply') return next();
   if (SESSION_AUTH_REQUIRED) {
@@ -289,6 +301,8 @@ app.use(async (req, res, next) => {
     return next(error);
   }
 });
+
+if (adminAuth) app.use('/api/admin-app', require('./admin-router').createAdminAppRouter(adminAuth));
 
 // Maps inherit the same session and unit authentication as business APIs.
 app.use('/api/maps', require('./orthomaps').createOrthomapRouter(
