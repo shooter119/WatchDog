@@ -301,8 +301,9 @@ PY
     ssh "$OTA_HOST" "cd '$(dirname "$COMPOSE_FILE")/../..' && docker compose -f '${COMPOSE_FILE}' build website >/dev/null && docker compose -f '${COMPOSE_FILE}' up -d website >/dev/null && echo website_rebuilt"
     PAGE="$(curl -fsS --max-time 20 "${PUBLIC_BASE}/")"
     echo "$PAGE" | grep -q "id=\"site-version\">${VERSION}+${BUILD}<" \
-      || die "官网版本未更新，请检查容器是否重建成功"
-    echo "$PAGE" | grep -q "${APK_NAME}" || die "官网下载链接未指向 ${APK_NAME}"
+      || die "官网版本未更新（OTA 已发布，仅官网未同步）：请检查 ${OTA_HOST} 上的 website 容器"
+    echo "$PAGE" | grep -q "${APK_NAME}" \
+      || die "官网下载链接未指向 ${APK_NAME}（OTA 已发布，仅官网未同步）"
     info "官网已更新并重建容器，页面版本 ${VERSION}+${BUILD}"
   else
     warn "本地 website/ 目录不存在，跳过官网同步"
