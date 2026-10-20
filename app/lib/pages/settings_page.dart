@@ -720,7 +720,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _SettingsLinkCard(
             icon: Icons.branding_watermark_outlined,
             title: '水印设置',
-            subtitle: '配置拍摄水印，拍摄请用首页现场拍摄',
+            subtitle: '配置拍摄水印，拍摄请用首页水印相机',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const WatermarkSettingsPage()),

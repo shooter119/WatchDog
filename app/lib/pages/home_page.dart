@@ -1336,8 +1336,8 @@ class HomePageState extends State<HomePage> {
                   },
                   onRename: _renameIncident,
                   onAddForce: () => _editForce(),
-                  onImageImport: () => _openImport(true),
-                  onTextImport: () => _openImport(false),
+                  onImportInfo: _openImport,
+                  onAdjustIncident: _adjustIncidentLevel,
                   onDetails: _openDetails,
                   onEditForce: (force) => _editForce(force),
                   onRemoveForce: (force) => _removeForce(force),
@@ -1592,7 +1592,7 @@ class HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _openImport(bool fromImages) async {
+  Future<void> _openImport() async {
     if (widget.controller.isGuest) {
       final goAuth = await showDialog<bool>(
         context: context,
@@ -1635,7 +1635,7 @@ class HomePageState extends State<HomePage> {
         builder: (_) => IncidentImportPage(
           api: api,
           incident: incident,
-          fromImages: fromImages,
+          chooseSourceOnOpen: true,
         ),
       ),
     );
@@ -1648,6 +1648,113 @@ class HomePageState extends State<HomePage> {
             context,
           ).showSnackBar(SnackBar(content: Text('已提交，刷新资料失败：$error')));
         }
+      }
+    }
+  }
+
+  Future<void> _adjustIncidentLevel() async {
+    final incident = widget.controller.currentIncident;
+    if (incident == null) return;
+    if (widget.controller.isGuest) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('游客模式暂不支持调整警情等级')));
+      return;
+    }
+    final currentCategory = incident.info['original_category']
+        ?.toString()
+        .trim();
+    final edit = TextEditingController(
+      text: currentCategory?.isNotEmpty == true
+          ? currentCategory!
+          : incident.info['level']?.toString().trim() ?? '',
+    );
+    final level = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('警情调整'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '修改灾情等级',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final option in const [
+                        '一级火灾扑救',
+                        '二级火灾扑救',
+                        '三级火灾扑救',
+                        '四级火灾扑救',
+                      ])
+                        ChoiceChip(
+                          label: Text(option),
+                          selected: edit.text.trim() == option,
+                          onSelected: (_) {
+                            edit.text = option;
+                            edit.selection = TextSelection.collapsed(
+                              offset: option.length,
+                            );
+                            setDialogState(() {});
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const Key('incident-level-field'),
+                    controller: edit,
+                    maxLength: 80,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: '灾情等级',
+                      hintText: '如：一级火灾扑救',
+                      helperText: '也可输入其他等级',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              key: const Key('incident-level-save'),
+              onPressed: edit.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(ctx, edit.text.trim()),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+    _disposeControllerAfterFrame(edit);
+    if (level == null || !mounted) return;
+    try {
+      await widget.controller.updateIncidentLevel(level);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('灾情等级已更新')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('调整警情等级失败：$e')));
       }
     }
   }
@@ -2137,7 +2244,7 @@ class HomePageState extends State<HomePage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: _fieldTool(
-                      '现场拍摄',
+                      '水印相机',
                       '照片与视频水印记录',
                       Icons.photo_camera_outlined,
                       () => Navigator.push<void>(
@@ -2675,7 +2782,7 @@ class HomePageState extends State<HomePage> {
                     ),
                   ),
                   icon: const Icon(Icons.photo_camera_outlined),
-                  label: const Text('现场拍摄'),
+                  label: const Text('水印相机'),
                 ),
               ],
             ),
@@ -3232,8 +3339,8 @@ class _TaskBar extends StatefulWidget {
   final ValueChanged<bool>? onExpandedChanged;
   final VoidCallback onRename;
   final VoidCallback onAddForce;
-  final VoidCallback onImageImport;
-  final VoidCallback onTextImport;
+  final VoidCallback onImportInfo;
+  final VoidCallback onAdjustIncident;
   final VoidCallback onDetails;
   final ValueChanged<IncidentForce> onEditForce;
   final ValueChanged<IncidentForce> onRemoveForce;
@@ -3248,8 +3355,8 @@ class _TaskBar extends StatefulWidget {
     this.onExpandedChanged,
     required this.onRename,
     required this.onAddForce,
-    required this.onImageImport,
-    required this.onTextImport,
+    required this.onImportInfo,
+    required this.onAdjustIncident,
     required this.onDetails,
     required this.onEditForce,
     required this.onRemoveForce,
@@ -3423,18 +3530,18 @@ class _TaskBarState extends State<_TaskBar> {
                       child: VerticalDivider(width: 1),
                     ),
                     _IncidentAction(
-                      label: '图片导入',
-                      icon: Icons.image_outlined,
-                      onTap: widget.onImageImport,
+                      label: '信息导入',
+                      icon: Icons.upload_file_outlined,
+                      onTap: widget.onImportInfo,
                     ),
                     const SizedBox(
                       height: 18,
                       child: VerticalDivider(width: 1),
                     ),
                     _IncidentAction(
-                      label: '文字导入',
-                      icon: Icons.description_outlined,
-                      onTap: widget.onTextImport,
+                      label: '警情调整',
+                      icon: Icons.tune,
+                      onTap: widget.onAdjustIncident,
                     ),
                   ],
                 ),

@@ -24,15 +24,17 @@ const incidentFieldLabels = <String, String>{
   'hazardous_materials': '危险物质',
 };
 
+enum IncidentImportEntryMode { camera, gallery, text }
+
 class IncidentImportPage extends StatefulWidget {
   final ApiClient api;
   final Incident incident;
-  final bool fromImages;
+  final bool chooseSourceOnOpen;
   const IncidentImportPage({
     super.key,
     required this.api,
     required this.incident,
-    this.fromImages = false,
+    this.chooseSourceOnOpen = false,
   });
   @override
   State<IncidentImportPage> createState() => _IncidentImportPageState();
@@ -41,6 +43,7 @@ class IncidentImportPage extends StatefulWidget {
 class _IncidentImportPageState extends State<IncidentImportPage> {
   late final ApiClient _api = widget.api.forIncident(widget.incident.id);
   final _text = TextEditingController();
+  final _textFocus = FocusNode();
   final _title = TextEditingController();
   final _fields = <String, TextEditingController>{};
   final _extra = <String, TextEditingController>{};
@@ -106,6 +109,9 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
           await _appendFiles(lost.files!, camera: true);
         }
       }
+      if (mounted && widget.chooseSourceOnOpen && _images.isEmpty) {
+        await _chooseSource();
+      }
       final tasks = await _api.fetchIncidentImports();
       if (!mounted) return;
       final pending = tasks.where(
@@ -121,7 +127,6 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
     } catch (_) {
       /* New installations or a temporarily unavailable service can still collect input. */
     }
-    if (mounted && widget.fromImages && _images.isEmpty) await _chooseSource();
   }
 
   @override
@@ -135,6 +140,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
     );
     _api.dispose();
     _text.dispose();
+    _textFocus.dispose();
     _title.dispose();
     _contacts.dispose();
     for (final c in [..._fields.values, ..._extra.values]) {
@@ -152,7 +158,8 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
     if (error is ApiException) {
       if (error.statusCode == 404 || error.code == 'IMPORT_NOT_FOUND') {
         message = '当前警情在云端不存在或已归档，无法导入';
-      } else if (error.statusCode == 401 || error.code == 'IMPORT_AUTH_REQUIRED') {
+      } else if (error.statusCode == 401 ||
+          error.code == 'IMPORT_AUTH_REQUIRED') {
         message = '请先完成单位认证后再使用警情导入';
       } else {
         message = error.message;
@@ -162,7 +169,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
   }
 
   Future<void> _chooseSource() async {
-    final source = await showModalBottomSheet<ImageSource>(
+    final mode = await showModalBottomSheet<IncidentImportEntryMode>(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
@@ -170,19 +177,37 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
           children: [
             ListTile(
               leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('拍照导入'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
+              title: const Text('拍照'),
+              subtitle: const Text('直接拍摄警情通知或纸质材料'),
+              onTap: () =>
+                  Navigator.pop(context, IncidentImportEntryMode.camera),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('从相册选择'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
+              title: const Text('从手机相册选择'),
+              subtitle: const Text('选择一张或多张已有照片'),
+              onTap: () =>
+                  Navigator.pop(context, IncidentImportEntryMode.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('文字导入'),
+              subtitle: const Text('粘贴接处警通报或警情信息'),
+              onTap: () => Navigator.pop(context, IncidentImportEntryMode.text),
             ),
           ],
         ),
       ),
     );
-    if (source != null && mounted) await _pick(source);
+    if (!mounted || mode == null) return;
+    switch (mode) {
+      case IncidentImportEntryMode.camera:
+        await _pick(ImageSource.camera);
+      case IncidentImportEntryMode.gallery:
+        await _pick(ImageSource.gallery);
+      case IncidentImportEntryMode.text:
+        _textFocus.requestFocus();
+    }
   }
 
   Future<void> _pick(ImageSource source) async {
@@ -786,6 +811,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       if (_images.isEmpty)
         TextField(
           controller: _text,
+          focusNode: _textFocus,
           minLines: 8,
           maxLines: 16,
           maxLength: 20000,

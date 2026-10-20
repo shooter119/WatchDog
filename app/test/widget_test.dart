@@ -314,6 +314,52 @@ class _FakeApi extends ApiClient {
   }
 }
 
+class _AdjustApi extends _FakeApi {
+  _AdjustApi() : super(incidentId: 'i1');
+
+  Map<String, dynamic> detailData = {'original_category': '一级火灾扑救'};
+  Map<String, dynamic>? updatedData;
+  int detailsVersion = 2;
+
+  @override
+  ApiClient forIncident(String id) => this;
+
+  @override
+  Future<Map<String, dynamic>> fetchIncidentDetails() async => {
+    'data': Map<String, dynamic>.from(detailData),
+    'version': detailsVersion,
+  };
+
+  @override
+  Future<Map<String, dynamic>> updateIncidentDetails(
+    Map<String, dynamic> data,
+    int version,
+    String opId,
+  ) async {
+    updatedData = Map<String, dynamic>.from(data);
+    detailData = Map<String, dynamic>.from(data);
+    detailsVersion++;
+    return {'ok': true, 'version': detailsVersion};
+  }
+
+  @override
+  Future<Incident> fetchIncident(String id) async => Incident(
+    id: id,
+    number: 'n',
+    status: 'active',
+    createdAt: 1,
+    lastActivityAt: 1,
+    info: {
+      'original_category': detailData['original_category']?.toString() ?? '',
+    },
+  );
+
+  @override
+  Future<List<IncidentForce>> fetchIncidentForces({
+    String? forIncidentId,
+  }) async => [];
+}
+
 class _HangingChatApi extends _FakeApi {
   bool canceled = false;
 
@@ -3670,7 +3716,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('活动警情提供登记力量及双导入入口', (tester) async {
+    testWidgets('活动警情提供登记、信息导入和警情调整入口', (tester) async {
       final c = _FakeController()
         ..api = _FakeApi()
         ..fakeCanReadKeySites = true
@@ -3686,7 +3732,7 @@ void main() {
         await tester.tap(find.byKey(const Key('toggle-incident-card')));
         await tester.pumpAndSettle();
       }
-      for (final label in ['登记力量', '图片导入', '文字导入']) {
+      for (final label in ['登记力量', '信息导入', '警情调整']) {
         expect(find.text(label), findsOneWidget);
         final button = find
             .ancestor(of: find.text(label), matching: find.byType(TextButton))
@@ -3697,8 +3743,60 @@ void main() {
         tester.getTopLeft(find.text('登记力量')).dy,
         lessThan(tester.getTopLeft(find.text('关联重点单位')).dy),
       );
-      // 水印相机已有首页悬浮主入口，展开工具栏不再重复。
-      expect(find.text('水印相机'), findsNothing);
+      expect(find.text('图片导入'), findsNothing);
+      expect(find.text('文字导入'), findsNothing);
+
+      await tester.tap(find.text('信息导入'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ListTile, '拍照'), findsOneWidget);
+      expect(find.widgetWithText(ListTile, '从手机相册选择'), findsOneWidget);
+      expect(find.widgetWithText(ListTile, '文字导入'), findsOneWidget);
+    });
+
+    testWidgets('警情调整可修改灾情等级并刷新当前警情', (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final api = _AdjustApi();
+      final c = _FakeController()
+        ..api = api
+        ..currentIncident = const Incident(
+          id: 'i1',
+          number: 'n',
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+          info: {'original_category': '一级火灾扑救'},
+        );
+      await pumpTask(tester, c, textScale: 1.3);
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('警情调整'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('警情调整'),
+        ),
+        findsOneWidget,
+      );
+      final field = tester.widget<TextField>(
+        find.byKey(const Key('incident-level-field')),
+      );
+      expect(field.controller?.text, '一级火灾扑救');
+
+      await tester.tap(find.text('二级火灾扑救'));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('incident-level-save')));
+      await tester.pumpAndSettle();
+
+      expect(api.updatedData?['original_category'], '二级火灾扑救');
+      expect(api.updatedData?['level'], '二级火灾扑救');
+      expect(c.currentIncident?.info['original_category'], '二级火灾扑救');
+      expect(find.textContaining('二级火灾扑救'), findsWidgets);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('窄屏放大字体下导入工具栏不溢出且保留触控范围', (tester) async {
@@ -3740,7 +3838,7 @@ void main() {
       await tester.pump();
       await tester.tap(find.byKey(const Key('toggle-incident-card')));
       await tester.pumpAndSettle();
-      for (final label in ['登记力量', '图片导入', '文字导入']) {
+      for (final label in ['登记力量', '信息导入', '警情调整']) {
         expect(find.text(label), findsOneWidget);
         final button = find
             .ancestor(of: find.text(label), matching: find.byType(TextButton))

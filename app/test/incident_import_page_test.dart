@@ -175,7 +175,7 @@ void main() {
     expect(forces[1]['personnel_count_known'], isFalse);
     expect(api.opId, isNotEmpty);
   });
-  testWidgets('图片入口同时提供拍照和相册', (tester) async {
+  testWidgets('信息导入入口提供拍照、相册和文字三种方式', (tester) async {
     final api = ImportApi();
     await tester.pumpWidget(
       MaterialApp(
@@ -183,13 +183,14 @@ void main() {
         home: IncidentImportPage(
           api: api,
           incident: incident,
-          fromImages: true,
+          chooseSourceOnOpen: true,
         ),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('拍照导入'), findsOneWidget);
-    expect(find.text('从相册选择'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, '拍照'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, '从手机相册选择'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, '文字导入'), findsOneWidget);
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
   });

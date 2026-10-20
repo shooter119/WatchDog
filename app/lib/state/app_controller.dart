@@ -2009,6 +2009,38 @@ class AppController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> updateIncidentLevel(String level) async {
+    final a = api;
+    final incident = currentIncident;
+    if (a == null || incident == null) throw StateError('未选择警情');
+    final value = level.trim();
+    if (value.isEmpty || value.length > 80) {
+      throw const FormatException('灾情等级须为1至80字');
+    }
+    final scoped = a.forIncident(incident.id);
+    try {
+      final detail = await scoped.fetchIncidentDetails();
+      final data = Map<String, dynamic>.from(detail['data'] as Map? ?? {});
+      final version = (detail['version'] as num?)?.toInt() ?? 0;
+      await scoped.updateIncidentDetails(
+        {...data, 'original_category': value, 'level': value},
+        version,
+        'incident-level-${DateTime.now().microsecondsSinceEpoch}',
+      );
+    } finally {
+      if (!identical(scoped, a)) scoped.dispose();
+    }
+    if (!identical(api, a) || currentIncident?.id != incident.id) return;
+    final updated = await a.fetchIncident(incident.id);
+    final rows = await a.fetchIncidentForces();
+    if (!identical(api, a) || currentIncident?.id != incident.id || _disposed) {
+      return;
+    }
+    currentIncident = updated;
+    forces = rows;
+    _notify();
+  }
+
   Future<void> saveForce({
     String? forceId,
     required String stationName,

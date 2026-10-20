@@ -307,7 +307,7 @@ void main() {
     expect(find.text('现场工具'), findsOneWidget);
     expect(find.text('单机模式'), findsOneWidget);
     expect(find.text('重点单位'), findsOneWidget);
-    expect(find.text('现场拍摄'), findsOneWidget);
+    expect(find.text('水印相机'), findsOneWidget);
     expect(find.text('按住下方按钮说话'), findsNothing);
     expect(find.byType(FloatingActionButton), findsNothing);
     expect(
