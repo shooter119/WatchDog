@@ -22,7 +22,7 @@ echo "验证日志：$logs"
 node - "$logs" <<'JS'
 const fs = require('node:fs'), assert = require('node:assert/strict');
 const root = process.argv[2], log = fs.readFileSync(`${root}/backend.log`, 'utf8');
-assert.ok(Number(/ℹ tests (\d+)/.exec(log)?.[1]) >= 263); assert.match(log, /ℹ fail 0/);
+assert.ok(Number(/ℹ tests (\d+)/.exec(log)?.[1]) >= 264); assert.match(log, /ℹ fail 0/);
 const done = fs.readFileSync(`${root}/app.jsonl`, 'utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return {}; } });
 assert.ok(done.filter(item => item.type === 'testDone' && !item.hidden && !item.skipped).length >= 354);
 assert.ok(done.some(item => item.type === 'done' && item.success === true));

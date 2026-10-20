@@ -20,7 +20,12 @@ function createIncidentKeySites(store, db, sites, now = Date.now) {
       FROM incident_key_site_references r JOIN key_site_versions v ON v.id=r.version_id
       JOIN unit_members m ON m.id=r.first_linked_by WHERE r.incident_id=$1 ORDER BY r.first_linked_at DESC,v.version DESC`, [incidentId]);
     return { link: incident.key_site_link, revision: incident.key_site_link_revision, latestVersion,
-      active, newVersionAvailable: Boolean(incident.key_site_link && latestVersion > incident.key_site_link.version), history };
+      active, newVersionAvailable: Boolean(incident.key_site_link && latestVersion > incident.key_site_link.version),
+      history: history.map(row => {
+        const timestamp = Number(row.first_linked_at);
+        if (!Number.isSafeInteger(timestamp)) fail('历史关联时间无效', 'KEY_SITE_INVALID_TIMESTAMP', 500);
+        return { ...row, first_linked_at: timestamp };
+      }) };
   }
   async function change(memberId, incidentId, input, { operationId, deviceId = null } = {}) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(operationId || '')) fail('缺少合法操作编号，请重新提交', 'KEY_SITE_OPERATION_REQUIRED', 400);

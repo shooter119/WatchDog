@@ -383,3 +383,22 @@ test('发布毫秒时间在列表、最近查看、版本和历史HTTP响应中�
     assert.equal(record.published_at, timestamp, route);
   }
 });
+
+test('警情历史引用首次关联时间在HTTP响应中为JSON数字', async () => {
+  const db = require('../src/db-postgres');
+  const links = require('../src/incident-key-sites').createIncidentKeySites(store, db, sites);
+  const site = await create('关联历史时间类型合成样例');
+  const content = shape.emptyContent(); content.cards.push({ title: '合成记录', body: '接口契约回归' });
+  await save(site, content); await publish(site);
+  const incident = await db.createIncident({ unitId: 'one' });
+  await links.change('manager', incident.id, { siteId: site.id, version: 1, revision: 0,
+    confirmName: site.name, confirmAddress: site.address }, { operationId: 'history-time-link' });
+  const state = await links.read('manager', incident.id);
+  assert.equal(typeof state.history[0].first_linked_at, 'number');
+  assert.equal(state.history[0].first_linked_at, state.link.linkedAt);
+  const response = await request(`/api/incidents/${incident.id}/key-site`, { session: null, member: 'manager' });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(typeof data.history[0].first_linked_at, 'number');
+  assert.equal(data.history[0].first_linked_at, state.link.linkedAt);
+});
