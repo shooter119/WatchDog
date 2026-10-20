@@ -173,3 +173,16 @@ test('授权变更与实时通知同事务提交，通知失败回滚权限，�
   assert.equal(await eventAuth.identity('event-member'), undefined);
   assert.equal((await store.query("SELECT count(*)::int AS n FROM sync_events WHERE event_type='admin.capability_changed'")).rows[0].n, 2);
 });
+
+test('全部平台成员失效时私有命令可指定已有成员恢复，失效会话不能复活', async () => {
+  const previous = await login('platform');
+  await store.query("UPDATE unit_members SET status='disabled' WHERE id='platform'");
+  await rejects(() => auth.session(previous.token), 'ADMIN_SESSION_INVALID');
+  await auth.setGrant(null, 'ordinary', 'platform_admin', { bootstrap: true });
+  assert.equal((await auth.identity('ordinary')).admin_role, 'platform_admin');
+  await rejects(() => auth.setGrant('ordinary', 'ordinary', null), 'ADMIN_LAST_PLATFORM');
+  await rejects(() => auth.setGrant(null, 'other', 'platform_admin', { bootstrap: true }), 'ADMIN_ALREADY_INITIALIZED');
+  await store.query("UPDATE unit_members SET status='active' WHERE id='platform'");
+  await rejects(() => auth.session(previous.token), 'ADMIN_SESSION_INVALID');
+  await auth.setGrant('platform', 'ordinary', null);
+});

@@ -9,7 +9,7 @@
 
 ## 重点单位后台兼容部署
 
-使用 `scripts/deploy-key-sites.sh --dry-run` 查看范围；实际执行要求干净已提交工作区，并重新通过后端252+、App352+与analyze零问题门禁。脚本只部署后端和管理端路由，不改版本、正式APK、tag、官网或OTA。
+使用 `scripts/deploy-key-sites.sh --dry-run` 查看范围；实际执行要求干净已提交工作区，并重新通过后端253+、App353+与analyze零问题门禁。脚本只部署后端和管理端路由，不改版本、正式APK、tag、官网或OTA。
 
 目标默认 `ali:/opt/watchdog`，可用 `WATCHDOG_DEPLOY_HOST` / `WATCHDOG_DEPLOY_ROOT` 指定。先备份私有源码配置并保留旧Docker镜像，校验Caddy并构建新镜像；构建成功后短暂停止后端，备份PostgreSQL自定义格式dump和容器 `/app/data`，验证dump目录可读取。旧容器没有持久卷时，将资料迁入 `vps_import-data`，不覆盖已有非空目标卷；后续部署继续使用已有卷。数据库、官网与Caddy容器不随backend重建。1.6GiB VPS将文档转换和上传并发限制为1，AI并发为1。
 
@@ -20,3 +20,5 @@
 匿名公网检查不能证明已授权手机扫码、真实资料试点或实机操作成功。首个平台管理员必须另行指定已有有效成员ID，初始化命令不自动选择单位admin。
 
 国内VPS构建通过 `DEBIAN_MIRROR=https://mirrors.aliyun.com` 使用HTTPS软件镜像；默认Docker构建仍采用Debian官方HTTPS源。Node slim未预装系统CA时，以Node内置公共根证书建立HTTPS信任，再安装Debian `ca-certificates`；不关闭TLS校验或APT包签名校验。
+
+2026-10-20 已完成资料后台部署与匿名公网验收，当前有效备份为 `/opt/watchdog/backups/key-sites-20261020T013238Z/`。授权手机扫码、真实资料试点与Android实机尚未完成，详见 [验收记录](ADMIN-ACCEPTANCE.md)。

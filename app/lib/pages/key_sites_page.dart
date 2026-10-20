@@ -860,6 +860,7 @@ class KeySiteImage extends StatefulWidget {
   final KeySiteVersion site;
   final String attachmentId, resource;
   final BoxFit fit;
+  final ValueChanged<Object?>? onResult;
   final String? incidentId;
   const KeySiteImage({
     super.key,
@@ -868,6 +869,7 @@ class KeySiteImage extends StatefulWidget {
     required this.attachmentId,
     required this.resource,
     this.fit = BoxFit.contain,
+    this.onResult,
     this.incidentId,
   });
   @override
@@ -877,6 +879,7 @@ class KeySiteImage extends StatefulWidget {
 class _KeySiteImageState extends State<KeySiteImage> {
   late Future<Uint8List> _bytes;
   MemoryImage? _provider;
+  bool _reportedSuccess = false, _reportedFailure = false;
   @override
   void initState() {
     super.initState();
@@ -896,7 +899,26 @@ class _KeySiteImageState extends State<KeySiteImage> {
     super.dispose();
   }
 
+  void _report(Object? error) {
+    if (widget.onResult == null ||
+        (error == null ? _reportedSuccess : _reportedFailure)) {
+      return;
+    }
+    if (error == null) {
+      _reportedSuccess = true;
+    } else {
+      _reportedFailure = true;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onResult?.call(error);
+    });
+  }
+
   Widget _failure(Object error) {
+    _report(error);
+    if (widget.onResult != null) {
+      return const ColoredBox(color: Color(0xffe2e2e2));
+    }
     void retry() => setState(() {
       _provider?.evict();
       _provider = null;
@@ -922,8 +944,11 @@ class _KeySiteImageState extends State<KeySiteImage> {
         return _failure(snapshot.error!);
       }
       if (!snapshot.hasData) {
-        return const Center(child: CircularProgressIndicator());
+        return widget.onResult == null
+            ? const Center(child: CircularProgressIndicator())
+            : const ColoredBox(color: Color(0xffeeeeee));
       }
+      _report(null);
       _provider ??= MemoryImage(snapshot.data!);
       return Image(
         image: _provider!,
@@ -1003,6 +1028,18 @@ class _PixelMapCanvas extends StatefulWidget {
 }
 
 class _PixelMapCanvasState extends State<_PixelMapCanvas> {
+  Object? _failure;
+  bool _loaded = false;
+  int _retry = 0;
+  void _tileResult(Object? error) {
+    if (!mounted) return;
+    if (error != null && _failure == null) {
+      setState(() => _failure = error);
+    } else if (error == null && !_loaded) {
+      setState(() => _loaded = true);
+    }
+  }
+
   Size? _viewport;
   double _fit = 1;
   @override
@@ -1024,14 +1061,40 @@ class _PixelMapCanvasState extends State<_PixelMapCanvas> {
             ..setEntry(0, 3, (size.width - width * _fit) / 2)
             ..setEntry(1, 3, (size.height - height * _fit) / 2);
         }
-        return ClipRect(
-          child: InteractiveViewer.builder(
-            transformationController: widget.transform,
-            minScale: _fit * 0.8,
-            maxScale: math.max(4, _fit * 8),
-            boundaryMargin: const EdgeInsets.all(256),
-            builder: (context, _) => _tiles(size, width, height),
-          ),
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRect(
+              child: InteractiveViewer.builder(
+                transformationController: widget.transform,
+                minScale: _fit * 0.8,
+                maxScale: math.max(4, _fit * 8),
+                boundaryMargin: const EdgeInsets.all(256),
+                builder: (context, _) => _tiles(size, width, height),
+              ),
+            ),
+            if (!_loaded && _failure == null)
+              const Center(child: CircularProgressIndicator()),
+            if (_failure != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: MaterialBanner(
+                  content: Text('部分图纸加载失败：${keySiteError(_failure!)}'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _failure = null;
+                        _loaded = false;
+                        _retry++;
+                      }),
+                      child: const Text('重试地图'),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         );
       },
     );
@@ -1068,7 +1131,8 @@ class _PixelMapCanvasState extends State<_PixelMapCanvas> {
                 width: span,
                 height: span,
                 child: KeySiteImage(
-                  key: ValueKey('${widget.page}:$zoom:$x:$y'),
+                  key: ValueKey('${widget.page}:$_retry:$zoom:$x:$y'),
+                  onResult: _tileResult,
                   api: widget.api,
                   site: widget.site,
                   attachmentId: widget.attachmentId,

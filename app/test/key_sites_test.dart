@@ -38,6 +38,7 @@ class FakeApi extends ApiClient {
   bool fail = false;
   KeySiteVersion? fixture;
   final resources = <String>[];
+  bool failImages = false;
   @override
   Future<Uint8List> fetchKeySiteImage(
     String siteId,
@@ -47,6 +48,7 @@ class FakeApi extends ApiClient {
     String? incident,
   }) async {
     resources.add(resource);
+    if (failImages) throw const SocketException('synthetic offline');
     return base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
     );
@@ -316,6 +318,56 @@ void main() {
     controller.revoke();
     await tester.pumpAndSettle();
     expect(find.text('合成分区图.pdf'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
+
+  testWidgets('地图缩至全图时，加载错误和重试在像素变换之外保持可读可点', (tester) async {
+    final api = FakeApi()..failImages = true;
+    final controller = FakeController(api);
+    final attachment = <String, dynamic>{
+      'id': 'map',
+      'filename': '合成大图.pdf',
+      'metadata': {
+        'pages': 1,
+        'mapPages': {
+          '1': {'width': 6000, 'height': 3000, 'maxZoom': 5},
+        },
+      },
+    };
+    final site = KeySiteVersion(
+      siteId: 'one',
+      version: 1,
+      latestVersion: 1,
+      publishedAt: 1,
+      active: true,
+      profile: {'name': '合成单位'},
+      content: {},
+      attachments: [attachment],
+    );
+    api.fixture = site;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: KeySiteDocumentPage(
+          controller: controller,
+          site: site,
+          attachment: attachment,
+          map: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('网络未连接'), findsOneWidget);
+    final retry = find.widgetWithText(TextButton, '重试地图');
+    expect(tester.getSize(retry).height, greaterThanOrEqualTo(48));
+    final before = api.resources.length;
+    api.failImages = false;
+    await tester.tap(retry);
+    await tester.pumpAndSettle();
+    expect(api.resources.length, greaterThan(before));
+    expect(find.text('重试地图'), findsNothing);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
     api.dispose();
