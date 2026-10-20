@@ -703,6 +703,7 @@ class _SettingsPageState extends State<SettingsPage> {
               const Spacer(),
               ConnectionStatus(
                 connected: !widget.controller.connectionLost,
+                localOnly: widget.controller.isGuest,
                 syncing: widget.controller.syncing,
                 syncError: widget.controller.syncError,
                 onRetry: widget.controller.refreshNow,

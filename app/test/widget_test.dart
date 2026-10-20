@@ -3173,6 +3173,30 @@ void main() {
       expect(retried, 1);
     });
 
+    testWidgets('游客连接状态明确单机且不提供同步重试', (tester) async {
+      var retries = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: ConnectionStatus(
+                connected: true,
+                syncing: true,
+                syncError: '旧网络错误',
+                localOnly: true,
+                onRetry: () => retries++,
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('单机模式'), findsOneWidget);
+      expect(find.text('已连接'), findsNothing);
+      expect(find.text('同步中'), findsNothing);
+      await tester.tap(find.byType(ConnectionStatus));
+      expect(retries, 0);
+    });
+
     testWidgets('VoiceButton 尊重系统减少动效偏好', (tester) async {
       await tester.pumpWidget(
         MaterialApp(

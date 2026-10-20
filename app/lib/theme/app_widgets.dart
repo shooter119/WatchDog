@@ -562,6 +562,7 @@ class _PulseGlowState extends State<PulseGlow>
 /// 红/绿切换仍由 AppController.connectionLost 平滑判定（30 秒无成功才转红）。
 class ConnectionStatus extends StatelessWidget {
   final bool connected;
+  final bool localOnly;
   final bool syncing;
   final String? syncError;
   final VoidCallback? onRetry;
@@ -569,6 +570,7 @@ class ConnectionStatus extends StatelessWidget {
   const ConnectionStatus({
     super.key,
     required this.connected,
+    this.localOnly = false,
     this.syncing = false,
     this.syncError,
     this.onRetry,
@@ -576,9 +578,15 @@ class ConnectionStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFailed = syncError != null && !syncing;
-    final canRetry = !syncing && onRetry != null && (!connected || isFailed);
-    final (label, icon, color) = syncing
+    final isFailed = !localOnly && syncError != null && !syncing;
+    final canRetry =
+        !localOnly && !syncing && onRetry != null && (!connected || isFailed);
+    final pillHeight = (MediaQuery.textScalerOf(context).scale(11) * 1.4 + 8)
+        .clamp(24.0, 64.0)
+        .toDouble();
+    final (label, icon, color) = localOnly
+        ? ('单机模式', Icons.phone_android_outlined, AppColors.textSecondary)
+        : syncing
         ? ('同步中', Icons.cloud_sync_outlined, AppColors.textSecondary)
         : isFailed
         ? ('同步失败', Icons.cloud_off_outlined, AppColors.caution)
@@ -604,7 +612,7 @@ class ConnectionStatus extends StatelessWidget {
       container: true,
       button: canRetry,
       enabled: canRetry,
-      label: syncError == null ? label : '$label：$syncError',
+      label: localOnly || syncError == null ? label : '$label：$syncError',
       hint: canRetry ? '点击重试同步' : null,
       child: Tooltip(
         message: canRetry ? '重试同步' : label,
@@ -612,15 +620,20 @@ class ConnectionStatus extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onTap: canRetry ? onRetry : null,
           child: ConstrainedBox(
-            // 让视觉高度参与页头排版，避免 48dp 点击热区把胶囊垂直居中
-            // 后与左侧标题错位；横向仍保留足够的点击宽度。
-            constraints: const BoxConstraints(minWidth: 48),
-            child: Center(
+            // 重试按钮保留48dp热区，胶囊固定顶部对齐，避免标题随点击区域错位。
+            constraints: BoxConstraints(
+              minWidth: 48,
+              minHeight: canRetry ? 48 : pillHeight,
+            ),
+            child: Align(
+              alignment: Alignment.topCenter,
+              widthFactor: 1,
+              heightFactor: 1,
               child: Transform.translate(
                 // 标题字面顶部有字体内置留白，视觉胶囊下移后与字面边缘对齐。
                 offset: const Offset(0, 1),
                 child: Container(
-                  height: 24,
+                  height: pillHeight,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
                     color: AppColors.surface,

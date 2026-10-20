@@ -1286,6 +1286,7 @@ class HomePageState extends State<HomePage> {
               MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
           final connectionStatus = ConnectionStatus(
             connected: !widget.controller.connectionLost,
+            localOnly: widget.controller.isGuest,
             syncing: widget.controller.syncing,
             syncError: widget.controller.syncError,
             onRetry: widget.controller.refreshNow,
