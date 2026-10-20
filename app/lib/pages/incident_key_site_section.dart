@@ -144,9 +144,7 @@ class _IncidentLinkState extends State<_IncidentLink> {
                   title: Text(remove ? '解除重点单位关联' : '核对重点单位'),
                   content: SingleChildScrollView(
                     child: Text(
-                      remove
-                          ? '解除后仍保留警情历史引用和操作记录。'
-                          : '${site!.name}\n${site.address}\n\n确认关联已发布资料 v${site.version}？新版发布后需人工核对更新。',
+                      remove ? '解除后仍保留警情历史引用和操作记录。' : '确认关联“${site!.name}”？',
                     ),
                   ),
                   actions: [
@@ -207,7 +205,6 @@ class _IncidentLinkState extends State<_IncidentLink> {
     final link = raw is Map
         ? IncidentKeySiteLink.fromJson(Map<String, dynamic>.from(raw))
         : (_state == null ? widget.incident.keySiteLink : null);
-    final history = _state?['history'] as List? ?? [];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
@@ -215,9 +212,7 @@ class _IncidentLinkState extends State<_IncidentLink> {
         children: [
           const Text('关联重点单位', style: TextStyle(fontWeight: FontWeight.w700)),
           if (link != null) ...[
-            Text(
-              '${link.name}\n${link.address}\n资料 v${link.version} · ${link.linkedByName}确认',
-            ),
+            Text(link.name, softWrap: true),
             if (_state?['newVersionAvailable'] == true)
               const Text('已有新版资料，请人工核对后更新'),
             if (_state?['active'] == false) const Text('重点单位已停用，保留历史引用'),
@@ -257,25 +252,6 @@ class _IncidentLinkState extends State<_IncidentLink> {
                 ),
             ],
           ),
-          if (history.isNotEmpty)
-            ExpansionTile(
-              title: const Text('历史资料引用'),
-              tilePadding: EdgeInsets.zero,
-              children: history.map((item) {
-                final row = item as Map;
-                final profile = row['profile'] as Map;
-                return ListTile(
-                  title: Text('${profile['name']} · v${row['version']}'),
-                  subtitle: Text(
-                    '${profile['address']}\n${row['first_linked_by']} · ${DateTime.fromMillisecondsSinceEpoch((row['first_linked_at'] as num).toInt())}',
-                  ),
-                  onTap: () => _open(
-                    row['site_id'] as String,
-                    (row['version'] as num).toInt(),
-                  ),
-                );
-              }).toList(),
-            ),
           if (_saving) const LinearProgressIndicator(),
         ],
       ),

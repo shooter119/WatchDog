@@ -1315,19 +1315,24 @@ class HomePageState extends State<HomePage> {
                 );
           final taskBar = incident == null || compactEntryFlow
               ? null
-              : _TaskBar(
-                  controller: widget.controller,
-                  incident: incident,
-                  forces: widget.controller.forces,
-                  onRename: _renameIncident,
-                  onAddForce: () => _editForce(),
-                  onImageImport: () => _openImport(true),
-                  onTextImport: () => _openImport(false),
-                  onDetails: _openDetails,
-                  onEditForce: (force) => _editForce(force),
-                  onRemoveForce: (force) => _removeForce(force),
-                  onArchive: _confirmArchive,
-                  onExit: _confirmExitIncident,
+              : ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: max(240, min(480, viewport.maxHeight * 0.58)),
+                  ),
+                  child: _TaskBar(
+                    controller: widget.controller,
+                    incident: incident,
+                    forces: widget.controller.forces,
+                    onRename: _renameIncident,
+                    onAddForce: () => _editForce(),
+                    onImageImport: () => _openImport(true),
+                    onTextImport: () => _openImport(false),
+                    onDetails: _openDetails,
+                    onEditForce: (force) => _editForce(force),
+                    onRemoveForce: (force) => _removeForce(force),
+                    onArchive: _confirmArchive,
+                    onExit: _confirmExitIncident,
+                  ),
                 );
 
           // 横屏可用高度通常不足以同时放下警情卡、结果区和底部导航。
@@ -3123,20 +3128,12 @@ class _IncidentPicker extends StatelessWidget {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      SizedBox(
-                                        height: 25,
-                                        width: double.infinity,
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          alignment: Alignment.centerLeft,
-                                          child: Text(
-                                            incident.displayName,
-                                            maxLines: 1,
-                                            style: const TextStyle(
-                                              fontSize: 17,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
+                                      Text(
+                                        incident.displayName,
+                                        softWrap: true,
+                                        style: const TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w800,
                                         ),
                                       ),
                                       const SizedBox(height: 5),
@@ -3274,6 +3271,7 @@ class _TaskBarState extends State<_TaskBar> {
       boxShadow: AppShadow.card,
     ),
     child: Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Material(
@@ -3295,12 +3293,11 @@ class _TaskBarState extends State<_TaskBar> {
                         children: [
                           Text(
                             widget.incident.displayName,
+                            softWrap: true,
                             style: const TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w800,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -3344,161 +3341,194 @@ class _TaskBarState extends State<_TaskBar> {
             ),
           ),
         ),
-        if (_expanded) ...[
-          Row(
-            children: [
-              Icon(
-                Icons.schedule_outlined,
-                size: 14,
-                color: AppColors.textTertiary,
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  widget.incident.number,
-                  style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              IconButton(
-                key: const Key('rename-incident'),
-                onPressed: widget.onRename,
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                tooltip: '修改名称',
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              ),
-            ],
-          ),
-          if (widget.incident.info.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              [
-                widget.incident.info['original_category'],
-                widget.incident.info['location'],
-              ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-          ],
-          IncidentKeySiteSection(
-            controller: widget.controller,
-            incident: widget.incident,
-          ),
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.surfaceSubtle.withValues(alpha: .5),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                _IncidentAction(
-                  label: '登记力量',
-                  icon: Icons.group_add_outlined,
-                  onTap: widget.onAddForce,
-                ),
-                const SizedBox(height: 18, child: VerticalDivider(width: 1)),
-                _IncidentAction(
-                  label: '图片导入',
-                  icon: Icons.image_outlined,
-                  onTap: widget.onImageImport,
-                ),
-                const SizedBox(height: 18, child: VerticalDivider(width: 1)),
-                _IncidentAction(
-                  label: '文字导入',
-                  icon: Icons.description_outlined,
-                  onTap: widget.onTextImport,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  '参战力量',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              Text(
-                '${widget.forces.length}支队伍',
-                style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
-              ),
-            ],
-          ),
-          if (widget.forces.isEmpty)
-            Padding(
-              padding: EdgeInsets.only(top: 1),
-              child: Text(
-                '尚未登记参战力量',
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1.2,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < widget.forces.length; i++) ...[
-                  _ForceRow(
-                    force: widget.forces[i],
-                    onEdit: () => widget.onEditForce(widget.forces[i]),
-                    onRemove: () => widget.onRemoveForce(widget.forces[i]),
+        if (_expanded)
+          Flexible(
+            fit: FlexFit.loose,
+            child: SingleChildScrollView(
+              key: const Key('incident-card-scroll'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.schedule_outlined,
+                        size: 14,
+                        color: AppColors.textTertiary,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          widget.incident.number,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textTertiary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        key: const Key('rename-incident'),
+                        onPressed: widget.onRename,
+                        icon: const Icon(Icons.edit_outlined, size: 16),
+                        tooltip: '修改名称',
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
+                        ),
+                      ),
+                    ],
                   ),
-                  if (i < widget.forces.length - 1) const SizedBox(height: 8),
+                  if (widget.incident.info.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      [
+                            widget.incident.info['original_category'],
+                            widget.incident.info['location'],
+                          ]
+                          .whereType<String>()
+                          .where((s) => s.isNotEmpty)
+                          .join(' · '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                  IncidentKeySiteSection(
+                    controller: widget.controller,
+                    incident: widget.incident,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceSubtle.withValues(alpha: .5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        _IncidentAction(
+                          label: '登记力量',
+                          icon: Icons.group_add_outlined,
+                          onTap: widget.onAddForce,
+                        ),
+                        const SizedBox(
+                          height: 18,
+                          child: VerticalDivider(width: 1),
+                        ),
+                        _IncidentAction(
+                          label: '图片导入',
+                          icon: Icons.image_outlined,
+                          onTap: widget.onImageImport,
+                        ),
+                        const SizedBox(
+                          height: 18,
+                          child: VerticalDivider(width: 1),
+                        ),
+                        _IncidentAction(
+                          label: '文字导入',
+                          icon: Icons.description_outlined,
+                          onTap: widget.onTextImport,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '参战力量',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      Text(
+                        '${widget.forces.length}支队伍',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (widget.forces.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.only(top: 1),
+                      child: Text(
+                        '尚未登记参战力量',
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.2,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var i = 0; i < widget.forces.length; i++) ...[
+                          _ForceRow(
+                            force: widget.forces[i],
+                            onEdit: () => widget.onEditForce(widget.forces[i]),
+                            onRemove: () =>
+                                widget.onRemoveForce(widget.forces[i]),
+                          ),
+                          if (i < widget.forces.length - 1)
+                            const SizedBox(height: 8),
+                        ],
+                      ],
+                    ),
+                  TextButton(
+                    onPressed: widget.onDetails,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      padding: EdgeInsets.zero,
+                    ),
+                    child: const Row(
+                      children: [
+                        Expanded(child: Text('警情详情')),
+                        Icon(Icons.chevron_right, size: 18),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: widget.onExit,
+                          icon: const Icon(Icons.logout_outlined, size: 18),
+                          label: const Text('退出当前警情'),
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            minimumSize: const Size.fromHeight(48),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: widget.onArchive,
+                          icon: const Icon(Icons.archive_outlined, size: 18),
+                          label: const Text('归档警情'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.alarm,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            minimumSize: const Size.fromHeight(48),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
-              ],
-            ),
-          TextButton(
-            onPressed: widget.onDetails,
-            style: TextButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-              padding: EdgeInsets.zero,
-            ),
-            child: const Row(
-              children: [
-                Expanded(child: Text('警情详情')),
-                Icon(Icons.chevron_right, size: 18),
-              ],
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: widget.onExit,
-                  icon: const Icon(Icons.logout_outlined, size: 18),
-                  label: const Text('退出当前警情'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    minimumSize: const Size.fromHeight(48),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: widget.onArchive,
-                  icon: const Icon(Icons.archive_outlined, size: 18),
-                  label: const Text('归档警情'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.alarm,
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    minimumSize: const Size.fromHeight(48),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ],
     ),
   );

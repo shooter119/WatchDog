@@ -442,10 +442,6 @@
           for (const entry of saved.content[key]) {
             preview.append(node('strong', entry.title), node('p', entry.body));
             for (const field of recordFields(key, entry.kind)) if (entry.fields[field]) preview.append(node('p', `${fieldLabels[field] || field}：${entry.fields[field]}`));
-            for (const source of entry.sources) {
-              const file = current.attachments.find(item => item.id === source.attachmentId);
-              if (file) preview.append(link(`查看出处：${file.filename} · 第${source.page || 1}页`, `/api/admin/key-sites/${current.site.id}/attachments/${file.id}/${file.mime.startsWith('image/') ? `pages/${source.page || 1}.jpg` : `document.pdf#page=${source.page || 1}`}`));
-            }
           }
         }
         panel.querySelector('.version-preview')?.remove(); panel.append(preview); preview.scrollIntoView({ block: 'nearest' });

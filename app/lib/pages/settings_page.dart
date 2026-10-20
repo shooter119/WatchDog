@@ -921,14 +921,16 @@ class _SettingsPageState extends State<SettingsPage> {
     final unit = authenticated && _unitName.trim().isNotEmpty
         ? _unitName.trim()
         : '未选择单位';
-    final role = _unitRole == 'admin'
-        ? '单位管理员'
-        : _unitRole == 'manager'
-        ? '单位管理成员'
-        : '普通成员';
     final backend = authenticated && widget.controller.canReadKeySites
         ? widget.controller.adminCapability
         : null;
+    final level = guest
+        ? '游客'
+        : !authenticated
+        ? '未认证'
+        : _unitRole == 'admin' || _unitRole == 'manager' || backend != null
+        ? '管理员'
+        : '认证用户';
     return AppCard(
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -982,20 +984,17 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      guest ? '单机体验 · 加入单位后可查阅资料' : unit,
+                      unit,
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         height: 1.4,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    if (!guest)
-                      Text(authenticated ? '单位角色：$role · 已认证' : '认证状态：未认证'),
-                    if (backend != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text('后台角色：${backend.roleLabel}'),
-                      ),
+                    Text(
+                      level,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ],
                 ),
               ),

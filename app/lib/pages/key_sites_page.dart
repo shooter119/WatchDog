@@ -613,47 +613,37 @@ class _ModuleContentState extends State<_ModuleContent> {
                             ),
                           ),
                         ),
-                    if (entry.sources.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 12),
-                        child: Text('人工核对资料，未附原文来源'),
-                      ),
-                    ...entry.sources.map((source) {
-                      final attachments = widget.site.attachments.where(
-                        (a) => a['id'] == source.attachmentId,
-                      );
-                      final attachment = attachments.isEmpty
-                          ? null
-                          : attachments.first;
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: OutlinedButton.icon(
-                          onPressed: attachment == null
-                              ? null
-                              : () => Navigator.push<void>(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => KeySiteDocumentPage(
-                                      controller: widget.controller,
-                                      site: widget.site,
-                                      attachment: attachment,
-                                      initialPage: source.page,
-                                      incidentId: widget.incidentId,
-                                      map: widget.module == 'maps',
+                    if (widget.module == 'maps')
+                      ...entry.sources.map((source) {
+                        final attachments = widget.site.attachments.where(
+                          (a) => a['id'] == source.attachmentId,
+                        );
+                        final attachment = attachments.isEmpty
+                            ? null
+                            : attachments.first;
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: OutlinedButton.icon(
+                            onPressed: attachment == null
+                                ? null
+                                : () => Navigator.push<void>(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => KeySiteDocumentPage(
+                                        controller: widget.controller,
+                                        site: widget.site,
+                                        attachment: attachment,
+                                        initialPage: source.page,
+                                        incidentId: widget.incidentId,
+                                        map: true,
+                                      ),
                                     ),
                                   ),
-                                ),
-                          icon: Icon(
-                            widget.module == 'maps'
-                                ? Icons.map_outlined
-                                : Icons.description_outlined,
+                            icon: const Icon(Icons.map_outlined),
+                            label: const Text('查看地图'),
                           ),
-                          label: Text(
-                            '${widget.module == 'maps' ? '查看图纸' : '原文出处'}：${attachment?['filename'] ?? '附件不可用'} · 第 ${source.page} 页${source.paragraph.isEmpty ? '' : ' · 段落 ${source.paragraph}'}',
-                          ),
-                        ),
-                      );
-                    }),
+                        );
+                      }),
                   ],
                 ),
               ),

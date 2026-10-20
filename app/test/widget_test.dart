@@ -276,6 +276,13 @@ class _FakeApi extends ApiClient {
   Future<List<ChatMessage>> fetchChatMessages() async => chatHistory;
 
   @override
+  Future<Map<String, dynamic>> fetchIncidentKeySite(String id) async => {
+    'link': null,
+    'revision': 0,
+    'history': [],
+  };
+
+  @override
   Future<ChatMessage> sendChatMessage(
     String message, {
     String? opId,
@@ -1047,7 +1054,8 @@ void main() {
       await _scrollToVisible(tester, list, find.text('人员与热词'));
 
       expect(find.byType(CircleAvatar), findsOneWidget);
-      expect(tester.widget<Text>(find.text('未认证')).style?.fontSize, 20);
+      expect(tester.widget<Text>(find.text('未认证').first).style?.fontSize, 20);
+      expect(find.text('未认证'), findsNWidgets(2));
       const labels = ['水印设置', '人员与热词'];
       for (final label in labels) {
         final card = find
@@ -1195,6 +1203,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('游客模式'), findsOneWidget);
+      expect(find.text('未选择单位'), findsOneWidget);
+      expect(find.text('游客'), findsOneWidget);
       expect(find.text('加入单位'), findsOneWidget);
       expect(find.byKey(const Key('admin-scan')), findsNothing);
       expect(find.text('现场协同正常'), findsNothing);
@@ -3285,10 +3295,20 @@ void main() {
   });
 
   group('警情卡与选择流程', () {
-    Future<void> pumpTask(WidgetTester tester, _FakeController c) async {
+    Future<void> pumpTask(
+      WidgetTester tester,
+      _FakeController c, {
+      double textScale = 1,
+    }) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
+            child: child!,
+          ),
           home: Scaffold(
             body: AnimatedBuilder(
               animation: c,
@@ -3340,6 +3360,104 @@ void main() {
       expect(find.text('处置中'), findsNothing);
     });
 
+    testWidgets('320dp大字号下当前警情和选择列表名称完整换行', (tester) async {
+      tester.view.physicalSize = const Size(320, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const longName = '幸福街道综合体地下车库新能源汽车集中充电区域火灾处置';
+      final c = _FakeController()
+        ..currentIncident = const Incident(
+          id: 'i1',
+          number: '2026-8-9-8-59',
+          title: longName,
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        );
+      await pumpTask(tester, c, textScale: 1.3);
+      final currentTitle = tester.widget<Text>(find.text(longName));
+      expect(currentTitle.maxLines, isNull);
+      expect(currentTitle.overflow, isNull);
+      expect(tester.getSize(find.text(longName)).height, greaterThan(24));
+      expect(tester.takeException(), isNull);
+
+      c
+        ..currentIncident = null
+        ..activeIncidents = const [
+          Incident(
+            id: 'i2',
+            number: '2026-8-9-9-10',
+            title: longName,
+            status: 'active',
+            createdAt: 1,
+            lastActivityAt: 1,
+          ),
+        ];
+      await pumpTask(tester, c, textScale: 1.3);
+      final pickerTitle = tester.widget<Text>(find.text(longName));
+      expect(pickerTitle.maxLines, isNull);
+      expect(
+        find.ancestor(
+          of: find.text(longName),
+          matching: find.byType(FittedBox),
+        ),
+        findsNothing,
+      );
+      expect(tester.getSize(find.text(longName)).height, greaterThan(24));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('展开警情卡在长名称和多支力量下可滚动且无布局溢出', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final api = _FakeApi();
+      final c = _FakeController()
+        ..api = api
+        ..fakeCanReadKeySites = true
+        ..currentIncident = const Incident(
+          id: 'i1',
+          number: '2026-8-9-8-59',
+          title: '幸福街道综合体地下车库新能源汽车集中充电区域火灾处置',
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        )
+        ..forces = List.generate(
+          8,
+          (i) => IncidentForce(
+            id: 'f$i',
+            incidentId: 'i1',
+            stationName: '第${i + 1}消防救援站',
+            vehicleCount: i + 1,
+            personnelCount: (i + 1) * 5,
+            createdAt: 1,
+            updatedAt: 1,
+            version: 1,
+          ),
+        );
+      await pumpTask(tester, c, textScale: 1.3);
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('incident-card-scroll')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.scrollUntilVisible(
+        find.text('归档警情'),
+        220,
+        scrollable: find.descendant(
+          of: find.byKey(const Key('incident-card-scroll')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(find.text('归档警情'), findsOneWidget);
+      expect(find.text('第8消防救援站 8车40人'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      api.dispose();
+    });
+
     testWidgets('无当前警情显示活跃列表和新建入口', (tester) async {
       final c = _FakeController(currentIncident: null)
         ..currentIncident = null
@@ -3362,7 +3480,7 @@ void main() {
       expect(find.text('新建警情'), findsOneWidget);
     });
 
-    testWidgets('选择警情列表长名称单行缩放不换行', (tester) async {
+    testWidgets('选择警情列表长名称完整换行', (tester) async {
       final c = _FakeController(currentIncident: null)
         ..currentIncident = null
         ..activeIncidents = const [

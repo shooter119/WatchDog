@@ -181,7 +181,7 @@ void main() {
     controller.dispose();
     api.dispose();
   });
-  testWidgets('身份Hero区分单位admin与后台权限，撤权隐藏扫码，退出同步清除身份', (tester) async {
+  testWidgets('身份Hero统一显示管理员，撤权隐藏扫码，退出同步清除身份', (tester) async {
     await Settings.setRealName('合成成员');
     await Settings.setUnitId('u');
     await Settings.setUnitName('合成消防单位');
@@ -196,8 +196,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('合成成员'), findsOneWidget);
-    expect(find.text('单位角色：单位管理员 · 已认证'), findsOneWidget);
-    expect(find.text('后台角色：单位后台管理员'), findsOneWidget);
+    expect(find.text('合成消防单位'), findsOneWidget);
+    expect(find.text('管理员'), findsOneWidget);
+    expect(find.textContaining('单位角色'), findsNothing);
+    expect(find.textContaining('后台角色'), findsNothing);
+    expect(find.textContaining('认证状态'), findsNothing);
     expect(find.textContaining('平台管理员'), findsNothing);
     expect(find.byKey(const Key('admin-scan')), findsOneWidget);
     expect(find.text('现场地图'), findsNothing);
@@ -209,6 +212,37 @@ void main() {
     controller.revoke();
     await tester.pumpAndSettle();
     expect(find.text('合成成员'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
+  testWidgets('单位manager仍显示管理员，普通成员显示认证用户', (tester) async {
+    await Settings.setRealName('合成成员');
+    await Settings.setUnitId('u');
+    await Settings.setUnitName('合成消防单位');
+    await Settings.setUnitCode('test');
+    await Settings.setUserRole('manager');
+    final api = _Api()..grant = null;
+    final controller = _Controller(api);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: SettingsPage(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('管理员'), findsOneWidget);
+    expect(find.byKey(const Key('admin-scan')), findsNothing);
+
+    await Settings.setUserRole('member');
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: SettingsPage(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('认证用户'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
     api.dispose();

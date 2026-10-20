@@ -227,6 +227,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.reads.last, ('one', 1, 'i'));
     expect(find.text('已核对风险'), findsOneWidget);
+    expect(find.text('人工核对资料，未附原文来源'), findsNothing);
+    expect(find.textContaining('原文出处'), findsNothing);
     controller.revoke();
     await tester.pumpAndSettle();
     expect(find.text('已核对风险'), findsNothing);
@@ -371,6 +373,83 @@ void main() {
     api.dispose();
   });
 
+  testWidgets('已发布资料隐藏原文出处但地图保留查看入口', (tester) async {
+    final api = FakeApi();
+    final controller = FakeController(api);
+    final attachment = <String, dynamic>{
+      'id': 'map',
+      'filename': '合成分区图.pdf',
+      'metadata': {
+        'pages': 1,
+        'mapPages': {
+          '1': {'width': 256, 'height': 256, 'maxZoom': 0},
+        },
+      },
+    };
+    final site = KeySiteVersion(
+      siteId: 'one',
+      version: 1,
+      latestVersion: 1,
+      publishedAt: 1,
+      active: true,
+      profile: {'name': '合成单位'},
+      content: {
+        'cards': [
+          const KeySiteEntry(
+            title: '已核对风险',
+            body: '只展示核对后的正文',
+            sources: [
+              KeySiteSource(attachmentId: 'map', page: 1, paragraph: '不应展示的段落'),
+            ],
+          ),
+        ],
+        'maps': [
+          const KeySiteEntry(
+            title: '合成分区图',
+            sources: [KeySiteSource(attachmentId: 'map', page: 1)],
+          ),
+        ],
+      },
+      attachments: [attachment],
+    );
+    api.fixture = site;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: KeySiteModulePage(
+          controller: controller,
+          site: site,
+          module: 'cards',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('只展示核对后的正文'), findsOneWidget);
+    expect(find.textContaining('原文出处'), findsNothing);
+    expect(find.textContaining('不应展示的段落'), findsNothing);
+    expect(find.text('人工核对资料，未附原文来源'), findsNothing);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: KeySiteModulePage(
+          controller: controller,
+          site: site,
+          module: 'maps',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('查看地图'), findsOneWidget);
+    expect(find.textContaining('原文出处'), findsNothing);
+    await tester.tap(find.text('查看地图'));
+    await tester.pumpAndSettle();
+    expect(api.resources, contains('maps/1/tiles/0/0/0.jpg'));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
+
   testWidgets('地图缩至全图时，加载错误和重试在像素变换之外保持可读可点', (tester) async {
     final api = FakeApi()..failImages = true;
     final controller = FakeController(api);
@@ -421,7 +500,7 @@ void main() {
     api.dispose();
   });
 
-  testWidgets('警情关联必须搜索并核对名称地址后确认，取消不写入', (tester) async {
+  testWidgets('警情关联只核对单位名称，取消不写入', (tester) async {
     final api = FakeApi();
     final controller = FakeController(api);
     const incident = Incident(
@@ -447,7 +526,9 @@ void main() {
     await tester.tap(find.text('合成单位'));
     await tester.pumpAndSettle();
     expect(find.text('核对重点单位'), findsOneWidget);
-    expect(find.textContaining('合成地址'), findsOneWidget);
+    expect(find.text('确认关联“合成单位”？'), findsOneWidget);
+    expect(find.textContaining('合成地址'), findsNothing);
+    expect(find.textContaining('确认关联已发布资料 v'), findsNothing);
     expect(controller.changes, 0);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
@@ -478,7 +559,15 @@ void main() {
           'linkedAt': 1,
         },
         'revision': 1,
-        'history': [],
+        'history': [
+          {
+            'site_id': 'one',
+            'version': 1,
+            'profile': {'name': '合成单位', 'address': '合成地址'},
+            'first_linked_by': '合成成员',
+            'first_linked_at': 1,
+          },
+        ],
         'newVersionAvailable': true,
         'active': true,
       };
@@ -502,13 +591,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('资料 v1'), findsOneWidget);
+    expect(find.text('合成单位'), findsOneWidget);
+    expect(find.textContaining('资料 v1'), findsNothing);
+    expect(find.textContaining('合成地址'), findsNothing);
+    expect(find.textContaining('合成成员确认'), findsNothing);
+    expect(find.text('历史资料引用'), findsNothing);
     expect(find.text('已有新版资料，请人工核对后更新'), findsOneWidget);
     expect(controller.changes, 0);
     await tester.tap(find.text('核对新版'));
     await tester.pumpAndSettle();
     expect(find.text('核对重点单位'), findsOneWidget);
-    expect(find.textContaining('确认关联已发布资料 v2'), findsOneWidget);
+    expect(find.text('确认关联“合成单位”？'), findsOneWidget);
     expect(controller.changes, 0);
     await tester.tap(find.text('确认'));
     await tester.pumpAndSettle();
@@ -522,7 +615,7 @@ void main() {
     api.dispose();
   });
 
-  testWidgets('扫码之外的资料确认弹窗也随认证失效清除姓名地址', (tester) async {
+  testWidgets('资料确认弹窗随认证失效清除单位名称', (tester) async {
     final api = FakeApi();
     final controller = FakeController(api);
     const incident = Incident(
@@ -549,7 +642,7 @@ void main() {
     await tester.pumpAndSettle();
     controller.revoke();
     await tester.pumpAndSettle();
-    expect(find.textContaining('合成地址'), findsNothing);
+    expect(find.textContaining('合成单位'), findsNothing);
     expect(find.text('确认'), findsNothing);
     expect(controller.changes, 0);
     await tester.pumpWidget(const SizedBox());
