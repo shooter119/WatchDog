@@ -892,6 +892,17 @@ void main() {
 
     testWidgets('相机权限被拒时显示授权引导页', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      const screenChannel = MethodChannel('watchdog/screen');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      var settingsOpened = false;
+      messenger.setMockMethodCallHandler(screenChannel, (call) async {
+        if (call.method == 'openAppSettings') settingsOpened = true;
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(screenChannel, null),
+      );
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(cameraChannel, (call) async {
             if (call.method == 'requestPermissions') return false;
@@ -910,6 +921,7 @@ void main() {
       await tester.tap(find.text('重新授权'));
       await tester.pumpAndSettle();
       expect(find.text('需要相机权限才能拍摄现场资料'), findsOneWidget);
+      expect(settingsOpened, isTrue);
 
       debugDefaultTargetPlatformOverride = null;
     });

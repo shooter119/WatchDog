@@ -131,6 +131,9 @@ void main() {
       'flutter/platform_views',
     ]) {
       messenger.setMockMethodCallHandler(MethodChannel(name), (call) async {
+        if (name == 'watchdog/screen' && call.method == 'openAppSettings') {
+          calls.add('screen/openAppSettings');
+        }
         if (name == 'flutter/platform_views') {
           if (call.method == 'create') return 1;
           if (call.method == 'resize') return {'width': 800.0, 'height': 600.0};
@@ -296,7 +299,16 @@ void main() {
     await tester.ensureVisible(find.text('去系统设置'));
     await tester.tap(find.text('去系统设置'));
     await tester.pumpAndSettle();
-    expect(calls, contains('openAppSettings'));
+    expect(calls, contains('screen/openAppSettings'));
+    expect(calls, isNot(contains('openAppSettings')));
+    final button = tester.widget<TextButton>(
+      find.widgetWithText(TextButton, '去系统设置'),
+    );
+    expect(button.style!.foregroundColor!.resolve({}), Colors.white);
+    expect(
+      tester.getSize(find.widgetWithText(TextButton, '去系统设置')).height,
+      greaterThanOrEqualTo(48),
+    );
     expect(tester.takeException(), isNull);
   });
 

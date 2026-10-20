@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'screen_on.dart';
+
 /// 水印内容：拍摄开始时组装一次，原生侧在录制期间冻结不再变更。
 ///
 /// 单位抬头与拍摄部门来自「水印设置」，与登录身份解耦：
@@ -206,9 +208,7 @@ class CameraBridge {
   }
 
   static Future<void> openSystemSettings() async {
-    try {
-      await _channel.invokeMethod<void>('openAppSettings');
-    } catch (_) {}
+    await ScreenOn.openAppSettings();
   }
 
   static Future<String?> takePhoto() {

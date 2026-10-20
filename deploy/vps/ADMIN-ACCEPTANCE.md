@@ -24,6 +24,10 @@
 
 本地最终门禁：Node24 `npm test` **253项通过**；App `flutter test` **353项通过**，`flutter analyze` **0问题**。Android `:app:compileDebugKotlin` 成功；只构建并安装Debug验收包，未构建正式APK。
 
+提交 `ef8aa38` 的 GitHub Actions [Quality Checks](https://github.com/shooter119/WatchDog/actions/runs/39355071325) 后端与App均成功。随后模拟器权限回归发现相机设置入口调用了未实现的通道，已改为原生已实现的 `watchdog/screen`，并提升黑底按钮对比度、保持48dp触控高度。测试现核对通道与拒绝后恢复路径；全量门禁仍为253/353及analyze零问题。
+
+Android模拟器实测完成“拒绝相机权限 → App引导 → 系统本应用设置 → 仅使用时允许 → 返回自动恢复预览 → 拍照 → 核对页”。新JPEG已独立读取并确认横屏成片与水印烧录，测试前原数据已私有备份；这不替代实体手机及真实扫码验收。
+
 ## 部署与公网证据
 
 - 实际部署提交：`b1f1bd5`；后端镜像ID前缀 `9497d309db38`。后续App地图提示修正与测试文档不改变线上后端镜像。

@@ -636,6 +636,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   style: TextStyle(color: Colors.white70),
                 ),
                 TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(48, 48),
+                  ),
                   onPressed: CameraBridge.openSystemSettings,
                   child: const Text('去系统设置'),
                 ),
