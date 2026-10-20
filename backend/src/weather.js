@@ -12,6 +12,7 @@
 const AMAP_BASE = process.env.AMAP_BASE_URL || 'https://restapi.amap.com';
 const REQUEST_TIMEOUT_MS = 4000;
 const ADDRESS_TTL_MS = 10 * 60 * 1000;
+const COORDINATE_TTL_MS = 10 * 60 * 1000;
 const WEATHER_TTL_MS = 20 * 60 * 1000;
 // 3 位小数约 110 米，足够区分同一现场的不同拍摄点，又能让相邻设备命中同一缓存。
 const COORD_DIGITS = 3;
@@ -41,6 +42,19 @@ function parseRegeo(payload) {
     city: String(component.city || component.province || '').trim(),
     district: String(component.district || '').trim(),
   };
+}
+
+/** 解析高德坐标转换响应；返回可直接用于逆地理与地图链接的 GCJ-02 坐标。 */
+function parseCoordinateConversion(payload) {
+  if (!payload || String(payload.status) !== '1') return null;
+  const raw = Array.isArray(payload.locations)
+    ? payload.locations[0]
+    : payload.locations;
+  const parts = String(raw || '').split(',').map((part) => Number(part.trim()));
+  if (parts.length !== 2) return null;
+  const [lon, lat] = parts;
+  if (!validCoord(lat, lon)) return null;
+  return { lat, lon, coordinate: 'gcj02' };
 }
 
 /** 解析天气实况响应；高德返回 lives 数组，空数组表示查无此城市。 */
@@ -93,6 +107,7 @@ class TtlCache {
 }
 
 const addressCache = new TtlCache(ADDRESS_TTL_MS);
+const coordinateCache = new TtlCache(COORDINATE_TTL_MS);
 const weatherCache = new TtlCache(WEATHER_TTL_MS);
 
 async function fetchJson(url, fetchImpl) {
@@ -112,11 +127,13 @@ async function fetchJson(url, fetchImpl) {
 /**
  * 查询地址与天气。
  * @returns {Promise<{address:string|null,adcode:string|null,city:string|null,
- *   weather:object|null,degraded:boolean}>}
+ *   weather:object|null,amapLocation:object|null,coordinateDegraded:boolean,
+ *   degraded:boolean}>}
  */
 async function lookup({
   lat, lon, key, fetchImpl = fetch, now = Date.now(),
-  addressStore = addressCache, weatherStore = weatherCache,
+  addressStore = addressCache, coordinateStore = coordinateCache,
+  weatherStore = weatherCache,
 } = {}) {
   const latitude = Number(lat);
   const longitude = Number(lon);
@@ -131,11 +148,22 @@ async function lookup({
     throw error;
   }
 
-  const addressKey = `${roundCoord(latitude)},${roundCoord(longitude)}`;
+  const sourceKey = `${roundCoord(latitude)},${roundCoord(longitude)}`;
+  let amapLocation = coordinateStore.get(sourceKey, now);
+  if (!amapLocation) {
+    const url = `${AMAP_BASE}/v3/assistant/coordinate/convert?locations=${longitude},${latitude}` +
+      `&coordsys=gps&output=JSON&key=${encodeURIComponent(key)}`;
+    amapLocation = parseCoordinateConversion(await fetchJson(url, fetchImpl));
+    if (amapLocation) coordinateStore.set(sourceKey, amapLocation, now);
+  }
+  const coordinateDegraded = !amapLocation;
+  const geoLat = amapLocation?.lat ?? latitude;
+  const geoLon = amapLocation?.lon ?? longitude;
+  const addressKey = `${roundCoord(geoLat)},${roundCoord(geoLon)}`;
 
   let geo = addressStore.get(addressKey, now);
   if (!geo) {
-    const url = `${AMAP_BASE}/v3/geocode/regeo?location=${longitude},${latitude}` +
+    const url = `${AMAP_BASE}/v3/geocode/regeo?location=${geoLon},${geoLat}` +
       `&key=${encodeURIComponent(key)}&extensions=base&radius=200`;
     geo = parseRegeo(await fetchJson(url, fetchImpl));
     if (geo) addressStore.set(addressKey, geo, now);
@@ -157,6 +185,8 @@ async function lookup({
     adcode: geo?.adcode || null,
     city: weather?.city || geo?.city || null,
     weather,
+    amapLocation,
+    coordinateDegraded,
     // 地址或天气任一缺失即为降级：客户端照常拍摄，只显示已有部分。
     degraded: !geo || !weather,
   };
@@ -174,16 +204,33 @@ function weatherLine(weather) {
   return parts.join(' · ');
 }
 
+/** 组装 `/api/weather` 响应；保留旧字段，同时追加可选的 GCJ-02 坐标。 */
+function lookupResponse(result) {
+  return {
+    address: result?.address ?? null,
+    adcode: result?.adcode ?? null,
+    city: result?.city ?? null,
+    weather: result?.weather ?? null,
+    amapLocation: result?.amapLocation ?? null,
+    coordinateDegraded: result?.coordinateDegraded !== false,
+    line: weatherLine(result?.weather),
+    degraded: result?.degraded !== false,
+  };
+}
+
 function clearCaches() {
   addressCache.clear();
+  coordinateCache.clear();
   weatherCache.clear();
 }
 
 module.exports = {
   lookup,
   parseRegeo,
+  parseCoordinateConversion,
   parseWeather,
   weatherLine,
+  lookupResponse,
   validCoord,
   roundCoord,
   clearCaches,

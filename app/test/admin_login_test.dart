@@ -308,11 +308,23 @@ void main() {
     expect(find.text('单机模式'), findsOneWidget);
     expect(find.text('重点单位'), findsOneWidget);
     expect(find.text('水印相机'), findsOneWidget);
+    expect(find.text('定位分享'), findsOneWidget);
+    expect(find.text('视频资源'), findsOneWidget);
     expect(find.text('按住下方按钮说话'), findsNothing);
     expect(find.byType(FloatingActionButton), findsNothing);
     expect(
       tester.getSize(find.byKey(const ValueKey('tool-重点单位'))).width,
       greaterThanOrEqualTo(48),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('tool-定位分享'))).width,
+      greaterThanOrEqualTo(48),
+    );
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('tool-定位分享'))).dy,
+      greaterThan(
+        tester.getBottomLeft(find.byKey(const ValueKey('tool-重点单位'))).dy,
+      ),
     );
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());

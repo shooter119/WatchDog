@@ -332,10 +332,7 @@ class CameraBridge {
     try {
       final raw = await _mediaChannel.invokeMethod<List<Object?>>(
         'savePairToGallery',
-        {
-          'watermarkedPath': watermarkedPath,
-          'sourcePath': sourcePath,
-        },
+        {'watermarkedPath': watermarkedPath, 'sourcePath': sourcePath},
       );
       final uris = raw?.whereType<String>().toList(growable: false) ?? const [];
       return uris.length == 2 ? uris : null;
@@ -363,6 +360,36 @@ class CameraBridge {
           false;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// 仅申请定位权限；不复用相机/麦克风权限请求。
+  static Future<bool> requestLocationPermission() async {
+    if (!isSupported) return false;
+    try {
+      return await _locationChannel.invokeMethod<bool>('requestPermission') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> isLocationServiceEnabled() async {
+    if (!isSupported) return false;
+    try {
+      return await _locationChannel.invokeMethod<bool>('serviceEnabled') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> openLocationSettings() async {
+    if (!isSupported) return;
+    try {
+      await _locationChannel.invokeMethod<void>('openLocationSettings');
+    } catch (_) {
+      // 由界面提供“重新定位”作为恢复兜底。
     }
   }
 

@@ -1487,6 +1487,10 @@ void main() {
       expect(c.notes.single.category, NoteCategory.deploy);
       expect(find.text('全部确认进入火场（2 人）'), findsNothing);
       expect(find.text('现场监控'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tool-重点单位')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tool-水印相机')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tool-定位分享')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tool-视频资源')), findsOneWidget);
     });
 
     testWidgets('多人确认窄屏大字号下说明与姓名压力字段均可读', (tester) async {

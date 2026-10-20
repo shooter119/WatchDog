@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.View
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
@@ -61,6 +62,25 @@ class WatchdogCameraPlugin(
                             ?.toLong() ?: 8_000L
                         LocationHelper.current(context, timeoutMs) { fix ->
                             result.success(fix?.toMap())
+                        }
+                    }
+                }
+                "requestPermission" -> requestLocationPermission(result)
+                "serviceEnabled" -> result.success(LocationHelper.isServiceEnabled(context))
+                "openLocationSettings" -> {
+                    val activity = context.findActivity()
+                    if (activity == null) {
+                        result.error("no_activity", "无法获取 Activity", null)
+                    } else {
+                        try {
+                            activity.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                            result.success(null)
+                        } catch (error: Exception) {
+                            result.error(
+                                "open_location_settings_failed",
+                                error.message ?: "无法打开定位设置",
+                                null,
+                            )
                         }
                     }
                 }
@@ -246,6 +266,7 @@ class WatchdogCameraPlugin(
     }
 
     private var pendingPermissionResult: MethodChannel.Result? = null
+    private var pendingLocationPermissionResult: MethodChannel.Result? = null
     private var pendingGalleryResult: MethodChannel.Result? = null
     private var pendingGalleryAction: (() -> Unit)? = null
 
@@ -272,6 +293,25 @@ class WatchdogCameraPlugin(
         ActivityCompat.requestPermissions(activity, missing.toTypedArray(), PERMISSION_REQUEST_CODE)
     }
 
+    private fun requestLocationPermission(result: MethodChannel.Result) {
+        val activity = context.findActivity()
+        if (activity == null) {
+            result.error("no_activity", "无法获取 Activity", null)
+            return
+        }
+        if (LocationHelper.hasPermission(context)) {
+            result.success(true)
+            return
+        }
+        pendingLocationPermissionResult = result
+        // Android 12+ 要求粗略与精确定位同批申请，不能借用相机权限请求。
+        ActivityCompat.requestPermissions(
+            activity,
+            LOCATION_PERMISSIONS,
+            LOCATION_PERMISSION_REQUEST_CODE,
+        )
+    }
+
     private fun currentPermissionState(): Map<String, Boolean> = mapOf(
         "camera" to granted(Manifest.permission.CAMERA),
         "microphone" to granted(Manifest.permission.RECORD_AUDIO),
@@ -285,6 +325,11 @@ class WatchdogCameraPlugin(
 
     /** 由 MainActivity 转发；返回 true 表示本次结果由相机插件消费。 */
     fun onRequestPermissionsResult(requestCode: Int): Boolean {
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            pendingLocationPermissionResult?.success(LocationHelper.hasPermission(context))
+            pendingLocationPermissionResult = null
+            return true
+        }
         if (requestCode == GALLERY_PERMISSION_REQUEST_CODE) {
             val result = pendingGalleryResult
             val action = pendingGalleryAction
@@ -459,6 +504,11 @@ class WatchdogCameraPlugin(
         const val MEDIA_CHANNEL = "watchdog/media"
         private const val PERMISSION_REQUEST_CODE = 4711
         private const val GALLERY_PERMISSION_REQUEST_CODE = 4712
+        private const val LOCATION_PERMISSION_REQUEST_CODE = 4713
+        private val LOCATION_PERMISSIONS = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
         private val PERMISSIONS = arrayOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,

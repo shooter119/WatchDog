@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
@@ -42,6 +43,18 @@ object LocationHelper {
             PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
+
+    fun isServiceEnabled(context: Context): Boolean {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            ?: return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return runCatching { manager.isLocationEnabled }.getOrDefault(false)
+        }
+        return runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }
+            .getOrDefault(false) ||
+            runCatching { manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }
+                .getOrDefault(false)
+    }
 
     /**
      * 获取一次定位。

@@ -1124,14 +1124,7 @@ app.get('/api/weather', async (req, res) => {
   }
   try {
     const result = await weather.lookup({ lat, lon, key: CFG.amap.key });
-    res.json({
-      address: result.address,
-      adcode: result.adcode,
-      city: result.city,
-      weather: result.weather,
-      line: weather.weatherLine(result.weather),
-      degraded: result.degraded,
-    });
+    res.json(weather.lookupResponse(result));
   } catch (e) {
     logger.error('weather_lookup_failed', e?.code || 'unknown');
     res.status(502).json({ error: '地址与天气服务暂时不可用', code: 'AMAP_UPSTREAM_FAILED' });
