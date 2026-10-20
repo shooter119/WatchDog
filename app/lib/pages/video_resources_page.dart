@@ -7,17 +7,22 @@ import '../models/video_resources.dart';
 import '../services/video_resource_probe.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
-import 'video_player_page.dart';
 import 'video_resource_admin_page.dart';
+import 'video_resource_player.dart';
+
+Widget _defaultExpandedPlayer(VideoResource resource) =>
+    VideoResourcePlayer(resource: resource);
 
 class VideoResourcesPage extends StatefulWidget {
   final AppController controller;
   final VideoResourceAvailabilityChecker availabilityChecker;
+  final Widget Function(VideoResource resource) expandedPlayerBuilder;
 
   const VideoResourcesPage({
     super.key,
     required this.controller,
     this.availabilityChecker = VideoResourceProbe.check,
+    this.expandedPlayerBuilder = _defaultExpandedPlayer,
   });
 
   @override
@@ -30,6 +35,7 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
   bool _loading = true;
   String? _error;
   final Map<String, bool> _availability = {};
+  String? _expandedResourceId;
 
   ApiClient? get _api => widget.controller.api;
 
@@ -64,6 +70,9 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
         _resources = resources;
         _canManage = canManage;
         _availability.clear();
+        if (!resources.any((item) => item.id == _expandedResourceId)) {
+          _expandedResourceId = null;
+        }
       });
       unawaited(_checkAvailability(resources));
     } catch (error) {
@@ -93,7 +102,7 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
     if (mounted) await _load();
   }
 
-  void _open(VideoResource resource) {
+  void _expand(VideoResource resource) {
     final uri = Uri.tryParse(resource.streamUrl);
     if (uri == null ||
         uri.scheme != 'https' ||
@@ -105,10 +114,12 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
       ).showSnackBar(const SnackBar(content: Text('视频地址无效，请联系管理员更新')));
       return;
     }
-    Navigator.push<void>(
-      context,
-      MaterialPageRoute(builder: (_) => VideoPlayerPage(resource: resource)),
-    );
+    setState(() => _expandedResourceId = resource.id);
+  }
+
+  void _collapse(String resourceId) {
+    if (_expandedResourceId != resourceId) return;
+    setState(() => _expandedResourceId = null);
   }
 
   @override
@@ -149,9 +160,14 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
                     const _EmptyResources(),
                   for (final resource in _resources) ...[
                     VideoResourceCard(
+                      key: ValueKey('video-resource-${resource.id}'),
                       resource: resource,
                       available: _availability[resource.id],
-                      onTap: () => _open(resource),
+                      expandedPlayer: _expandedResourceId == resource.id
+                          ? widget.expandedPlayerBuilder(resource)
+                          : null,
+                      onTap: () => _expand(resource),
+                      onClose: () => _collapse(resource.id),
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -165,122 +181,172 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
 class VideoResourceCard extends StatelessWidget {
   final VideoResource resource;
   final bool? available;
+  final Widget? expandedPlayer;
   final VoidCallback onTap;
+  final VoidCallback onClose;
 
   const VideoResourceCard({
     super.key,
     required this.resource,
     this.available,
+    this.expandedPlayer,
     required this.onTap,
+    required this.onClose,
   });
 
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      onTap: onTap,
+      onTap: expandedPlayer == null ? onTap : null,
       padding: const EdgeInsets.all(14),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: AppColors.heroBackground,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            child: Icon(
-              Icons.videocam_rounded,
-              color: AppColors.heroOnDark,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: AppColors.heroBackground,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Icon(
+                  Icons.videocam_rounded,
+                  color: AppColors.heroOnDark,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(9, 6, 10, 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceSubtle,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Row(
+                        children: [
+                          Tooltip(
+                            message: available == null
+                                ? '正在检测视频是否可用'
+                                : available!
+                                ? '视频可用'
+                                : '视频不可用',
+                            child: Semantics(
+                              label: available == null
+                                  ? '正在检测视频是否可用'
+                                  : available!
+                                  ? '视频可用'
+                                  : '视频不可用',
+                              child: Container(
+                                key: ValueKey(
+                                  'video-resource-status-${resource.id}',
+                                ),
+                                width: 9,
+                                height: 9,
+                                decoration: BoxDecoration(
+                                  color: available == null
+                                      ? AppColors.textTertiary
+                                      : available!
+                                      ? AppColors.online
+                                      : AppColors.alarm,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              resource.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      resource.description.trim().isEmpty
+                          ? '已授权视频画面'
+                          : resource.description.trim(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (expandedPlayer == null) ...[
+                const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.fromLTRB(9, 6, 10, 6),
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
                     color: AppColors.surfaceSubtle,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(color: AppColors.border),
+                    shape: BoxShape.circle,
                   ),
-                  child: Row(
-                    children: [
-                      Tooltip(
-                        message: available == null
-                            ? '正在检测视频是否可用'
-                            : available!
-                            ? '视频可用'
-                            : '视频不可用',
-                        child: Semantics(
-                          label: available == null
-                              ? '正在检测视频是否可用'
-                              : available!
-                              ? '视频可用'
-                              : '视频不可用',
-                          child: Container(
-                            key: ValueKey(
-                              'video-resource-status-${resource.id}',
-                            ),
-                            width: 9,
-                            height: 9,
-                            decoration: BoxDecoration(
-                              color: available == null
-                                  ? AppColors.textTertiary
-                                  : available!
-                                  ? AppColors.online
-                                  : AppColors.alarm,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          resource.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  resource.description.trim().isEmpty
-                      ? '已授权视频画面'
-                      : resource.description.trim(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: AppColors.textSecondary,
-                    height: 1.4,
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    color: AppColors.actionPrimary,
+                    size: 28,
                   ),
                 ),
               ],
-            ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceSubtle,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.play_arrow_rounded,
-              color: AppColors.actionPrimary,
-              size: 28,
-            ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: expandedPlayer == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      child: AspectRatio(
+                        key: ValueKey('video-resource-expanded-${resource.id}'),
+                        aspectRatio: 16 / 9,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            expandedPlayer!,
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: IconButton(
+                                key: ValueKey(
+                                  'video-resource-close-${resource.id}',
+                                ),
+                                tooltip: '关闭视频',
+                                onPressed: onClose,
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Colors.black54,
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(48, 48),
+                                ),
+                                icon: const Icon(Icons.close_rounded),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -307,7 +373,7 @@ class _VideoIntro extends StatelessWidget {
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
-              '仅展示本单位管理员启用的授权视频资源。点击资源即可查看实时画面。',
+              '仅展示本单位管理员启用的授权视频资源。点击资源后在卡片内展开并播放实时画面。',
               style: TextStyle(fontSize: 13, height: 1.5),
             ),
           ),

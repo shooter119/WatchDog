@@ -113,6 +113,26 @@ class _VideoController extends AppController {
   bool get connectionLost => false;
 }
 
+class _DisposableProbe extends StatefulWidget {
+  final VoidCallback onDispose;
+
+  const _DisposableProbe({super.key, required this.onDispose});
+
+  @override
+  State<_DisposableProbe> createState() => _DisposableProbeState();
+}
+
+class _DisposableProbeState extends State<_DisposableProbe> {
+  @override
+  void dispose() {
+    widget.onDispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const ColoredBox(color: Colors.black);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -234,6 +254,48 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     offlineController.dispose();
     offlineApi.dispose();
+  });
+
+  testWidgets('点击资源行内展开播放器，关闭后立即收起并销毁播放器', (tester) async {
+    final api = _VideoApi();
+    final controller = _VideoController(api);
+    var playerDisposed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoResourcesPage(
+          controller: controller,
+          availabilityChecker: (_) async => true,
+          expandedPlayerBuilder: (_) => _DisposableProbe(
+            key: const Key('inline-video-player'),
+            onDispose: () => playerDisposed = true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('合成监控'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('inline-video-player')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('video-resource-expanded-camera-1')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('video-resource-close-camera-1')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('video-resource-close-camera-1')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('inline-video-player')), findsNothing);
+    expect(playerDisposed, isTrue);
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
   });
 
   testWidgets('视频资源管理页拒绝非 HTTPS 地址并支持新增', (tester) async {
