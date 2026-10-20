@@ -325,9 +325,11 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
   Widget _buildAuthentication() {
     final hasKeyboard = MediaQuery.viewInsetsOf(context).bottom > 80;
     return Column(
+      mainAxisSize: hasKeyboard ? MainAxisSize.min : MainAxisSize.max,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
+        Flexible(
+          fit: hasKeyboard ? FlexFit.loose : FlexFit.tight,
           child: SingleChildScrollView(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             child: Column(
@@ -411,43 +413,28 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   enabled: !_busy,
                   maxLength: 120,
                   textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(
-                    isDense: hasKeyboard,
-                    contentPadding: hasKeyboard
-                        ? const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          )
-                        : null,
+                  decoration: const InputDecoration(
                     labelText: '单位名称',
                     hintText: '请输入所属消防救援单位全称',
-                    prefixIcon: const Icon(Icons.business_outlined),
+                    prefixIcon: Icon(Icons.business_outlined),
                     counterText: '',
                   ),
                 ),
-                SizedBox(height: hasKeyboard ? 6 : 12),
+                SizedBox(height: hasKeyboard ? 10 : 12),
                 TextField(
                   key: const Key('auth-real-name'),
                   controller: _realName,
                   enabled: !_busy,
-                  autofocus: true,
                   maxLength: 20,
                   textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(
-                    isDense: hasKeyboard,
-                    contentPadding: hasKeyboard
-                        ? const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          )
-                        : null,
+                  decoration: const InputDecoration(
                     labelText: '真实姓名',
                     hintText: '请输入姓名，用于现场记录署名',
-                    prefixIcon: const Icon(Icons.person_outline),
+                    prefixIcon: Icon(Icons.person_outline),
                     counterText: '',
                   ),
                 ),
-                SizedBox(height: hasKeyboard ? 6 : 12),
+                SizedBox(height: hasKeyboard ? 10 : 12),
                 TextField(
                   key: const Key('auth-unit-code'),
                   controller: _unitCode,
@@ -457,17 +444,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _authenticate(),
-                  decoration: InputDecoration(
-                    isDense: hasKeyboard,
-                    contentPadding: hasKeyboard
-                        ? const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          )
-                        : null,
+                  decoration: const InputDecoration(
                     labelText: '单位验证码',
                     hintText: '请输入 4 位验证码',
-                    prefixIcon: const Icon(Icons.password_outlined),
+                    prefixIcon: Icon(Icons.password_outlined),
                     counterText: '',
                   ),
                 ),
@@ -498,7 +478,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
               : const Icon(Icons.arrow_forward_rounded),
           label: const Text('认证并继续'),
           style: FilledButton.styleFrom(
-            minimumSize: Size.fromHeight(hasKeyboard ? 40 : 50),
+            minimumSize: const Size.fromHeight(50),
             backgroundColor: AppColors.voice,
             foregroundColor: AppColors.onPrimary,
           ),
@@ -511,7 +491,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             icon: const Icon(Icons.explore_outlined, size: 18),
             label: const Text('先以游客身份体验（单机可用）'),
             style: OutlinedButton.styleFrom(
-              minimumSize: Size.fromHeight(hasKeyboard ? 36 : 44),
+              minimumSize: const Size.fromHeight(44),
               foregroundColor: AppColors.textPrimary,
             ),
           ),
@@ -721,10 +701,19 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                     1.0,
                     math.min(constraints.maxHeight - 20, 640.0),
                   );
-                  return Center(
-                    child: SizedBox(
-                      width: width,
-                      height: height,
+                  final keyboardAuth =
+                      widget.authenticationRequired && hasKeyboard;
+                  return Align(
+                    alignment: keyboardAuth
+                        ? Alignment.bottomCenter
+                        : Alignment.center,
+                    child: ConstrainedBox(
+                      constraints: keyboardAuth
+                          ? BoxConstraints(maxWidth: width, maxHeight: height)
+                          : BoxConstraints.tightFor(
+                              width: width,
+                              height: height,
+                            ),
                       child: Material(
                         key: const Key('incident-selection-overlay'),
                         color: AppColors.surface,

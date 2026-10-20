@@ -2768,6 +2768,54 @@ void main() {
       expect(find.text('认证并继续'), findsOneWidget);
     });
 
+    testWidgets('认证浮层在320dp大字号键盘下保持正常字段高度且提交按钮可见', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              viewInsets: const EdgeInsets.only(bottom: 300),
+              textScaler: const TextScaler.linear(1.3),
+            ),
+            child: child!,
+          ),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (_, __, ___) async {},
+            onEnterGuestMode: () async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final card = tester.getRect(
+        find.byKey(const Key('incident-selection-overlay')),
+      );
+      expect(card.bottom, lessThanOrEqualTo(420.5));
+      for (final key in const [
+        Key('auth-unit-name'),
+        Key('auth-real-name'),
+        Key('auth-unit-code'),
+      ]) {
+        final field = find.byKey(key);
+        expect(tester.getSize(field).height, greaterThanOrEqualTo(56));
+        expect(
+          tester.widget<TextField>(field).decoration?.isDense,
+          isNot(true),
+        );
+      }
+      final submit = tester.getRect(find.byKey(const Key('auth-submit')));
+      expect(submit.bottom, lessThanOrEqualTo(card.bottom + 0.5));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('认证信息不正确时弹窗提示', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
