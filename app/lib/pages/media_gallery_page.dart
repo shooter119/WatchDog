@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../services/camera_bridge.dart';
 import '../services/local_media_store.dart';
 import '../services/media_capture_service.dart';
+import '../services/media_share_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import 'media_review_page.dart';
@@ -93,9 +93,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
 
   Future<void> _share(LocalMedia media) async {
     try {
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(media.path)], text: media.transcript.trim()),
-      );
+      await MediaShareService.shareWatermarked(media.path);
     } catch (_) {
       _toast('系统分享不可用');
     }
@@ -103,9 +101,34 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
 
   Future<void> _saveToGallery(LocalMedia media) async {
     _toast('正在保存到手机相册…');
-    final uri = await CameraBridge.saveToGallery(media.path);
+    final paired = media.sourcePath.isNotEmpty;
+    final saved = paired
+        ? await CameraBridge.savePairToGallery(
+                watermarkedPath: media.path,
+                sourcePath: media.sourcePath,
+              ) !=
+              null
+        : await CameraBridge.saveToGallery(media.path) != null;
     if (!mounted) return;
-    _toast(uri != null ? '已保存到手机相册' : '保存到相册失败，可用「分享」另存');
+    if (saved && paired) {
+      try {
+        final source = File(media.sourcePath);
+        if (await source.exists()) await source.delete();
+        if (!await source.exists()) {
+          await LocalMediaStore.instance.updateDerived(
+            id: media.id,
+            sourcePath: '',
+          );
+        }
+      } catch (_) {
+        // 相册两份已经落盘，母版清理留给过期清理继续处理。
+      }
+    }
+    await _load();
+    if (!mounted) return;
+    _toast(
+      saved ? (paired ? '已保存带水印版和无水印版到手机相册' : '旧资料仅保存了带水印版') : '两份相册文件保存失败，已回滚',
+    );
   }
 
   Future<void> _openMedia(LocalMedia media) async {
@@ -134,7 +157,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
     );
     if (confirmed != true) return;
     await LocalMediaStore.instance.deleteById(media.id);
-    for (final path in [media.path, ...media.frames]) {
+    for (final path in [media.path, media.sourcePath, ...media.frames]) {
       try {
         final file = File(path);
         if (file.existsSync()) await file.delete();
@@ -333,7 +356,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                 if (media.isVideo && !media.hasTranscript)
                   const PopupMenuItem(value: 'rederive', child: Text('重新识别口述')),
                 const PopupMenuItem(value: 'open', child: Text('用其他应用打开')),
-                const PopupMenuItem(value: 'save', child: Text('保存到手机相册')),
+                const PopupMenuItem(value: 'save', child: Text('保存两份到手机相册')),
                 const PopupMenuItem(value: 'share', child: Text('分享')),
                 if (media.incidentId.isEmpty)
                   const PopupMenuItem(value: 'attach', child: Text('关联到当前警情')),

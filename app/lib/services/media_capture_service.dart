@@ -16,6 +16,7 @@ class MediaCaptureService {
   static Future<LocalMedia> registerPhoto({
     required String incidentId,
     required String path,
+    String sourcePath = '',
     required WatermarkPayload watermark,
     required LocationFix? fix,
   }) async {
@@ -24,6 +25,7 @@ class MediaCaptureService {
       incidentId: incidentId,
       kind: 'photo',
       path: path,
+      sourcePath: sourcePath,
       durationMs: 0,
       capturedAt: watermark.timestampMs == 0
           ? DateTime.now().millisecondsSinceEpoch
@@ -45,6 +47,7 @@ class MediaCaptureService {
   static Future<LocalMedia> registerVideo({
     required String incidentId,
     required String path,
+    String sourcePath = '',
     required int durationMs,
     required WatermarkPayload watermark,
     required LocationFix? fix,
@@ -54,6 +57,7 @@ class MediaCaptureService {
       incidentId: incidentId,
       kind: 'video',
       path: path,
+      sourcePath: sourcePath,
       durationMs: durationMs,
       capturedAt: watermark.timestampMs == 0
           ? DateTime.now().millisecondsSinceEpoch
@@ -143,7 +147,9 @@ class MediaCaptureService {
       LocalMediaStore.instance.countExpired(days: days);
 
   /// 清理过期媒体（默认 30 天），返回被删除的文件路径。
-  static Future<int> purgeExpired({int days = LocalMediaStore.retentionDays}) async {
+  static Future<int> purgeExpired({
+    int days = LocalMediaStore.retentionDays,
+  }) async {
     final paths = await LocalMediaStore.instance.purgeExpired(days: days);
     for (final path in paths) {
       try {
@@ -170,24 +176,51 @@ class MediaCaptureService {
       if (!dir.existsSync()) return 0;
 
       final known = await LocalMediaStore.instance.allPaths();
+      final files = dir.listSync().whereType<File>().toList(growable: false);
+      final byName = <String, File>{
+        for (final file in files) p.basename(file.path): file,
+      };
       var recovered = 0;
-      for (final entity in dir.listSync()) {
-        if (entity is! File) continue;
+      for (final entity in files) {
         final name = p.basename(entity.path);
         final lower = name.toLowerCase();
+        if (lower.endsWith('.part')) {
+          try {
+            await entity.delete();
+          } catch (_) {
+            // 被占用时留给下一次启动继续清理。
+          }
+          continue;
+        }
         final isPhoto = lower.endsWith('.jpg') || lower.endsWith('.jpeg');
         final isVideo = lower.endsWith('.mp4');
         if (!isPhoto && !isVideo) continue;
+
+        final stem = p.basenameWithoutExtension(name);
+        final isWatermarked = stem.endsWith('_WM');
+        final isNewSource = stem.startsWith('SRC_');
+        // 未完成的母版没有可展示的带水印成片，不能伪装成正常资料。
+        if (isNewSource) continue;
         if (known.contains(entity.path)) continue;
 
+        String sourcePath = '';
+        if (isWatermarked) {
+          final sourceStem = 'SRC_${stem.substring(0, stem.length - 3)}';
+          final source = byName['$sourceStem${p.extension(name)}'];
+          if (source != null) sourcePath = source.path;
+        }
+
         // 文件名形如 IMG_20261018_161039_160.jpg，时间可直接从名字复原
-        final stamp = _timestampFromName(name) ?? entity.statSync().modified.millisecondsSinceEpoch;
+        final stamp =
+            _timestampFromName(name) ??
+            entity.statSync().modified.millisecondsSinceEpoch;
         await LocalMediaStore.instance.insertRecovered(
           LocalMedia(
             id: LocalMediaStore.newId(),
             incidentId: '',
             kind: isVideo ? 'video' : 'photo',
             path: entity.path,
+            sourcePath: sourcePath,
             durationMs: 0,
             capturedAt: stamp,
             lat: null,
@@ -200,7 +233,25 @@ class MediaCaptureService {
             observationId: '',
           ),
         );
+        known.add(entity.path);
+        if (sourcePath.isNotEmpty) known.add(sourcePath);
         recovered++;
+      }
+
+      // 生成水印失败的母版没有可展示成片；若本次启动也没有可配对成片，
+      // 就作为未完成临时文件清理，避免隐藏视频永久占用空间。
+      for (final entity in files) {
+        final name = p.basename(entity.path);
+        final stem = p.basenameWithoutExtension(name);
+        if (!stem.startsWith('SRC_') || known.contains(entity.path)) continue;
+        final cleanStem = stem.substring('SRC_'.length);
+        final watermarked = byName['${cleanStem}_WM${p.extension(name)}'];
+        if (watermarked != null && watermarked.existsSync()) continue;
+        try {
+          await entity.delete();
+        } catch (_) {
+          // 下次启动重试。
+        }
       }
       return recovered;
     } catch (_) {

@@ -115,6 +115,58 @@ class WatchdogCameraPlugin(
                         saveToGallery(path, result)
                     }
                 }
+                "savePairToGallery" -> {
+                    val watermarkedPath = call.argument<String>("watermarkedPath")
+                    val sourcePath = call.argument<String>("sourcePath")
+                    if (watermarkedPath.isNullOrBlank() || sourcePath.isNullOrBlank()) {
+                        result.error("invalid_path", "缺少带水印版或无水印版路径", null)
+                    } else {
+                        savePairToGallery(watermarkedPath, sourcePath, result)
+                    }
+                }
+                "renderWatermarkedCopy" -> {
+                    val path = call.argument<String>("path")
+                    val taskId = call.argument<String>("taskId")
+                    val watermarkMap = call.argument<Map<*, *>>("watermark")
+                    if (path.isNullOrBlank() || taskId.isNullOrBlank() || watermarkMap == null) {
+                        result.error("invalid_argument", "缺少母版路径或水印参数", null)
+                    } else {
+                        val source = File(path)
+                        if (!source.isFile) {
+                            result.error("not_found", "拍摄母版不存在", null)
+                        } else {
+                            val watermark = WatermarkModel.fromMap(watermarkMap)
+                            worker.execute {
+                                try {
+                                    val output = MediaWatermarkProcessor.render(
+                                        source,
+                                        watermark,
+                                        taskId,
+                                    ) { progress ->
+                                        mainHandler.post {
+                                            emit(
+                                                mapOf(
+                                                    "type" to "watermark_progress",
+                                                    "taskId" to taskId,
+                                                    "progress" to progress,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                    mainHandler.post { result.success(output.absolutePath) }
+                                } catch (error: Exception) {
+                                    mainHandler.post {
+                                        result.error(
+                                            "watermark_failed",
+                                            error.message ?: "生成水印成片失败",
+                                            null,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -195,7 +247,7 @@ class WatchdogCameraPlugin(
 
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingGalleryResult: MethodChannel.Result? = null
-    private var pendingGalleryPath: String? = null
+    private var pendingGalleryAction: (() -> Unit)? = null
 
     /**
      * 运行时权限：相机是必需项，麦克风与定位是可选项（拒绝也允许拍摄静音视频/无水印位置）。
@@ -235,12 +287,12 @@ class WatchdogCameraPlugin(
     fun onRequestPermissionsResult(requestCode: Int): Boolean {
         if (requestCode == GALLERY_PERMISSION_REQUEST_CODE) {
             val result = pendingGalleryResult
-            val path = pendingGalleryPath
+            val action = pendingGalleryAction
             pendingGalleryResult = null
-            pendingGalleryPath = null
+            pendingGalleryAction = null
             if (result == null) return true
-            if (path != null && granted(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-                saveToGallery(path, result)
+            if (action != null && granted(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                action()
             } else {
                 result.error("permission_denied", "没有存储权限，无法保存到手机相册", null)
             }
@@ -264,23 +316,11 @@ class WatchdogCameraPlugin(
             result.error("not_found", "文件不存在", null)
             return
         }
-        if (GallerySaver.needsLegacyStoragePermission() &&
-            !granted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        ) {
-            val activity = context.findActivity()
-            if (activity == null) {
-                result.error("no_activity", "无法申请存储权限", null)
-                return
-            }
-            pendingGalleryResult = result
-            pendingGalleryPath = path
-            ActivityCompat.requestPermissions(
-                activity,
-                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
-                GALLERY_PERMISSION_REQUEST_CODE,
-            )
-            return
-        }
+        if (!withGalleryPermission(result) { saveToGalleryNow(file, result) }) return
+        saveToGalleryNow(file, result)
+    }
+
+    private fun saveToGalleryNow(file: File, result: MethodChannel.Result) {
         // 视频可能有几十 MB，拷贝放到工作线程，避免卡住界面。
         worker.execute {
             try {
@@ -292,6 +332,79 @@ class WatchdogCameraPlugin(
                 }
             }
         }
+    }
+
+    private fun savePairToGallery(
+        watermarkedPath: String,
+        sourcePath: String,
+        result: MethodChannel.Result,
+    ) {
+        val watermarked = File(watermarkedPath)
+        val source = File(sourcePath)
+        if (!watermarked.isFile) {
+            result.error("not_found", "带水印文件不存在", null)
+            return
+        }
+        if (!source.isFile) {
+            result.error("not_found", "无水印母版不存在", null)
+            return
+        }
+        if (!withGalleryPermission(result) {
+                savePairToGalleryNow(watermarked, source, result)
+            }
+        ) {
+            return
+        }
+        savePairToGalleryNow(watermarked, source, result)
+    }
+
+    private fun savePairToGalleryNow(
+        watermarked: File,
+        source: File,
+        result: MethodChannel.Result,
+    ) {
+        worker.execute {
+            try {
+                val saved = GallerySaver.savePair(context, watermarked, source)
+                mainHandler.post {
+                    result.success(
+                        listOf(saved.watermarked.toString(), saved.source.toString()),
+                    )
+                }
+            } catch (error: Exception) {
+                mainHandler.post {
+                    result.error("save_failed", error.message ?: "成对保存到相册失败", null)
+                }
+            }
+        }
+    }
+
+    /**
+     * Android 9 及以下写公共相册需要存储权限。授权后执行同一笔操作，
+     * 单份和成对保存共用这段续接逻辑。
+     */
+    private fun withGalleryPermission(
+        result: MethodChannel.Result,
+        action: () -> Unit,
+    ): Boolean {
+        if (!GallerySaver.needsLegacyStoragePermission() ||
+            granted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        ) {
+            return true
+        }
+        val activity = context.findActivity()
+        if (activity == null) {
+            result.error("no_activity", "无法申请存储权限", null)
+            return false
+        }
+        pendingGalleryResult = result
+        pendingGalleryAction = action
+        ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+            GALLERY_PERMISSION_REQUEST_CODE,
+        )
+        return false
     }
 
     /** 用系统默认应用打开媒体文件（播放器/图片查看器），文件通过 FileProvider 临时授权。 */

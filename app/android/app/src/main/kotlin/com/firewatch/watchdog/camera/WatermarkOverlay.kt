@@ -116,6 +116,29 @@ object WatermarkOverlay {
         appPackageName = context.packageName
     }
 
+    /** 在无水印母版上绘制同一版式，供照片成片使用。 */
+    @Synchronized
+    fun drawMedia(canvas: Canvas, width: Int, height: Int, model: WatermarkModel) {
+        if (width <= 0 || height <= 0) return
+        drawInArea(canvas, model, RectF(0f, 0f, width.toFloat(), height.toFloat()))
+    }
+
+    /** 生成透明水印层，供视频转码时上传为 GL 纹理。 */
+    @Synchronized
+    fun renderMediaOverlay(
+        width: Int,
+        height: Int,
+        model: WatermarkModel,
+    ): Bitmap {
+        val bitmap = Bitmap.createBitmap(
+            width.coerceAtLeast(1),
+            height.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        drawMedia(Canvas(bitmap), bitmap.width, bitmap.height, model)
+        return bitmap
+    }
+
     private var cachedBitmap: Bitmap? = null
     private var cachedKey: String? = null
 

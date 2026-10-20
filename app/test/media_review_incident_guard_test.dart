@@ -14,18 +14,20 @@ import 'package:watchdog/state/app_controller.dart';
 //    保持本次会话，不重新进入游客模式（会自动带 guest-drill-incident）。
 // 2. 点首页右下「水印相机」，确认「未关联警情」提示；允许相机权限。
 // 3. 选「拍照」并点快门，照片保存后自动进入核对页。
-// 4. 不输入口述，确认主按钮「保存并完成」；点击后应回相机且本机有资料。
+// 4. 不输入口述，点「仅保存」；应先把带水印版与无水印版成对写入系统相册，
+//    再回相机，确认相册有两份且 App「现场资料」只有一条带水印记录。
 // 5. 再拍一张，核对页口述框输入「现场已设置警戒」（或录像口述后停止，
-//    等待本机转写），确认仍为「保存并完成」。点击不弹写入确认，返回相机；
-//    在「现场资料」重开该条，确认口述草稿保留；结合请求日志检查无写入请求。
-//    游客状态无远端记录仅是辅助观察，零 API 调用由下方 fake 断言证明。
+//    等待本机转写），确认底栏只有「保存并分享」和「仅保存」，写警情入口只在
+//    口述卡内。点「仅保存」后口述草稿保留；结合请求日志检查无写入请求。
 // 6. 有警情对照：重进游客模式恢复演练警情，或登录后加入真实警情，
 //    拍摄并补写口述，确认「核对无误，写入警情」，
-//    点击先弹「写入警情？」；联网真实警情仅「确认写入」后新增一次记录并回相机。
+//    点击先弹「写入警情？」；确认后只新增一次记录并留在核对页，不会自动导出相册。
+// 7. 再点「保存并分享」，确认相册先出现两份文件，随后系统分享菜单只收到带水印版；
+//    关闭分享菜单后回相机。
 //
-// 代码核查：media_review_page.dart 的 _actionBar 在无警情时选择本地完成分支；
-// _confirmAndSubmit 检查 _hasIncident，_submit 在读取 API 前再次检查当前警情 ID。
-// currentIncident == null 时不会走到 createIncidentObservation，含确认弹窗期间退出。
+// 代码核查：media_review_page.dart 的 _savePair 负责成对导出，_saveAndShare
+// 只在成对保存成功后分享带水印路径；_confirmAndSubmit 与 _submit 独立处理警情写入，
+// 并在读取 API 前再次检查当前警情 ID。
 
 class _RecordingApi extends ApiClient {
   _RecordingApi()
@@ -50,6 +52,7 @@ class _MemoryStore extends LocalMediaStore {
 
   final Map<String, String> drafts = {};
   final List<String> linked = [];
+  final Set<String> clearedSourceIds = {};
 
   @override
   Future<void> updateDerived({
@@ -58,10 +61,39 @@ class _MemoryStore extends LocalMediaStore {
     List<LocalAsrSegment>? segments,
     List<String>? frames,
     String? observationId,
+    String? sourcePath,
   }) async {
     if (transcript != null) drafts[id] = transcript;
     if (observationId != null) linked.add(observationId);
+    if (sourcePath != null) clearedSourceIds.add(id);
   }
+}
+
+Future<void> _pumpAsyncAction(WidgetTester tester) async {
+  await tester.pump();
+  for (var i = 0; i < 3; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+  }
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
+Future<void> _tapIncidentSubmit(WidgetTester tester) async {
+  final submit = find.text('核对无误，写入警情');
+  final scrollable = find
+      .descendant(
+        of: find.byType(ListView).first,
+        matching: find.byType(Scrollable),
+      )
+      .first;
+  await tester.scrollUntilVisible(submit, 160, scrollable: scrollable);
+  await tester.drag(scrollable, const Offset(0, -120));
+  await tester.pumpAndSettle();
+  expect(submit.hitTestable(), findsOneWidget);
+  await tester.tap(submit);
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -78,6 +110,11 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           const MethodChannel('xyz.luan/audioplayers.global'),
+          (_) async => null,
+        );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('xyz.luan/audioplayers.global/events'),
           (_) async => null,
         );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -106,7 +143,16 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           mediaCalls.add(call);
-          return 'content://media/test/1';
+          if (call.method == 'savePairToGallery') {
+            return const [
+              'content://media/test/watermarked',
+              'content://media/test/source',
+            ];
+          }
+          if (call.method == 'saveToGallery') {
+            return 'content://media/test/1';
+          }
+          return null;
         });
   });
 
@@ -121,6 +167,11 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           const MethodChannel('xyz.luan/audioplayers.global'),
+          null,
+        );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('xyz.luan/audioplayers.global/events'),
           null,
         );
     LocalMediaStore.overrideInstance = null;
@@ -146,6 +197,7 @@ void main() {
       incidentId: 'incident-1',
       kind: 'photo',
       path: '/tmp/watchdog-test/none.jpg',
+      sourcePath: '/tmp/watchdog-test/SRC_IMG_1.jpg',
       durationMs: 0,
       capturedAt: 1,
       lat: null,
@@ -164,8 +216,8 @@ void main() {
             body: TextButton(
               onPressed: () async {
                 results.add(
-                  await Navigator.of(context).push<bool>(
-                    MaterialPageRoute(
+                  await Navigator.of(context).push<MediaReviewOutcome>(
+                    MaterialPageRoute<MediaReviewOutcome>(
                       builder: (_) =>
                           MediaReviewPage(controller: controller, media: media),
                     ),
@@ -184,22 +236,27 @@ void main() {
   }
 
   Future<void> finish(WidgetTester tester, List<Object?> results) async {
-    expect(results, [true]);
+    expect(results, [MediaReviewOutcome.saved]);
     expect(find.byType(MediaReviewPage), findsNothing);
-    expect(mediaCalls.where((c) => c.method == 'saveToGallery'), hasLength(1));
+    expect(
+      mediaCalls.where((c) => c.method == 'savePairToGallery'),
+      hasLength(1),
+    );
+    expect(store.clearedSourceIds, contains('media-guard'));
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('无当前警情且有转写：保存完成只存草稿，不调用写警情 API', (tester) async {
+  testWidgets('无当前警情且有转写：仅保存成对导出，不调用写警情 API', (tester) async {
     final results = await open(tester, '原始转写');
     expect(controller.currentIncident, isNull);
     await tester.enterText(find.byType(TextField), '核对后的口述');
     await tester.pump();
-    expect(find.text('保存并完成'), findsOneWidget);
+    expect(find.text('保存并分享'), findsOneWidget);
+    expect(find.text('仅保存'), findsOneWidget);
     expect(find.text('核对无误，写入警情'), findsNothing);
-    await tester.tap(find.text('保存并完成'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.text('仅保存'));
+    await _pumpAsyncAction(tester);
     expect(find.text('写入警情？'), findsNothing);
     expect(api.transcripts, isEmpty);
     expect(store.linked, isEmpty);
@@ -209,10 +266,11 @@ void main() {
 
   testWidgets('无当前警情且无文本：保存完成导出相册并返回，不写警情', (tester) async {
     final results = await open(tester, '');
-    expect(find.text('保存并完成'), findsOneWidget);
+    expect(find.text('保存并分享'), findsOneWidget);
+    expect(find.text('仅保存'), findsOneWidget);
     expect(find.text('核对无误，写入警情'), findsNothing);
-    await tester.tap(find.text('保存并完成'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.text('仅保存'));
+    await _pumpAsyncAction(tester);
     expect(api.transcripts, isEmpty);
     expect(store.linked, isEmpty);
     await finish(tester, results);
@@ -222,23 +280,26 @@ void main() {
     joinIncident();
     final results = await open(tester, '现场已设置警戒');
     expect(find.text('核对无误，写入警情'), findsOneWidget);
-    expect(find.text('保存并完成'), findsNothing);
-    await tester.tap(find.text('核对无误，写入警情'));
-    await tester.pumpAndSettle();
+    expect(find.text('保存并分享'), findsOneWidget);
+    expect(find.text('仅保存'), findsOneWidget);
+    await _tapIncidentSubmit(tester);
     expect(find.text('写入警情？'), findsOneWidget);
     expect(api.transcripts, isEmpty);
     await tester.tap(find.text('确认写入'));
     await tester.pumpAndSettle();
     expect(api.transcripts, ['现场已设置警戒']);
     expect(store.linked, ['media-guard']);
-    await finish(tester, results);
+    expect(mediaCalls, isEmpty);
+    expect(results, isEmpty);
+    expect(find.byType(MediaReviewPage), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('写入确认期间当前警情清空：再次检查并阻止 API 调用', (tester) async {
     joinIncident();
     final results = await open(tester, '现场已设置警戒');
-    await tester.tap(find.text('核对无误，写入警情'));
-    await tester.pumpAndSettle();
+    await _tapIncidentSubmit(tester);
     controller.currentIncident = null;
     await tester.tap(find.text('确认写入'));
     await tester.pumpAndSettle();

@@ -40,8 +40,9 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 相机会话：预览 + 照片 + 录像，三者共用同一个 OverlayEffect，
- * 因此水印在预览里所见即所得，并直接烧进照片与录像像素，不依赖二次转码。
+ * 相机会话：预览显示水印，照片与录像保留无水印母版。
+ * 保存前再由 MediaWatermarkProcessor 使用同一版式生成带水印成片，
+ * 因而同一笔拍摄可以同时得到带水印版和无水印版。
  */
 class CameraSession(
     private val context: Context,
@@ -154,7 +155,7 @@ class CameraSession(
         val lifetime = EffectLifetime(glThread)
         effectLifetime = lifetime
         val effect = OverlayEffect(
-            CameraEffect.PREVIEW or CameraEffect.VIDEO_CAPTURE or CameraEffect.IMAGE_CAPTURE,
+            CameraEffect.PREVIEW,
             0,
             Handler(glThread.looper),
         ) { error ->
@@ -350,7 +351,7 @@ class CameraSession(
             onResult(Result.failure(IllegalStateException("相机尚未就绪")))
             return
         }
-        val file = newFile("IMG", "jpg")
+        val file = newFile("SRC_IMG", "jpg")
         val options = ImageCapture.OutputFileOptions.Builder(file).build()
         capture.takePicture(options, mainExecutor, object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
@@ -377,7 +378,7 @@ class CameraSession(
         // 录制期间水印时间戳冻结，成片与预览一致
         watermark = watermark.withFrozenTime()
 
-        val file = newFile("VID", "mp4")
+        val file = newFile("SRC_VID", "mp4")
         val options = FileOutputOptions.Builder(file).build()
         val pending = capture.output.prepareRecording(context, options)
         if (hasAudioPermission()) pending.withAudioEnabled()

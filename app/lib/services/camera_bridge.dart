@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -96,6 +97,8 @@ class CameraRecordEvent {
   final String type;
   final String? path;
   final int? durationMs;
+  final String? taskId;
+  final double? progress;
   final bool autoStopped;
   final String? code;
   final String? message;
@@ -104,6 +107,8 @@ class CameraRecordEvent {
     required this.type,
     this.path,
     this.durationMs,
+    this.taskId,
+    this.progress,
     this.autoStopped = false,
     this.code,
     this.message,
@@ -114,6 +119,8 @@ class CameraRecordEvent {
       type: (map['type'] as String?) ?? 'unknown',
       path: map['path'] as String?,
       durationMs: (map['durationMs'] as num?)?.toInt(),
+      taskId: map['taskId'] as String?,
+      progress: (map['progress'] as num?)?.toDouble(),
       autoStopped: map['autoStopped'] == true,
       code: map['code']?.toString(),
       message: map['message'] as String?,
@@ -215,6 +222,24 @@ class CameraBridge {
     return _channel.invokeMethod<String>('takePhoto');
   }
 
+  /// 从无水印母版生成带水印成片。视频进度通过 [events] 的
+  /// `watermark_progress` 事件返回，并用 [taskId] 隔离旧任务。
+  static Future<String?> renderWatermarkedCopy({
+    required String sourcePath,
+    required WatermarkPayload watermark,
+    required String taskId,
+  }) async {
+    try {
+      return await _mediaChannel.invokeMethod<String>('renderWatermarkedCopy', {
+        'path': sourcePath,
+        'taskId': taskId,
+        'watermark': watermark.toMap(),
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> startRecording() async {
     await _channel.invokeMethod<void>('startRecording');
   }
@@ -296,6 +321,36 @@ class CameraBridge {
       });
     } catch (_) {
       return null;
+    }
+  }
+
+  /// 成对保存带水印版与无水印母版。任一份失败时原生侧回滚本次写入。
+  static Future<List<String>?> savePairToGallery({
+    required String watermarkedPath,
+    required String sourcePath,
+  }) async {
+    try {
+      final raw = await _mediaChannel.invokeMethod<List<Object?>>(
+        'savePairToGallery',
+        {
+          'watermarkedPath': watermarkedPath,
+          'sourcePath': sourcePath,
+        },
+      );
+      final uris = raw?.whereType<String>().toList(growable: false) ?? const [];
+      return uris.length == 2 ? uris : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> deleteLocalFile(String path) async {
+    if (path.isEmpty) return;
+    try {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // 清理失败不阻断已完成保存；下次过期清理会继续处理。
     }
   }
 

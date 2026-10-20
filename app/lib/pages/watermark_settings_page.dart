@@ -227,7 +227,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   const SizedBox(height: 18),
                   Text(
                     '水印在按下快门或开始录像那一刻固定，成片中的时间、地址不会随时间跳动。'
-                    '照片与视频默认只保存在本机，可在核对页另存到手机相册；是否分享由你逐次决定。',
+                    '核对页只提供「保存并分享」和「仅保存」：两者都会把带水印版与无水印版成对保存到手机相册；保存并分享只分享带水印文件，且不附带口述文字。',
                     style: TextStyle(
                       fontSize: 12,
                       color: AppColors.textSecondary,

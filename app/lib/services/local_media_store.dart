@@ -17,6 +17,8 @@ class LocalMedia {
   final String incidentId;
   final String kind; // photo | video
   final String path;
+  /// 相机输出的无水印母版；只用于成对导出相册，不单独展示。
+  final String sourcePath;
   final int durationMs;
   final int capturedAt;
   final double? lat;
@@ -33,6 +35,7 @@ class LocalMedia {
     required this.incidentId,
     required this.kind,
     required this.path,
+    this.sourcePath = '',
     required this.durationMs,
     required this.capturedAt,
     required this.lat,
@@ -48,6 +51,32 @@ class LocalMedia {
   bool get isVideo => kind == 'video';
   bool get hasTranscript => transcript.trim().isNotEmpty;
 
+  LocalMedia copyWith({
+    String? sourcePath,
+    String? transcript,
+    List<LocalAsrSegment>? segments,
+    List<String>? frames,
+    String? observationId,
+  }) {
+    return LocalMedia(
+      id: id,
+      incidentId: incidentId,
+      kind: kind,
+      path: path,
+      sourcePath: sourcePath ?? this.sourcePath,
+      durationMs: durationMs,
+      capturedAt: capturedAt,
+      lat: lat,
+      lon: lon,
+      address: address,
+      weather: weather,
+      transcript: transcript ?? this.transcript,
+      segments: segments ?? this.segments,
+      frames: frames ?? this.frames,
+      observationId: observationId ?? this.observationId,
+    );
+  }
+
   factory LocalMedia.fromRow(Map<String, Object?> row) {
     final segmentsRaw = row['segments'] as String?;
     final framesRaw = row['frames'] as String?;
@@ -56,6 +85,7 @@ class LocalMedia {
       incidentId: (row['incident_id'] as String?) ?? '',
       kind: (row['kind'] as String?) ?? 'photo',
       path: (row['path'] as String?) ?? '',
+      sourcePath: (row['source_path'] as String?) ?? '',
       durationMs: (row['duration_ms'] as num?)?.toInt() ?? 0,
       capturedAt: (row['captured_at'] as num?)?.toInt() ?? 0,
       lat: (row['lat'] as num?)?.toDouble(),
@@ -125,7 +155,7 @@ class LocalMediaStore {
     final dir = await getApplicationDocumentsDirectory();
     _db = await openDatabase(
       p.join(dir.path, 'watchdog_media.db'),
-      version: 1,
+      version: 2,
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE local_media (
@@ -133,6 +163,7 @@ class LocalMediaStore {
             incident_id TEXT NOT NULL,
             kind TEXT NOT NULL,
             path TEXT NOT NULL,
+            source_path TEXT NOT NULL DEFAULT '',
             duration_ms INTEGER NOT NULL DEFAULT 0,
             captured_at INTEGER NOT NULL,
             lat REAL,
@@ -150,6 +181,13 @@ class LocalMediaStore {
           'CREATE INDEX idx_local_media_incident ON local_media(incident_id, captured_at DESC)',
         );
       },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            "ALTER TABLE local_media ADD COLUMN source_path TEXT NOT NULL DEFAULT ''",
+          );
+        }
+      },
     );
     return _db!;
   }
@@ -163,6 +201,7 @@ class LocalMediaStore {
         'incident_id': media.incidentId,
         'kind': media.kind,
         'path': media.path,
+        'source_path': media.sourcePath,
         'duration_ms': media.durationMs,
         'captured_at': media.capturedAt,
         'lat': media.lat,
@@ -183,9 +222,18 @@ class LocalMediaStore {
 
   Future<Set<String>> allPaths() async {
     final db = await _database;
-    final rows = await db.query('local_media', columns: ['path']);
+    final rows = await db.query(
+      'local_media',
+      columns: ['path', 'source_path', 'frames'],
+    );
     return rows
-        .map((row) => (row['path'] as String?) ?? '')
+        .expand(
+          (row) => <String>[
+            (row['path'] as String?) ?? '',
+            (row['source_path'] as String?) ?? '',
+            ...LocalMedia._decodeFrames(row['frames'] as String?),
+          ],
+        )
         .where((path) => path.isNotEmpty)
         .toSet();
   }
@@ -249,6 +297,7 @@ class LocalMediaStore {
     List<LocalAsrSegment>? segments,
     List<String>? frames,
     String? observationId,
+    String? sourcePath,
   }) async {
     final db = await _database;
     final values = <String, Object?>{};
@@ -260,6 +309,7 @@ class LocalMediaStore {
     }
     if (frames != null) values['frames'] = jsonEncode(frames);
     if (observationId != null) values['observation_id'] = observationId;
+    if (sourcePath != null) values['source_path'] = sourcePath;
     if (values.isEmpty) return;
     await db.update('local_media', values, where: 'id = ?', whereArgs: [id]);
   }
@@ -277,15 +327,17 @@ class LocalMediaStore {
         .millisecondsSinceEpoch;
     final rows = await db.query(
       'local_media',
-      columns: ['path', 'frames'],
+      columns: ['path', 'source_path', 'frames'],
       where: 'captured_at < ?',
       whereArgs: [cutoff],
     );
     return rows.fold<int>(0, (count, row) {
       final path = (row['path'] as String?) ?? '';
+      final sourcePath = (row['source_path'] as String?) ?? '';
       final frames = LocalMedia._decodeFrames(row['frames'] as String?);
       return count +
           (path.isNotEmpty ? 1 : 0) +
+          (sourcePath.isNotEmpty ? 1 : 0) +
           frames.where((frame) => frame.isNotEmpty).length;
     });
   }
@@ -301,13 +353,14 @@ class LocalMediaStore {
         .millisecondsSinceEpoch;
     final rows = await db.query(
       'local_media',
-      columns: ['path', 'frames'],
+      columns: ['path', 'source_path', 'frames'],
       where: 'captured_at < ?',
       whereArgs: [cutoff],
     );
     final removed = <String>[];
     for (final row in rows) {
       removed.add((row['path'] as String?) ?? '');
+      removed.add((row['source_path'] as String?) ?? '');
       final frames = LocalMedia._decodeFrames(row['frames'] as String?);
       removed.addAll(frames);
     }

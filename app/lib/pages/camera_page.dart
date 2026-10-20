@@ -36,6 +36,26 @@ class CameraFlowPolicy {
 
 enum _CaptureMode { photo, video }
 
+class _PendingRender {
+  final bool video;
+  final String sourcePath;
+  final WatermarkPayload watermark;
+  final LocationFix? fix;
+  final int durationMs;
+  final bool review;
+
+  const _PendingRender({
+    required this.video,
+    required this.sourcePath,
+    required this.watermark,
+    required this.fix,
+    this.durationMs = 0,
+    this.review = true,
+  });
+}
+
+enum _PendingRenderChoice { retry, discard }
+
 /// 水印相机页。
 ///
 /// 现场约束（已按 UX 审查修正）：
@@ -56,6 +76,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   StreamSubscription<CameraRecordEvent>? _subscription;
 
   WatermarkPayload _watermark = const WatermarkPayload();
+  WatermarkPayload? _recordingWatermark;
   CameraPermissionState _permissions = CameraPermissionState.denied;
   LocationFix? _fix;
   bool _permissionDenied = false;
@@ -64,6 +85,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   bool _recording = false;
   bool _starting = false;
   bool _capturing = false;
+  bool _processing = false;
   bool _torch = false;
   _CaptureMode _mode = _CaptureMode.photo;
   Duration _elapsed = Duration.zero;
@@ -81,6 +103,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   /// 关闭流程进行中（含录像确认弹窗），防止连点叉/返回键触发多次 pop。
   bool _closing = false;
   String? _statusText;
+  String? _processingTaskId;
+  double _processingProgress = 0;
+  int _mediaTaskSerial = 0;
+  _PendingRender? _pendingRender;
 
   @override
   void initState() {
@@ -106,6 +132,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     _subscription?.cancel();
     _ticker?.cancel();
     if (_screenHeld) unawaited(ScreenOn.setKeepScreenOn(false));
+    final pending = _pendingRender;
+    if (pending != null) {
+      unawaited(CameraBridge.deleteLocalFile(pending.sourcePath));
+    }
     super.dispose();
   }
 
@@ -140,6 +170,50 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         Directionality.of(context),
       ),
     );
+  }
+
+  String _nextMediaTaskId(String kind) =>
+      '${kind}_${DateTime.now().microsecondsSinceEpoch}_${_mediaTaskSerial++}';
+
+  Future<String?> _renderWatermarkedCopy({
+    required String sourcePath,
+    required WatermarkPayload watermark,
+    required String taskId,
+    required bool video,
+  }) async {
+    setState(() {
+      _processing = true;
+      _processingTaskId = taskId;
+      _processingProgress = 0;
+      _statusText = video ? '正在生成水印版视频…' : '正在生成水印版照片…';
+    });
+    await ScreenOn.setKeepScreenOn(true);
+    final watermarked = await CameraBridge.renderWatermarkedCopy(
+      sourcePath: sourcePath,
+      watermark: watermark,
+      taskId: taskId,
+    );
+    await ScreenOn.setKeepScreenOn(false);
+    if (mounted) {
+      setState(() {
+        _processing = false;
+        _processingTaskId = null;
+        _processingProgress = 0;
+      });
+    }
+    return watermarked;
+  }
+
+  void _showReviewOutcome(MediaReviewOutcome outcome) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    setState(() {
+      _statusText = switch (outcome) {
+        MediaReviewOutcome.saved => '已保存带水印版和无水印版到手机相册',
+        MediaReviewOutcome.savedWatermarkedOnly => '旧资料仅保存了带水印版',
+        MediaReviewOutcome.shared => '两份已保存，分享菜单已关闭',
+        MediaReviewOutcome.sharedWatermarkedOnly => '旧资料已保存带水印版，分享菜单已关闭',
+      };
+    });
   }
 
   Future<void> _reconcileRecording([String? message]) async {
@@ -296,15 +370,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       case 'stopped':
         _stateUnknown = false;
         _ticker?.cancel();
-        unawaited(ScreenOn.setKeepScreenOn(false));
         _screenHeld = false;
-        _announce('录像已停止，视频已保存');
+        _announce('录像已停止，正在生成水印版');
         setState(() {
           _recording = false;
           _starting = false;
           _statusText = _saveWithoutReview
-              ? '视频已保存，可到现场资料查看'
-              : (event.autoStopped ? '已录满 60 秒，自动保存' : '视频已保存到本机');
+              ? '视频已保存，正在生成水印版'
+              : (event.autoStopped ? '已录满 60 秒，正在生成水印版' : '录像已停止，正在生成水印版');
         });
         final path = event.path;
         if (path != null) _openReviewForVideo(path, event.durationMs ?? 0);
@@ -314,7 +387,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         setState(() => _statusText = '已达 60 秒上限，正在保存…');
         break;
       case 'error':
+        _recordingWatermark = null;
         unawaited(_reconcileRecording(event.message));
+        break;
+      case 'watermark_progress':
+        if (event.taskId != _processingTaskId) break;
+        final progress = (event.progress ?? 0).clamp(0.0, 1.0);
+        setState(() {
+          _processingProgress = progress;
+          _statusText = '正在生成水印版 ${(progress * 100).round()}%';
+        });
         break;
     }
   }
@@ -345,37 +427,28 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _takePhoto() async {
-    if (_capturing || _recording || _starting || _stateUnknown) return;
+    if (_capturing || _processing || _recording || _starting || _stateUnknown) {
+      return;
+    }
+    if (!await _confirmPendingBeforeNewCapture()) return;
     setState(() => _capturing = true);
     try {
       if (!await _checkStorage(false)) return;
       final snapshot = await _snapshotWatermark();
-      final path = await CameraBridge.takePhoto();
+      final sourcePath = await CameraBridge.takePhoto();
       if (!mounted) return;
-      if (path == null) {
+      if (sourcePath == null) {
         setState(() => _statusText = '拍照失败，请重试');
         return;
       }
-      final media = await MediaCaptureService.registerPhoto(
-        incidentId: widget.controller.currentIncident?.id ?? '',
-        path: path,
-        watermark: snapshot,
-        fix: _fix,
-      );
-      if (!mounted) return;
-      setState(() => _statusText = '照片已保存');
-      final saved = await Navigator.of(context).push<bool>(
-        MaterialPageRoute<bool>(
-          builder: (_) =>
-              MediaReviewPage(controller: widget.controller, media: media),
+      await _finishPhoto(
+        _PendingRender(
+          video: false,
+          sourcePath: sourcePath,
+          watermark: snapshot,
+          fix: _fix,
         ),
       );
-      if (saved == true && mounted) {
-        // 核对页的 SnackBar 会跨页留在底部，正好盖住左下角水印；回到取景页
-        // 就收起它，改在右侧控制区显示状态，保证水印始终完整可见。
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        setState(() => _statusText = '已保存到「现场资料」');
-      }
     } on PlatformException catch (error) {
       if (!mounted) return;
       setState(() => _statusText = error.message ?? '拍照失败');
@@ -384,12 +457,110 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _finishPhoto(_PendingRender pending) async {
+    final taskId = _nextMediaTaskId('photo');
+    final path = await _renderWatermarkedCopy(
+      sourcePath: pending.sourcePath,
+      watermark: pending.watermark,
+      taskId: taskId,
+      video: false,
+    );
+    if (!mounted) return;
+    if (path == null) {
+      setState(() {
+        _pendingRender = pending;
+        _statusText = '水印照片生成失败，母版已保留，可点击“重新生成水印版”';
+      });
+      return;
+    }
+    final media = await MediaCaptureService.registerPhoto(
+      incidentId: widget.controller.currentIncident?.id ?? '',
+      path: path,
+      sourcePath: pending.sourcePath,
+      watermark: pending.watermark,
+      fix: pending.fix,
+    );
+    if (!mounted) return;
+    setState(() {
+      if (_pendingRender?.sourcePath == pending.sourcePath) {
+        _pendingRender = null;
+      }
+      _statusText = '照片已保存';
+    });
+    final outcome = await Navigator.of(context).push<MediaReviewOutcome>(
+      MaterialPageRoute<MediaReviewOutcome>(
+        builder: (_) =>
+            MediaReviewPage(controller: widget.controller, media: media),
+      ),
+    );
+    if (outcome != null && mounted) {
+      // 核对页的 SnackBar 会跨页留在底部，正好盖住左下角水印；回到取景页
+      // 就收起它，改在右侧控制区显示状态，保证水印始终完整可见。
+      _showReviewOutcome(outcome);
+    }
+  }
+
+  Future<void> _retryPendingRender() async {
+    final pending = _pendingRender;
+    if (pending == null || _processing || _capturing || _starting) return;
+    if (pending.video) {
+      await _finishVideo(pending);
+    } else {
+      await _finishPhoto(pending);
+    }
+  }
+
+  Future<void> _discardPendingRender() async {
+    final pending = _pendingRender;
+    if (pending == null) return;
+    if (mounted) {
+      setState(() => _pendingRender = null);
+    } else {
+      _pendingRender = null;
+    }
+    await CameraBridge.deleteLocalFile(pending.sourcePath);
+  }
+
+  Future<bool> _confirmPendingBeforeNewCapture() async {
+    final pending = _pendingRender;
+    if (pending == null) return true;
+    final choice = await showDialog<_PendingRenderChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(pending.video ? '上段视频尚未生成水印版' : '上张照片尚未生成水印版'),
+        content: const Text('原始母版仍保留在本机。可先重试生成，或放弃后重新拍摄。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.discard),
+            child: const Text('放弃母版'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.retry),
+            child: const Text('重试生成'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return false;
+    switch (choice) {
+      case _PendingRenderChoice.retry:
+        await _retryPendingRender();
+        return false;
+      case _PendingRenderChoice.discard:
+        await _discardPendingRender();
+        return true;
+      case null:
+        return false;
+    }
+  }
+
   Future<void> _toggleRecording() async {
-    if (_starting || _capturing || _stateUnknown) return;
+    if (_starting || _capturing || _processing || _stateUnknown) return;
     if (_recording) {
       await _stopRecording();
       return;
     }
+    if (!await _confirmPendingBeforeNewCapture()) return;
     setState(() {
       _starting = true;
       _saveWithoutReview = false;
@@ -400,11 +571,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         if (mounted) setState(() => _starting = false);
         return;
       }
-      await _snapshotWatermark();
+      _recordingWatermark = await _snapshotWatermark();
       await CameraBridge.startRecording();
     } on PlatformException catch (error) {
       if (!mounted) return;
       setState(() {
+        _recordingWatermark = null;
         _starting = false;
         _statusText = error.message ?? '无法开始录制';
       });
@@ -412,17 +584,57 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _openReviewForVideo(String path, int durationMs) async {
-    final review = !_saveWithoutReview;
+    final pending = _PendingRender(
+      video: true,
+      sourcePath: path,
+      watermark: _recordingWatermark ?? _watermark,
+      fix: _fix,
+      durationMs: durationMs,
+      review: !_saveWithoutReview,
+    );
+    _recordingWatermark = null;
+    await _finishVideo(pending);
+  }
+
+  Future<void> _finishVideo(_PendingRender pending) async {
+    final taskId = _nextMediaTaskId('video');
+    final watermarked = await _renderWatermarkedCopy(
+      sourcePath: pending.sourcePath,
+      watermark: pending.watermark,
+      taskId: taskId,
+      video: true,
+    );
+    if (!mounted) return;
+    if (watermarked == null) {
+      setState(() {
+        _pendingRender = pending;
+        _statusText = '水印视频生成失败，无水印母版已保留，可点击“重新生成水印版”';
+      });
+      _announce('水印视频生成失败');
+      return;
+    }
     final media = await MediaCaptureService.registerVideo(
       incidentId: widget.controller.currentIncident?.id ?? '',
-      path: path,
-      durationMs: durationMs,
-      watermark: _watermark,
-      fix: _fix,
+      path: watermarked,
+      sourcePath: pending.sourcePath,
+      durationMs: pending.durationMs,
+      watermark: pending.watermark,
+      fix: pending.fix,
     );
-    if (!mounted || !review) return;
-    final saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
+    if (!mounted) return;
+    setState(() {
+      if (_pendingRender?.sourcePath == pending.sourcePath) {
+        _pendingRender = null;
+      }
+      if (!pending.review) {
+        _statusText = '视频已生成水印版，可到现场资料查看';
+      }
+    });
+    if (!pending.review) {
+      return;
+    }
+    final outcome = await Navigator.of(context).push<MediaReviewOutcome>(
+      MaterialPageRoute<MediaReviewOutcome>(
         builder: (_) => MediaReviewPage(
           controller: widget.controller,
           media: media,
@@ -430,9 +642,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         ),
       ),
     );
-    if (saved == true && mounted) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      setState(() => _statusText = '已保存到「现场资料」');
+    if (outcome != null && mounted) {
+      _showReviewOutcome(outcome);
     }
   }
 
@@ -464,6 +675,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   /// 退出前确认：录像中必须先停下来并等文件落盘，否则会出现找不到的孤儿文件。
   Future<bool> _confirmLeave() async {
+    if (_processing) {
+      setState(() => _statusText = '正在生成水印版，请稍候');
+      return false;
+    }
     if (_capturing) {
       setState(() => _statusText = '正在保存照片，请稍候');
       return false;
@@ -472,6 +687,37 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       await _reconcileRecording();
       return false;
     }
+    if (_pendingRender != null) {
+      final choice = await showDialog<_PendingRenderChoice>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('水印成片尚未生成'),
+          content: const Text('当前原始母版仍保留在本机。继续生成会返回处理流程，退出并删除会放弃这份母版。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.discard),
+              child: const Text('退出并删除'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.retry),
+              child: const Text('继续生成'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return false;
+      switch (choice) {
+        case _PendingRenderChoice.retry:
+          await _retryPendingRender();
+          return false;
+        case _PendingRenderChoice.discard:
+          await _discardPendingRender();
+          return true;
+        case null:
+          return false;
+      }
+    }
+    if (!mounted) return false;
     if (!_recording && !_starting) return true;
     final leave = await showDialog<bool>(
       context: context,
@@ -692,7 +938,11 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   IconButton(
                     tooltip: '现场资料',
                     onPressed:
-                        (_recording || _capturing || _starting || _stateUnknown)
+                        (_recording ||
+                            _capturing ||
+                            _processing ||
+                            _starting ||
+                            _stateUnknown)
                         ? null
                         : _openGallery,
                     icon: const Icon(
@@ -915,6 +1165,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   onPressed: _reconcileRecording,
                   child: const Text('重试确认'),
                 ),
+              if (_pendingRender != null && !_processing)
+                TextButton.icon(
+                  style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
+                  onPressed: _retryPendingRender,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('重新生成水印版'),
+                ),
               if (!vertical) _modeSwitch(),
               const SizedBox(height: 14),
               if (_statusText != null)
@@ -924,6 +1181,18 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     _statusText!,
                     style: const TextStyle(color: Colors.white70, fontSize: 12),
                     textAlign: TextAlign.center,
+                  ),
+                ),
+              if (_processing)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: LinearProgressIndicator(
+                    value: _processingProgress <= 0
+                        ? null
+                        : _processingProgress,
+                    minHeight: 3,
+                    color: const Color(0xFFFF9500),
+                    backgroundColor: Colors.white12,
                   ),
                 ),
               if (vertical) ...[
@@ -937,7 +1206,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     _roundIcon(
                       icon: _torch ? Icons.flash_on : Icons.flash_off,
                       tooltip: _torch ? '关闭手电筒' : '打开手电筒',
-                      onTap: (_capturing || _starting) ? null : _toggleTorch,
+                      onTap: (_capturing || _processing || _starting)
+                          ? null
+                          : _toggleTorch,
                     ),
                     const SizedBox(width: 12),
                     _roundIcon(
@@ -947,6 +1218,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                           (_recording ||
                               _starting ||
                               _capturing ||
+                              _processing ||
                               _stateUnknown)
                           ? null
                           : CameraBridge.switchCamera,
@@ -960,7 +1232,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     _roundIcon(
                       icon: _torch ? Icons.flash_on : Icons.flash_off,
                       tooltip: _torch ? '关闭手电筒' : '打开手电筒',
-                      onTap: (_capturing || _starting) ? null : _toggleTorch,
+                      onTap: (_capturing || _processing || _starting)
+                          ? null
+                          : _toggleTorch,
                     ),
                     _shutter(),
                     _roundIcon(
@@ -970,6 +1244,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                           (_recording ||
                               _starting ||
                               _capturing ||
+                              _processing ||
                               _stateUnknown)
                           ? null
                           : CameraBridge.switchCamera,
@@ -995,7 +1270,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           selected: selected,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: (_recording || _starting || _capturing || _stateUnknown)
+            onTap:
+                (_recording ||
+                    _starting ||
+                    _capturing ||
+                    _processing ||
+                    _stateUnknown)
                 ? null
                 : () => setState(() => _mode = mode),
             child: AnimatedContainer(
@@ -1050,7 +1330,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   Widget _shutter() {
     final video = _mode == _CaptureMode.video;
-    final busy = _capturing || _starting || _stateUnknown;
+    final busy = _capturing || _processing || _starting || _stateUnknown;
     final active = video && _recording;
     return Semantics(
       button: true,

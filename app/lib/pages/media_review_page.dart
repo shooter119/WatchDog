@@ -2,14 +2,21 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../services/camera_bridge.dart';
 import '../services/local_asr_service.dart';
 import '../services/local_media_store.dart';
 import '../services/media_capture_service.dart';
+import '../services/media_share_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+
+enum MediaReviewOutcome {
+  saved,
+  savedWatermarkedOnly,
+  shared,
+  sharedWatermarkedOnly,
+}
 
 /// 拍摄后的核对页。
 ///
@@ -42,8 +49,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
   bool _busy = false;
   bool _deriving = false;
   bool _submitted = false;
-  bool _gallerySaved = false;
-  bool _galleryBusy = false;
+  bool _pairSaved = false;
   String _stage = '';
   String? _deriveError;
   int _deriveRun = 0;
@@ -223,13 +229,9 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     if (api == null) {
       setState(() => _busy = true);
       await _flushDraft();
-      final gallery = await _saveToGallery(announce: false);
       if (!mounted) return;
       setState(() => _busy = false);
-      _toast(
-        gallery ? '未连接服务器，口述已存为本机草稿，并已保存到手机相册' : '未连接服务器，口述文字已保存在本机草稿，联网后可再写入',
-      );
-      Navigator.of(context).pop(true);
+      _toast('未连接服务器，口述文字已保存在本机草稿，联网后可再写入');
       return;
     }
     setState(() => _busy = true);
@@ -246,16 +248,12 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
         observationId: _media.id,
       );
       _savedDraft = text;
-      // 写警情与存相册互不影响：相册失败只提示，不回滚已经写入的警情。
-      final gallery = await _saveToGallery(announce: false);
       if (!mounted) return;
       setState(() {
         _submitted = true;
         _busy = false;
       });
-      _toast(gallery ? '已写入警情，并保存到手机相册' : '已写入警情；相册保存失败，可用分享另存');
-      // 写入成功同样回到上级页面，避免停在本页让人以为还要再点一次。
-      Navigator.of(context).pop(true);
+      _toast('已写入警情，可继续仅保存或保存并分享');
     } catch (error) {
       if (!mounted) return;
       // 失败时内容仍保留在本机草稿里，用户重进页面不会丢。
@@ -266,60 +264,96 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     }
   }
 
-  /// 把拍摄文件导出到系统相册（重复点击复用同一相册项）。
-  Future<bool> _saveToGallery({bool announce = true}) async {
-    if (_galleryBusy) return _gallerySaved;
-    if (_gallerySaved) return true;
-    setState(() => _galleryBusy = true);
-    final uri = await CameraBridge.saveToGallery(_media.path);
+  /// 保存带水印版和无水印母版。旧资料没有母版时明确降级为单份保存。
+  Future<bool> _savePair({bool announce = true}) async {
+    if (_pairSaved) return true;
+    final sourcePath = _media.sourcePath;
+    final saved = sourcePath.isNotEmpty
+        ? await CameraBridge.savePairToGallery(
+                watermarkedPath: _media.path,
+                sourcePath: sourcePath,
+              ) !=
+              null
+        : await CameraBridge.saveToGallery(_media.path) != null;
     if (!mounted) return false;
-    setState(() {
-      _galleryBusy = false;
-      _gallerySaved = uri != null;
-    });
+    setState(() => _pairSaved = saved);
     if (announce) {
-      _toast(uri != null ? '已保存到手机相册' : '保存到相册失败，可用「分享」另存');
-    }
-    return uri != null;
-  }
-
-  /// 完成核对：文件本来就在「现场资料」，再导出一份到系统相册方便长期翻看。
-  Future<void> _completeOnly() async {
-    if (_busy || _galleryBusy) return;
-    setState(() => _busy = true);
-    final gallery = await _saveToGallery(announce: false);
-    await _flushDraft();
-    if (!mounted) return;
-    setState(() => _busy = false);
-    _toast(gallery ? '已保存到手机相册，可在「现场资料」补写口述' : '已保存在「现场资料」；相册保存失败，可用分享另存');
-    Navigator.of(context).pop(true);
-  }
-
-  /// 有口述但没有关联警情：允许完成核对，文字留在本机草稿。
-  Future<void> _completeWithoutIncident() async {
-    if (_busy || _galleryBusy) return;
-    setState(() => _busy = true);
-    final gallery = await _saveToGallery(announce: false);
-    await _flushDraft();
-    if (!mounted) return;
-    setState(() => _busy = false);
-    _toast(gallery ? '还没有关联警情，口述已存为本机草稿，并已保存到手机相册' : '还没有关联警情，口述已存为本机草稿');
-    Navigator.of(context).pop(true);
-  }
-
-  Future<void> _share() async {
-    try {
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(_media.path)],
-          text: _transcript.text.trim().isEmpty
-              ? '火场现场资料'
-              : _transcript.text.trim(),
-        ),
+      _toast(
+        saved
+            ? (sourcePath.isEmpty ? '旧资料仅保存了带水印版' : '已保存带水印版和无水印版到手机相册')
+            : '两份相册文件保存失败，已回滚，请重试',
       );
-    } catch (_) {
-      _toast('系统分享不可用');
     }
+    return saved;
+  }
+
+  Future<void> _cleanupExportedSource() async {
+    final sourcePath = _media.sourcePath;
+    if (sourcePath.isEmpty) return;
+    try {
+      final file = File(sourcePath);
+      if (await file.exists()) await file.delete();
+      if (await file.exists()) return;
+      await LocalMediaStore.instance.updateDerived(
+        id: _media.id,
+        sourcePath: '',
+      );
+      _media = _media.copyWith(sourcePath: '');
+    } catch (_) {
+      // 相册已经双份落盘；母版清理失败时留待过期清理。
+    }
+  }
+
+  Future<void> _saveOnly() async {
+    if (_busy || _deriving) return;
+    final paired = _media.sourcePath.isNotEmpty;
+    setState(() => _busy = true);
+    await _flushDraft();
+    final saved = await _savePair(announce: false);
+    if (!mounted) return;
+    if (!saved) {
+      setState(() => _busy = false);
+      _toast('两份相册文件保存失败，已回滚，核对页仍保留');
+      return;
+    }
+    await _cleanupExportedSource();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    Navigator.of(context).pop(
+      paired
+          ? MediaReviewOutcome.saved
+          : MediaReviewOutcome.savedWatermarkedOnly,
+    );
+  }
+
+  Future<void> _saveAndShare() async {
+    if (_busy || _deriving) return;
+    final paired = _media.sourcePath.isNotEmpty;
+    setState(() => _busy = true);
+    await _flushDraft();
+    final saved = await _savePair(announce: false);
+    if (!mounted) return;
+    if (!saved) {
+      setState(() => _busy = false);
+      _toast('两份相册文件保存失败，已回滚，未打开分享');
+      return;
+    }
+    try {
+      await MediaShareService.shareWatermarked(_media.path);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _toast('两份已保存到相册，系统分享不可用，可重试');
+      return;
+    }
+    await _cleanupExportedSource();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    Navigator.of(context).pop(
+      paired
+          ? MediaReviewOutcome.shared
+          : MediaReviewOutcome.sharedWatermarkedOnly,
+    );
   }
 
   Future<void> _openMedia() async {
@@ -377,7 +411,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
         title: const Text('核对现场记录'),
         actions: [
           IconButton(
-            tooltip: '打开原始文件',
+            tooltip: '打开带水印版',
             onPressed: File(_media.path).existsSync() ? _openMedia : null,
             icon: const Icon(Icons.open_in_new_rounded),
           ),
@@ -575,7 +609,9 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             ),
           const SizedBox(height: 6),
           Text(
-            '原始文件只保存在本机，可另存到手机相册；只有你核对后的文字会上传',
+            _media.sourcePath.isEmpty
+                ? '旧资料没有无水印母版，本次只能保存带水印版'
+                : '现场资料保留带水印版；导出相册时会同时保存带水印版和无水印版',
             style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
           ),
         ],
@@ -714,6 +750,23 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               contentPadding: const EdgeInsets.all(12),
             ),
           ),
+          if (_hasText && _hasIncident && !_submitted) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: _busy || _deriving ? null : _confirmAndSubmit,
+                icon: const Icon(Icons.fact_check_outlined, size: 18),
+                label: const Text('核对无误，写入警情'),
+              ),
+            ),
+          ] else if (_hasText && !_hasIncident) ...[
+            const SizedBox(height: 8),
+            Text(
+              '关联警情后可在这里核对并写入；当前口述只会保存在本机草稿。',
+              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            ),
+          ],
           if (segments.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
@@ -813,14 +866,11 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
   }
 
   Widget _actionBar() {
-    final canComplete = !_busy && !_galleryBusy && !_deriving && !_submitted;
-    final VoidCallback? primaryAction = !canComplete
-        ? null
-        : (!_hasText
-              ? _completeOnly
-              : (_hasIncident ? _confirmAndSubmit : _completeWithoutIncident));
-    final primary = FilledButton.icon(
-      onPressed: primaryAction,
+    final enabled = !_busy && !_deriving;
+    final saveAndShare = FilledButton.icon(
+      key: const Key('review-save-share'),
+      style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+      onPressed: enabled ? _saveAndShare : null,
       icon: _busy
           ? const SizedBox(
               width: 16,
@@ -830,48 +880,16 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                 color: Colors.white,
               ),
             )
-          : Icon(
-              _submitted
-                  ? Icons.check_rounded
-                  : (_hasText && _hasIncident
-                        ? Icons.check_rounded
-                        : Icons.save_outlined),
-              size: 18,
-            ),
-      label: Text(
-        _submitted
-            ? '已写入'
-            : (!_hasText ? '保存并完成' : (_hasIncident ? '核对无误，写入警情' : '保存并完成')),
-        maxLines: 2,
-        textAlign: TextAlign.center,
-        overflow: TextOverflow.ellipsis,
-      ),
+          : const Icon(Icons.ios_share_rounded, size: 18),
+      label: const Text('保存并分享'),
     );
-    final share = OutlinedButton.icon(
-      onPressed: _busy || _deriving ? null : _share,
-      icon: const Icon(Icons.ios_share_rounded, size: 18),
-      label: const Text('分享'),
+    final saveOnly = OutlinedButton.icon(
+      key: const Key('review-save-only'),
+      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+      onPressed: enabled ? _saveOnly : null,
+      icon: const Icon(Icons.save_alt_rounded, size: 18),
+      label: const Text('仅保存'),
     );
-    final gallery = OutlinedButton.icon(
-      onPressed: _busy || _galleryBusy || _gallerySaved
-          ? null
-          : () => _saveToGallery(),
-      icon: _galleryBusy
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(
-              _gallerySaved
-                  ? Icons.check_circle_outline_rounded
-                  : Icons.photo_library_outlined,
-              size: 18,
-            ),
-      label: Text(_gallerySaved ? '已保存到相册' : '保存到相册'),
-    );
-    // 大字号下并排按钮会挤压文案，改为上下排列并占满整行。
-    final stacked = MediaQuery.textScalerOf(context).scale(1) >= 1.4;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
       decoration: BoxDecoration(
@@ -880,31 +898,14 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       ),
       child: SafeArea(
         top: false,
-        child: stacked
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(width: double.infinity, child: primary),
-                  const SizedBox(height: 8),
-                  SizedBox(width: double.infinity, child: gallery),
-                  const SizedBox(height: 8),
-                  SizedBox(width: double.infinity, child: share),
-                ],
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: share),
-                      const SizedBox(width: 10),
-                      Expanded(child: gallery),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(width: double.infinity, child: primary),
-                ],
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(width: double.infinity, child: saveAndShare),
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, child: saveOnly),
+          ],
+        ),
       ),
     );
   }

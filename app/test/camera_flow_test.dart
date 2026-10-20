@@ -24,9 +24,11 @@ void cameraTestWidgets(String name, WidgetTesterCallback callback) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const camera = MethodChannel('watchdog/camera');
+  const media = MethodChannel('watchdog/media');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   late List<String> calls;
+  late List<MethodCall> mediaCalls;
   late bool permission;
   late int bytes;
   bool locationPermission = false;
@@ -36,11 +38,21 @@ void main() {
   Completer<String?>? photo;
   bool nativeRecording = false;
   bool reconcileFails = false;
+  String? renderedMediaPath;
 
-  Future<void> event(WidgetTester tester, String type) async {
+  Future<void> event(
+    WidgetTester tester,
+    String type, {
+    String? path,
+    int? durationMs,
+  }) async {
     await messenger.handlePlatformMessage(
       'watchdog/camera_events',
-      const StandardMethodCodec().encodeSuccessEnvelope({'type': type}),
+      const StandardMethodCodec().encodeSuccessEnvelope({
+        'type': type,
+        if (path != null) 'path': path,
+        if (durationMs != null) 'durationMs': durationMs,
+      }),
       (_) {},
     );
     await tester.pump();
@@ -94,6 +106,7 @@ void main() {
 
   setUp(() {
     calls = [];
+    mediaCalls = [];
     permission = true;
     bytes = 1024 * 1024 * 1024;
     photo = null;
@@ -103,6 +116,7 @@ void main() {
     watermarks = [];
     nativeRecording = false;
     reconcileFails = false;
+    renderedMediaPath = null;
     SharedPreferences.setMockInitialValues({});
     messenger.setMockMethodCallHandler(camera, (call) async {
       calls.add(call.method);
@@ -124,6 +138,11 @@ void main() {
         default:
           return null;
       }
+    });
+    messenger.setMockMethodCallHandler(media, (call) async {
+      mediaCalls.add(call);
+      if (call.method == 'renderWatermarkedCopy') return renderedMediaPath;
+      return null;
     });
     for (final name in [
       'watchdog/camera_events',
@@ -158,6 +177,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
     for (final name in [
       'watchdog/camera',
+      'watchdog/media',
       'watchdog/camera_events',
       'watchdog/screen',
       'watchdog/storage',
@@ -234,6 +254,57 @@ void main() {
     expect(calls.where((e) => e == 'takePhoto'), hasLength(1));
     photo!.complete(null);
     await tester.pumpAndSettle();
+  });
+
+  cameraTestWidgets('照片水印生成失败保留母版并可原路径重试', (tester) async {
+    photo = Completer<String?>()..complete('/tmp/watchdog-src.jpg');
+    await page(tester);
+
+    await tester.tap(find.text('点击拍照'));
+    await tester.pumpAndSettle();
+
+    final first = mediaCalls.singleWhere(
+      (call) => call.method == 'renderWatermarkedCopy',
+    );
+    expect((first.arguments as Map)['path'], '/tmp/watchdog-src.jpg');
+    expect(find.textContaining('水印照片生成失败'), findsOneWidget);
+
+    await tester.tap(find.text('重新生成水印版'));
+    await tester.pumpAndSettle();
+
+    final renders = mediaCalls
+        .where((call) => call.method == 'renderWatermarkedCopy')
+        .toList(growable: false);
+    expect(renders, hasLength(2));
+    for (final call in renders) {
+      expect((call.arguments as Map)['path'], '/tmp/watchdog-src.jpg');
+    }
+  });
+
+  cameraTestWidgets('视频水印生成失败保留母版并可原路径重试', (tester) async {
+    await page(tester);
+    await tester.tap(find.text('录像'));
+    await tester.pumpAndSettle();
+    await event(tester, 'started');
+    await event(
+      tester,
+      'stopped',
+      path: '/tmp/watchdog-src.mp4',
+      durationMs: 1200,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('水印视频生成失败'), findsOneWidget);
+    await tester.tap(find.text('重新生成水印版'));
+    await tester.pumpAndSettle();
+
+    final renders = mediaCalls
+        .where((call) => call.method == 'renderWatermarkedCopy')
+        .toList(growable: false);
+    expect(renders, hasLength(2));
+    for (final call in renders) {
+      expect((call.arguments as Map)['path'], '/tmp/watchdog-src.mp4');
+    }
   });
 
   cameraTestWidgets('拍摄前重取过期定位，失败不写旧坐标', (tester) async {
@@ -356,7 +427,7 @@ void main() {
     await tester.pump();
     expect(calls, contains('stopRecording'));
     await event(tester, 'stopped');
-    expect(find.text('视频已保存，可到现场资料查看'), findsOneWidget);
+    expect(find.text('视频已保存，正在生成水印版'), findsOneWidget);
     (tester.state(find.byType(CameraPage)) as dynamic)
         .didChangeAppLifecycleState(AppLifecycleState.resumed);
     await tester.pumpWidget(const SizedBox());
