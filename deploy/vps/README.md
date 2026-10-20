@@ -17,7 +17,7 @@
 
 私有备份在 `/opt/watchdog/backups/key-sites-<UTC时间>/`，目录700。包括 `database.dump`、`database.contents`、`private-data.tgz`、`app-data/`、`source-before.tgz`、`Caddyfile.before`、`old-image-id` 和 `rollback.sh`。手工回切运行 `bash <备份目录>/rollback.sh /opt/watchdog <备份目录>`，保留新私有卷和增量表，避免覆盖上线后的数据。只有确认需要完整时间点恢复时，才另行停后端并协调恢复数据库与同一份资料备份；不要日常回滚直接删表或用旧dump覆盖新数据。
 
-匿名公网检查不能证明已授权手机扫码、真实资料试点或实机操作成功。首个平台管理员必须另行指定已有有效成员ID，初始化命令不自动选择单位admin。
+匿名公网检查不能证明已授权手机扫码、真实资料试点或实机操作成功。首个平台管理员已按用户指定的已有有效成员完成私有初始化；初始化命令不自动选择单位admin，实际扫码仍待设备验收。
 
 国内VPS构建通过 `DEBIAN_MIRROR=https://mirrors.aliyun.com` 使用HTTPS软件镜像；默认Docker构建仍采用Debian官方HTTPS源。Node slim未预装系统CA时，以Node内置公共根证书建立HTTPS信任，再安装Debian `ca-certificates`；不关闭TLS校验或APT包签名校验。
 
