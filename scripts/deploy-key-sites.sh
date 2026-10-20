@@ -68,11 +68,17 @@ root="$1"; backup="$2"
 cd "$root"
 compose=(docker compose -f deploy/vps/docker-compose.yml)
 project="$(cat "$backup/compose-project")"
-caddy="$("${compose[@]}" ps -q caddy)"
+caddy="$("${compose[@]}" ps -aq caddy)"
 docker image tag "$(cat "$backup/old-image-id")" "${project}-backend"
 "${compose[@]}" up -d --no-deps --no-build backend
 cat "$backup/Caddyfile.before" > deploy/vps/Caddyfile
-docker exec "$caddy" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+host_inode="$(stat -c %i deploy/vps/Caddyfile)"
+mounted_inode="$(docker exec "$caddy" stat -c %i /etc/caddy/Caddyfile 2>/dev/null || true)"
+if [[ "$host_inode" != "$mounted_inode" ]]; then
+  "${compose[@]}" up -d --no-deps --force-recreate caddy
+else
+  docker exec "$caddy" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+fi
 echo '已回切旧镜像及路由，保留增量表与私有卷；未恢复旧数据库覆盖新数据。'
 ROLLBACK
 chmod 700 "$backup/rollback.sh"
@@ -82,7 +88,11 @@ rollback() {
   echo '部署失败，回切旧后端镜像；不删除增量表或私有资料。' >&2
   if [[ "$changed_caddy" == 1 ]]; then
     cat "$backup/Caddyfile.before" > deploy/vps/Caddyfile
-    docker exec "$caddy" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || true
+    current_caddy="$("${compose[@]}" ps -aq caddy)"
+    host_inode="$(stat -c %i deploy/vps/Caddyfile)"
+    mounted_inode="$(docker exec "$current_caddy" stat -c %i /etc/caddy/Caddyfile 2>/dev/null || true)"
+    if [[ "$host_inode" != "$mounted_inode" ]]; then "${compose[@]}" up -d --no-deps --force-recreate caddy || true
+    else docker exec "$current_caddy" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || true; fi
   fi
   if [[ "$activated" == 1 ]]; then
     docker image tag "$old_image" "${project}-backend"
@@ -119,7 +129,13 @@ docker exec "$current" node -e 'const fs=require("node:fs"),p=require("node:path
 # Preserve the bind-mounted file inode so Caddy reads the new contents.
 cat "$backup/candidate/deploy/vps/Caddyfile" > deploy/vps/Caddyfile
 changed_caddy=1
-docker exec "$caddy" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+host_inode="$(stat -c %i deploy/vps/Caddyfile)"
+mounted_inode="$(docker exec "$caddy" stat -c %i /etc/caddy/Caddyfile 2>/dev/null || true)"
+if [[ "$host_inode" != "$mounted_inode" ]]; then
+  "${compose[@]}" up -d --no-deps --force-recreate caddy
+else
+  docker exec "$caddy" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+fi
 printf '%s\n' "$revision" > "$backup/deployed-commit"
 "${compose[@]}" ps
 printf '私有备份：%s\n' "$backup"
@@ -128,7 +144,17 @@ trap - ERR EXIT HUP INT TERM
 REMOTE
 scp -q "$logs/deploy-worker.sh" "$remote_host:$remote_root/backups/key-sites-$stamp/deploy-worker.sh"
 ssh -o BatchMode=yes -o ConnectTimeout=10 "$remote_host" "bash '$remote_root/backups/key-sites-$stamp/deploy-worker.sh' '$remote_root' '$stamp' '$revision'" < /dev/null
-if ! WATCHDOG_PRE_DEPLOY_SNAPSHOT="$pre_snapshot" node scripts/verify-key-sites.mjs | tee "$logs/public-verification.json"; then
+verified=0
+for attempt in $(seq 1 5); do
+  if WATCHDOG_PRE_DEPLOY_SNAPSHOT="$pre_snapshot" node scripts/verify-key-sites.mjs > "$logs/public-verification.json" 2> "$logs/public-verification.err"; then
+    verified=1
+    cat "$logs/public-verification.json"
+    break
+  fi
+  sleep 2
+done
+if [[ "$verified" != 1 ]]; then
+  cat "$logs/public-verification.err" >&2
   echo '公网验收失败，执行保留数据的旧镜像与路由回切。' >&2
   ssh -o BatchMode=yes -o ConnectTimeout=10 "$remote_host" "bash '$remote_root/backups/key-sites-$stamp/rollback.sh' '$remote_root' '$remote_root/backups/key-sites-$stamp'"
   exit 1
