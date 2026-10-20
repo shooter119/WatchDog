@@ -3607,6 +3607,8 @@ void main() {
             stationName: '龙翔路站',
             vehicleCount: 5,
             personnelCount: 25,
+            deploymentStatus: 'dispatched',
+            informationSource: 'import',
             createdAt: 1,
             updatedAt: 1,
             version: 1,
@@ -3618,6 +3620,8 @@ void main() {
         await tester.pumpAndSettle();
       }
       expect(find.text('龙翔路站 5车25人'), findsOneWidget);
+      expect(find.textContaining('通报已调派'), findsNothing);
+      expect(find.textContaining('到场未确认'), findsNothing);
       expect(find.byType(InputChip), findsNothing);
       final forceRow = find.ancestor(
         of: find.byTooltip('编辑参战力量'),
@@ -3668,6 +3672,8 @@ void main() {
 
     testWidgets('活动警情提供登记力量及双导入入口', (tester) async {
       final c = _FakeController()
+        ..api = _FakeApi()
+        ..fakeCanReadKeySites = true
         ..currentIncident = const Incident(
           id: 'i1',
           number: 'n',
@@ -3687,6 +3693,10 @@ void main() {
             .first;
         expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
       }
+      expect(
+        tester.getTopLeft(find.text('登记力量')).dy,
+        lessThan(tester.getTopLeft(find.text('关联重点单位')).dy),
+      );
       // 水印相机已有首页悬浮主入口，展开工具栏不再重复。
       expect(find.text('水印相机'), findsNothing);
     });

@@ -3406,11 +3406,6 @@ class _TaskBarState extends State<_TaskBar> {
                   ),
                 ],
               ),
-              IncidentKeySiteSection(
-                controller: widget.controller,
-                incident: widget.incident,
-              ),
-              const SizedBox(height: 8),
               Container(
                 decoration: BoxDecoration(
                   color: AppColors.surfaceSubtle.withValues(alpha: .5),
@@ -3443,6 +3438,11 @@ class _TaskBarState extends State<_TaskBar> {
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 8),
+              IncidentKeySiteSection(
+                controller: widget.controller,
+                incident: widget.incident,
               ),
               const SizedBox(height: 8),
               Row(
@@ -3631,18 +3631,6 @@ class _ForceRow extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    if (force.informationSource == 'import')
-                      Text(
-                        '${force.deploymentStatus == 'mobilized'
-                            ? '通报已出动'
-                            : force.deploymentStatus == 'dispatched'
-                            ? '通报已调派'
-                            : '来自通报'} · 到场未确认',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
                   ],
                 ),
               ),
