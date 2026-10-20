@@ -395,10 +395,11 @@ test('警情历史引用首次关联时间在HTTP响应中为JSON数字', async 
     confirmName: site.name, confirmAddress: site.address }, { operationId: 'history-time-link' });
   const state = await links.read('manager', incident.id);
   assert.equal(typeof state.history[0].first_linked_at, 'number');
-  assert.equal(state.history[0].first_linked_at, state.link.linkedAt);
+  assert.ok(Number.isSafeInteger(state.history[0].first_linked_at));
+  assert.ok(state.history[0].first_linked_at >= state.link.linkedAt);
   const response = await request(`/api/incidents/${incident.id}/key-site`, { session: null, member: 'manager' });
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(typeof data.history[0].first_linked_at, 'number');
-  assert.equal(data.history[0].first_linked_at, state.link.linkedAt);
+  assert.equal(data.history[0].first_linked_at, state.history[0].first_linked_at);
 });

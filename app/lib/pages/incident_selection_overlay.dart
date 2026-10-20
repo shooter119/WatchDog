@@ -17,6 +17,7 @@ class IncidentSelectionOverlay extends StatefulWidget {
   final List<Incident> activeIncidents;
   final bool loading;
   final VoidCallback? onOpenKeySites;
+  final VoidCallback? onOpenSettings;
   final Future<void> Function(Incident incident) onSelect;
   final Future<void> Function() onCreate;
   final Future<void> Function(
@@ -47,6 +48,7 @@ class IncidentSelectionOverlay extends StatefulWidget {
     this.onEnterGuestMode,
     this.onApply,
     this.onOpenKeySites,
+    this.onOpenSettings,
   });
 
   @override
@@ -878,6 +880,19 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                             Icons.domain_outlined,
                                           ),
                                           label: const Text('查阅重点单位资料'),
+                                        ),
+                                      ),
+                                    if (widget.onOpenSettings != null)
+                                      TextButton.icon(
+                                        onPressed: _busy
+                                            ? null
+                                            : widget.onOpenSettings,
+                                        icon: const Icon(Icons.person_outline),
+                                        label: const Text('个人与设置'),
+                                        style: TextButton.styleFrom(
+                                          minimumSize: const Size.fromHeight(
+                                            48,
+                                          ),
                                         ),
                                       ),
                                     const SizedBox(height: 4),

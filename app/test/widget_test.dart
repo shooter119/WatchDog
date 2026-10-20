@@ -59,6 +59,10 @@ class _FakeController extends AppController {
 
   bool fakeNeedsAuthentication = false;
   bool fakeIsGuest = false;
+  bool fakeCanReadKeySites = false;
+
+  @override
+  bool get canReadKeySites => fakeCanReadKeySites;
 
   // 测试直接从业务页开始；首次安装认证流程由独立的启动浮层用例覆盖。
   @override
@@ -2609,6 +2613,34 @@ void main() {
       await tester.pump();
       expect(find.text('火场日志'), findsNothing);
       expect(find.text('先选择一份警情'), findsOneWidget);
+    });
+
+    testWidgets('已认证未选警情可进入设置并返回原选择层，不自动加入警情', (tester) async {
+      final c = _FakeController(currentIncident: null)
+        ..fakeCanReadKeySites = true
+        ..api = _FakeApi();
+      await tester.pumpWidget(WatchDogApp(controller: c));
+      await tester.pump();
+      await tester.tap(find.text('个人与设置'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(c.currentIncident, isNull);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('先选择一份警情'), findsOneWidget);
+      expect(c.currentIncident, isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('未认证的启动层不提供个人设置或受保护资料旁路', (tester) async {
+      final c = _FakeController(currentIncident: null)
+        ..fakeNeedsAuthentication = true;
+      await tester.pumpWidget(WatchDogApp(controller: c));
+      await tester.pump();
+      expect(find.text('个人与设置'), findsNothing);
+      expect(find.text('查阅重点单位资料'), findsNothing);
+      expect(find.text('先完成用户认证'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
     });
 
     testWidgets('警情浮层加入按钮回调选择流程', (tester) async {
