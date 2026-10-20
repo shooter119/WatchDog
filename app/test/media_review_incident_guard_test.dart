@@ -15,19 +15,20 @@ import 'package:watchdog/state/app_controller.dart';
 // 2. 点首页右下「水印相机」，确认「未关联警情」提示；允许相机权限。
 // 3. 选「拍照」并点快门，照片保存后自动进入核对页。
 // 4. 不输入口述，点「仅保存」；应先把带水印版与无水印版成对写入系统相册，
-//    再回相机，确认相册有两份且 App「现场资料」只有一条带水印记录。
+//    再回相机；确认相册有两份，且 App「现场资料」不再保留这次拍摄。
 // 5. 再拍一张，核对页口述框输入「现场已设置警戒」（或录像口述后停止，
 //    等待本机转写），确认底栏只有「保存并分享」和「仅保存」，写警情入口只在
-//    口述卡内。点「仅保存」后口述草稿保留；结合请求日志检查无写入请求。
+//    口述卡内。点「仅保存」后本机工作副本移除；结合请求日志检查无写入请求。
 // 6. 有警情对照：重进游客模式恢复演练警情，或登录后加入真实警情，
 //    拍摄并补写口述，确认「核对无误，写入警情」，
 //    点击先弹「写入警情？」；确认后只新增一次记录并留在核对页，不会自动导出相册。
 // 7. 再点「保存并分享」，确认相册先出现两份文件，随后系统分享菜单只收到带水印版；
 //    关闭分享菜单后回相机。
 //
-// 代码核查：media_review_page.dart 的 _savePair 负责成对导出，_saveAndShare
-// 只在成对保存成功后分享带水印路径；_confirmAndSubmit 与 _submit 独立处理警情写入，
-// 并在读取 API 前再次检查当前警情 ID。
+// 代码核查：media_review_page.dart 的 _savePair 负责成对导出，成功后调用
+// MediaCaptureService.removeLocalCopy 清理本机记录和文件；_saveAndShare 只在
+// 分享菜单关闭后清理。_confirmAndSubmit 与 _submit 独立处理警情写入，并在读取
+// API 前再次检查当前警情 ID。
 
 class _RecordingApi extends ApiClient {
   _RecordingApi()
@@ -52,7 +53,7 @@ class _MemoryStore extends LocalMediaStore {
 
   final Map<String, String> drafts = {};
   final List<String> linked = [];
-  final Set<String> clearedSourceIds = {};
+  final List<String> deletedIds = [];
 
   @override
   Future<void> updateDerived({
@@ -65,7 +66,11 @@ class _MemoryStore extends LocalMediaStore {
   }) async {
     if (transcript != null) drafts[id] = transcript;
     if (observationId != null) linked.add(observationId);
-    if (sourcePath != null) clearedSourceIds.add(id);
+  }
+
+  @override
+  Future<void> deleteById(String id) async {
+    deletedIds.add(id);
   }
 }
 
@@ -242,7 +247,7 @@ void main() {
       mediaCalls.where((c) => c.method == 'savePairToGallery'),
       hasLength(1),
     );
-    expect(store.clearedSourceIds, contains('media-guard'));
+    expect(store.deletedIds, contains('media-guard'));
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
   }
@@ -260,7 +265,7 @@ void main() {
     expect(find.text('写入警情？'), findsNothing);
     expect(api.transcripts, isEmpty);
     expect(store.linked, isEmpty);
-    expect(store.drafts['media-guard'], '核对后的口述');
+    expect(store.deletedIds, contains('media-guard'));
     await finish(tester, results);
   });
 

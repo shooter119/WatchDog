@@ -275,33 +275,17 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               ) !=
               null
         : await CameraBridge.saveToGallery(_media.path) != null;
-    if (!mounted) return false;
-    setState(() => _pairSaved = saved);
-    if (announce) {
-      _toast(
-        saved
-            ? (sourcePath.isEmpty ? '旧资料仅保存了带水印版' : '已保存带水印版和无水印版到手机相册')
-            : '两份相册文件保存失败，已回滚，请重试',
-      );
+    if (mounted) {
+      setState(() => _pairSaved = saved);
+      if (announce) {
+        _toast(
+          saved
+              ? (sourcePath.isEmpty ? '旧资料仅保存了带水印版' : '已保存带水印版和无水印版到手机相册')
+              : '两份相册文件保存失败，已回滚，请重试',
+        );
+      }
     }
     return saved;
-  }
-
-  Future<void> _cleanupExportedSource() async {
-    final sourcePath = _media.sourcePath;
-    if (sourcePath.isEmpty) return;
-    try {
-      final file = File(sourcePath);
-      if (await file.exists()) await file.delete();
-      if (await file.exists()) return;
-      await LocalMediaStore.instance.updateDerived(
-        id: _media.id,
-        sourcePath: '',
-      );
-      _media = _media.copyWith(sourcePath: '');
-    } catch (_) {
-      // 相册已经双份落盘；母版清理失败时留待过期清理。
-    }
   }
 
   Future<void> _saveOnly() async {
@@ -310,20 +294,19 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     setState(() => _busy = true);
     await _flushDraft();
     final saved = await _savePair(announce: false);
-    if (!mounted) return;
     if (!saved) {
+      if (!mounted) return;
       setState(() => _busy = false);
       _toast('两份相册文件保存失败，已回滚，核对页仍保留');
       return;
     }
-    await _cleanupExportedSource();
     if (!mounted) return;
-    setState(() => _busy = false);
     Navigator.of(context).pop(
       paired
           ? MediaReviewOutcome.saved
           : MediaReviewOutcome.savedWatermarkedOnly,
     );
+    await MediaCaptureService.removeLocalCopy(_media);
   }
 
   Future<void> _saveAndShare() async {
@@ -332,28 +315,27 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     setState(() => _busy = true);
     await _flushDraft();
     final saved = await _savePair(announce: false);
-    if (!mounted) return;
     if (!saved) {
+      if (!mounted) return;
       setState(() => _busy = false);
       _toast('两份相册文件保存失败，已回滚，未打开分享');
       return;
     }
     try {
       await MediaShareService.shareWatermarked(_media.path);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() => _busy = false);
       _toast('两份已保存到相册，系统分享不可用，可重试');
       return;
     }
-    await _cleanupExportedSource();
     if (!mounted) return;
-    setState(() => _busy = false);
     Navigator.of(context).pop(
       paired
           ? MediaReviewOutcome.shared
           : MediaReviewOutcome.sharedWatermarkedOnly,
     );
+    await MediaCaptureService.removeLocalCopy(_media);
   }
 
   Future<void> _openMedia() async {
@@ -610,8 +592,8 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           const SizedBox(height: 6),
           Text(
             _media.sourcePath.isEmpty
-                ? '旧资料没有无水印母版，本次只能保存带水印版'
-                : '现场资料保留带水印版；导出相册时会同时保存带水印版和无水印版',
+                ? '旧资料没有无水印母版，本次只能保存带水印版；保存成功后将从本机记录中移除'
+                : '拍摄文件仅用于本次核对；保存成功后将从 App 清理，手机相册保留带水印版和无水印版',
             style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
           ),
         ],

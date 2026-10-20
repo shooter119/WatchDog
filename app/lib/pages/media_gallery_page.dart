@@ -109,21 +109,10 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
               ) !=
               null
         : await CameraBridge.saveToGallery(media.path) != null;
-    if (!mounted) return;
-    if (saved && paired) {
-      try {
-        final source = File(media.sourcePath);
-        if (await source.exists()) await source.delete();
-        if (!await source.exists()) {
-          await LocalMediaStore.instance.updateDerived(
-            id: media.id,
-            sourcePath: '',
-          );
-        }
-      } catch (_) {
-        // 相册两份已经落盘，母版清理留给过期清理继续处理。
-      }
+    if (saved) {
+      await MediaCaptureService.removeLocalCopy(media);
     }
+    if (!mounted) return;
     await _load();
     if (!mounted) return;
     _toast(
@@ -156,13 +145,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
       ),
     );
     if (confirmed != true) return;
-    await LocalMediaStore.instance.deleteById(media.id);
-    for (final path in [media.path, media.sourcePath, ...media.frames]) {
-      try {
-        final file = File(path);
-        if (file.existsSync()) await file.delete();
-      } catch (_) {}
-    }
+    await MediaCaptureService.removeLocalCopy(media);
     await _load();
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -67,7 +68,7 @@ class _FakeMediaStore extends LocalMediaStore {
   final List<String> deletedIds = [];
   final Map<String, String> drafts = {};
   final Map<String, String> observationIds = {};
-  final Set<String> clearedSourceIds = {};
+  void Function(String id)? onDelete;
   int expiredCount = 0;
   int purgeCalls = 0;
 
@@ -81,6 +82,7 @@ class _FakeMediaStore extends LocalMediaStore {
   @override
   Future<void> deleteById(String id) async {
     deletedIds.add(id);
+    onDelete?.call(id);
     items = items.where((item) => item.id != id).toList();
   }
 
@@ -97,7 +99,6 @@ class _FakeMediaStore extends LocalMediaStore {
     if (observationId != null && observationId.isNotEmpty) {
       observationIds[id] = observationId;
     }
-    if (sourcePath != null) clearedSourceIds.add(id);
     items = items
         .map((item) {
           if (item.id != id) return item;
@@ -238,9 +239,9 @@ Future<void> _settleSnackBar(WidgetTester tester) async {
 /// Widget 测试的 fake async 不会自行推进真实 I/O，需短暂切换到 runAsync。
 Future<void> _pumpAsyncAction(WidgetTester tester) async {
   await tester.pump();
-  for (var i = 0; i < 3; i++) {
+  for (var i = 0; i < 16; i++) {
     await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      () => Future<void>.delayed(const Duration(milliseconds: 40)),
     );
     await tester.pump(const Duration(milliseconds: 120));
   }
@@ -457,7 +458,10 @@ void main() {
       expect(find.text('现场口述（请核对后再使用）'), findsOneWidget);
       expect(find.text('现场明火已扑灭，正在清理余火'), findsOneWidget);
       expect(find.text('照片'), findsOneWidget);
-      expect(find.text('现场资料保留带水印版；导出相册时会同时保存带水印版和无水印版'), findsOneWidget);
+      expect(
+        find.text('拍摄文件仅用于本次核对；保存成功后将从 App 清理，手机相册保留带水印版和无水印版'),
+        findsOneWidget,
+      );
       expect(find.text('文件只保存在本机，不会自动上传'), findsNothing);
     });
 
@@ -561,7 +565,7 @@ void main() {
         'watermarkedPath': watermarked,
         'sourcePath': source,
       });
-      expect(store.clearedSourceIds, contains('media-1'));
+      expect(store.deletedIds, contains('media-1'));
 
       await _settleSnackBar(tester);
     });
@@ -574,6 +578,8 @@ void main() {
       const source = '/tmp/watchdog-test/SRC_VID_20261020_083900_123.mp4';
       const watermarked = '/tmp/watchdog-test/VID_20261020_083900_123_WM.mp4';
       final operations = <String>[];
+      final shareClosed = Completer<void>();
+      store.onDelete = (_) => operations.add('delete');
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(mediaChannel, (call) async {
             mediaCalls.add(call);
@@ -589,6 +595,7 @@ void main() {
       MediaShareService.overrideShare = (params) async {
         operations.add('share');
         shareCalls.add(params);
+        await shareClosed.future;
         return const ShareResult('', ShareResultStatus.dismissed);
       };
 
@@ -610,6 +617,13 @@ void main() {
       await _pumpAsyncAction(tester);
 
       expect(operations, ['pair', 'share']);
+      expect(store.deletedIds, isEmpty);
+      expect(find.byType(MediaReviewPage), findsOneWidget);
+
+      shareClosed.complete();
+      await _pumpAsyncAction(tester);
+
+      expect(operations, ['pair', 'share', 'delete']);
       expect(results, [MediaReviewOutcome.shared]);
       expect(shareCalls, hasLength(1));
       expect(shareCalls.single.files, hasLength(1));
@@ -655,6 +669,7 @@ void main() {
         mediaCalls.where((call) => call.method == 'savePairToGallery'),
         hasLength(1),
       );
+      expect(store.deletedIds, isEmpty);
 
       await tester.tap(find.text('保存并分享'));
       await _pumpAsyncAction(tester);
@@ -666,6 +681,7 @@ void main() {
         mediaCalls.where((call) => call.method == 'savePairToGallery'),
         hasLength(1),
       );
+      expect(store.deletedIds, ['media-1']);
       await _settleSnackBar(tester);
     });
 
@@ -709,6 +725,7 @@ void main() {
       expect(find.byType(MediaReviewPage), findsOneWidget);
       expect(shareCalls, isEmpty);
       expect(results, isEmpty);
+      expect(store.deletedIds, isEmpty);
 
       await tester.tap(find.text('保存并分享'));
       await _pumpAsyncAction(tester);
@@ -716,6 +733,7 @@ void main() {
       expect(shareCalls, hasLength(1));
       expect(results, [MediaReviewOutcome.shared]);
       expect(find.byType(MediaReviewPage), findsNothing);
+      expect(store.deletedIds, ['media-1']);
       await _settleSnackBar(tester);
     });
 
@@ -736,7 +754,7 @@ void main() {
         ),
       );
 
-      expect(find.text('旧资料没有无水印母版，本次只能保存带水印版'), findsOneWidget);
+      expect(find.textContaining('旧资料没有无水印母版，本次只能保存带水印版'), findsOneWidget);
       await tester.tap(find.text('仅保存'));
       await _pumpAsyncAction(tester);
 
@@ -1100,7 +1118,7 @@ void main() {
       expect(find.text('还没有拍摄现场照片或录像'), findsOneWidget);
     });
 
-    testWidgets('菜单一键保存两份，成功后清理隐藏母版并刷新资料状态', (tester) async {
+    testWidgets('菜单一键保存两份，成功后移除 App 内工作副本并刷新资料状态', (tester) async {
       final dir = (await tester.runAsync(
         () => Directory.systemTemp.createTemp('watchdog-pair-save-'),
       ))!;
@@ -1138,8 +1156,10 @@ void main() {
         isEmpty,
       );
       expect(source.existsSync(), isFalse);
-      expect(store.items.single.sourcePath, isEmpty);
-      expect(store.clearedSourceIds, contains('photo-1'));
+      expect(watermarked.existsSync(), isFalse);
+      expect(store.items, isEmpty);
+      expect(store.deletedIds, contains('photo-1'));
+      expect(find.text('还没有拍摄现场照片或录像'), findsOneWidget);
 
       await _settleSnackBar(tester);
     });
@@ -1169,6 +1189,8 @@ void main() {
             .arguments,
         {'path': '/tmp/watchdog-test/legacy.jpg'},
       );
+      expect(store.deletedIds, contains('legacy-1'));
+      expect(store.items, isEmpty);
 
       await _settleSnackBar(tester);
     });

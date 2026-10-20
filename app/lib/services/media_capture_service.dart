@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -12,6 +14,8 @@ import 'local_media_store.dart';
 /// 约束：视频本身不上传；只从视频里抽出 16k WAV（本机识别）与少量关键帧，
 /// 需要分析时再把文字与关键帧交给后端。
 class MediaCaptureService {
+  static const _cleanupDirName = '.cleanup';
+
   /// 登记一张照片。照片不需要转写，直接入库。
   static Future<LocalMedia> registerPhoto({
     required String incidentId,
@@ -162,6 +166,167 @@ class MediaCaptureService {
     return paths.length;
   }
 
+  /// 相册导出成功后移除 App 内的工作副本。
+  ///
+  /// 先写清理标记并删除数据库记录，确保主界面可以立即返回；大文件删除放到
+  /// 后台执行。若进程在文件删除前退出，下次启动会按标记继续清理。标记期间
+  /// 对应文件不会被孤儿恢复重新登记。
+  static Future<void> removeLocalCopy(LocalMedia media) async {
+    final paths = _localPaths(media);
+    final marker = await _writeCleanupMarker(media, paths);
+    if (marker == null && paths.any((path) => File(path).existsSync())) {
+      // 没有清理标记时不能安全删除数据库记录，否则异常退出后孤儿恢复
+      // 可能把已导出的文件重新登记成现场资料。保留记录供下次重试。
+      return;
+    }
+    try {
+      await LocalMediaStore.instance.deleteById(media.id);
+    } catch (_) {
+      // 保留标记，下次启动再次尝试删除数据库记录和文件。
+      return;
+    }
+    unawaited(_finishCleanup(paths, marker));
+  }
+
+  static List<String> _localPaths(LocalMedia media) {
+    final paths = <String>{};
+    void add(String path) {
+      if (path.trim().isNotEmpty) paths.add(path);
+    }
+
+    add(media.path);
+    add(media.sourcePath);
+    media.frames.forEach(add);
+    return paths.toList(growable: false);
+  }
+
+  static Future<File?> _writeCleanupMarker(
+    LocalMedia media,
+    List<String> paths,
+  ) async {
+    if (paths.isEmpty) return null;
+    final anchor = paths.firstWhere(
+      (path) => File(path).existsSync(),
+      orElse: () => paths.first,
+    );
+    final parent = Directory(p.dirname(anchor));
+    if (!parent.existsSync()) return null;
+    final cleanupDir = Directory(p.join(parent.path, _cleanupDirName));
+    final marker = File(p.join(cleanupDir.path, '${media.id}.json'));
+    final partial = File('${marker.path}.part');
+    try {
+      await cleanupDir.create(recursive: true);
+      await partial.writeAsString(
+        jsonEncode({'id': media.id, 'paths': paths}),
+        flush: true,
+      );
+      if (marker.existsSync()) await marker.delete();
+      await partial.rename(marker.path);
+      return marker;
+    } catch (_) {
+      try {
+        if (partial.existsSync()) await partial.delete();
+      } catch (_) {}
+      return null;
+    }
+  }
+
+  static Future<void> _finishCleanup(List<String> paths, File? marker) async {
+    final removed = await _deleteLocalPaths(paths);
+    if (!removed || marker == null) return;
+    try {
+      if (marker.existsSync()) await marker.delete();
+    } catch (_) {
+      // 下次启动继续移除标记。
+      return;
+    }
+    await _removeCleanupDirIfEmpty(marker);
+  }
+
+  static Future<void> _removeCleanupDirIfEmpty(File marker) async {
+    try {
+      final dir = marker.parent;
+      if (dir.existsSync() && dir.listSync().isEmpty) {
+        await dir.delete();
+      }
+    } catch (_) {
+      // 空目录清理失败不影响媒体文件已经删除。
+    }
+  }
+
+  static Future<bool> _deleteLocalPaths(List<String> paths) async {
+    var removed = true;
+    final frameParents = <String>{};
+    for (final path in paths) {
+      final file = File(path);
+      if (!file.existsSync()) continue;
+      try {
+        await file.delete();
+        if (p.basename(file.parent.path).startsWith('frames_')) {
+          frameParents.add(file.parent.path);
+        }
+      } catch (_) {
+        removed = false;
+      }
+    }
+    for (final parentPath in frameParents) {
+      try {
+        final parent = Directory(parentPath);
+        if (parent.existsSync() && parent.listSync().isEmpty) {
+          await parent.delete();
+        }
+      } catch (_) {
+        // 空目录清理失败不影响媒体文件已经删除。
+      }
+    }
+    return removed;
+  }
+
+  /// 处理上次进程中断时留下的清理标记，并返回仍应屏蔽的路径。
+  static Future<Set<String>> _cleanupPendingRemovals(
+    Directory captureDir,
+  ) async {
+    final hiddenPaths = <String>{};
+    final cleanupDir = Directory(p.join(captureDir.path, _cleanupDirName));
+    if (!cleanupDir.existsSync()) return hiddenPaths;
+
+    for (final marker in cleanupDir.listSync().whereType<File>()) {
+      if (marker.path.endsWith('.part')) {
+        try {
+          await marker.delete();
+        } catch (_) {}
+        continue;
+      }
+      if (!marker.path.endsWith('.json')) continue;
+      try {
+        final raw = jsonDecode(await marker.readAsString());
+        if (raw is! Map) continue;
+        final id = raw['id']?.toString() ?? '';
+        final paths =
+            (raw['paths'] as List?)
+                ?.map((path) => path.toString())
+                .where((path) => path.isNotEmpty)
+                .toList(growable: false) ??
+            const <String>[];
+        hiddenPaths.addAll(paths);
+        if (id.isNotEmpty) {
+          await LocalMediaStore.instance.deleteById(id);
+        }
+        if (await _deleteLocalPaths(paths)) {
+          await marker.delete();
+        }
+      } catch (_) {
+        // 数据库暂不可用时保留标记和文件，下次启动继续处理。
+      }
+    }
+    try {
+      if (cleanupDir.existsSync() && cleanupDir.listSync().isEmpty) {
+        await cleanupDir.delete();
+      }
+    } catch (_) {}
+    return hiddenPaths;
+  }
+
   /// 补登记孤儿文件。
   ///
   /// 录像结束的那一瞬间如果界面被关闭、进程被回收或订阅已取消，原生侧仍会把文件
@@ -175,7 +340,9 @@ class MediaCaptureService {
       final dir = Directory(p.join(base.path, 'capture'));
       if (!dir.existsSync()) return 0;
 
+      final hiddenPaths = await _cleanupPendingRemovals(dir);
       final known = await LocalMediaStore.instance.allPaths();
+      known.addAll(hiddenPaths);
       final files = dir.listSync().whereType<File>().toList(growable: false);
       final byName = <String, File>{
         for (final file in files) p.basename(file.path): file,
