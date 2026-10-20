@@ -14,6 +14,7 @@ import 'incident_details_page.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import 'report_pressure_sheet.dart';
+import 'video_resources_page.dart';
 import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
@@ -2259,6 +2260,19 @@ class HomePageState extends State<HomePage> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+            _fieldTool(
+              '视频资源',
+              '查看本单位授权监控与现场画面',
+              Icons.videocam_outlined,
+              () => Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      VideoResourcesPage(controller: widget.controller),
+                ),
+              ),
+            ),
             if (_peopleEditors.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 16),
@@ -2783,6 +2797,17 @@ class HomePageState extends State<HomePage> {
                   ),
                   icon: const Icon(Icons.photo_camera_outlined),
                   label: const Text('水印相机'),
+                ),
+                TextButton.icon(
+                  onPressed: () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          VideoResourcesPage(controller: widget.controller),
+                    ),
+                  ),
+                  icon: const Icon(Icons.videocam_outlined),
+                  label: const Text('视频资源'),
                 ),
               ],
             ),

@@ -10,6 +10,7 @@ import 'package:http_parser/http_parser.dart';
 import '../models/models.dart';
 import '../models/key_sites.dart';
 import '../models/admin_login.dart';
+import '../models/video_resources.dart';
 import '../services/settings.dart';
 import '../services/scoped_json_cache.dart';
 
@@ -1684,6 +1685,61 @@ class ApiClient {
     String id,
     Map<String, dynamic> data,
   ) => _importJson('/api/unit-stations/$id', method: 'PATCH', body: data);
+  Future<Map<String, dynamic>> videoResourceAccess() =>
+      _importJson('/api/video-resources/access');
+  Future<List<VideoResource>> fetchVideoResources({
+    bool includeInactive = false,
+  }) async {
+    final data = await _importJson(
+      '/api/video-resources${includeInactive ? '?include_inactive=1' : ''}',
+    );
+    return (data['resources'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => VideoResource.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<VideoResource> addVideoResource({
+    required String name,
+    required String streamUrl,
+    String description = '',
+    bool active = true,
+  }) async {
+    final data = await _importJson(
+      '/api/video-resources',
+      method: 'POST',
+      body: {
+        'name': name.trim(),
+        'stream_url': streamUrl.trim(),
+        'description': description.trim(),
+        'active': active,
+      },
+    );
+    return VideoResource.fromJson(data);
+  }
+
+  Future<VideoResource> updateVideoResource(
+    String id, {
+    required int expectedVersion,
+    String? name,
+    String? streamUrl,
+    String? description,
+    bool? active,
+  }) async {
+    final data = await _importJson(
+      '/api/video-resources/${Uri.encodeComponent(id)}',
+      method: 'PATCH',
+      body: {
+        'expected_version': expectedVersion,
+        if (name != null) 'name': name.trim(),
+        if (streamUrl != null) 'stream_url': streamUrl.trim(),
+        if (description != null) 'description': description.trim(),
+        if (active != null) 'active': active,
+      },
+    );
+    return VideoResource.fromJson(data);
+  }
+
   Future<Map<String, dynamic>> mergeIncidentForces(
     Map<String, dynamic> body,
     String opId,

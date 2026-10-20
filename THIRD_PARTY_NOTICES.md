@@ -20,7 +20,8 @@ App 直接依赖的 Dart 包均为宽松许可证（BSD / MIT / Apache-2.0），
 `record`、`path_provider`、`path`、`http`、`http_parser`、`flutter_tts`、`shared_preferences`、
 `flutter_secure_storage`、`sqflite`、`audioplayers`、`flutter_local_notifications`、`timezone`、
 `crypto`、`convert`、`sherpa_onnx`、`flutter_markdown`、`flutter_foreground_task`、
-`package_info_plus`、`remixicon`、`image_picker`、`image`
+`package_info_plus`、`remixicon`、`image_picker`、`image`、`media_kit`、
+`media_kit_video`、`media_kit_libs_video`
 
 完整的传递依赖清单与逐包许可证文本，可在 App 内通过 Flutter 自动生成的许可证页面查看，或执行
 `flutter pub deps` 获取依赖树。

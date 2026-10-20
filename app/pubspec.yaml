@@ -32,6 +32,9 @@ dependencies:
   share_plus: ^13.3.1
   image: ^4.5.4
   mobile_scanner: ^7.4.2
+  media_kit: ^1.2.6
+  media_kit_libs_video: ^1.0.7
+  media_kit_video: ^2.0.1
 
 dev_dependencies:
   flutter_test:

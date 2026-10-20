@@ -23,6 +23,7 @@ import 'op_log_page.dart';
 import 'roster_page.dart';
 import 'stats_page.dart';
 import 'unit_stations_page.dart';
+import 'video_resource_admin_page.dart';
 import 'watermark_settings_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
@@ -71,6 +72,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String _unitName = '';
   bool _unitAuthenticated = false;
   String _unitRole = 'member';
+  bool _canManageVideoResources = false;
 
   @override
   void initState() {
@@ -101,6 +103,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _unitAuthenticated = false;
       _realName.clear();
       _unitName = '';
+      _canManageVideoResources = false;
     } else {
       unawaited(_loadIdentity());
     }
@@ -122,6 +125,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     setState(() {
       _unitRole = role;
+      _canManageVideoResources = role == 'manager' || role == 'admin';
       _realName.text = name;
       _unitName = unit;
       _unitAuthenticated = authenticated;
@@ -153,6 +157,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _asrCloud = await Settings.asrCloudEnabled;
     _parseCloud = await Settings.parseCloudEnabled;
     _unitRole = await Settings.userRole;
+    _canManageVideoResources = _unitRole == 'manager' || _unitRole == 'admin';
     _realName.text = await Settings.realName;
     _unitName = await Settings.unitName;
     _unitAuthenticated =
@@ -793,6 +798,23 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ),
+          if (_canManageVideoResources) ...[
+            const SizedBox(height: 9),
+            _SettingsLinkCard(
+              key: const Key('video-resource-settings'),
+              icon: Icons.videocam_outlined,
+              title: '视频资源管理',
+              subtitle: '添加、编辑或停用本单位视频资源',
+              enabled: widget.controller.api != null,
+              onTap: () => Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      VideoResourceAdminPage(api: widget.controller.api!),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 22),
           const SectionTitle(text: '运行策略'),
           _SettingsAccordion(
@@ -1790,6 +1812,7 @@ class _SettingsLinkCard extends StatelessWidget {
   final bool enabled;
 
   const _SettingsLinkCard({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,

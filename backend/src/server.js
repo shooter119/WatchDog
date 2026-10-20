@@ -236,6 +236,7 @@ app.use(async (req, res, next) => {
 let adminAuth = null;
 let keySites = null;
 let keySiteFiles = null;
+let videoResources = null;
 app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
   setHeaders: (res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -249,6 +250,7 @@ if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER ||
   });
   keySites = require('./key-sites').createKeySites(require('./postgres-store'), adminAuth);
   keySiteFiles = require('./key-site-files').createKeySiteFiles(require('./postgres-store'), keySites, adminAuth);
+  videoResources = require('./video-resources').createVideoResources(require('./postgres-store'));
   const keySiteAI = require('./key-site-ai').createKeySiteAI(require('./postgres-store'), keySites, keySiteFiles, adminAuth, CFG.llm);
   app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, { sites: keySites, files: keySiteFiles, ai: keySiteAI }));
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteFiles.startWorker(error => logger.warn(`key_site_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
@@ -314,6 +316,7 @@ app.use(async (req, res, next) => {
 });
 
 if (adminAuth) app.use('/api/admin-app', require('./admin-router').createAdminAppRouter(adminAuth));
+if (videoResources) app.use('/api/video-resources', require('./video-resources').createVideoResourceRouter(videoResources));
 if (keySites) app.use('/api/key-sites', require('./key-site-routes').createKeySiteAppRouter(keySites, keySiteFiles));
 if (keySites) app.use('/api/incidents', require('./incident-key-sites').createIncidentKeySiteRouter(
   require('./incident-key-sites').createIncidentKeySites(require('./postgres-store'), db, keySites),
