@@ -278,6 +278,38 @@ void main() {
     controller.dispose();
     api.dispose();
   });
+  testWidgets('身份Hero使用黑色卡面并保留姓名单位等级层级', (tester) async {
+    await Settings.setRealName('合成成员');
+    await Settings.setUnitId('u');
+    await Settings.setUnitName('合成消防单位');
+    await Settings.setUnitCode('test');
+    await Settings.setUserRole('member');
+    final api = _Api()..grant = null;
+    final controller = _Controller(api);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: SettingsPage(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final hero = tester.widget<Container>(
+      find.byKey(const Key('identity-hero')),
+    );
+    final decoration = hero.decoration! as BoxDecoration;
+    final gradient = decoration.gradient! as LinearGradient;
+    expect(gradient.colors.first.computeLuminance(), lessThan(0.02));
+    expect(find.text('我的身份'), findsNothing);
+    expect(find.text('合成成员'), findsOneWidget);
+    expect(find.text('合成消防单位'), findsOneWidget);
+    expect(find.text('认证用户'), findsOneWidget);
+    expect(find.text('用户等级'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
   testWidgets('首页两列工具卡大字号横屏可滚动，相机无悬浮入口', (tester) async {
     tester.view.physicalSize = const Size(900, 420);
     tester.view.devicePixelRatio = 1;

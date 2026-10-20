@@ -1028,7 +1028,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
-      expect(find.text('我的身份'), findsOneWidget);
+      expect(find.text('我的身份'), findsNothing);
       expect(find.text('未选择单位'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('人员与热词'));
       expect(find.text('人员与热词'), findsOneWidget);
@@ -1099,7 +1099,7 @@ void main() {
       final list = find.byType(ListView).first;
       await _scrollToVisible(tester, list, find.text('人员与热词'));
 
-      expect(find.byType(CircleAvatar), findsOneWidget);
+      expect(find.byType(CircleAvatar), findsNothing);
       expect(tester.widget<Text>(find.text('未认证').first).style?.fontSize, 20);
       expect(find.text('未认证'), findsNWidgets(2));
       const labels = ['水印设置', '人员与热词'];

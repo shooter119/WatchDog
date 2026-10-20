@@ -953,118 +953,29 @@ class _SettingsPageState extends State<SettingsPage> {
         : _unitRole == 'admin' || _unitRole == 'manager' || backend != null
         ? '管理员'
         : '认证用户';
-    return AppCard(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  '我的身份',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                ),
-              ),
-              if (authenticated)
-                PopupMenuButton<String>(
-                  key: const Key('user-actions'),
-                  tooltip: '用户操作',
-                  onSelected: (value) {
-                    if (value == 'leave') unawaited(_leaveUnit());
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'leave', child: Text('退出当前单位')),
-                  ],
-                ),
-            ],
+    return _IdentityHeroCard(
+      guest: guest,
+      authenticated: authenticated,
+      name: name,
+      unit: unit,
+      level: level,
+      canScan: backend != null,
+      onLeave: _leaveUnit,
+      onJoin: widget.controller.leaveUnit,
+      onScan: () async {
+        await widget.controller.refreshAdminCapability();
+        if (!mounted ||
+            !widget.controller.canReadKeySites ||
+            widget.controller.adminCapability == null) {
+          return;
+        }
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AdminScannerPage(controller: widget.controller),
           ),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 26,
-                backgroundColor: AppColors.surfaceSubtle,
-                child: Icon(
-                  Icons.person_outline,
-                  size: 32,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      unit,
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      level,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-              ),
-              if (backend != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: InkWell(
-                    key: const Key('admin-scan'),
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () async {
-                      await widget.controller.refreshAdminCapability();
-                      if (!mounted ||
-                          !widget.controller.canReadKeySites ||
-                          widget.controller.adminCapability == null) {
-                        return;
-                      }
-                      await Navigator.push<void>(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              AdminScannerPage(controller: widget.controller),
-                        ),
-                      );
-                    },
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minWidth: 56, minHeight: 64),
-                      child: Column(
-                        children: [
-                          Icon(Icons.qr_code_scanner, size: 28),
-                          SizedBox(height: 6),
-                          Text('扫一扫', style: TextStyle(fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          if (guest)
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: OutlinedButton(
-                onPressed: widget.controller.leaveUnit,
-                child: const Text('加入单位'),
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1668,6 +1579,348 @@ class _GroupLabel extends StatelessWidget {
       ),
     );
   }
+}
+
+class _IdentityHeroCard extends StatelessWidget {
+  final bool guest;
+  final bool authenticated;
+  final bool canScan;
+  final String name;
+  final String unit;
+  final String level;
+  final Future<void> Function() onLeave;
+  final Future<void> Function() onJoin;
+  final Future<void> Function() onScan;
+
+  const _IdentityHeroCard({
+    required this.guest,
+    required this.authenticated,
+    required this.canScan,
+    required this.name,
+    required this.unit,
+    required this.level,
+    required this.onLeave,
+    required this.onJoin,
+    required this.onScan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = AppColors.heroOnDark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.26),
+            blurRadius: 28,
+            spreadRadius: -4,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          key: const Key('identity-hero'),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.heroOnDarkBorder),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.heroBackground,
+                Color.lerp(AppColors.heroBackground, Colors.black, 0.48)!,
+                Color.lerp(AppColors.heroBackground, Colors.white, 0.035)!,
+              ],
+              stops: const [0, 0.58, 1],
+            ),
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _IdentityCardTexturePainter(foreground),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: const Alignment(0.84, -1.05),
+                          radius: 1.18,
+                          colors: [
+                            foreground.withValues(alpha: 0.11),
+                            foreground.withValues(alpha: 0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 5,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      name,
+                                      softWrap: true,
+                                      style: TextStyle(
+                                        color: foreground,
+                                        fontSize: 20,
+                                        height: 1.15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    _HeroRoleBadge(level: level),
+                                  ],
+                                ),
+                                const SizedBox(height: 7),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 1),
+                                      child: Icon(
+                                        Icons.apartment_rounded,
+                                        size: 15,
+                                        color: AppColors.heroMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        unit,
+                                        softWrap: true,
+                                        style: TextStyle(
+                                          color: AppColors.heroMuted,
+                                          fontSize: 14,
+                                          height: 1.35,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (authenticated)
+                            PopupMenuButton<String>(
+                              key: const Key('user-actions'),
+                              tooltip: '用户操作',
+                              iconColor: foreground,
+                              onSelected: (value) {
+                                if (value == 'leave') unawaited(onLeave());
+                              },
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'leave',
+                                  child: Text('退出当前单位'),
+                                ),
+                              ],
+                            ),
+                          if (canScan) _HeroScanAction(onTap: onScan),
+                        ],
+                      ),
+                      if (guest) ...[
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => unawaited(onJoin()),
+                            icon: const Icon(
+                              Icons.add_circle_outline,
+                              size: 18,
+                            ),
+                            label: const Text('加入单位'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: foreground,
+                              backgroundColor: foreground.withValues(
+                                alpha: 0.06,
+                              ),
+                              minimumSize: const Size(48, 48),
+                              side: BorderSide(
+                                color: AppColors.heroOnDarkBorder,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroRoleBadge extends StatelessWidget {
+  final String level;
+
+  const _HeroRoleBadge({required this.level});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.heroOnDark.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: AppColors.heroOnDarkBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.verified_user_outlined,
+            size: 13,
+            color: AppColors.heroOnDark,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            level,
+            style: TextStyle(
+              color: AppColors.heroOnDark,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroScanAction extends StatelessWidget {
+  final Future<void> Function() onTap;
+
+  const _HeroScanAction({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      key: const Key('admin-scan'),
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => unawaited(onTap()),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 58, minHeight: 62),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: AppColors.heroOnDark.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.heroOnDarkBorder),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.qr_code_scanner_rounded,
+              size: 24,
+              color: AppColors.heroOnDark,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '扫一扫',
+              style: TextStyle(
+                color: AppColors.heroOnDark,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IdentityCardTexturePainter extends CustomPainter {
+  final Color color;
+
+  const _IdentityCardTexturePainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final line = Paint()
+      ..color = color.withValues(alpha: 0.022)
+      ..strokeWidth = 0.65;
+    for (double x = -size.height; x < size.width; x += 17) {
+      canvas.drawLine(Offset(x, size.height), Offset(x + size.height, 0), line);
+    }
+
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8
+      ..color = color.withValues(alpha: 0.04);
+    canvas.drawCircle(
+      Offset(size.width * 0.96, -size.height * 0.09),
+      size.width * 0.48,
+      ring,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.96, -size.height * 0.09),
+      size.width * 0.33,
+      ring,
+    );
+
+    final sheenRect = Rect.fromLTWH(
+      size.width * 0.42,
+      0,
+      size.width * 0.46,
+      size.height,
+    );
+    final sheen = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          color.withValues(alpha: 0),
+          color.withValues(alpha: 0.025),
+          color.withValues(alpha: 0),
+        ],
+      ).createShader(sheenRect);
+    final path = Path()
+      ..moveTo(size.width * 0.65, 0)
+      ..lineTo(size.width * 0.88, 0)
+      ..lineTo(size.width * 0.55, size.height)
+      ..lineTo(size.width * 0.4, size.height)
+      ..close();
+    canvas.drawPath(path, sheen);
+  }
+
+  @override
+  bool shouldRepaint(covariant _IdentityCardTexturePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _SettingsEyebrow extends StatelessWidget {

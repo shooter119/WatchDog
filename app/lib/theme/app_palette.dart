@@ -201,7 +201,7 @@ class AppPalette {
     rankGold: Color(0xFFB8860B),
     rankSilver: Color(0xFF8C8A82),
     rankBronze: Color(0xFF9A6B45),
-    heroBackground: Color(0xFF262624),
+    heroBackground: Color(0xFF111111),
     heroMuted: Color(0xFF9A958A),
     heroActive: Color(0xFFC5F4CC),
     heroInactive: Color(0xFFB8B4A8),
