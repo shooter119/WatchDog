@@ -205,6 +205,10 @@ class _IncidentLinkState extends State<_IncidentLink> {
     final link = raw is Map
         ? IncidentKeySiteLink.fromJson(Map<String, dynamic>.from(raw))
         : (_state == null ? widget.incident.keySiteLink : null);
+    final compactAction = TextButton.styleFrom(
+      minimumSize: const Size(48, 48),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
@@ -218,40 +222,73 @@ class _IncidentLinkState extends State<_IncidentLink> {
             if (_state?['active'] == false) const Text('重点单位已停用，保留历史引用'),
           ],
           if (_error != null) Text(keySiteError(_error!)),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              if (link != null)
-                OutlinedButton.icon(
-                  onPressed: () => _open(link.siteId, link.version),
-                  icon: const Icon(Icons.folder_open),
-                  label: const Text('单位资料'),
-                ),
-              if (widget.incident.isActive) ...[
-                TextButton(
-                  onPressed: _busy || _state == null ? null : _change,
-                  child: Text(link == null ? '搜索并关联' : '更换'),
-                ),
-                if (link != null)
-                  TextButton(
-                    onPressed: _busy ? null : () => _change(remove: true),
-                    child: const Text('解除'),
+          if (link != null && widget.incident.isActive)
+            Row(
+              children: [
+                Flexible(
+                  child: OutlinedButton.icon(
+                    key: const Key('key-site-open'),
+                    onPressed: () => _open(link.siteId, link.version),
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text('单位资料'),
                   ),
-                if (_state?['newVersionAvailable'] == true &&
-                    _state?['active'] == true)
+                ),
+                const SizedBox(width: 4),
+                TextButton(
+                  key: const Key('key-site-change'),
+                  onPressed: _busy || _state == null ? null : _change,
+                  style: compactAction,
+                  child: const Text('更换'),
+                ),
+                TextButton(
+                  key: const Key('key-site-remove'),
+                  onPressed: _busy ? null : () => _change(remove: true),
+                  style: compactAction,
+                  child: const Text('解除'),
+                ),
+              ],
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (link != null)
+                  OutlinedButton.icon(
+                    key: const Key('key-site-open'),
+                    onPressed: () => _open(link.siteId, link.version),
+                    icon: const Icon(Icons.folder_open),
+                    label: const Text('单位资料'),
+                  ),
+                if (widget.incident.isActive)
                   TextButton(
-                    onPressed: _busy ? null : () => _change(update: true),
-                    child: const Text('核对新版'),
+                    key: const Key('key-site-search'),
+                    onPressed: _busy || _state == null ? null : _change,
+                    child: const Text('搜索并关联'),
                   ),
               ],
-              if (_error != null)
-                TextButton(
-                  onPressed: _busy ? null : _load,
-                  child: const Text('重试'),
-                ),
-            ],
-          ),
+            ),
+          if (link != null &&
+              widget.incident.isActive &&
+              _state?['newVersionAvailable'] == true &&
+              _state?['active'] == true)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: const Key('key-site-update'),
+                onPressed: _busy ? null : () => _change(update: true),
+                style: compactAction,
+                child: const Text('核对新版'),
+              ),
+            ),
+          if (_error != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _busy ? null : _load,
+                child: const Text('重试'),
+              ),
+            ),
           if (_saving) const LinearProgressIndicator(),
         ],
       ),

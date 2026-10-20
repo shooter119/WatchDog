@@ -546,6 +546,65 @@ void main() {
     api.dispose();
   });
 
+  testWidgets('320dp大字号下更换和解除保持同一行', (tester) async {
+    tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    final api = FakeApi()
+      ..linkState = {
+        'link': {
+          'siteId': 'one',
+          'name': '合成单位',
+          'version': 1,
+          'linkedBy': 'm',
+          'linkedByName': '合成成员',
+          'linkedAt': 1,
+        },
+        'revision': 1,
+        'newVersionAvailable': false,
+        'active': true,
+      };
+    final controller = FakeController(api);
+    const incident = Incident(
+      id: 'i',
+      number: '合成警情',
+      status: 'active',
+      createdAt: 1,
+      lastActivityAt: 1,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.3)),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: IncidentKeySiteSection(
+              controller: controller,
+              incident: incident,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final change = tester.getRect(find.byKey(const Key('key-site-change')));
+    final remove = tester.getRect(find.byKey(const Key('key-site-remove')));
+    expect(change.center.dy, closeTo(remove.center.dy, 0.5));
+    expect(change.height, greaterThanOrEqualTo(48));
+    expect(remove.height, greaterThanOrEqualTo(48));
+    expect(find.byKey(const Key('key-site-open')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
+
   testWidgets('新版资料只提示人工更新，确认后关联固定到核对版本', (tester) async {
     final api = FakeApi()
       ..linkState = {
