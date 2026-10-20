@@ -31,6 +31,8 @@ services:
       DATABASE_URL: postgresql://watchdog:${WATCHDOG_DB_PASSWORD}@database:5432/watchdog
       DATABASE_POOL_MAX: 5
       DATABASE_SSL: 0
+      # 1.6GiB VPS: serialize document conversion and incoming uploads.
+      WATCHDOG_KEY_SITE_CONCURRENCY: 1
     depends_on:
       database:
         condition: service_healthy

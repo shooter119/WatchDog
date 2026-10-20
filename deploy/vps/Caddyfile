@@ -28,6 +28,10 @@ fireman119.xyz {
   }
 
   encode zstd gzip
+  @adminSurface path /admin /admin/* /api/admin /api/admin/*
+  handle @adminSurface {
+    reverse_proxy backend:3000
+  }
   handle_path /ota/* {
     root * /srv/ota
     header /latest.json Cache-Control "no-store, max-age=0"
