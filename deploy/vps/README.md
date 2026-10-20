@@ -13,7 +13,7 @@
 
 目标默认 `ali:/opt/watchdog`，可用 `WATCHDOG_DEPLOY_HOST` / `WATCHDOG_DEPLOY_ROOT` 指定。先备份私有源码配置并保留旧Docker镜像，校验Caddy并构建新镜像；构建成功后短暂停止后端，备份PostgreSQL自定义格式dump和容器 `/app/data`，验证dump目录可读取。旧容器没有持久卷时，将资料迁入 `vps_import-data`，不覆盖已有非空目标卷；后续部署继续使用已有卷。数据库、官网与Caddy容器不随backend重建。1.6GiB VPS将文档转换和上传并发限制为1，AI并发为1。
 
-部署后等容器健康，再原地写入并重载Caddy；只将主域名 `/admin`、`/admin/*`、`/api/admin`、`/api/admin/*` 路由到backend，官网、OTA及旧API域名不变。`scripts/verify-key-sites.mjs` 检查公开登录壳、Cookie标志、Origin拒绝、未确认挑战状态、跨浏览器拒绝、私有资源匿名鉴权，并比较部署前后官网与OTA响应摘要。公网失败自动回切旧后端镜像和Caddy路由，保留增量表和私有卷。
+部署后等容器健康，再原地写入并重载Caddy；只将主域名 `/admin`、`/admin/*`、`/api/admin`、`/api/admin/*` 路由到backend，官网、OTA及旧API域名不变。`scripts/verify-key-sites.mjs` 检查公开登录壳、Cookie标志、Origin拒绝、未确认挑战状态、跨浏览器拒绝、私有资源匿名鉴权，并比较部署前后官网与OTA响应摘要。公网失败自动回切旧后端镜像和Caddy路由，保留增量表和私有卷。远端任务先保存为独立脚本文件，再以空标准输入执行；备份命令不能消耗后续控制脚本，未到达完成标记的正常退出或信号也触发回切保护。
 
 私有备份在 `/opt/watchdog/backups/key-sites-<UTC时间>/`，目录700。包括 `database.dump`、`database.contents`、`private-data.tgz`、`app-data/`、`source-before.tgz`、`Caddyfile.before`、`old-image-id` 和 `rollback.sh`。手工回切运行 `bash <备份目录>/rollback.sh /opt/watchdog <备份目录>`，保留新私有卷和增量表，避免覆盖上线后的数据。只有确认需要完整时间点恢复时，才另行停后端并协调恢复数据库与同一份资料备份；不要日常回滚直接删表或用旧dump覆盖新数据。
 

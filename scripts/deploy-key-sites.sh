@@ -32,7 +32,7 @@ pre_snapshot="$(node scripts/verify-key-sites.mjs --snapshot)"
 git archive --format=tar "$revision" backend deploy/vps/Caddyfile deploy/vps/docker-compose.yml | gzip > "$logs/source.tgz"
 ssh -o BatchMode=yes -o ConnectTimeout=10 "$remote_host" "mkdir -p '$remote_root/backups/key-sites-$stamp' && chmod 700 '$remote_root/backups/key-sites-$stamp'"
 scp -q "$logs/source.tgz" "$remote_host:$remote_root/backups/key-sites-$stamp/candidate.tgz"
-ssh -o BatchMode=yes -o ConnectTimeout=10 "$remote_host" bash -s -- "$remote_root" "$stamp" "$revision" <<'REMOTE'
+cat > "$logs/deploy-worker.sh" <<'REMOTE'
 set -euo pipefail
 umask 077
 root="$1"; stamp="$2"; revision="$3"; backup="$root/backups/key-sites-$stamp"
@@ -76,9 +76,9 @@ docker exec "$caddy" caddy reload --config /etc/caddy/Caddyfile --adapter caddyf
 echo '已回切旧镜像及路由，保留增量表与私有卷；未恢复旧数据库覆盖新数据。'
 ROLLBACK
 chmod 700 "$backup/rollback.sh"
-stopped=0; activated=0; changed_caddy=0
+stopped=0; activated=0; changed_caddy=0; finished=0
 rollback() {
-  trap - ERR
+  trap - ERR EXIT HUP INT TERM
   echo '部署失败，回切旧后端镜像；不删除增量表或私有资料。' >&2
   if [[ "$changed_caddy" == 1 ]]; then
     cat "$backup/Caddyfile.before" > deploy/vps/Caddyfile
@@ -90,10 +90,11 @@ rollback() {
   elif [[ "$stopped" == 1 ]]; then docker start "$cid" >/dev/null || true; fi
   exit 1
 }
-trap rollback ERR
+trap rollback ERR HUP INT TERM
+trap 'if [[ "$finished" != 1 ]]; then rollback; fi' EXIT
 "${compose[@]}" stop backend
 stopped=1
-"${compose[@]}" exec -T database pg_dump -U watchdog -d watchdog -Fc > "$backup/database.dump"
+"${compose[@]}" exec -T database pg_dump -U watchdog -d watchdog -Fc < /dev/null > "$backup/database.dump"
 "${compose[@]}" exec -T database pg_restore --list < "$backup/database.dump" > "$backup/database.contents"
 mkdir "$backup/app-data"
 docker cp -a "$cid:/app/data/." "$backup/app-data/"
@@ -101,6 +102,8 @@ tar -czf "$backup/private-data.tgz" -C "$backup/app-data" .
 if [[ -z "$old_volume" ]]; then
   docker run --rm -u 0 --entrypoint sh -v "$volume:/restore" -v "$backup/app-data:/seed:ro" "$old_image" -c 'cp -a /seed/. /restore/ && chown -R 1000:1000 /restore && chmod 700 /restore'
 fi
+test -s "$backup/database.dump"
+test -s "$backup/private-data.tgz"
 docker image tag "watchdog-backend:candidate-$stamp" "${project}-backend"
 activated=1
 "${compose[@]}" up -d --no-deps --no-build backend
@@ -120,7 +123,11 @@ docker exec "$caddy" caddy reload --config /etc/caddy/Caddyfile --adapter caddyf
 printf '%s\n' "$revision" > "$backup/deployed-commit"
 "${compose[@]}" ps
 printf '私有备份：%s\n' "$backup"
+finished=1
+trap - ERR EXIT HUP INT TERM
 REMOTE
+scp -q "$logs/deploy-worker.sh" "$remote_host:$remote_root/backups/key-sites-$stamp/deploy-worker.sh"
+ssh -o BatchMode=yes -o ConnectTimeout=10 "$remote_host" "bash '$remote_root/backups/key-sites-$stamp/deploy-worker.sh' '$remote_root' '$stamp' '$revision'" < /dev/null
 if ! WATCHDOG_PRE_DEPLOY_SNAPSHOT="$pre_snapshot" node scripts/verify-key-sites.mjs | tee "$logs/public-verification.json"; then
   echo '公网验收失败，执行保留数据的旧镜像与路由回切。' >&2
   ssh -o BatchMode=yes -o ConnectTimeout=10 "$remote_host" "bash '$remote_root/backups/key-sites-$stamp/rollback.sh' '$remote_root' '$remote_root/backups/key-sites-$stamp'"
