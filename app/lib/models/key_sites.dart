@@ -41,16 +41,18 @@ class KeySiteSource {
 }
 
 class KeySiteEntry {
-  final String title, body;
+  final String title, body, kind;
   final Map<String, String> fields;
   final List<KeySiteSource> sources;
   const KeySiteEntry({
     required this.title,
+    this.kind = '',
     this.body = '',
     this.fields = const {},
     this.sources = const [],
   });
   factory KeySiteEntry.fromJson(Map<String, dynamic> json) => KeySiteEntry(
+    kind: json['kind']?.toString() ?? '',
     title: json['title']?.toString() ?? '',
     body: json['body']?.toString() ?? '',
     fields: (json['fields'] as Map? ?? {}).map(

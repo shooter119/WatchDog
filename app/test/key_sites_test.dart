@@ -269,6 +269,54 @@ void main() {
     controller.dispose();
     api.dispose();
   });
+  testWidgets('标准储罐显示中文字段且按编号搜索，设计容积不冒充实际储量', (tester) async {
+    final api = FakeApi();
+    api.fixture = KeySiteVersion(
+      siteId: 'one',
+      version: 1,
+      latestVersion: 1,
+      publishedAt: 1,
+      active: true,
+      profile: {'name': '合成单位'},
+      content: {
+        'hazards': [
+          KeySiteEntry.fromJson({
+            'kind': 'storageTank',
+            'title': '合成介质',
+            'fields': {
+              'tankNumber': 'T-TEST',
+              'designVolume': '42',
+              'designPressure': '-0.0005/0.008',
+              'quantity': '',
+            },
+          }),
+        ],
+      },
+      attachments: [],
+    );
+    final controller = FakeController(api);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: KeySiteModulePage(
+          controller: controller,
+          site: api.fixture!,
+          module: 'hazards',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('储罐'), findsOneWidget);
+    expect(find.text('储罐编号：T-TEST'), findsOneWidget);
+    expect(find.text('储罐容积（m³，非实际储量）：42'), findsOneWidget);
+    expect(find.textContaining('实际储量（原文及单位）：'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'T-TEST');
+    await tester.pump();
+    expect(find.text('合成介质'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
   testWidgets('地图使用来源页对应的鉴权瓦片，切页与恢复全图保持可操作', (tester) async {
     final api = FakeApi();
     final controller = FakeController(api);

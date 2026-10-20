@@ -10,7 +10,7 @@ function createKeySiteAdminRouter(sites, files, ai) {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: files.limits.fileBytes, files: 1, fields: 2, parts: 3 } }).single('file');
   let uploading = 0;
   router.use((req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
-  router.get('/limits', (req, res) => res.json({ limits: files.limits, aiAvailable: ai?.available() || false }));
+  router.get('/limits', (req, res) => res.json({ limits: files.limits, aiAvailable: ai?.available() || false, schema: require('./key-site-content').SCHEMA }));
   if (ai) {
     router.get('/tasks/:taskId', wrap(async (req, res) => res.json(await ai.read(req.admin.id, req.params.taskId))));
     router.post('/:id/attachments/:attachmentId/ai', wrap(async (req, res) => res.status(201).json(await ai.create(req.admin.id, req.params.id, req.params.attachmentId, req.body.pages))));

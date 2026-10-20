@@ -337,3 +337,23 @@ test('停用后的历史附件按警情协作范围鉴权，解除关联后仍�
   const state = await response.json(); assert.equal(state.link, null); assert.equal(state.history.length, 1);
   assert.equal((await request(`/api/incidents/${incident.id}/key-site`, { session: null, member: 'reader' })).status, 404);
 });
+
+test('标准记录HTTP保存发布保留独立储量与来源，旧发布版本不被新版覆盖', async () => {
+  const caps = await (await request('/api/admin/key-sites/limits')).json();
+  assert.ok(caps.schema.kinds.storageTank.fields.includes('designVolume'));
+  const site = await create('标准化合成单位');
+  const data = shape.emptyContent();
+  data.cards.push({kind:'siteOverview',title:'概况',fields:{dayStaff:'约30人'}});
+  data.hazards.push({kind:'storageTank',title:'合成介质 V-TEST',fields:{tankNumber:'V-TEST',designVolume:'42',quantity:'',designPressure:'-0.0005/0.008'}});
+  const draft = await sites.draft('manager',site.id);
+  const saved = await request(`/api/admin/key-sites/${site.id}/draft`,{session:manager,method:'PUT',body:{revision:draft.draft.revision,content:data}});
+  assert.equal(saved.status,200); await publish(site);
+  const v1 = await (await request(`/api/key-sites/${site.id}`,{session:null,member:'reader'})).json();
+  assert.equal(v1.content.hazards[0].kind,'storageTank'); assert.equal(v1.content.hazards[0].fields.quantity,'');
+  assert.equal(v1.content.cards[0].fields.dayStaff,'约30人');
+  data.hazards[0].fields.designVolume='43'; await save(site,data); await publish(site);
+  const old = await sites.versionForAdmin('platform',site.id,1);
+  assert.equal(old.content.hazards[0].fields.designVolume,'42');
+  const latest = await sites.versionForAdmin('platform',site.id,2);
+  assert.equal(latest.content.hazards[0].fields.designVolume,'43');
+});

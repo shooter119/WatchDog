@@ -22,7 +22,7 @@
 | 普通App、旧 `/api/maps`、官网和OTA兼容 | 全量回归；部署前后官网与OTA响应SHA-256一致；旧地图鉴权正常 | 已验证范围通过，未改变正式版本或OTA |
 | 后端与网页兼容上线、备份、增量迁移、健康、回滚 | 下述部署信息；回切实际执行，数据库保留增量表；Caddy挂载修正后公网检查全过 | 已部署；完整授权资料链路未验收 |
 
-本地最终门禁：Node24 `npm test` **253项通过**；App `flutter test` **353项通过**，`flutter analyze` **0问题**。Android `:app:compileDebugKotlin` 成功；只构建并安装Debug验收包，未构建正式APK。
+本地最终门禁：Node24 `npm test` **262项通过**；App `flutter test` **354项通过**，`flutter analyze` **0问题**。Android `:app:compileDebugKotlin` 成功；只构建并安装Debug验收包，未构建正式APK。
 
 提交 `ef8aa38` 的 GitHub Actions [Quality Checks](https://github.com/shooter119/WatchDog/actions/runs/39355071325) 后端与App均成功。随后模拟器权限回归发现相机设置入口调用了未实现的通道，已改为原生已实现的 `watchdog/screen`，并提升黑底按钮对比度、保持48dp触控高度。测试现核对通道与拒绝后恢复路径；全量门禁仍为253/353及analyze零问题。
 
@@ -54,3 +54,7 @@ Android模拟器实测完成“拒绝相机权限 → App引导 → 系统本应
 4. 完成真实授权环境下的多设备警情关联、版本提示、归档历史与撤权同步检查。
 
 版本号、正式APK、Git tag、Release和OTA仍须用户另外明确决定。
+
+## 基本情况标准化适配
+
+已参照用户提供的基本情况表栏目完成九类标准记录，后台表单、AI摘录及新版App显示共用标准字段；原始样表和个人信息不入库。详见 [标准说明](KEY-SITE-STANDARD.md)。隔离合成数据库完成浏览器建档、储罐录入、人工确认发布、刷新后持久化核对，控制台无错误。后端新增标准记录、来源、类型边界、储量语义和历史版本测试；App验证中文字段、储罐编号检索及不把容积当作实际储量。真实资料尚未自动上传或发布。

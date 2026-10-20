@@ -189,3 +189,13 @@ test('结果大小硬限制生效，过大的识别结果不写入任务或人�
   assert.equal(failed.status,'failed'); assert.equal(failed.result.pages[0].errorCode,'KEY_SITE_AI_RESULT_LIMIT');
   assert.ok(Buffer.byteLength(JSON.stringify(failed.result))<=500); assert.deepEqual((await state()).draft,before);
 });
+
+test('标准类型AI草稿采用及人工修订保留字段、类型和出处', async () => {
+  provider = options => validatePage({rawText:'合成储罐 T-TEST 42',classification:['hazards'],entries:[{module:'hazards',kind:'storageTank',title:'合成储罐',fields:{tankNumber:'T-TEST',designVolume:'42'},evidence:{title:'合成储罐',fields:{tankNumber:'T-TEST',designVolume:'42'}}}]},options);
+  const task = await runTask(await ai.create('manager',site.id,attachment.id,[1]));
+  const candidate = task.summary.entries[0]; const before=(await state()).draft;
+  const adopted = await apply(task,[candidate.id],before.revision,{edits:{[candidate.id]:{module:'hazards',kind:'storageTank',title:candidate.entry.title,body:'',fields:{...candidate.entry.fields,notes:'人工核对备注'}}}});
+  const item=adopted.content.hazards.at(-1);
+  assert.equal(item.kind,'storageTank'); assert.equal(item.fields.designVolume,'42'); assert.equal(item.fields.quantity,'');
+  assert.equal(item.fields.notes,'人工核对备注'); assert.equal(item.sources[0].attachmentId,attachment.id);
+});

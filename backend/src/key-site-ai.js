@@ -105,7 +105,7 @@ function createKeySiteAI(store, sites, files, auth, config, { extract = extractK
         const edit = input.edits?.[id];
         const module = edit?.module || candidate.module;
         if (!shape.MODULES.includes(module)) fail('请选择有效资料分类', 'KEY_SITE_AI_SELECTION_INVALID', 400);
-        const proposed = edit ? { title: edit.title, body: edit.body, fields: edit.fields, sources: candidate.entry.sources } : candidate.entry;
+        const proposed = edit ? { kind: edit.kind, title: edit.title, body: edit.body, fields: edit.fields, sources: candidate.entry.sources } : candidate.entry;
         const checked = shape.emptyContent(); checked[module] = [proposed];
         const entry = shape.content(checked)[module][0];
         if (module === 'maps') {

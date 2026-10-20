@@ -1,0 +1,268 @@
+{
+  "version": 1,
+  "name": "重点单位基本情况标准",
+  "fieldLabels": {
+    "capturedAt": "拍摄日期",
+    "versionLabel": "地图版本",
+    "area": "区域",
+    "scope": "适用范围",
+    "risk": "风险",
+    "keyLocations": "重点部位",
+    "access": "通行条件",
+    "water": "水源",
+    "response": "处置信息",
+    "parent": "上级组织或岗位",
+    "position": "岗位",
+    "contact": "联系人",
+    "phone": "联系方式",
+    "responsibilities": "岗位职责",
+    "location": "存放位置",
+    "quantity": "实际储量（原文及单位）",
+    "storage": "存放条件",
+    "notes": "待核对事项或补充说明",
+    "registeredName": "原文单位名称",
+    "registeredAddress": "原文单位地址",
+    "dutyPhone": "单位值班电话",
+    "totalStaff": "人员总数",
+    "dayStaff": "白班人数",
+    "nightStaff": "夜班人数",
+    "buildingStructure": "建筑结构",
+    "siteArea": "占地面积（含单位）",
+    "buildingArea": "建筑面积（含单位）",
+    "useAndZones": "主要使用性质及功能分区",
+    "eastNeighbor": "东侧毗邻企业",
+    "southNeighbor": "南侧毗邻企业",
+    "westNeighbor": "西侧毗邻企业",
+    "northNeighbor": "北侧毗邻企业",
+    "noParkingRoads": "不可停靠道路",
+    "chemicals": "涉及危化品名称",
+    "dangerousProcess": "危险工艺",
+    "fixedFireFacilities": "固定消防设施",
+    "fireResistance": "耐火等级",
+    "floorsAndHeight": "层数及高度（保留原文单位）",
+    "warehouseName": "仓库名称",
+    "composition": "主要成分",
+    "storageForm": "储存形式",
+    "packageCapacity": "单位包装储量（原文及单位）",
+    "tankNumber": "储罐编号",
+    "tankForm": "储罐形式",
+    "tankMaterial": "储罐材质",
+    "diameterAndHeight": "直径及高度（原文及单位）",
+    "designPressure": "设计压力（MPa）",
+    "nitrogenBlanket": "氮封情况",
+    "refrigeration": "冷冻设备情况",
+    "floatingRoof": "浮盘类型",
+    "designTemperature": "设计温度（℃）",
+    "insulation": "保温情况",
+    "designVolume": "储罐容积（m³，非实际储量）",
+    "controlRoomCount": "中央控制室数量",
+    "controlRoomLocation": "中央控制室位置",
+    "pumpRoomLocation": "消防水泵房位置",
+    "poolCount": "消防水池数量",
+    "poolLocation": "消防水池位置",
+    "poolCapacity": "消防水池总容量（含单位）",
+    "replenishment": "补水方式",
+    "naturalWater": "天然水源位置及取水方式",
+    "fireAlarm": "自动报警系统",
+    "highPressureSystem": "稳高压系统",
+    "sprinklerSystem": "自动喷水系统",
+    "emergencyBroadcast": "应急广播系统",
+    "onsiteHydrants": "单位内消火栓数量及分布",
+    "municipalHydrants": "周边市政消火栓数量及分布",
+    "firePumps": "消防泵及稳压泵参数",
+    "escapeRoutes": "应急避险通道数量及位置",
+    "extinguishingAgents": "灭火药剂及器材储备",
+    "processFlow": "工艺流程",
+    "specialWarnings": "重点提示（原文）",
+    "confidentiality": "涉密或未提供内容说明"
+  },
+  "legacyFields": {
+    "maps": [
+      "capturedAt",
+      "versionLabel",
+      "area"
+    ],
+    "plans": [
+      "scope"
+    ],
+    "cards": [
+      "risk",
+      "keyLocations",
+      "access",
+      "water",
+      "response"
+    ],
+    "organization": [
+      "parent",
+      "position",
+      "contact",
+      "phone",
+      "responsibilities"
+    ],
+    "hazards": [
+      "location",
+      "quantity",
+      "risk",
+      "storage",
+      "notes"
+    ]
+  },
+  "kinds": {
+    "siteOverview": {
+      "module": "cards",
+      "label": "单位基本情况",
+      "fields": [
+        "registeredName",
+        "registeredAddress",
+        "dutyPhone",
+        "totalStaff",
+        "dayStaff",
+        "nightStaff",
+        "buildingStructure",
+        "siteArea",
+        "buildingArea",
+        "useAndZones",
+        "notes"
+      ],
+      "help": "原文名称与地址须与单位档案核对；人数及面积保留约数与计量单位。"
+    },
+    "surroundings": {
+      "module": "cards",
+      "label": "毗邻与道路",
+      "fields": [
+        "eastNeighbor",
+        "southNeighbor",
+        "westNeighbor",
+        "northNeighbor",
+        "noParkingRoads",
+        "access",
+        "notes"
+      ],
+      "help": "各方向分别填写；不可停靠道路不等同于禁止通行道路。"
+    },
+    "productionUnit": {
+      "module": "cards",
+      "label": "生产装置",
+      "fields": [
+        "location",
+        "chemicals",
+        "dangerousProcess",
+        "fixedFireFacilities",
+        "fireResistance",
+        "floorsAndHeight",
+        "risk",
+        "notes"
+      ],
+      "help": "每套工艺装置一条，以装置名称为标题；未知危险工艺不得推定为无。"
+    },
+    "fireProtection": {
+      "module": "cards",
+      "label": "消防设施及水源",
+      "fields": [
+        "controlRoomCount",
+        "controlRoomLocation",
+        "pumpRoomLocation",
+        "poolCount",
+        "poolLocation",
+        "poolCapacity",
+        "replenishment",
+        "naturalWater",
+        "fireAlarm",
+        "highPressureSystem",
+        "sprinklerSystem",
+        "emergencyBroadcast",
+        "onsiteHydrants",
+        "municipalHydrants",
+        "firePumps",
+        "escapeRoutes",
+        "extinguishingAgents",
+        "notes"
+      ],
+      "help": "系统按原文记录有、无或待核对；数量、流量、扬程和一用一备关系不得合并丢失。"
+    },
+    "processFlow": {
+      "module": "cards",
+      "label": "工艺流程",
+      "fields": [
+        "processFlow",
+        "confidentiality",
+        "notes"
+      ],
+      "help": "未提供或涉密须原样说明；不推断工艺流程。"
+    },
+    "safetyNotice": {
+      "module": "cards",
+      "label": "重点提示",
+      "fields": [
+        "specialWarnings",
+        "risk",
+        "response",
+        "confidentiality",
+        "notes"
+      ],
+      "help": "保留单位原文警示及防护要求，不生成现场处置结论。"
+    },
+    "warehouseStock": {
+      "module": "hazards",
+      "label": "仓库库存",
+      "fields": [
+        "warehouseName",
+        "location",
+        "composition",
+        "buildingStructure",
+        "buildingArea",
+        "storageForm",
+        "packageCapacity",
+        "quantity",
+        "risk",
+        "storage",
+        "notes"
+      ],
+      "help": "每种存货一条，以品名为标题；单位包装储量与总储量分开，合并单元格信息须人工核对。"
+    },
+    "storageTank": {
+      "module": "hazards",
+      "label": "储罐",
+      "fields": [
+        "tankNumber",
+        "location",
+        "composition",
+        "tankForm",
+        "tankMaterial",
+        "diameterAndHeight",
+        "designPressure",
+        "nitrogenBlanket",
+        "refrigeration",
+        "floatingRoof",
+        "designTemperature",
+        "insulation",
+        "designVolume",
+        "quantity",
+        "risk",
+        "storage",
+        "notes"
+      ],
+      "help": "每个储罐一条；标题保留介质名称与编号。容积不代表实际储量，直径和高度保留原单位。"
+    },
+    "contact": {
+      "module": "organization",
+      "label": "单位联系人",
+      "fields": [
+        "position",
+        "contact",
+        "phone",
+        "responsibilities",
+        "parent",
+        "notes"
+      ],
+      "help": "每个岗位或联系人一条；相同人员兼任不同岗位时分别保留，未提供电话不得补造。"
+    }
+  },
+  "rules": [
+    "名称、地址与档案核对；草稿不自动改写档案。",
+    "每套装置、每种仓库存货、每个储罐和每个联系人分别记录。",
+    "未知留空；原文“/”、约数、涉密说明及计量单位保留，待人工核对。",
+    "设计容积、单位包装储量、实际储量分别记录，不做换算或推断。",
+    "所有记录沿用出处、人工核对、草稿和版本发布流程。"
+  ]
+}

@@ -32,3 +32,6 @@ backend/asr-debug.js
 .playwright-mcp/
 .playwright-cli/
 .od-skills/
+
+# 用户提供的私有原始资料
+.codex-attachments/

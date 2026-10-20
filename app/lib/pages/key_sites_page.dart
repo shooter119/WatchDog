@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../models/key_sites.dart';
+import '../models/key_site_schema.dart';
 import '../services/key_site_recents.dart';
 import '../state/app_controller.dart';
 
@@ -359,26 +360,6 @@ const keySiteModules = <String, String>{
   'organization': '组织架构',
   'hazards': '危险品信息',
 };
-const _fieldLabels = <String, String>{
-  'risk': '风险',
-  'keyLocations': '重点部位',
-  'access': '通行',
-  'water': '水源',
-  'response': '处置信息',
-  'scope': '适用范围',
-  'parent': '上级组织',
-  'position': '岗位',
-  'contact': '联系人',
-  'phone': '联系方式',
-  'responsibilities': '岗位职责',
-  'location': '位置',
-  'quantity': '数量',
-  'storage': '存放',
-  'notes': '备注',
-  'capturedAt': '拍摄日期',
-  'versionLabel': '图纸版本',
-  'area': '区域',
-};
 
 class KeySitePage extends StatelessWidget {
   final AppController controller;
@@ -567,9 +548,9 @@ class _ModuleContentState extends State<_ModuleContent> {
         .where(
           (e) =>
               widget.module != 'hazards' ||
-              '${e.title} ${e.fields['location'] ?? ''}'.toLowerCase().contains(
-                _query.toLowerCase(),
-              ),
+              '${e.title} ${e.fields['location'] ?? ''} ${e.fields['warehouseName'] ?? ''} ${e.fields['tankNumber'] ?? ''}'
+                  .toLowerCase()
+                  .contains(_query.toLowerCase()),
         )
         .toList();
     return Scaffold(
@@ -608,6 +589,11 @@ class _ModuleContentState extends State<_ModuleContent> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (entry.kind.isNotEmpty)
+                      Text(
+                        keySiteRecordLabels[entry.kind] ?? '标准记录',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
                     Text(
                       entry.title,
                       style: Theme.of(context).textTheme.titleLarge,
@@ -623,7 +609,7 @@ class _ModuleContentState extends State<_ModuleContent> {
                           (field) => Padding(
                             padding: const EdgeInsets.symmetric(vertical: 6),
                             child: SelectableText(
-                              '${_fieldLabels[field.key] ?? field.key}：${field.value}',
+                              '${keySiteFieldLabels[field.key] ?? field.key}：${field.value}',
                             ),
                           ),
                         ),

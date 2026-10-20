@@ -1,8 +1,17 @@
 'use strict';
 (() => {
   const labels = { maps: '地图', plans: '应急预案', cards: '作战信息卡', organization: '组织架构', hazards: '危险品' };
-  const fieldLabels = { capturedAt: '拍摄日期', versionLabel: '地图版本', area: '区域', scope: '适用范围', risk: '风险', keyLocations: '重点部位', access: '通行条件', water: '水源', response: '处置信息', parent: '上级组织或岗位', position: '岗位', contact: '联系人', phone: '联系方式', responsibilities: '岗位职责', location: '存放位置', quantity: '数量（含单位）', storage: '存放条件', notes: '待核对事项或补充说明' };
-  const fields = { maps: ['capturedAt','versionLabel','area'], plans: ['scope'], cards: ['risk','keyLocations','access','water','response'], organization: ['parent','position','contact','phone','responsibilities'], hazards: ['location','quantity','risk','storage','notes'] };
+  let schema, fieldLabels = {}, fields = {};
+  const recordFields = (module, kind) => kind ? schema.kinds[kind].fields : fields[module];
+  const recordName = kind => schema.kinds[kind]?.label || '通用资料';
+  function kindSelect(root, module, value, changed) {
+    const label = node('label', '标准记录类型'), select = node('select');
+    for (const [key, text] of [['', '通用资料（兼容已有记录）'], ...Object.entries(schema.kinds).filter(([, item]) => item.module === module).map(([key, item]) => [key, item.label])]) {
+      const option = node('option', text); option.value = key; select.append(option);
+    }
+    select.value = value || ''; select.onchange = () => changed(select.value);
+    label.append(select); root.append(label); return select;
+  }
   const profileFields = { name: '重点单位名称', short_name: '简称', address: '地址', district: '辖区', site_type: '类型' };
   const taskErrors = { KEY_SITE_INTERRUPTED: '处理进程中断，可重试', KEY_SITE_CONVERTER_UNAVAILABLE: '服务器文档转换组件暂不可用', KEY_SITE_PROCESS_TIMEOUT: '处理超时，请缩小文件后重试', KEY_SITE_CONVERT_FAILED: '文件损坏、加密或无法转换', KEY_SITE_PAGE_LIMIT: '文档页数超过限制', KEY_SITE_ENCRYPTED: '不支持加密PDF', KEY_SITE_QUOTA_EXCEEDED: '处理结果超过资料存储配额', KEY_SITE_PROCESS_FAILED: '文件处理失败，请重试' };
   let member, units = [], limits, aiAvailable = false, current, module = 'cards', offset = 0, dirty = false, query = {}, taskTimer;
@@ -29,6 +38,7 @@
     units = (await api('/units', undefined, 'GET')).units;
     const capabilities = await api('/key-sites/limits', undefined, 'GET');
     limits = capabilities.limits; aiAvailable = capabilities.aiAvailable;
+    schema = capabilities.schema; fieldLabels = schema.fieldLabels; fields = schema.legacyFields;
     const p = $('workspace').querySelector(':scope > p:last-of-type');
     if (p?.textContent.includes('随阶段')) p.remove();
     await list();
@@ -44,9 +54,18 @@
     const { site, draft } = current;
     $('site-summary').textContent = `${site.address} · ${site.published_version ? `当前已发布 v${site.published_version}` : '尚未发布'} · 草稿更新 ${date(draft.updated_at)}`;
   }
+  function standardGuide() {
+    const guide = node('details', '', 'standard-guide');
+    guide.append(node('summary', `${schema.name} · 查看字段与填写约定`));
+    for (const rule of schema.rules) guide.append(node('p', rule));
+    for (const spec of Object.values(schema.kinds)) {
+      guide.append(node('h4', `${labels[spec.module]} / ${spec.label}`), node('p', spec.fields.map(key => fieldLabels[key]).join(' · ')), node('p', spec.help, 'muted'));
+    }
+    return guide;
+  }
   async function list() {
     clearTimeout(taskTimer); current = null; dirty = false; manager.replaceChildren();
-    const head = node('div', '', 'section-head'); head.append(node('h2', '重点单位档案'), button('新建重点单位', () => editProfile())); manager.append(head);
+    const head = node('div', '', 'section-head'); head.append(node('h2', '重点单位档案'), button('新建重点单位', () => editProfile())); manager.append(head, standardGuide());
     const search = node('form', '', 'search-bar');
     const q = input(search, '搜索名称、简称或地址', query.q || '');
     const district = input(search, '辖区', query.district || '');
@@ -109,7 +128,7 @@
       if (!confirm(site.active ? '停用后不能新关联，历史警情仍保留引用版本。确认停用？' : '确认恢复此单位？')) return;
       await api(`/key-sites/${id}`, { ...site, active: !site.active }, 'PUT'); dirty = false; await open(id);
     })); const summary = node('p'); summary.id = 'site-summary'; manager.append(head, summary); updateSummary();
-    const notice = node('div', '草稿仅维护人员可见。请逐项核对原件；主动发布后，全平台已认证有效成员均可查阅。', 'notice'); manager.append(notice);
+    const notice = node('div', '草稿仅维护人员可见。请逐项核对原件；主动发布后，全平台已认证有效成员均可查阅。', 'notice'); manager.append(notice, standardGuide());
     const tabs = node('nav', '', 'module-tabs'); tabs.setAttribute('aria-label', '资料分类');
     for (const key of ['cards','maps','plans','organization','hazards']) tabs.append(button(labels[key], () => { if (mayLeave()) { manager.querySelector('.ai-review')?.remove(); activeAI = null; module = key; renderModule(); dirty = false; } }, key === module ? 'active' : ''));
     manager.append(tabs); const content = node('div'); content.id = 'module-content'; manager.append(content);
@@ -123,12 +142,15 @@
   }
   function renderModule() {
     const root = $('module-content'); root.replaceChildren(node('h3', labels[module]));
-    root.append(button('添加资料条目', () => editEntry()));
+    root.append(node('p', '按标准记录分类维护；每套装置、每种存货、每个储罐分别一条。原文空白、约数和涉密说明请保留待核对。', 'muted'));
+    const add = node('div', '', 'record-tools');
+    for (const [kind, spec] of Object.entries(schema.kinds).filter(([, spec]) => spec.module === module)) add.append(button(`＋ ${spec.label}`, () => editEntry(undefined, kind)));
+    add.append(button('添加通用资料', () => editEntry())); root.append(add);
     const entries = current.draft.content[module] || [];
     if (!entries.length) root.append(node('p', '暂无资料', 'empty'));
     entries.forEach((entry, index) => {
-      const card = node('article', '', 'entry-card'); card.append(node('h3', entry.title), node('p', entry.body));
-      for (const [key, value] of Object.entries(entry.fields || {})) if (value) card.append(node('p', `${fieldLabels[key]}：${value}`));
+      const card = node('article', '', 'entry-card'); card.append(node('small', recordName(entry.kind), 'record-kind'), node('h3', entry.title), node('p', entry.body));
+      for (const key of recordFields(module, entry.kind)) if (entry.fields[key]) card.append(node('p', `${fieldLabels[key]}：${entry.fields[key]}`));
       for (const source of entry.sources) {
         const file = current.attachments.find(file => file.id === source.attachmentId);
         if (file) card.append(link(`查看出处：${file.filename}${source.page ? ` · 第${source.page}页` : ''}`, `/api/admin/key-sites/${current.site.id}/attachments/${file.id}/${file.mime.startsWith('image/') ? `pages/${source.page || 1}.jpg` : `document.pdf#page=${source.page || 1}`}`));
@@ -148,16 +170,28 @@
     updateSummary();
     dirty = false; $('error').textContent = '草稿已保存，尚未发布';
   }
-  function editEntry(index) {
+  function editEntry(index, initialKind = '') {
     if (!mayLeave()) return;
     manager.querySelector('.ai-review')?.remove(); activeAI = null;
-    const entry = index === undefined ? { title: '', body: '', fields: {}, sources: [] } : current.draft.content[module][index];
+    const entry = index === undefined ? { kind: initialKind, title: '', body: '', fields: {}, sources: [] } : current.draft.content[module][index];
     const root = $('entry-editor'); root.replaceChildren(); const form = node('form', '', 'entry-form');
     form.append(node('h3', index === undefined ? `添加${labels[module]}` : `编辑${labels[module]}`));
     const title = input(form, module === 'hazards' ? '危险品名称' : module === 'organization' ? '组织或岗位名称' : '标题', entry.title, { required: true });
     const body = input(form, module === 'plans' ? '预案正文（可按章节分条录入，标题组成目录）' : '正文或补充说明', entry.body, { multiline: true });
-    const controls = {};
-    for (const key of fields[module]) controls[key] = input(form, fieldLabels[key], entry.fields[key] || '', { multiline: ['response','responsibilities','risk','notes'].includes(key) });
+    let kind = entry.kind || '';
+    const fieldRoot = node('div', '', 'standard-fields'), help = node('p', '', 'muted');
+    const controls = {}, retained = { ...entry.fields };
+    const renderFields = () => {
+      for (const [key, control] of Object.entries(controls)) retained[key] = control.value;
+      fieldRoot.replaceChildren(); for (const key of Object.keys(controls)) delete controls[key];
+      help.textContent = schema.kinds[kind]?.help || '保留原有通用字段，历史发布版本不受编辑影响。';
+      for (const key of recordFields(module, kind)) controls[key] = input(fieldRoot, fieldLabels[key], retained[key] || '', { multiline: ['notes','useAndZones','firePumps','escapeRoutes','extinguishingAgents','processFlow','specialWarnings','confidentiality','risk','response','responsibilities','onsiteHydrants','municipalHydrants','naturalWater'].includes(key) });
+    };
+    const select = kindSelect(form, module, kind, next => {
+      if (!confirm('更改记录类型会只保存新类型字段；未采用的字段仍留在旧发布版本。确认更改？')) { select.value = kind; return; }
+      kind = next; renderFields(); dirty = true;
+    });
+    form.append(help, fieldRoot); renderFields();
     form.append(node('h4', '原文出处')); const sourceRoot = node('div'), sources = []; form.append(sourceRoot);
     const addSource = (source = {}) => {
       const line = node('div', '', 'source-row'), select = node('select'); select.setAttribute('aria-label', '来源附件');
@@ -174,7 +208,7 @@
     form.onsubmit = async event => {
       event.preventDefault();
       try {
-        const next = structuredClone(current.draft.content), edited = { title: title.value, body: body.value, fields: Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value])), sources: sources.filter(item => !item.removed && item.select.value).map(item => ({ attachmentId: item.select.value, page: item.page.value ? Number(item.page.value) : null, paragraph: item.paragraph.value })) };
+        const next = structuredClone(current.draft.content), edited = { ...(kind ? { kind } : {}), title: title.value, body: body.value, fields: Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value])), sources: sources.filter(item => !item.removed && item.select.value).map(item => ({ attachmentId: item.select.value, page: item.page.value ? Number(item.page.value) : null, paragraph: item.paragraph.value })) };
         if (index === undefined) next[module].push(edited); else next[module][index] = edited;
         await save(next); renderModule();
       } catch (error) { report(error); }
@@ -309,26 +343,32 @@
       if (!page.extraction.entries.length) proposed.append(node('p', '本页未提取到可核实条目，请人工核对或录入。'));
       for (const candidate of page.extraction.entries) {
         const box = node('div', '', 'ai-candidate'), adopted = task.result.applied.includes(candidate.id);
-        const edit = cache.edits.get(candidate.id) || { module: candidate.module, title: candidate.entry.title, body: candidate.entry.body, fields: { ...candidate.entry.fields } };
+        const edit = cache.edits.get(candidate.id) || { module: candidate.module, kind: candidate.entry.kind, title: candidate.entry.title, body: candidate.entry.body, fields: { ...candidate.entry.fields } };
         cache.edits.set(candidate.id, edit);
         const choose = node('label', adopted ? '已采用（后续修改请编辑人工草稿）' : '选择此条目加入草稿'), check = node('input'); check.type = 'checkbox'; check.disabled = adopted; check.checked = cache.selected.has(candidate.id); choose.prepend(check); box.append(choose);
         check.onchange = () => { check.checked ? cache.selected.add(candidate.id) : cache.selected.delete(candidate.id); reviewed.checked = false; };
         const classificationLabel = node('label', '资料分类'), classification = node('select');
         for (const [key, label] of Object.entries(labels)) { const option = node('option', label); option.value = key; classification.append(option); }
         classification.value = edit.module; classificationLabel.append(classification); box.append(classificationLabel);
+        const kindControl = kindSelect(box, edit.module, edit.kind, next => {
+          edit.kind = next;
+          edit.fields = Object.fromEntries(recordFields(edit.module, edit.kind).map(key => [key, edit.fields[key] || '']));
+          changed(); renderFields();
+        });
+        kindControl.disabled = adopted;
         const title = input(box, '标题', edit.title), body = input(box, '正文原文摘录', edit.body, { multiline: true });
         const changed = () => { dirty = true; cache.changed.add(candidate.id); reviewed.checked = false; };
         title.oninput = () => { edit.title = title.value; changed(); }; body.oninput = () => { edit.body = body.value; changed(); };
         const fieldRoot = node('div'); box.append(fieldRoot);
         const renderFields = () => {
           fieldRoot.replaceChildren();
-          for (const key of fields[edit.module]) {
+          for (const key of recordFields(edit.module, edit.kind)) {
             const control = input(fieldRoot, fieldLabels[key], edit.fields[key] || '', { multiline: ['risk','response','responsibilities','notes'].includes(key) });
             control.oninput = () => { edit.fields[key] = control.value; changed(); };
           }
           if (adopted) for (const control of fieldRoot.querySelectorAll('input,textarea')) control.disabled = true;
         };
-        classification.onchange = () => { edit.module = classification.value; changed(); renderFields(); }; renderFields();
+        classification.onchange = () => { edit.module = classification.value; edit.kind = ''; edit.fields = Object.fromEntries(fields[edit.module].map(key => [key, edit.fields[key] || ''])); changed(); renderPage(); }; renderFields();
         classification.disabled = adopted; title.disabled = adopted; body.disabled = adopted;
         for (const note of candidate.toConfirm) box.append(node('p', `待核对：${note}`, 'review-note'));
         proposed.append(box);
@@ -401,7 +441,7 @@
           if (!saved.content[key].length) preview.append(node('p', '暂无资料'));
           for (const entry of saved.content[key]) {
             preview.append(node('strong', entry.title), node('p', entry.body));
-            for (const [field, value] of Object.entries(entry.fields || {})) if (value) preview.append(node('p', `${fieldLabels[field]}：${value}`));
+            for (const field of recordFields(key, entry.kind)) if (entry.fields[field]) preview.append(node('p', `${fieldLabels[field] || field}：${entry.fields[field]}`));
             for (const source of entry.sources) {
               const file = current.attachments.find(item => item.id === source.attachmentId);
               if (file) preview.append(link(`查看出处：${file.filename} · 第${source.page || 1}页`, `/api/admin/key-sites/${current.site.id}/attachments/${file.id}/${file.mime.startsWith('image/') ? `pages/${source.page || 1}.jpg` : `document.pdf#page=${source.page || 1}`}`));
