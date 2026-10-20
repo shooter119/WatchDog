@@ -11,12 +11,14 @@ import 'pages/key_sites_page.dart';
 import 'pages/incident_selection_overlay.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
+import 'pages/video_playback_surface.dart';
 import 'services/foreground_keep_alive.dart';
 import 'services/app_data_epoch.dart';
 import 'services/local_asr_service.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/op_log_service.dart';
 import 'services/theme_controller.dart';
+import 'services/video_playback_session.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_widgets.dart';
@@ -89,6 +91,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   late final AppController controller;
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
+  final VideoPlaybackSession _videoPlayback = VideoPlaybackSession();
   final TextEditingController _chatInput =
       TextEditingController(); // 辅助页输入条（全局底部聊天操作条）
   final FocusNode _chatInputFocus = FocusNode(); // 辅助页文字输入切换按钮聚焦目标
@@ -126,6 +129,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _chatInput.dispose();
     _chatInputFocus.dispose();
+    _videoPlayback.dispose();
     controller.dispose();
     super.dispose();
   }
@@ -146,6 +150,21 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
       _tab = i;
       if (i != 3) _chatTextMode = false; // 离开辅助页重置为悬浮麦克风态
     });
+  }
+
+  Future<void> _fullscreenFloatingVideo(BuildContext context) async {
+    if (_videoPlayback.presentation != VideoPlaybackPresentation.floating ||
+        !_videoPlayback.hasResource) {
+      return;
+    }
+    _videoPlayback.enterFullscreen();
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => VideoFullscreenPage(session: _videoPlayback),
+      ),
+    );
+    if (!mounted || !_videoPlayback.hasResource) return;
+    _videoPlayback.enterFloating();
   }
 
   String _pageName(int tab) => switch (tab) {
@@ -294,6 +313,8 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                 onNoteIntent: _routeNote,
                 onAskIntent: _routeAsk,
                 onEntryConfirmed: () => _selectTab(1),
+                videoPlayback: _videoPlayback,
+                onVideoFloating: () => _selectTab(2),
               ),
               ChatPage(
                 key: _chatKey,
@@ -530,6 +551,24 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                           _homeKey.currentState?.createIncidentFromGate() ??
                           Future<void>.value(),
                     ),
+                  AnimatedBuilder(
+                    animation: _videoPlayback,
+                    builder: (context, _) {
+                      if (_videoPlayback.presentation !=
+                              VideoPlaybackPresentation.floating ||
+                          !_videoPlayback.hasResource) {
+                        return const SizedBox.shrink();
+                      }
+                      return Positioned(
+                        right: 12,
+                        bottom: 84 + MediaQuery.paddingOf(context).bottom,
+                        child: FloatingVideoWindow(
+                          session: _videoPlayback,
+                          onFullscreen: () => _fullscreenFloatingVideo(context),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             );

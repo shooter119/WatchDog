@@ -20,6 +20,7 @@ import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
+import '../services/video_playback_session.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
@@ -34,6 +35,8 @@ class HomePage extends StatefulWidget {
   final ValueChanged<String>? onNoteIntent; // 识别为火场日志：记入并跳日志页
   final ValueChanged<String>? onAskIntent; // 识别为提问：跳问答页并发送
   final VoidCallback? onEntryConfirmed; // 进场确认成功后跳转看板
+  final VideoPlaybackSession? videoPlayback;
+  final VoidCallback? onVideoFloating;
   final AudioService? audioService; // 测试注入
 
   const HomePage({
@@ -46,6 +49,8 @@ class HomePage extends StatefulWidget {
     this.onNoteIntent,
     this.onAskIntent,
     this.onEntryConfirmed,
+    this.videoPlayback,
+    this.onVideoFloating,
     this.audioService,
   });
 
@@ -3010,6 +3015,8 @@ class HomePageState extends State<HomePage> {
                     MaterialPageRoute(
                       builder: (_) => VideoResourcesPage(
                         controller: widget.controller,
+                        playback: widget.videoPlayback,
+                        onVideoFloating: widget.onVideoFloating,
                       ),
                     ),
                   ),

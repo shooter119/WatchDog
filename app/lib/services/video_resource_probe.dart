@@ -7,7 +7,9 @@ typedef VideoResourceAvailabilityChecker =
     Future<bool> Function(VideoResource resource);
 
 class VideoResourceProbe {
-  static const timeout = Duration(seconds: 6);
+  // The Commander gateway may spend about 15 seconds inviting the upstream
+  // device. A shorter timeout marked otherwise reachable resources red.
+  static const timeout = Duration(seconds: 20);
 
   /// Availability means the authorized stream endpoint answered successfully.
   /// It does not replace the real video-surface acceptance on a phone.

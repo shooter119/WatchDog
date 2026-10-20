@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:watchdog/api/api_client.dart';
@@ -7,8 +8,10 @@ import 'package:watchdog/models/video_resources.dart';
 import 'package:watchdog/pages/home_page.dart';
 import 'package:watchdog/pages/settings_page.dart';
 import 'package:watchdog/pages/video_resource_admin_page.dart';
+import 'package:watchdog/pages/video_playback_surface.dart';
 import 'package:watchdog/pages/video_resources_page.dart';
 import 'package:watchdog/services/settings.dart';
+import 'package:watchdog/services/video_playback_session.dart';
 import 'package:watchdog/state/app_controller.dart';
 import 'package:watchdog/theme/app_widgets.dart';
 
@@ -296,6 +299,144 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
     api.dispose();
+  });
+
+  testWidgets('展开后的播放器提供全屏、浮窗和关闭三个独立操作', (tester) async {
+    var fullscreen = 0;
+    var floating = 0;
+    var closed = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoResourceCard(
+            resource: _resource,
+            available: true,
+            expandedPlayer: const ColoredBox(color: Colors.black),
+            onTap: () {},
+            onClose: () => closed++,
+            onFullscreen: () => fullscreen++,
+            onFloating: () => floating++,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('video-resource-fullscreen-camera-1')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('video-resource-floating-camera-1')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('video-resource-close-camera-1')),
+    );
+
+    expect(fullscreen, 1);
+    expect(floating, 1);
+    expect(closed, 1);
+  });
+
+  testWidgets('浮窗画面提供切换全屏的悬浮按钮', (tester) async {
+    final session = VideoPlaybackSession();
+    var fullscreen = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: FloatingVideoWindow(
+              session: session,
+              onFullscreen: () => fullscreen++,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    for (final key in const [
+      Key('video-floating-fullscreen'),
+      Key('video-floating-close'),
+    ]) {
+      final size = tester.getSize(find.byKey(key));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+    }
+    await tester.tap(find.byKey(const Key('video-floating-fullscreen')));
+    expect(fullscreen, 1);
+    expect(find.byKey(const Key('video-floating-close')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  });
+
+  testWidgets('全屏自动横屏，返回浮窗或行内后恢复竖屏', (tester) async {
+    final orientations = <List<Object?>>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'SystemChrome.setPreferredOrientations') {
+            orientations.add(call.arguments as List<Object?>);
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    final session = VideoPlaybackSession.forTesting(resource: _resource);
+    session.enterFullscreen();
+    await tester.pump();
+    expect(
+      orientations.last,
+      containsAll(<String>[
+        'DeviceOrientation.landscapeLeft',
+        'DeviceOrientation.landscapeRight',
+      ]),
+    );
+
+    session.enterFloating();
+    await tester.pump();
+    expect(orientations.last, ['DeviceOrientation.portraitUp']);
+
+    session.returnInline();
+    await tester.pump();
+    expect(orientations.last, ['DeviceOrientation.portraitUp']);
+    session.dispose();
+  });
+
+  testWidgets('16:9 行内播放器在 1.3 倍字体下显示失败态不溢出', (tester) async {
+    tester.view.physicalSize = const Size(430, 2200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final session = VideoPlaybackSession.forTesting(
+      resource: _resource,
+      status: VideoPlaybackStatus.failed,
+      lastError: 'synthetic failure',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
+          child: Center(
+            child: SizedBox(
+              width: 398,
+              height: 224,
+              child: VideoPlaybackSurface(
+                session: session,
+                key: const Key('constrained-video-failure'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('视频连接失败'), findsOneWidget);
+    expect(find.text('重新连接'), findsOneWidget);
+    session.dispose();
   });
 
   testWidgets('视频资源管理页拒绝非 HTTPS 地址并支持新增', (tester) async {

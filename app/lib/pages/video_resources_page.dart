@@ -5,24 +5,26 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../models/video_resources.dart';
 import '../services/video_resource_probe.dart';
+import '../services/video_playback_session.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import 'video_resource_admin_page.dart';
-import 'video_resource_player.dart';
-
-Widget _defaultExpandedPlayer(VideoResource resource) =>
-    VideoResourcePlayer(resource: resource);
+import 'video_playback_surface.dart';
 
 class VideoResourcesPage extends StatefulWidget {
   final AppController controller;
   final VideoResourceAvailabilityChecker availabilityChecker;
-  final Widget Function(VideoResource resource) expandedPlayerBuilder;
+  final Widget Function(VideoResource resource)? expandedPlayerBuilder;
+  final VideoPlaybackSession? playback;
+  final VoidCallback? onVideoFloating;
 
   const VideoResourcesPage({
     super.key,
     required this.controller,
     this.availabilityChecker = VideoResourceProbe.check,
-    this.expandedPlayerBuilder = _defaultExpandedPlayer,
+    this.expandedPlayerBuilder,
+    this.playback,
+    this.onVideoFloating,
   });
 
   @override
@@ -36,13 +38,38 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
   String? _error;
   final Map<String, bool> _availability = {};
   String? _expandedResourceId;
+  late final VideoPlaybackSession _playback;
+  late final bool _ownsPlayback;
 
   ApiClient? get _api => widget.controller.api;
 
   @override
   void initState() {
     super.initState();
+    _ownsPlayback = widget.playback == null;
+    _playback = widget.playback ?? VideoPlaybackSession();
+    _playback.addListener(_onPlaybackChanged);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _playback.removeListener(_onPlaybackChanged);
+    if (_ownsPlayback) {
+      _playback.dispose();
+    } else if (_playback.presentation == VideoPlaybackPresentation.inline) {
+      _playback.stop();
+    }
+    super.dispose();
+  }
+
+  void _onPlaybackChanged() {
+    if (!mounted) return;
+    if (!_playback.hasResource && _expandedResourceId != null) {
+      setState(() => _expandedResourceId = null);
+      return;
+    }
+    setState(() {});
   }
 
   Future<void> _load() async {
@@ -115,11 +142,45 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
       return;
     }
     setState(() => _expandedResourceId = resource.id);
+    if (widget.expandedPlayerBuilder == null) {
+      _playback.startInline(resource);
+    }
   }
 
   void _collapse(String resourceId) {
     if (_expandedResourceId != resourceId) return;
+    _playback.stop();
     setState(() => _expandedResourceId = null);
+  }
+
+  Future<void> _showFullscreen(VideoResource resource) async {
+    if (_expandedResourceId != resource.id) return;
+    _playback.enterFullscreen();
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => VideoFullscreenPage(session: _playback),
+      ),
+    );
+    if (!mounted) return;
+    if (_playback.resource?.id == resource.id) {
+      _playback.returnInline();
+    } else {
+      setState(() => _expandedResourceId = null);
+    }
+  }
+
+  void _showFloating(VideoResource resource) {
+    if (_expandedResourceId != resource.id) return;
+    _playback.enterFloating();
+    widget.onVideoFloating?.call();
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Widget _expandedPlayer(VideoResource resource) {
+    return widget.expandedPlayerBuilder?.call(resource) ??
+        VideoPlaybackSurface(session: _playback);
   }
 
   @override
@@ -163,11 +224,16 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
                       key: ValueKey('video-resource-${resource.id}'),
                       resource: resource,
                       available: _availability[resource.id],
-                      expandedPlayer: _expandedResourceId == resource.id
-                          ? widget.expandedPlayerBuilder(resource)
+                      expandedPlayer:
+                          _expandedResourceId == resource.id &&
+                              _playback.presentation ==
+                                  VideoPlaybackPresentation.inline
+                          ? _expandedPlayer(resource)
                           : null,
                       onTap: () => _expand(resource),
                       onClose: () => _collapse(resource.id),
+                      onFullscreen: () => _showFullscreen(resource),
+                      onFloating: () => _showFloating(resource),
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -184,6 +250,8 @@ class VideoResourceCard extends StatelessWidget {
   final Widget? expandedPlayer;
   final VoidCallback onTap;
   final VoidCallback onClose;
+  final VoidCallback? onFullscreen;
+  final VoidCallback? onFloating;
 
   const VideoResourceCard({
     super.key,
@@ -192,6 +260,8 @@ class VideoResourceCard extends StatelessWidget {
     this.expandedPlayer,
     required this.onTap,
     required this.onClose,
+    this.onFullscreen,
+    this.onFloating,
   });
 
   @override
@@ -328,18 +398,35 @@ class VideoResourceCard extends StatelessWidget {
                             Positioned(
                               top: 8,
                               right: 8,
-                              child: IconButton(
-                                key: ValueKey(
-                                  'video-resource-close-${resource.id}',
-                                ),
-                                tooltip: '关闭视频',
-                                onPressed: onClose,
-                                style: IconButton.styleFrom(
-                                  backgroundColor: Colors.black54,
-                                  foregroundColor: Colors.white,
-                                  minimumSize: const Size(48, 48),
-                                ),
-                                icon: const Icon(Icons.close_rounded),
+                              child: Row(
+                                children: [
+                                  PlayerOverlayButton(
+                                    key: ValueKey(
+                                      'video-resource-fullscreen-${resource.id}',
+                                    ),
+                                    tooltip: '全屏播放',
+                                    icon: Icons.fullscreen_rounded,
+                                    onPressed: onFullscreen ?? () {},
+                                  ),
+                                  const SizedBox(width: 2),
+                                  PlayerOverlayButton(
+                                    key: ValueKey(
+                                      'video-resource-floating-${resource.id}',
+                                    ),
+                                    tooltip: '浮窗播放',
+                                    icon: Icons.picture_in_picture_alt_rounded,
+                                    onPressed: onFloating ?? () {},
+                                  ),
+                                  const SizedBox(width: 2),
+                                  PlayerOverlayButton(
+                                    key: ValueKey(
+                                      'video-resource-close-${resource.id}',
+                                    ),
+                                    tooltip: '关闭视频',
+                                    icon: Icons.close_rounded,
+                                    onPressed: onClose,
+                                  ),
+                                ],
                               ),
                             ),
                           ],
