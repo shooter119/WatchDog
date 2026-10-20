@@ -221,9 +221,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
         ),
         const SizedBox(height: 6),
         Text(
-          hasIncident
-              ? '在首页警情卡点「水印相机」拍摄，文件会保存在这台设备上'
-              : '先加入或新建警情，拍摄的现场资料会归到当前警情下',
+          hasIncident ? '在首页点「现场拍摄」，文件会保存在这台设备上' : '先加入或新建警情，拍摄的现场资料会归到当前警情下',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),

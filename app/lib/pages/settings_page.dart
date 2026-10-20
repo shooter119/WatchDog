@@ -3,9 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import 'orthomap_page.dart';
+import 'admin_scanner_page.dart';
 
-import '../models/models.dart';
 import '../services/alarm_service.dart';
 import '../services/foreground_keep_alive.dart';
 import '../services/local_asr_service.dart';
@@ -18,7 +17,6 @@ import '../services/update_service.dart';
 import '../state/app_controller.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_widgets.dart';
-import '../theme/fire_control_logo.dart';
 import 'about_page.dart';
 import 'archived_incidents_page.dart';
 import 'op_log_page.dart';
@@ -72,6 +70,7 @@ class _SettingsPageState extends State<SettingsPage> {
   _SaveState _saveState = _SaveState.idle; // 自动保存状态提示
   String _unitName = '';
   bool _unitAuthenticated = false;
+  String _unitRole = 'member';
 
   @override
   void initState() {
@@ -97,18 +96,32 @@ class _SettingsPageState extends State<SettingsPage> {
   void _onControllerChanged() {
     if (!mounted) return;
     setState(() {});
-    if (!widget.controller.needsAuthentication) unawaited(_loadIdentity());
+    if (widget.controller.protectedDataRevoked ||
+        widget.controller.needsAuthentication) {
+      _unitAuthenticated = false;
+      _realName.clear();
+      _unitName = '';
+    } else {
+      unawaited(_loadIdentity());
+    }
   }
 
   Future<void> _loadIdentity() async {
+    final epoch = widget.controller.protectedDataEpoch;
     final name = await Settings.realName;
     final unit = await Settings.unitName;
+    final role = await Settings.userRole;
     final authenticated =
         (await Settings.unitId).isNotEmpty &&
         (await Settings.unitName).isNotEmpty &&
         (await Settings.unitCode).isNotEmpty;
-    if (!mounted) return;
+    if (!mounted ||
+        widget.controller.protectedDataRevoked ||
+        epoch != widget.controller.protectedDataEpoch) {
+      return;
+    }
     setState(() {
+      _unitRole = role;
       _realName.text = name;
       _unitName = unit;
       _unitAuthenticated = authenticated;
@@ -139,6 +152,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _keepAlive = await Settings.keepAliveEnabled;
     _asrCloud = await Settings.asrCloudEnabled;
     _parseCloud = await Settings.parseCloudEnabled;
+    _unitRole = await Settings.userRole;
     _realName.text = await Settings.realName;
     _unitName = await Settings.unitName;
     _unitAuthenticated =
@@ -667,6 +681,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final connected = !widget.controller.connectionLost;
     final entries = widget.controller.entries;
     final activeEntries = entries.where((entry) => entry.isActive).length;
     final uniqueNames = entries
@@ -674,7 +689,6 @@ class _SettingsPageState extends State<SettingsPage> {
         .where((name) => name.isNotEmpty)
         .toSet()
         .length;
-    final connected = !widget.controller.connectionLost;
 
     return SafeArea(
       child: ListView(
@@ -698,33 +712,14 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 6),
           const _SettingsEyebrow('现场处置 / 本机状态'),
           const SizedBox(height: 8),
-          _SettingsHero(
-            incident: widget.controller.currentIncident,
-            connected: connected,
-            syncError: widget.controller.syncError,
-            isGuest: widget.controller.isGuest,
-          ),
-          const SizedBox(height: 22),
-          const SectionTitle(text: '我的身份'),
           _buildIdentityCard(),
           const SizedBox(height: 22),
-          const SectionTitle(text: '现场资料'),
-          _SettingsLinkCard(
-            icon: Icons.map_outlined,
-            title: '现场地图',
-            subtitle: '查看单位正射影像，支持缩放和拖动',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => OrthomapPage(controller: widget.controller),
-              ),
-            ),
-          ),
+          const SectionTitle(text: '现场设置'),
           const SizedBox(height: 9),
           _SettingsLinkCard(
             icon: Icons.branding_watermark_outlined,
             title: '水印设置',
-            subtitle: '配置拍摄水印，拍摄请用首页水印相机',
+            subtitle: '配置拍摄水印，拍摄请用首页现场拍摄',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const WatermarkSettingsPage()),
@@ -830,8 +825,8 @@ class _SettingsPageState extends State<SettingsPage> {
             summary: widget.controller.isGuest
                 ? '单机演练 · 仅本机保存'
                 : connected
-                    ? '现场协同服务器 · 连接正常'
-                    : '现场协同服务器 · 等待连接',
+                ? '现场协同服务器 · 连接正常'
+                : '现场协同服务器 · 等待连接',
             child: _buildServerBody(),
           ),
           const SizedBox(height: 9),
@@ -914,96 +909,139 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildIdentityCard() {
-    final name = _realName.text.trim().isEmpty ? '未认证' : _realName.text.trim();
-    final unitName = _unitName.trim().isEmpty ? '未选择单位' : _unitName.trim();
-    // 与「水印设置」「添加语音热词」等设置项共用同一套行高与字号：
-    // 35dp 图标框 + 14/11 两级文字 + 至少 48dp 的行高。
+    final guest = widget.controller.isGuest;
+    final authenticated =
+        !guest && _unitAuthenticated && !widget.controller.protectedDataRevoked;
+    final name = guest
+        ? '游客模式'
+        : authenticated && _realName.text.trim().isNotEmpty
+        ? _realName.text.trim()
+        : '未认证';
+    final unit = authenticated && _unitName.trim().isNotEmpty
+        ? _unitName.trim()
+        : '未选择单位';
+    final role = _unitRole == 'admin'
+        ? '单位管理员'
+        : _unitRole == 'manager'
+        ? '单位管理成员'
+        : '普通成员';
+    final backend = authenticated && widget.controller.canReadKeySites
+        ? widget.controller.adminCapability
+        : null;
     return AppCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const _SettingsIconBox(icon: Icons.person_outline),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '我的身份',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (authenticated)
+                PopupMenuButton<String>(
+                  key: const Key('user-actions'),
+                  tooltip: '用户操作',
+                  onSelected: (value) {
+                    if (value == 'leave') unawaited(_leaveUnit());
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'leave', child: Text('退出当前单位')),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: AppColors.surfaceSubtle,
+                child: Icon(
+                  Icons.person_outline,
+                  size: 32,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      guest ? '单机体验 · 加入单位后可查阅资料' : unit,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (!guest)
+                      Text(authenticated ? '单位角色：$role · 已认证' : '认证状态：未认证'),
+                    if (backend != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text('后台角色：${backend.roleLabel}'),
+                      ),
+                  ],
+                ),
+              ),
+              if (backend != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: InkWell(
+                    key: const Key('admin-scan'),
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () async {
+                      await widget.controller.refreshAdminCapability();
+                      if (!mounted ||
+                          !widget.controller.canReadKeySites ||
+                          widget.controller.adminCapability == null) {
+                        return;
+                      }
+                      await Navigator.push<void>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              AdminScannerPage(controller: widget.controller),
+                        ),
+                      );
+                    },
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minWidth: 56, minHeight: 64),
+                      child: Column(
+                        children: [
+                          Icon(Icons.qr_code_scanner, size: 28),
+                          SizedBox(height: 6),
+                          Text('扫一扫', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceSubtle,
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                        ),
-                        child: Text(
-                          '单位',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          unitName,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
+            ],
+          ),
+          if (guest)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: OutlinedButton(
+                onPressed: widget.controller.leaveUnit,
+                child: const Text('加入单位'),
               ),
             ),
-            if (_unitAuthenticated) ...[
-              const SizedBox(width: 8),
-              IconButton(
-                key: const Key('leave-unit'),
-                onPressed: _saving ? null : _leaveUnit,
-                tooltip: '退出当前单位',
-                style: IconButton.styleFrom(
-                  foregroundColor: AppColors.alarm,
-                  backgroundColor: AppColors.alarm.withValues(alpha: 0.08),
-                  minimumSize: const Size(48, 48),
-                  fixedSize: const Size(48, 48),
-                  padding: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                icon: const Icon(Icons.logout_rounded, size: 21),
-              ),
-            ],
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -1632,184 +1670,6 @@ class _SettingsEyebrow extends StatelessWidget {
   }
 }
 
-class _SettingsHero extends StatelessWidget {
-  final Incident? incident;
-  final bool connected;
-  final String? syncError;
-  final bool isGuest;
-
-  const _SettingsHero({
-    required this.incident,
-    required this.connected,
-    required this.syncError,
-    this.isGuest = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final active = incident?.isActive == true;
-    final title = active ? incident!.displayName : '暂无处置警情';
-    final status = active ? '处置中' : '待命';
-    final String subtitle;
-    if (isGuest) {
-      subtitle = '单机演练 · 仅本机保存';
-    } else if (syncError != null && syncError!.isNotEmpty) {
-      subtitle = '同步异常 · $syncError';
-    } else if (!connected) {
-      subtitle = '本地数据 · 等待网络恢复';
-    } else if (active) {
-      subtitle = '已加入警情 · 现场协同正常';
-    } else {
-      subtitle = '请选择或新建警情后开始处置';
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(color: AppColors.heroBackground),
-        child: Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            Positioned(
-              right: -74,
-              bottom: -96,
-              child: IgnorePointer(
-                child: Container(
-                  width: 245,
-                  height: 245,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.heroOnDarkBorder),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.heroOnDarkRing,
-                        blurRadius: 0,
-                        spreadRadius: 21,
-                      ),
-                      BoxShadow(
-                        color: AppColors.heroOnDarkRingFaint,
-                        blurRadius: 0,
-                        spreadRadius: 43,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FireControlLogo(
-                      size: 38,
-                      background: AppColors.heroOnDark,
-                      foreground: AppColors.actionPrimary,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '火场智控',
-                            style: TextStyle(
-                              color: AppColors.heroMuted,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.3,
-                            ),
-                          ),
-                          SizedBox(height: 3),
-                          Text(
-                            '现场处置',
-                            style: TextStyle(
-                              color: AppColors.heroOnDark,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: active
-                            ? AppColors.safe.withValues(alpha: 0.22)
-                            : AppColors.heroOnDark.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            active
-                                ? Icons.check_rounded
-                                : Icons.pause_circle_outline,
-                            size: 14,
-                            color: active
-                                ? AppColors.heroActive
-                                : AppColors.heroInactive,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            status,
-                            style: TextStyle(
-                              color: active
-                                  ? AppColors.heroActive
-                                  : AppColors.heroInactive,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 26),
-                Text(
-                  '当前警情',
-                  style: TextStyle(color: AppColors.heroLabel, fontSize: 11),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.heroOnDark,
-                    fontSize: 16,
-                    height: 1.25,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.heroMuted,
-                    fontSize: 11,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SettingsIconBox extends StatelessWidget {
   final IconData icon;
   final bool badge;
@@ -1914,11 +1774,7 @@ class _SettingsShortcut extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 5),
-            Icon(
-              Icons.chevron_right,
-              size: 20,
-              color: AppColors.textTertiary,
-            ),
+            Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
           ],
         ),
       ),

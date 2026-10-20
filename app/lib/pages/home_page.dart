@@ -1,4 +1,3 @@
-import 'incident_key_site_section.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -8,6 +7,9 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import 'incident_import_page.dart';
+import 'incident_key_site_section.dart';
+import 'key_sites_page.dart';
+import 'camera_page.dart';
 import 'incident_details_page.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
@@ -2090,139 +2092,60 @@ class HomePageState extends State<HomePage> {
       if (activeEntries.isNotEmpty) {
         return _buildActiveCombatLiveOverview(context, activeEntries);
       }
-      // 引导区：统一卡片 + 图标网格，内容不足时居中，窄屏可滚动不溢出
-      return LayoutBuilder(
-        builder: (ctx, box) =>
-            NotificationListener<OverscrollIndicatorNotification>(
-              onNotification: (notification) {
-                notification.disallowIndicator();
-                return false;
-              },
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: box.maxHeight),
-                  child: Center(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                        border: Border.fromBorderSide(
-                          BorderSide(color: AppColors.border),
+      return SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('现场工具', style: AppTextStyles.h2),
+            const SizedBox(height: 12),
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _fieldTool(
+                      '重点单位',
+                      '地图、预案与作战资料',
+                      Icons.domain_outlined,
+                      () => Navigator.push<void>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              KeySitesPage(controller: widget.controller),
                         ),
-                      ),
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: 30,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: AppColors.voice,
-                                ),
-                                child: Icon(
-                                  Icons.mic_rounded,
-                                  size: 17,
-                                  color: AppColors.onPrimary,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  '按住下方按钮说话',
-                                  softWrap: true,
-                                  style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          LayoutBuilder(
-                            builder: (ctx, c) {
-                              final itemW = (c.maxWidth - 10) / 2;
-                              // 三行等高：文字行数不同也保持六块整齐一致
-                              return IntrinsicHeight(
-                                child: Column(
-                                  children: [
-                                    Expanded(
-                                      child: _guideRow(
-                                        itemW,
-                                        _guideItem(
-                                          Icons.login_rounded,
-                                          '进场登记',
-                                          '「张伟，20兆帕」\n自动开始倒计时',
-                                        ),
-                                        _guideItem(
-                                          Icons.groups_rounded,
-                                          '多人进场',
-                                          '「张伟20兆帕，刘洋22兆帕」\n一次确认全部进场',
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Expanded(
-                                      child: _guideRow(
-                                        itemW,
-                                        _guideItem(
-                                          Icons.logout_rounded,
-                                          '出场登记',
-                                          '「刘洋出来了」\n登记出火场',
-                                        ),
-                                        _guideItem(
-                                          Icons.update_rounded,
-                                          '压力复核',
-                                          '「张伟，15兆帕」\n场中报数，更新倒计时',
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Expanded(
-                                      child: _guideRow(
-                                        itemW,
-                                        _guideItem(
-                                          Icons.edit_note_rounded,
-                                          '火场随手记',
-                                          '「三楼破拆完成」\n自动记入火场日志',
-                                        ),
-                                        _guideItem(
-                                          Icons.assistant_rounded,
-                                          '火场提问',
-                                          '「浓烟太大看不清路怎么办？」\n转给辅助智囊',
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                          if (_peopleEditors.isNotEmpty) ...[
-                            const SizedBox(height: 14),
-                            FilledButton.icon(
-                              onPressed: _showPendingConfirm,
-                              icon: const Icon(Icons.fact_check_outlined),
-                              label: Text(
-                                '继续确认已录入的 ${_peopleEditors.length} 人',
-                              ),
-                            ),
-                          ],
-                        ],
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _fieldTool(
+                      '现场拍摄',
+                      '照片与视频水印记录',
+                      Icons.photo_camera_outlined,
+                      () => Navigator.push<void>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CameraPage(controller: widget.controller),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (_peopleEditors.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: FilledButton.icon(
+                  onPressed: _showPendingConfirm,
+                  icon: const Icon(Icons.fact_check_outlined),
+                  label: Text('继续确认已录入的 ${_peopleEditors.length} 人'),
+                ),
+              ),
+          ],
+        ),
       );
     }
 
@@ -2510,7 +2433,7 @@ class HomePageState extends State<HomePage> {
                         children: [
                           Flexible(
                             child: Text(
-                              '按住下方按钮说话',
+                              '现场监控',
                               style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 16,
@@ -2712,13 +2635,32 @@ class HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              alignment: Alignment.center,
-              child: Text(
-                '长按底部橙色按钮，可直接报数复核或登记出场',
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
-              ),
+            Wrap(
+              spacing: 12,
+              alignment: WrapAlignment.center,
+              children: [
+                TextButton.icon(
+                  onPressed: () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          KeySitesPage(controller: widget.controller),
+                    ),
+                  ),
+                  icon: const Icon(Icons.domain_outlined),
+                  label: const Text('重点单位'),
+                ),
+                TextButton.icon(
+                  onPressed: () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CameraPage(controller: widget.controller),
+                    ),
+                  ),
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text('现场拍摄'),
+                ),
+              ],
             ),
           ],
         ),
@@ -2937,62 +2879,48 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  /// 引导网格行：两个等宽卡片，行内等高（较矮的卡片底部留白对齐）
-  Widget _guideRow(double itemW, Widget first, Widget second) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(width: itemW, child: first),
-        const SizedBox(width: 10),
-        SizedBox(width: itemW, child: second),
-      ],
-    );
-  }
-
-  /// 引导网格项：图标 + 意图标签 + 语音示例（两行，覆盖全部语音意图）
-  Widget _guideItem(IconData icon, String label, String example) {
-    return Container(
-      key: ValueKey('guide-$label'),
-      padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, size: 15, color: AppColors.voice),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  label,
-                  softWrap: true,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          Text(
-            example,
-            style: TextStyle(
-              fontSize: 11.5,
-              height: 1.4,
-              color: AppColors.textSecondary,
+  Widget _fieldTool(
+    String title,
+    String subtitle,
+    IconData icon,
+    VoidCallback open,
+  ) => Material(
+    color: AppColors.surface,
+    borderRadius: BorderRadius.circular(AppRadius.md),
+    child: InkWell(
+      key: ValueKey('tool-$title'),
+      onTap: open,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 140),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 30, color: AppColors.voice),
+            const SizedBox(height: 18),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
       ),
-    );
-  }
+    ),
+  );
 }
 
 /// 单人提交结果

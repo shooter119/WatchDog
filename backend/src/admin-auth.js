@@ -5,7 +5,7 @@ const secret = () => crypto.randomBytes(32).toString('base64url');
 const fail = (code, status = 403) => { throw Object.assign(new Error(code), { code, status }); };
 
 // Store injection lets the same authorization boundary run against isolated PostgreSQL schemas.
-function createAdminAuth(store, now = Date.now) {
+function createAdminAuth(store, now = Date.now, { onGrantChanged } = {}) {
   const query = async (sql, args = []) => (await store.query(sql, args)).rows;
   const audit = (actor, action, target = null) => query(
     'INSERT INTO admin_audit(id,actor_id,action,target_id,created_at) VALUES($1,$2,$3,$4,$5)',
@@ -43,6 +43,7 @@ function createAdminAuth(store, now = Date.now) {
       await query('UPDATE admin_sessions SET revoked_at=$2 WHERE member_id=$1 AND revoked_at IS NULL', [memberId, now()]);
       await query("UPDATE admin_challenges SET state='cancelled' WHERE member_id=$1 AND state='confirmed'", [memberId]);
       await audit(actorId, bootstrap ? 'admin_initialized' : role ? 'grant_set' : 'grant_revoked', memberId);
+      if (onGrantChanged) await onGrantChanged(target);
     });
   }
   async function challenge() {

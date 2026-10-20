@@ -1027,7 +1027,7 @@ void main() {
       expect(find.byIcon(Icons.local_fire_department_outlined), findsOneWidget);
     });
 
-    testWidgets('身份栏与设置项高度、字号一致', (tester) async {
+    testWidgets('身份Hero合并展示，普通设置项保持统一行高', (tester) async {
       tester.view.physicalSize = const Size(1080, 4000);
       tester.view.devicePixelRatio = 2.75;
       addTearDown(tester.view.reset);
@@ -1042,7 +1042,9 @@ void main() {
       final list = find.byType(ListView).first;
       await _scrollToVisible(tester, list, find.text('人员与热词'));
 
-      const labels = ['未认证', '水印设置', '人员与热词'];
+      expect(find.byType(CircleAvatar), findsOneWidget);
+      expect(tester.widget<Text>(find.text('未认证')).style?.fontSize, 20);
+      const labels = ['水印设置', '人员与热词'];
       for (final label in labels) {
         final card = find
             .ancestor(of: find.text(label), matching: find.byType(AppCard))
@@ -1188,7 +1190,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('单机演练 · 仅本机保存'), findsOneWidget);
+      expect(find.text('游客模式'), findsOneWidget);
+      expect(find.text('加入单位'), findsOneWidget);
+      expect(find.byKey(const Key('admin-scan')), findsNothing);
       expect(find.text('现场协同正常'), findsNothing);
     });
 
@@ -1210,10 +1214,19 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('同步异常 · 网络连接超时'), findsOneWidget);
+      expect(find.text('测试火情'), findsNothing);
+      expect(find.text('处置中'), findsNothing);
+      expect(
+        tester
+            .widget<ConnectionStatus>(find.byType(ConnectionStatus))
+            .syncError,
+        '网络连接超时',
+      );
     });
 
-    testWidgets('设置页跳页入口统一使用 chevron_right 图标且无 arrow_forward_outlined', (tester) async {
+    testWidgets('设置页跳页入口统一使用 chevron_right 图标且无 arrow_forward_outlined', (
+      tester,
+    ) async {
       final c = _FakeController();
       await tester.pumpWidget(
         MaterialApp(
@@ -1413,7 +1426,7 @@ void main() {
       expect(c.notes.single.text, '张伟进入救援现场，空气呼吸器压力20兆帕、李娜进入救援现场，空气呼吸器压力22兆帕');
       expect(c.notes.single.category, NoteCategory.deploy);
       expect(find.text('全部确认进入火场（2 人）'), findsNothing);
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场监控'), findsOneWidget);
     });
 
     testWidgets('多人确认窄屏大字号下说明与姓名压力字段均可读', (tester) async {
@@ -1551,7 +1564,7 @@ void main() {
       await tester.tap(find.text('确认进入火场，开始倒计时'));
       await tester.pumpAndSettle();
       expect(api.created, ['李娜']);
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场监控'), findsOneWidget);
 
       // 清空最后一行：TextField 必须先从树上移除，再释放 controller，不能红屏。
       await state.beginRecording();
@@ -1559,7 +1572,7 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('重新语音输入'));
       await tester.pumpAndSettle();
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场监控'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -1602,7 +1615,7 @@ void main() {
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜', '王强']);
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场监控'), findsOneWidget);
     });
 
     testWidgets('出场指令不清空待确认名单，可从空闲态回到确认页', (tester) async {
@@ -1722,7 +1735,7 @@ void main() {
       expect(c.exited, ['e-张伟', 'e-李娜']);
       expect(c.notes.single.text, '张伟撤离救援现场、李娜撤离救援现场');
       expect(c.notes.single.category, NoteCategory.withdraw);
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场工具'), findsOneWidget);
     });
 
     testWidgets('取消全员离场不登记出场', (tester) async {
@@ -1744,7 +1757,7 @@ void main() {
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       expect(c.exited, isEmpty);
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场监控'), findsOneWidget);
     });
 
     testWidgets('语音提到钢瓶容积时录入页容积字段随之更新', (tester) async {
@@ -1797,7 +1810,7 @@ void main() {
       expect(c.notes.single.text, '张伟20兆帕，李娜22兆帕');
       expect(c.notes.single.category, NoteCategory.other);
       // 回到空闲态
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场工具'), findsOneWidget);
     });
 
     testWidgets('识别为日志意图（如搜救出物品）不弹全员离场，回调路由记入日志', (tester) async {
@@ -1830,7 +1843,7 @@ void main() {
       expect(routed, '龙翔路站从燃烧建筑中搜救出一只宠物狗');
       expect(c.notes.single.text, '龙翔路站从燃烧建筑中搜救出一只宠物狗');
       expect(c.notes.single.category, NoteCategory.rescue);
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场工具'), findsOneWidget);
     });
   });
 
@@ -3522,7 +3535,7 @@ void main() {
         await tester.tap(find.byKey(const Key('toggle-incident-card')));
         await tester.pumpAndSettle();
       }
-      expect(find.text('按住下方按钮说话'), findsOneWidget);
+      expect(find.text('现场工具'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

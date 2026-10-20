@@ -243,7 +243,10 @@ app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
   },
 }));
 if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER || (process.env.NODE_ENV === 'test' ? 'sqlite' : 'postgres')).toLowerCase())) {
-  adminAuth = require('./admin-auth').createAdminAuth(require('./postgres-store'));
+  adminAuth = require('./admin-auth').createAdminAuth(require('./postgres-store'), Date.now, {
+    onGrantChanged: member => db.appendRosterSyncEvent({ unitId: member.unit_id, eventType: 'admin.capability_changed',
+      aggregateId: member.id, payload: { memberId: member.id } }),
+  });
   keySites = require('./key-sites').createKeySites(require('./postgres-store'), adminAuth);
   keySiteFiles = require('./key-site-files').createKeySiteFiles(require('./postgres-store'), keySites, adminAuth);
   const keySiteAI = require('./key-site-ai').createKeySiteAI(require('./postgres-store'), keySites, keySiteFiles, adminAuth, CFG.llm);

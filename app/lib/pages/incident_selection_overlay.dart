@@ -16,6 +16,7 @@ class IncidentSelectionOverlay extends StatefulWidget {
   final bool authenticationRequired;
   final List<Incident> activeIncidents;
   final bool loading;
+  final VoidCallback? onOpenKeySites;
   final Future<void> Function(Incident incident) onSelect;
   final Future<void> Function() onCreate;
   final Future<void> Function(
@@ -45,6 +46,7 @@ class IncidentSelectionOverlay extends StatefulWidget {
     this.onAuthenticate,
     this.onEnterGuestMode,
     this.onApply,
+    this.onOpenKeySites,
   });
 
   @override
@@ -249,9 +251,9 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
       final pending = await Settings.pendingApplication;
       if (mounted) {
         setState(() => _pendingApp = pending);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('入队申请已提交，等待站长审批')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('入队申请已提交，等待站长审批')));
       }
     } catch (e) {
       if (mounted) await _showAuthenticationError('$e');
@@ -281,10 +283,11 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     } catch (e) {
       if (!silent && mounted) {
         if (e is ApiException && e.code == 'MEMBER_APPLICATION_PENDING') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('站长尚未审批，请稍候再试')),
-          );
-        } else if (e is ApiException && e.code == 'MEMBER_APPLICATION_REJECTED') {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('站长尚未审批，请稍候再试')));
+        } else if (e is ApiException &&
+            e.code == 'MEMBER_APPLICATION_REJECTED') {
           await Settings.clearPendingApplication();
           setState(() => _pendingApp = null);
           await _showAuthenticationError('您的申请已被驳回，请重新申请');
@@ -409,7 +412,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   decoration: InputDecoration(
                     isDense: hasKeyboard,
                     contentPadding: hasKeyboard
-                        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                        ? const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          )
                         : null,
                     labelText: '单位名称',
                     hintText: '请输入所属消防救援单位全称',
@@ -428,7 +434,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   decoration: InputDecoration(
                     isDense: hasKeyboard,
                     contentPadding: hasKeyboard
-                        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                        ? const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          )
                         : null,
                     labelText: '真实姓名',
                     hintText: '请输入姓名，用于现场记录署名',
@@ -449,7 +458,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   decoration: InputDecoration(
                     isDense: hasKeyboard,
                     contentPadding: hasKeyboard
-                        ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                        ? const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          )
                         : null,
                     labelText: '单位验证码',
                     hintText: '请输入 4 位验证码',
@@ -610,7 +622,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
               ? const SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Icon(Icons.refresh_rounded),
           label: const Text('检查审批状态'),
@@ -641,7 +656,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   await Settings.clearPendingApplication();
                   if (mounted) setState(() => _pendingApp = null);
                 },
-          child: Text('撤销申请并重新填写', style: TextStyle(color: AppColors.textSecondary)),
+          child: Text(
+            '撤销申请并重新填写',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
         ),
       ],
     );
@@ -651,8 +669,14 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        Text(
+          label,
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
       ],
     );
   }
@@ -683,7 +707,8 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
               curve: Curves.easeOutCubic,
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final hasKeyboard = MediaQuery.viewInsetsOf(context).bottom > 80;
+                  final hasKeyboard =
+                      MediaQuery.viewInsetsOf(context).bottom > 80;
                   // 首帧或键盘切换时约束可能暂时小于边距，不能把负值传给
                   // SizedBox，否则会触发红屏：BoxConstraints(-32, -32)。
                   final width = math.max(
@@ -716,148 +741,166 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                           ),
                           child: widget.authenticationRequired
                               ? (_pendingApp != null
-                                  ? _buildPendingApprovalView()
-                                  : _buildAuthentication())
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        width: 44,
-                                        height: 44,
-                                        decoration: BoxDecoration(
-                                          color: AppColors.voice.withValues(
-                                            alpha: 0.13,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                        ),
-                                        child: Icon(
-                                          Icons.local_fire_department_outlined,
-                                          color: AppColors.voice,
-                                          size: 26,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              '先选择一份警情',
-                                              style: TextStyle(
-                                                fontSize: 21,
-                                                fontWeight: FontWeight.w800,
-                                              ),
-                                            ),
-                                            SizedBox(height: 4),
-                                            Text(
-                                              '请选择新建或加入现有警情，现场记录才会归档到正确的位置。',
-                                              style: TextStyle(
-                                                color: AppColors.textSecondary,
-                                                fontSize: 13,
-                                                height: 1.35,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (widget.loading) ...[
-                                    const SizedBox(height: 14),
+                                    ? _buildPendingApprovalView()
+                                    : _buildAuthentication())
+                              : Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
                                     Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        SizedBox(
-                                          width: 14,
-                                          height: 14,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
+                                        Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.voice.withValues(
+                                              alpha: 0.13,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              14,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            Icons
+                                                .local_fire_department_outlined,
+                                            color: AppColors.voice,
+                                            size: 26,
                                           ),
                                         ),
-                                        SizedBox(width: 8),
-                                        Text(
-                                          '正在同步现有警情…',
-                                          style: TextStyle(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 12,
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '先选择一份警情',
+                                                style: TextStyle(
+                                                  fontSize: 21,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                              SizedBox(height: 4),
+                                              Text(
+                                                '请选择新建或加入现有警情，现场记录才会归档到正确的位置。',
+                                                style: TextStyle(
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                  fontSize: 13,
+                                                  height: 1.35,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ],
-                                  if (_error != null) ...[
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      _error!,
-                                      key: const Key(
-                                        'incident-selection-error',
-                                      ),
-                                      style: TextStyle(
-                                        color: AppColors.alarm,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                  const SizedBox(height: 16),
-                                  Expanded(
-                                    child: incidents.isEmpty
-                                        ? const _EmptyIncidentState()
-                                        : ListView.separated(
-                                            key: const Key(
-                                              'incident-selection-list',
+                                    if (widget.loading) ...[
+                                      const SizedBox(height: 14),
+                                      Row(
+                                        children: [
+                                          SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
                                             ),
-                                            padding: EdgeInsets.zero,
-                                            itemCount: incidents.length,
-                                            separatorBuilder: (_, __) =>
-                                                const Divider(height: 1),
-                                            itemBuilder: (context, index) {
-                                              final incident = incidents[index];
-                                              return _IncidentOption(
-                                                incident: incident,
-                                                enabled: !_busy,
-                                                onTap: () => _select(incident),
-                                              );
-                                            },
                                           ),
-                                  ),
-                                  const SizedBox(height: 14),
-                                  FilledButton.icon(
-                                    onPressed: _busy ? null : _create,
-                                    icon: const Icon(Icons.add),
-                                    label: const Text('新建警情'),
-                                    style: FilledButton.styleFrom(
-                                      minimumSize: const Size.fromHeight(52),
-                                      backgroundColor: AppColors.voice,
-                                      foregroundColor: AppColors.onPrimary,
+                                          SizedBox(width: 8),
+                                          Text(
+                                            '正在同步现有警情…',
+                                            style: TextStyle(
+                                              color: AppColors.textSecondary,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                    if (_error != null) ...[
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        _error!,
+                                        key: const Key(
+                                          'incident-selection-error',
+                                        ),
+                                        style: TextStyle(
+                                          color: AppColors.alarm,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 16),
+                                    Expanded(
+                                      child: incidents.isEmpty
+                                          ? const _EmptyIncidentState()
+                                          : ListView.separated(
+                                              key: const Key(
+                                                'incident-selection-list',
+                                              ),
+                                              padding: EdgeInsets.zero,
+                                              itemCount: incidents.length,
+                                              separatorBuilder: (_, __) =>
+                                                  const Divider(height: 1),
+                                              itemBuilder: (context, index) {
+                                                final incident =
+                                                    incidents[index];
+                                                return _IncidentOption(
+                                                  incident: incident,
+                                                  enabled: !_busy,
+                                                  onTap: () =>
+                                                      _select(incident),
+                                                );
+                                              },
+                                            ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    incidents.isEmpty
-                                        ? '当前没有进行中的警情，可以创建一份新的现场档案。'
-                                        : '如果列表中没有目标警情，也可以新建一份现场档案。',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: AppColors.textTertiary,
-                                      fontSize: 12,
+                                    const SizedBox(height: 14),
+                                    FilledButton.icon(
+                                      onPressed: _busy ? null : _create,
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('新建警情'),
+                                      style: FilledButton.styleFrom(
+                                        minimumSize: const Size.fromHeight(52),
+                                        backgroundColor: AppColors.voice,
+                                        foregroundColor: AppColors.onPrimary,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                    if (widget.onOpenKeySites != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 8),
+                                        child: OutlinedButton.icon(
+                                          onPressed: _busy
+                                              ? null
+                                              : widget.onOpenKeySites,
+                                          icon: const Icon(
+                                            Icons.domain_outlined,
+                                          ),
+                                          label: const Text('查阅重点单位资料'),
+                                        ),
+                                      ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      incidents.isEmpty
+                                          ? '当前没有进行中的警情，可以创建一份新的现场档案。'
+                                          : '如果列表中没有目标警情，也可以新建一份现场档案。',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: AppColors.textTertiary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
-        ),
           if (_busy)
             const Positioned.fill(
               child: IgnorePointer(

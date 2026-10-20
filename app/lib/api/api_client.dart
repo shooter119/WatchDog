@@ -9,6 +9,7 @@ import 'package:http_parser/http_parser.dart';
 
 import '../models/models.dart';
 import '../models/key_sites.dart';
+import '../models/admin_login.dart';
 import '../services/settings.dart';
 import '../services/scoped_json_cache.dart';
 
@@ -120,6 +121,36 @@ class ApiClient {
       throw _apiException(response, body: body, fallback: '资料加载失败');
     }
     return Map<String, dynamic>.from(body as Map);
+  }
+
+  Future<AdminCapability?> fetchAdminCapability() async {
+    final data = await _keySiteRequest('/api/admin-app/capability');
+    return data['member'] is Map
+        ? AdminCapability.fromJson(
+            Map<String, dynamic>.from(data['member'] as Map),
+          )
+        : null;
+  }
+
+  Future<void> confirmAdminLogin(
+    AdminLoginCode code, {
+    bool cancel = false,
+  }) async {
+    final response = await _client
+        .post(
+          _uri('/api/admin-app/confirm'),
+          headers: _headers,
+          body: jsonEncode({
+            'id': code.id,
+            'scan': code.scan,
+            'cancel': cancel,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(response, fallback: '网页登录确认失败');
+    if (response.statusCode != 200) {
+      throw _apiException(response, body: body, fallback: '网页登录确认失败');
+    }
   }
 
   Future<Map<String, dynamic>> keySiteAccess() =>

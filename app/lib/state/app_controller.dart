@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../models/key_sites.dart';
+import '../models/admin_login.dart';
 import '../services/alarm_service.dart';
 import '../services/chat_history.dart';
 import '../services/key_site_recents.dart';
@@ -123,13 +124,45 @@ class AppController extends ChangeNotifier {
   List<Incident> activeIncidents = [];
   List<IncidentForce> forces = [];
   bool _authenticated = false;
+  AdminCapability? adminCapability;
+  Timer? _adminCapabilityTimer;
+  int _adminCapabilityRequest = 0;
+  Future<void> refreshAdminCapability() async {
+    final activeApi = api;
+    final epoch = protectedDataEpoch;
+    if (!canReadKeySites || activeApi == null) {
+      return;
+    }
+    final request = ++_adminCapabilityRequest;
+    try {
+      final capability = await activeApi.fetchAdminCapability();
+      if (canReadKeySites &&
+          api == activeApi &&
+          epoch == protectedDataEpoch &&
+          request == _adminCapabilityRequest) {
+        adminCapability = capability;
+        _notify();
+      }
+    } catch (_) {
+      if (api == activeApi &&
+          epoch == protectedDataEpoch &&
+          request == _adminCapabilityRequest) {
+        adminCapability = null;
+        _notify();
+      }
+    }
+  }
+
   bool _protectedDataRevoked = false;
   int _protectedDataEpoch = 0;
   bool get canReadKeySites =>
       !_protectedDataRevoked && _authenticated && !_isGuest && api != null;
   int get protectedDataEpoch => _protectedDataEpoch;
+  bool get protectedDataRevoked => _protectedDataRevoked;
   KeySiteRecents get keySiteRecents => KeySiteRecents.instance;
   void _revokeProtectedData() {
+    adminCapability = null;
+    _adminCapabilityTimer?.cancel();
     _protectedDataRevoked = true;
     _protectedDataEpoch++;
     unawaited(keySiteRecents.clearAll());
@@ -277,6 +310,12 @@ class AppController extends ChangeNotifier {
   void _startAuthenticatedServices() {
     if (_disposed || !_authenticated || _syncStarted) return;
     _startSessionRefreshTimer();
+    unawaited(refreshAdminCapability());
+    _adminCapabilityTimer?.cancel();
+    _adminCapabilityTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(refreshAdminCapability()),
+    );
     startSync();
     // 认证前的名单请求会被服务端拒绝；认证完成后重新拉取，拿到单位当前名单。
     unawaited(loadRoster());
@@ -1070,6 +1109,15 @@ class AppController extends ChangeNotifier {
     if (_disposed) return;
     final payload = event.payload;
     switch (event.eventType) {
+      case 'admin.capability_changed':
+        if (adminCapability != null &&
+            payload['memberId'] != adminCapability!.memberId) {
+          break;
+        }
+        adminCapability = null;
+        _notify();
+        unawaited(refreshAdminCapability());
+        break;
       case 'incident.created':
       case 'incident.updated':
       case 'incident.archived':
@@ -2438,6 +2486,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _adminCapabilityTimer?.cancel();
     _sessionGeneration++;
     unawaited(OpLogService.instance.flushLocal());
     unawaited(_syncCoordinator?.stop() ?? Future<void>.value());

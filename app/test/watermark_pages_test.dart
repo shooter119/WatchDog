@@ -744,7 +744,7 @@ void main() {
       await _pumpPage(tester, MediaGalleryPage(controller: controller));
 
       expect(find.text('还没有拍摄现场照片或录像'), findsOneWidget);
-      expect(find.text('在首页警情卡点「水印相机」拍摄，文件会保存在这台设备上'), findsOneWidget);
+      expect(find.text('在首页点「现场拍摄」，文件会保存在这台设备上'), findsOneWidget);
     });
 
     testWidgets('没有当前警情时提示先加入警情', (tester) async {

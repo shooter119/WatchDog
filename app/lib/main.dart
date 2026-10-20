@@ -4,10 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'pages/camera_page.dart';
 import 'pages/board_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/home_page.dart';
+import 'pages/key_sites_page.dart';
 import 'pages/incident_selection_overlay.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
@@ -279,259 +279,250 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
       home: KeyedSubtree(
         key: ValueKey(ThemeController.instance.currentId),
         child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          final pages = [
-            NotesPage(controller: controller),
-            BoardPage(controller: controller, onGoVoice: _goVoice),
-            HomePage(
-              key: _homeKey,
-              controller: controller,
-              autoRecord: _pendingVoice,
-              onAutoRecordConsumed: () => _pendingVoice = false,
-              onRecordingChanged: (v) => setState(() => _recording = v),
-              onProcessingChanged: (v) => setState(() => _processing = v),
-              onNoteIntent: _routeNote,
-              onAskIntent: _routeAsk,
-              onEntryConfirmed: () => _selectTab(1),
-            ),
-            ChatPage(
-              key: _chatKey,
-              controller: controller,
-              onBack: () => _selectTab(_preChatTab),
-              onRecordingChanged: (v) => setState(() => _recording = v),
-              onProcessingChanged: (v) => setState(() => _processing = v),
-              onSendingChanged: (v) => setState(() => _chatSending = v),
-            ),
-            SettingsPage(controller: controller),
-          ];
-          // 辅助页系统返回键 = 回来源页（与顶部返回箭头一致）；其它页维持系统默认（退出）
-          final startupGateLocked =
-              controller.needsAuthentication ||
-              controller.needsIncidentSelection;
-          // 水印相机是现场高频操作，放在首页右下角常驻入口，
-          // 不再藏进警情卡的展开工具栏里。
-          final showCameraFab = _tab == 2 && !startupGateLocked;
-          // 悬浮按钮会遮住页面底部内容。竖屏高度富余，直接让出按钮高度，
-          // 避免压住卡片区最后一行（真机曾压住「火场提问」）；
-          // 横屏高度紧张且整页可滚动，保持原高度不做裁切。
-          final isPortrait =
-              MediaQuery.of(context).size.height >= MediaQuery.of(context).size.width;
-          final pageBottomInset = showCameraFab && isPortrait ? 76.0 : 0.0;
-          // 页面区域统一让出悬浮按钮的高度（页面背景连续，视觉上无断层）
-          Widget withCameraFabInset(Widget child) => pageBottomInset == 0
-              ? child
-              : Padding(
-                  padding: EdgeInsets.only(bottom: pageBottomInset),
-                  child: child,
-                );
-          final Widget bodyContent = controller.isGuest
-              ? Column(
-                  children: [
-                    SafeArea(
-                      bottom: false,
-                      child: Container(
-                        margin: const EdgeInsets.fromLTRB(14, 6, 14, 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0F172A),
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(
-                            color: const Color(0xFFF59E0B).withValues(alpha: 0.75),
-                            width: 1.2,
+          animation: controller,
+          builder: (context, _) {
+            final pages = [
+              NotesPage(controller: controller),
+              BoardPage(controller: controller, onGoVoice: _goVoice),
+              HomePage(
+                key: _homeKey,
+                controller: controller,
+                autoRecord: _pendingVoice,
+                onAutoRecordConsumed: () => _pendingVoice = false,
+                onRecordingChanged: (v) => setState(() => _recording = v),
+                onProcessingChanged: (v) => setState(() => _processing = v),
+                onNoteIntent: _routeNote,
+                onAskIntent: _routeAsk,
+                onEntryConfirmed: () => _selectTab(1),
+              ),
+              ChatPage(
+                key: _chatKey,
+                controller: controller,
+                onBack: () => _selectTab(_preChatTab),
+                onRecordingChanged: (v) => setState(() => _recording = v),
+                onProcessingChanged: (v) => setState(() => _processing = v),
+                onSendingChanged: (v) => setState(() => _chatSending = v),
+              ),
+              SettingsPage(controller: controller),
+            ];
+            // 辅助页系统返回键 = 回来源页（与顶部返回箭头一致）；其它页维持系统默认（退出）
+            final startupGateLocked =
+                controller.needsAuthentication ||
+                controller.needsIncidentSelection;
+            final Widget bodyContent = controller.isGuest
+                ? Column(
+                    children: [
+                      SafeArea(
+                        bottom: false,
+                        child: Container(
+                          margin: const EdgeInsets.fromLTRB(14, 6, 14, 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
-                              blurRadius: 10,
-                              offset: const Offset(0, 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            border: Border.all(
+                              color: const Color(
+                                0xFFF59E0B,
+                              ).withValues(alpha: 0.75),
+                              width: 1.2,
                             ),
-                            const BoxShadow(
-                              color: Colors.black38,
-                              blurRadius: 6,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                                shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFFF59E0B,
+                                ).withValues(alpha: 0.08),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
                               ),
-                              child: const Icon(
-                                Icons.shield_outlined,
-                                size: 15,
-                                color: Color(0xFFFBBF24),
+                              const BoxShadow(
+                                color: Colors.black38,
+                                blurRadius: 6,
+                                offset: Offset(0, 2),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: Text(
-                                '游客模式（数据仅保存在本机）',
-                                style: TextStyle(
-                                  color: Color(0xFFF1F5F9),
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.2,
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFFF59E0B,
+                                  ).withValues(alpha: 0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.shield_outlined,
+                                  size: 15,
+                                  color: Color(0xFFFBBF24),
                                 ),
                               ),
-                            ),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                key: const Key('guest-convert-btn'),
-                                borderRadius: BorderRadius.circular(AppRadius.sm),
-                                onTap: () {
-                                  HapticFeedback.lightImpact();
-                                  controller.leaveUnit();
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF59E0B).withValues(alpha: 0.18),
-                                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                                    border: Border.all(
-                                      color: const Color(0xFFF59E0B),
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    '转为正式队员',
-                                    style: TextStyle(
-                                      color: Color(0xFFFBBF24),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  '游客模式（数据仅保存在本机）',
+                                  style: TextStyle(
+                                    color: Color(0xFFF1F5F9),
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.2,
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  key: const Key('guest-convert-btn'),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.sm,
+                                  ),
+                                  onTap: () {
+                                    HapticFeedback.lightImpact();
+                                    controller.leaveUnit();
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                        0xFFF59E0B,
+                                      ).withValues(alpha: 0.18),
+                                      borderRadius: BorderRadius.circular(
+                                        AppRadius.sm,
+                                      ),
+                                      border: Border.all(
+                                        color: const Color(0xFFF59E0B),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      '转为正式队员',
+                                      style: TextStyle(
+                                        color: Color(0xFFFBBF24),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    Expanded(
-                      child: withCameraFabInset(
-                        MediaQuery.removePadding(
+                      Expanded(
+                        child: MediaQuery.removePadding(
                           context: context,
                           removeTop: true,
                           child: IndexedStack(index: _tab, children: pages),
                         ),
                       ),
-                    ),
-                  ],
-                )
-              : withCameraFabInset(
-                  IndexedStack(index: _tab, children: pages),
-                );
-
-          final appScaffold = Scaffold(
-            body: bodyContent,
-            floatingActionButton: showCameraFab
-                ? FloatingActionButton.extended(
-                    heroTag: 'watermark-camera',
-                    backgroundColor: AppColors.voice,
-                    foregroundColor: Colors.white,
-                    // 去掉按钮自带的投影：浅色页面上它只是一块灰色底，
-                    // 橙色底 + 白色图标文字已经足够区分，不需要再加一层。
-                    elevation: 0,
-                    focusElevation: 0,
-                    hoverElevation: 0,
-                    highlightElevation: 0,
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => CameraPage(controller: controller),
-                      ),
-                    ),
-                    icon: const Icon(Icons.videocam_rounded),
-                    label: const Text(
-                      '水印相机',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    ],
                   )
-                : null,
-            bottomNavigationBar: ExcludeSemantics(
-              excluding: startupGateLocked,
-              child: IgnorePointer(
-                ignoring: startupGateLocked,
-                child: _BottomNav(
-                  index: _tab,
-                  pendingCount: controller.pendingMemberCount,
-                  recording: _recording,
-                  processing: _processing,
-                  chatMode: _tab == 3,
-                  chatTextMode: _chatTextMode,
-                  chatController: _chatInput,
-                  chatInputFocus: _chatInputFocus,
-                  chatSending: _chatSending,
-                  onChatSubmit: _chatSubmit,
-                  onChatTextModeChange: (v) {
-                    if (startupGateLocked) return;
-                    setState(() => _chatTextMode = v);
-                    if (v) {
-                      _chatInputFocus.requestFocus();
-                    } else {
-                      _chatInputFocus.unfocus();
-                    }
-                  },
-                  onSelect: _selectTab,
-                  onVoiceTap: _voiceTap,
-                  onVoiceLongPressStart: _voiceLongPressStart,
-                  onVoiceLongPressEnd: _voiceLongPressEnd,
+                : IndexedStack(index: _tab, children: pages);
+
+            final appScaffold = Scaffold(
+              body: bodyContent,
+              bottomNavigationBar: ExcludeSemantics(
+                excluding: startupGateLocked,
+                child: IgnorePointer(
+                  ignoring: startupGateLocked,
+                  child: _BottomNav(
+                    index: _tab,
+                    pendingCount: controller.pendingMemberCount,
+                    recording: _recording,
+                    processing: _processing,
+                    chatMode: _tab == 3,
+                    chatTextMode: _chatTextMode,
+                    chatController: _chatInput,
+                    chatInputFocus: _chatInputFocus,
+                    chatSending: _chatSending,
+                    onChatSubmit: _chatSubmit,
+                    onChatTextModeChange: (v) {
+                      if (startupGateLocked) return;
+                      setState(() => _chatTextMode = v);
+                      if (v) {
+                        _chatInputFocus.requestFocus();
+                      } else {
+                        _chatInputFocus.unfocus();
+                      }
+                    },
+                    onSelect: _selectTab,
+                    onVoiceTap: _voiceTap,
+                    onVoiceLongPressStart: _voiceLongPressStart,
+                    onVoiceLongPressEnd: _voiceLongPressEnd,
+                  ),
                 ),
               ),
-            ),
-          );
-          return PopScope(
-            canPop: !startupGateLocked && _tab != 3,
-            onPopInvokedWithResult: (didPop, _) {
-              if (!didPop && !startupGateLocked && _tab == 3) {
-                _selectTab(_preChatTab);
-              }
-            },
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                appScaffold,
-                if (startupGateLocked)
-                  IncidentSelectionOverlay(
-                    authenticationRequired: controller.needsAuthentication,
-                    activeIncidents: controller.activeIncidents,
-                    loading:
-                        !controller.needsAuthentication &&
-                        (controller.syncing || controller.api == null),
-                    onAuthenticate: (unitName, name, code) =>
-                        controller.authenticate(
-                          unitName: unitName,
-                          realName: name,
-                          unitCode: code,
-                        ),
-                    onEnterGuestMode: () => controller.enterGuestMode(),
-                    onApply: (unitName, name, code, {stationName, phone, applyReason}) =>
-                        controller.applyUnitMembership(
-                          unitName: unitName,
-                          unitCode: code,
-                          realName: name,
-                          stationName: stationName,
-                          phone: phone,
-                          applyReason: applyReason,
-                        ),
-                    onSelect: (incident) =>
-                        _homeKey.currentState?.selectIncidentFromGate(
-                          incident,
-                        ) ??
-                        Future<void>.value(),
-                    onCreate: () =>
-                        _homeKey.currentState?.createIncidentFromGate() ??
-                        Future<void>.value(),
-                  ),
-              ],
-            ),
-          );
-        },
+            );
+            return PopScope(
+              canPop: !startupGateLocked && _tab != 3,
+              onPopInvokedWithResult: (didPop, _) {
+                if (!didPop && !startupGateLocked && _tab == 3) {
+                  _selectTab(_preChatTab);
+                }
+              },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  appScaffold,
+                  if (startupGateLocked)
+                    IncidentSelectionOverlay(
+                      onOpenKeySites: controller.canReadKeySites
+                          ? () => Navigator.push<void>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    KeySitesPage(controller: controller),
+                              ),
+                            )
+                          : null,
+                      authenticationRequired: controller.needsAuthentication,
+                      activeIncidents: controller.activeIncidents,
+                      loading:
+                          !controller.needsAuthentication &&
+                          (controller.syncing || controller.api == null),
+                      onAuthenticate: (unitName, name, code) =>
+                          controller.authenticate(
+                            unitName: unitName,
+                            realName: name,
+                            unitCode: code,
+                          ),
+                      onEnterGuestMode: () => controller.enterGuestMode(),
+                      onApply:
+                          (
+                            unitName,
+                            name,
+                            code, {
+                            stationName,
+                            phone,
+                            applyReason,
+                          }) => controller.applyUnitMembership(
+                            unitName: unitName,
+                            unitCode: code,
+                            realName: name,
+                            stationName: stationName,
+                            phone: phone,
+                            applyReason: applyReason,
+                          ),
+                      onSelect: (incident) =>
+                          _homeKey.currentState?.selectIncidentFromGate(
+                            incident,
+                          ) ??
+                          Future<void>.value(),
+                      onCreate: () =>
+                          _homeKey.currentState?.createIncidentFromGate() ??
+                          Future<void>.value(),
+                    ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );

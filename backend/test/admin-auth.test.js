@@ -154,3 +154,22 @@ test('HTTP 独立Cookie、来源限制、CSRF与已有会话恢复', async () =>
   assert.equal((await request('/logout', {}, { Cookie: sessionCookie, 'X-CSRF-Token': result.csrf })).status, 200);
   assert.equal((await request('/me', undefined, { Cookie: sessionCookie }, 'GET')).status, 401);
 });
+
+test('授权变更与实时通知同事务提交，通知失败回滚权限，事件不含登录凭据', async () => {
+  const db = require('../src/db-postgres');
+  await store.query("INSERT INTO unit_members(id,unit_id,real_name,role,created_at,updated_at) VALUES('event-member','u','合成成员','manager',1,1)");
+  const eventAuth = require('../src/admin-auth').createAdminAuth(store, () => time, {
+    onGrantChanged: member => db.appendRosterSyncEvent({ unitId: member.unit_id, eventType: 'admin.capability_changed',
+      aggregateId: member.id, payload: { memberId: member.id } }),
+  });
+  await eventAuth.setGrant('platform', 'event-member', 'unit_admin');
+  assert.equal((await eventAuth.identity('event-member')).admin_role, 'unit_admin');
+  const events = (await store.query("SELECT * FROM sync_events WHERE event_type='admin.capability_changed'")).rows;
+  assert.equal(events.length, 1); assert.deepEqual(events[0].payload, { memberId: 'event-member' });
+  const failing = require('../src/admin-auth').createAdminAuth(store, () => time, { onGrantChanged: () => { throw new Error('synthetic outbox failure'); } });
+  await assert.rejects(() => failing.setGrant('platform', 'event-member', null));
+  assert.ok(await eventAuth.identity('event-member'));
+  await eventAuth.setGrant('platform', 'event-member', null);
+  assert.equal(await eventAuth.identity('event-member'), undefined);
+  assert.equal((await store.query("SELECT count(*)::int AS n FROM sync_events WHERE event_type='admin.capability_changed'")).rows[0].n, 2);
+});
