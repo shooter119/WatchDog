@@ -8,6 +8,7 @@ import 'package:http/io_client.dart';
 import 'package:http_parser/http_parser.dart';
 
 import '../models/models.dart';
+import '../models/key_sites.dart';
 import '../services/settings.dart';
 import '../services/scoped_json_cache.dart';
 
@@ -92,6 +93,126 @@ class ApiClient {
       throw StateError('服务器地址无效');
     }
     return uri;
+  }
+
+  Future<Map<String, dynamic>> _keySiteRequest(
+    String path, {
+    Map<String, String>? query,
+    Map<String, dynamic>? data,
+    String? operationId,
+  }) async {
+    final uri = _uri(path).replace(queryParameters: query);
+    final response =
+        await (data == null
+                ? _client.get(uri, headers: _headers)
+                : _client.put(
+                    uri,
+                    headers: {
+                      ..._headers,
+                      'Content-Type': 'application/json',
+                      if (operationId != null) 'X-Op-Id': operationId,
+                    },
+                    body: jsonEncode(data),
+                  ))
+            .timeout(const Duration(seconds: 20));
+    final body = _decodeJson(response, fallback: '资料加载失败');
+    if (response.statusCode != 200) {
+      throw _apiException(response, body: body, fallback: '资料加载失败');
+    }
+    return Map<String, dynamic>.from(body as Map);
+  }
+
+  Future<Map<String, dynamic>> keySiteAccess() =>
+      _keySiteRequest('/api/key-sites/access');
+  Future<Map<String, dynamic>> keySiteFilters() =>
+      _keySiteRequest('/api/key-sites/filters');
+  Future<Map<String, dynamic>> fetchKeySites({
+    String search = '',
+    String district = '',
+    String type = '',
+    int offset = 0,
+  }) => _keySiteRequest(
+    '/api/key-sites',
+    query: {
+      'q': search,
+      'district': district,
+      'site_type': type,
+      'offset': '$offset',
+      'limit': '20',
+    },
+  );
+  Future<List<KeySiteSummary>> fetchRecentKeySites(List<String> ids) async {
+    final data = await _keySiteRequest(
+      '/api/key-sites/recent',
+      query: {'ids': ids.join(',')},
+    );
+    return (data['sites'] as List)
+        .map(
+          (s) => KeySiteSummary.fromJson(Map<String, dynamic>.from(s as Map)),
+        )
+        .toList();
+  }
+
+  Future<KeySiteVersion> fetchKeySite(
+    String id, {
+    int? version,
+    String? incident,
+  }) async => KeySiteVersion.fromJson(
+    await _keySiteRequest(
+      '/api/key-sites/${Uri.encodeComponent(id)}${version == null ? '' : '/versions/$version'}',
+      query: {if (incident != null) 'incidentId': incident},
+    ),
+  );
+  Future<Map<String, dynamic>> fetchIncidentKeySite(String id) =>
+      _keySiteRequest('/api/incidents/${Uri.encodeComponent(id)}/key-site');
+  Future<Incident> changeIncidentKeySite(
+    String id, {
+    required int revision,
+    required String operationId,
+    KeySiteVersion? site,
+  }) async {
+    final result = await _keySiteRequest(
+      '/api/incidents/${Uri.encodeComponent(id)}/key-site',
+      operationId: operationId,
+      data: {
+        'revision': revision,
+        'siteId': site?.siteId,
+        if (site != null) ...{
+          'version': site.version,
+          'confirmName': site.name,
+          'confirmAddress': site.address,
+        },
+      },
+    );
+    return Incident.fromJson(
+      Map<String, dynamic>.from(result['incident'] as Map),
+    );
+  }
+
+  /// 文件路径由调用方的版本快照生成，拒绝任意外站 URL；不使用磁盘缓存。
+  Future<Uint8List> fetchKeySiteImage(
+    String siteId,
+    int version,
+    String attachmentId, {
+    required String resource,
+    String? incident,
+  }) async {
+    if (!RegExp(
+      r'^(pages/[1-9][0-9]*\.jpg|maps/[1-9][0-9]*/tiles/[0-9]+/[0-9]+/[0-9]+\.jpg)$',
+    ).hasMatch(resource)) {
+      throw ArgumentError('资料图像路径无效');
+    }
+    final uri = _uri(
+      '/api/key-sites/${Uri.encodeComponent(siteId)}/versions/$version/attachments/${Uri.encodeComponent(attachmentId)}/$resource',
+    ).replace(queryParameters: {if (incident != null) 'incidentId': incident});
+    final response = await _client
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode != 200) {
+      final body = _decodeJson(response, fallback: '附件加载失败');
+      throw _apiException(response, body: body, fallback: '附件加载失败');
+    }
+    return response.bodyBytes;
   }
 
   Future<List<Map<String, dynamic>>> fetchMaps() async {
@@ -327,6 +448,7 @@ class ApiClient {
         'SESSION_REQUIRED',
         'SESSION_INVALID',
         'SESSION_EXPIRED',
+        'KEY_SITE_AUTH_REQUIRED',
       }.contains(error.code);
 
   String _responseCode(http.Response res, dynamic body) {
@@ -739,7 +861,8 @@ class ApiClient {
     required double lon,
   }) async {
     try {
-      final query = 'lat=${lat.toStringAsFixed(5)}&lon=${lon.toStringAsFixed(5)}';
+      final query =
+          'lat=${lat.toStringAsFixed(5)}&lon=${lon.toStringAsFixed(5)}';
       final res = await _client
           .get(_uri('/api/weather?$query'), headers: _headers)
           .timeout(const Duration(seconds: 12));
@@ -1129,8 +1252,7 @@ class ApiClient {
           'real_name': realName.trim(),
           if (stationName != null && stationName.trim().isNotEmpty)
             'station_name': stationName.trim(),
-          if (phone != null && phone.trim().isNotEmpty)
-            'phone': phone.trim(),
+          if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
           if (applyReason != null && applyReason.trim().isNotEmpty)
             'apply_reason': applyReason.trim(),
         }),
@@ -1150,17 +1272,30 @@ class ApiClient {
   Future<List<UnitMember>> fetchUnitMembers() async {
     final res = await _client.get(_uri('/api/unit-members'), headers: _headers);
     final body = _decodeJson(res, fallback: '获取成员列表失败');
-    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '获取成员列表失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取成员列表失败');
+    }
     if (body is! List) throw _responseShapeException(res, '成员列表响应格式异常');
-    return body.whereType<Map<String, dynamic>>().map(UnitMember.fromJson).toList();
+    return body
+        .whereType<Map<String, dynamic>>()
+        .map(UnitMember.fromJson)
+        .toList();
   }
 
   Future<List<UnitMember>> fetchPendingMembers() async {
-    final res = await _client.get(_uri('/api/unit-members/pending'), headers: _headers);
+    final res = await _client.get(
+      _uri('/api/unit-members/pending'),
+      headers: _headers,
+    );
     final body = _decodeJson(res, fallback: '获取待审批成员列表失败');
-    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '获取待审批成员列表失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取待审批成员列表失败');
+    }
     if (body is! List) throw _responseShapeException(res, '待审列表响应格式异常');
-    return body.whereType<Map<String, dynamic>>().map(UnitMember.fromJson).toList();
+    return body
+        .whereType<Map<String, dynamic>>()
+        .map(UnitMember.fromJson)
+        .toList();
   }
 
   Future<UnitMember> approveMember(String memberId) async {
@@ -1169,25 +1304,35 @@ class ApiClient {
       headers: _headers,
     );
     final body = _decodeJson(res, fallback: '审批成员失败');
-    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '审批成员失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '审批成员失败');
+    }
     if (body is! Map || body['member'] is! Map) {
       throw _responseShapeException(res, '审批响应格式异常');
     }
-    return UnitMember.fromJson(Map<String, dynamic>.from(body['member'] as Map));
+    return UnitMember.fromJson(
+      Map<String, dynamic>.from(body['member'] as Map),
+    );
   }
 
   Future<UnitMember> rejectMember(String memberId, {String? reason}) async {
     final res = await _client.post(
       _uri('/api/unit-members/$memberId/reject'),
       headers: _headers,
-      body: jsonEncode({if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim()}),
+      body: jsonEncode({
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      }),
     );
     final body = _decodeJson(res, fallback: '驳回成员申请失败');
-    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '驳回成员申请失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '驳回成员申请失败');
+    }
     if (body is! Map || body['member'] is! Map) {
       throw _responseShapeException(res, '驳回响应格式异常');
     }
-    return UnitMember.fromJson(Map<String, dynamic>.from(body['member'] as Map));
+    return UnitMember.fromJson(
+      Map<String, dynamic>.from(body['member'] as Map),
+    );
   }
 
   Future<UnitMember> addUnitMember({
@@ -1202,7 +1347,8 @@ class ApiClient {
       body: jsonEncode({
         'real_name': realName.trim(),
         'role': role,
-        if (stationName != null && stationName.trim().isNotEmpty) 'station_name': stationName.trim(),
+        if (stationName != null && stationName.trim().isNotEmpty)
+          'station_name': stationName.trim(),
         if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
       }),
     );
@@ -1232,7 +1378,9 @@ class ApiClient {
       }),
     );
     final body = _decodeJson(res, fallback: '更新成员失败');
-    if (res.statusCode != 200) throw _apiException(res, body: body, fallback: '更新成员失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '更新成员失败');
+    }
     if (body is! Map) throw _responseShapeException(res, '更新成员响应格式异常');
     return UnitMember.fromJson(Map<String, dynamic>.from(body));
   }
@@ -1796,8 +1944,9 @@ class UnitMember {
       stationName: json['station_name'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       applyReason: json['apply_reason'] as String? ?? '',
-      createdAt: (json['created_at'] is num) ? (json['created_at'] as num).toInt() : 0,
+      createdAt: (json['created_at'] is num)
+          ? (json['created_at'] as num).toInt()
+          : 0,
     );
   }
 }
-

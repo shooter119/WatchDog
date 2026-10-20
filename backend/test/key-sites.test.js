@@ -67,6 +67,8 @@ before(async () => {
   app.use('/api/admin', require('../src/admin-router').createAdminRouter(auth, { sites, files }));
   // Emulate the already-verified App authentication boundary with a server-selected member, never a role declaration.
   app.use('/api/key-sites', (req, res, next) => { req.auth = { memberId: req.get('X-Test-Member') }; next(); }, require('../src/key-site-routes').createKeySiteAppRouter(sites, files));
+  const links = require('../src/incident-key-sites').createIncidentKeySites(store, require('../src/db-postgres'), sites);
+  app.use('/api/incidents', (req, res, next) => { req.auth = { memberId: req.get('X-Test-Member') }; next(); }, require('../src/incident-key-sites').createIncidentKeySiteRouter(links));
   server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); base = `http://127.0.0.1:${server.address().port}`;
   platform = await login('platform'); manager = await login('manager');
 });
@@ -262,4 +264,76 @@ test('多页PDF地图独立切片，第二页来源与瓦片不串页', async ()
   assert.equal(response.status, 200);
   const wrong = shape.emptyContent(); wrong.cards = content.maps; await save(site, wrong);
   assert.equal((await publish(site)).version, 2); // An explicit source may support multiple module types.
+});
+
+test('警情关联固定版本、范围权限、人工更新及历史保留', async () => {
+  const db = require('../src/db-postgres');
+  const links = require('../src/incident-key-sites').createIncidentKeySites(store, db, sites);
+  const site = await create('警情版本关联样例');
+  const content = shape.emptyContent(); content.cards.push({ title: '核对样例', body: '合成资料', sources: [] });
+  await save(site, content); await publish(site);
+  const incident = await db.createIncident({ unitId: 'one' });
+  const input = { siteId: site.id, version: 1, revision: 0, confirmName: site.name, confirmAddress: site.address };
+  await reject(() => links.change('manager', incident.id, { ...input, confirmAddress: '错误地址' }, { operationId: 'link-wrong' }), 'KEY_SITE_LINK_REVIEW_REQUIRED');
+  await reject(() => links.change('reader', incident.id, input, { operationId: 'link-cross-unit' }), 'INCIDENT_NOT_FOUND');
+  await reject(() => links.change('pending', incident.id, input, { operationId: 'link-pending' }), 'KEY_SITE_AUTH_REQUIRED');
+  const first = await links.change('manager', incident.id, input, { operationId: 'link-once' });
+  assert.equal(first.incident.key_site_link.version, 1);
+  assert.equal(first.event.actor_name, 'manager');
+  assert.equal(first.event.sync.event_type, 'incident.updated');
+  assert.equal(first.event.sync.payload.key_site_link.siteId, site.id);
+  assert.equal((await links.change('manager', incident.id, input, { operationId: 'link-once' })).replayed, true);
+  await reject(() => links.change('platform', incident.id, input, { operationId: 'link-once' }), 'CLIENT_OP_ID_CONFLICT');
+  await reject(() => links.change('manager', incident.id, input, { operationId: 'link-stale' }), 'KEY_SITE_LINK_CONFLICT');
+  await publish(site);
+  const state = await links.read('manager', incident.id);
+  assert.equal(state.link.version, 1); assert.equal(state.newVersionAvailable, true);
+  await reject(() => links.change('manager', incident.id, { ...input, revision: 1 }, { operationId: 'link-old' }), 'KEY_SITE_NEW_VERSION');
+  await links.change('platform', incident.id, { ...input, version: 2, revision: 1 }, { operationId: 'link-update' });
+  await links.change('manager', incident.id, { siteId: null, revision: 2 }, { operationId: 'link-remove' });
+  assert.equal((await links.read('manager', incident.id)).history.length, 2);
+  await sites.update('manager', site.id, { ...await sites.site(site.id), active: false });
+  await reject(() => sites.published('manager', site.id, 1), 'KEY_SITE_INACTIVE');
+  assert.equal((await sites.published('manager', site.id, 1, incident.id)).version, 1);
+  await reject(() => sites.published('reader', site.id, 1, incident.id), 'KEY_SITE_INACTIVE');
+  await reject(() => links.change('manager', incident.id, { ...input, version: 2, revision: 3 }, { operationId: 'link-inactive' }), 'KEY_SITE_INACTIVE');
+  await store.query("UPDATE incidents SET status='archived' WHERE id=$1", [incident.id]);
+  await reject(() => links.change('manager', incident.id, { siteId: null, revision: 3 }, { operationId: 'link-archived' }), 'INCIDENT_ARCHIVED');
+  assert.equal((await links.read('platform', incident.id)).history.length, 2);
+});
+
+test('筛选及最近查看仅返回当前已发布有效档案', async () => {
+  const site = await create('最近查看样例');
+  const content = shape.emptyContent(); content.cards.push({ title: '合成资料', sources: [] });
+  await save(site, content); await publish(site);
+  assert.ok((await sites.filters('reader')).districts.includes('样例辖区'));
+  const rows = await sites.recent('reader', [site.id, 'not-present']);
+  assert.equal(rows.length, 1); assert.equal(rows[0].name, site.name);
+  await reject(() => sites.recent('pending', [site.id]), 'KEY_SITE_AUTH_REQUIRED');
+  await reject(() => sites.recent('reader', Array(21).fill(site.id)), 'KEY_SITE_INVALID');
+});
+
+
+test('停用后的历史附件按警情协作范围鉴权，解除关联后仍可读，源文件始终私有', async () => {
+  const db = require('../src/db-postgres');
+  const links = require('../src/incident-key-sites').createIncidentKeySites(store, db, sites);
+  const site = await create('历史附件合成样例');
+  const buffer = await sharp({ create: { width: 100, height: 80, channels: 3, background: '#ffffff' } }).png().toBuffer();
+  const attachment = await files.upload('manager', site.id, 'plans', { originalname: '历史合成图.png', buffer });
+  await finishAttachment(attachment.id);
+  const content = shape.emptyContent(); content.plans.push({ title: '合成预案', sources: [{ attachmentId: attachment.id, page: 1 }] });
+  await save(site, content); await publish(site);
+  const incident = await db.createIncident({ unitId: 'one' });
+  await links.change('manager', incident.id, { revision: 0, siteId: site.id, version: 1, confirmName: site.name, confirmAddress: site.address }, { operationId: 'historical-attach' });
+  await links.change('manager', incident.id, { revision: 1, siteId: null }, { operationId: 'historical-detach' });
+  await sites.update('manager', site.id, { ...await sites.site(site.id), active: false });
+  const prefix = `/api/key-sites/${site.id}/versions/1/attachments/${attachment.id}`;
+  assert.equal((await request(`${prefix}/pages/1.jpg?incidentId=${incident.id}`, { session: null, member: 'manager' })).status, 200);
+  assert.equal((await request(`${prefix}/pages/1.jpg?incidentId=${incident.id}`, { session: null, member: 'reader' })).status, 404);
+  assert.equal((await request(`${prefix}/pages/1.jpg`, { session: null, member: 'manager' })).status, 404);
+  assert.equal((await request(`${prefix}/source?incidentId=${incident.id}`, { session: null, member: 'manager' })).status, 403);
+  const response = await request(`/api/incidents/${incident.id}/key-site`, { session: null, member: 'manager' });
+  assert.match(response.headers.get('cache-control'), /no-store/);
+  const state = await response.json(); assert.equal(state.link, null); assert.equal(state.history.length, 1);
+  assert.equal((await request(`/api/incidents/${incident.id}/key-site`, { session: null, member: 'reader' })).status, 404);
 });

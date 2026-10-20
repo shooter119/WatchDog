@@ -6,8 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/models.dart';
+import '../models/key_sites.dart';
 import '../services/alarm_service.dart';
 import '../services/chat_history.dart';
+import '../services/key_site_recents.dart';
 import '../services/diagnostic_log_service.dart';
 import '../services/foreground_keep_alive.dart';
 import '../services/local_asr_service.dart';
@@ -121,6 +123,19 @@ class AppController extends ChangeNotifier {
   List<Incident> activeIncidents = [];
   List<IncidentForce> forces = [];
   bool _authenticated = false;
+  bool _protectedDataRevoked = false;
+  int _protectedDataEpoch = 0;
+  bool get canReadKeySites =>
+      !_protectedDataRevoked && _authenticated && !_isGuest && api != null;
+  int get protectedDataEpoch => _protectedDataEpoch;
+  KeySiteRecents get keySiteRecents => KeySiteRecents.instance;
+  void _revokeProtectedData() {
+    _protectedDataRevoked = true;
+    _protectedDataEpoch++;
+    unawaited(keySiteRecents.clearAll());
+    _notify();
+  }
+
   bool _syncStarted = false;
   bool _isGuest = false;
   bool get isGuest => _isGuest;
@@ -488,6 +503,8 @@ class AppController extends ChangeNotifier {
     await Settings.setUnitCode(code);
     await Settings.setUnitName(unitInfo['name']?.toString() ?? unit);
     await Settings.markModified(DateTime.now().millisecondsSinceEpoch);
+    _protectedDataRevoked = false;
+    _protectedDataEpoch++;
     _authenticated = true;
     await refreshConfig();
     _startAuthenticatedServices();
@@ -497,6 +514,7 @@ class AppController extends ChangeNotifier {
 
   /// 进入游客模式：跳过强制登录门禁，使用本地单机功能
   Future<void> enterGuestMode() async {
+    _revokeProtectedData();
     _isGuest = true;
     await Settings.setIsGuestMode(true);
     _initGuestIncident();
@@ -568,8 +586,34 @@ class AppController extends ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> changeKeySiteLink(
+    String incidentId, {
+    required int revision,
+    required String operationId,
+    KeySiteVersion? site,
+  }) async {
+    final activeApi = api;
+    final epoch = protectedDataEpoch;
+    if (!canReadKeySites || activeApi == null) throw StateError('请重新认证');
+    final updated = await activeApi.changeIncidentKeySite(
+      incidentId,
+      revision: revision,
+      operationId: operationId,
+      site: site,
+    );
+    if (!canReadKeySites || api != activeApi || epoch != protectedDataEpoch) {
+      return;
+    }
+    if (currentIncident?.id == incidentId) currentIncident = updated;
+    activeIncidents = activeIncidents
+        .map((item) => item.id == incidentId ? updated : item)
+        .toList();
+    _notify();
+  }
+
   /// 主动退出当前单位：清理本机认证信息和当前警情，回到启动认证浮层。
   Future<void> leaveUnit() async {
+    _revokeProtectedData();
     final activeApi = api;
     await OpLogService.instance.flushLocal();
     _sessionGeneration++;
@@ -1432,6 +1476,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _invalidateAuthentication() async {
+    _revokeProtectedData();
     _sessionGeneration++;
     await _syncCoordinator?.stop();
     _syncCoordinator = null;

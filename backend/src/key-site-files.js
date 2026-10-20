@@ -259,10 +259,10 @@ function createKeySiteFiles(store, sites, auth, { root = path.resolve(process.en
       return { ok: true };
     });
   }
-  async function attachmentFor(memberId, siteId, attachmentId, version, admin = false) {
+  async function attachmentFor(memberId, siteId, attachmentId, version, admin = false, incidentId = null) {
     if (admin) await sites.maintain(memberId, siteId);
     else {
-      const published = await sites.published(memberId, siteId, version);
+      const published = await sites.published(memberId, siteId, version, incidentId);
       if (!published.attachment_ids.includes(attachmentId)) throw error('此版本不包含该附件', 'KEY_SITE_FILE_NOT_FOUND', 404);
     }
     const row = (await query('SELECT * FROM key_site_attachments WHERE id=$1 AND site_id=$2', [attachmentId, siteId]))[0];

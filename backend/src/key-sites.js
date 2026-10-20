@@ -7,7 +7,7 @@ const fail = (message, code = 'KEY_SITE_FORBIDDEN', status = 403) => { throw for
 function createKeySites(store, auth, now = Date.now) {
   const query = async (sql, args = []) => (await store.query(sql, args)).rows;
   async function reader(memberId) {
-    const member = (await query("SELECT id,unit_id FROM unit_members WHERE id=$1 AND status='active' AND review_status='approved'", [memberId]))[0];
+    const member = (await query("SELECT id,unit_id,real_name FROM unit_members WHERE id=$1 AND status='active' AND review_status='approved'", [memberId]))[0];
     if (!member) fail('请先完成有效成员认证', 'KEY_SITE_AUTH_REQUIRED', 401);
     return member;
   }
@@ -158,16 +158,32 @@ function createKeySites(store, auth, now = Date.now) {
     if (!row) fail('资料版本不存在', 'KEY_SITE_VERSION_NOT_FOUND', 404);
     return row;
   }
-  async function published(memberId, id, version) {
-    await reader(memberId);
+  async function published(memberId, id, version, incidentId = null) {
+    const member = await reader(memberId);
     const row = await site(id);
-    // Historical references for disabled sites are added with incident scope in stage 4.
-    if (!row.active) fail('重点单位已停用', 'KEY_SITE_INACTIVE', 404);
     const number = version === undefined ? row.published_version : Number(version);
     if (!Number.isInteger(number) || number < 1 || number > 2147483647) fail('暂无已发布资料', 'KEY_SITE_VERSION_NOT_FOUND', 404);
     const data = (await query('SELECT * FROM key_site_versions WHERE site_id=$1 AND version=$2', [id, number]))[0];
     if (!data) fail('暂无已发布资料', 'KEY_SITE_VERSION_NOT_FOUND', 404);
-    return { ...data, latestVersion: row.published_version };
+    if (!row.active) {
+      const reference = incidentId ? await query(`SELECT r.version_id FROM incident_key_site_references r JOIN incidents i ON i.id=r.incident_id
+        WHERE r.incident_id=$1 AND r.version_id=$2 AND i.unit_id=$3`, [incidentId, data.id, member.unit_id]) : [];
+      if (!reference.length) fail('重点单位已停用，仅可从有权限的历史警情引用中查阅', 'KEY_SITE_INACTIVE', 404);
+    }
+    return { ...data, latestVersion: row.published_version, active: row.active };
+  }
+  async function filters(memberId) {
+    await reader(memberId);
+    const rows = await query(`SELECT DISTINCT v.profile->>'district' AS district,v.profile->>'site_type' AS site_type FROM key_sites s
+      JOIN key_site_versions v ON v.site_id=s.id AND v.version=s.published_version WHERE s.active=true`);
+    return { districts: [...new Set(rows.map(row => row.district).filter(Boolean))].sort(), types: [...new Set(rows.map(row => row.site_type).filter(Boolean))].sort() };
+  }
+  async function recent(memberId, ids) {
+    await reader(memberId);
+    if (!Array.isArray(ids) || ids.length > 20 || ids.some(id => typeof id !== 'string' || id.length > 128)) fail('最近查看标识无效', 'KEY_SITE_INVALID', 400);
+    const rows = await query(`SELECT s.id,v.profile,s.published_version,v.published_at FROM key_sites s JOIN key_site_versions v ON v.site_id=s.id AND v.version=s.published_version
+      WHERE s.id=ANY($1::text[]) AND s.active=true`, [ids]);
+    return ids.map(id => rows.find(row => row.id === id)).filter(Boolean).map(row => ({ id: row.id, ...row.profile, published_version: row.published_version, published_at: row.published_at }));
   }
   async function duplicates(memberId, input) {
     const member = await auth.requireIdentity(memberId);
@@ -176,6 +192,6 @@ function createKeySites(store, auth, now = Date.now) {
       AND (name ILIKE $1 OR ($2<>'' AND address ILIKE $2)) ORDER BY name LIMIT 20`,
     [`%${value.replace(/[\\%_]/g, '\\$&')}%`, address ? `%${address.replace(/[\\%_]/g, '\\$&')}%` : '', member.admin_role === 'platform_admin', member.unit_id]);
   }
-  return { reader, site, maintain, create, update, list, draft, saveDraft, discardDraft, publish, history, versionForAdmin, published, duplicates };
+  return { reader, site, maintain, create, update, list, draft, saveDraft, discardDraft, publish, history, versionForAdmin, published, duplicates, filters, recent };
 }
 module.exports = { createKeySites };

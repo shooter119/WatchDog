@@ -1,3 +1,4 @@
+import 'incident_key_site_section.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -1312,6 +1313,7 @@ class HomePageState extends State<HomePage> {
           final taskBar = incident == null || compactEntryFlow
               ? null
               : _TaskBar(
+                  controller: widget.controller,
                   incident: incident,
                   forces: widget.controller.forces,
                   onRename: _renameIncident,
@@ -1638,7 +1640,11 @@ class HomePageState extends State<HomePage> {
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
-        builder: (_) => IncidentDetailsPage(api: api, incident: incident),
+        builder: (_) => IncidentDetailsPage(
+          api: api,
+          incident: incident,
+          controller: widget.controller,
+        ),
       ),
     );
     await widget.controller.refreshIncidentData(incident.id);
@@ -2078,7 +2084,9 @@ class HomePageState extends State<HomePage> {
       );
     }
     if (_transcript == null || _parsed == null) {
-      final activeEntries = widget.controller.entries.where((e) => e.isActive).toList();
+      final activeEntries = widget.controller.entries
+          .where((e) => e.isActive)
+          .toList();
       if (activeEntries.isNotEmpty) {
         return _buildActiveCombatLiveOverview(context, activeEntries);
       }
@@ -2471,9 +2479,7 @@ class HomePageState extends State<HomePage> {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.fromBorderSide(
-            BorderSide(color: AppColors.border),
-          ),
+          border: Border.fromBorderSide(BorderSide(color: AppColors.border)),
           boxShadow: AppShadow.card,
         ),
         padding: const EdgeInsets.all(16),
@@ -2559,7 +2565,10 @@ class HomePageState extends State<HomePage> {
                     icon: const Icon(Icons.dashboard_outlined, size: 14),
                     label: const Text(
                       '看板',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
               ],
@@ -2681,7 +2690,9 @@ class HomePageState extends State<HomePage> {
                                   style: TextStyle(
                                     fontSize: 10.5,
                                     color: AppColors.textTertiary,
-                                    fontFeatures: [FontFeature.tabularFigures()],
+                                    fontFeatures: [
+                                      FontFeature.tabularFigures(),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -2706,10 +2717,7 @@ class HomePageState extends State<HomePage> {
               alignment: Alignment.center,
               child: Text(
                 '长按底部橙色按钮，可直接报数复核或登记出场',
-                style: TextStyle(
-                  color: AppColors.textTertiary,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
               ),
             ),
           ],
@@ -3285,6 +3293,7 @@ class _IncidentPicker extends StatelessWidget {
 }
 
 class _TaskBar extends StatefulWidget {
+  final AppController controller;
   final Incident incident;
   final List<IncidentForce> forces;
   final VoidCallback onRename;
@@ -3298,6 +3307,7 @@ class _TaskBar extends StatefulWidget {
   final VoidCallback onExit;
 
   const _TaskBar({
+    required this.controller,
     required this.incident,
     required this.forces,
     required this.onRename,
@@ -3443,6 +3453,10 @@ class _TaskBarState extends State<_TaskBar> {
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
           ],
+          IncidentKeySiteSection(
+            controller: widget.controller,
+            incident: widget.incident,
+          ),
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(

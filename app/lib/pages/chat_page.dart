@@ -790,8 +790,11 @@ class ChatPageState extends State<ChatPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) =>
-                          IncidentDetailsPage(api: api, incident: incident),
+                      builder: (_) => IncidentDetailsPage(
+                        api: api,
+                        incident: incident,
+                        controller: widget.controller,
+                      ),
                     ),
                   );
                 }

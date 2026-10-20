@@ -500,6 +500,7 @@ class _IncidentDetailPageState extends State<IncidentDetailPage> {
                           context,
                           MaterialPageRoute(
                             builder: (_) => IncidentDetailsPage(
+                              controller: widget.controller,
                               api: widget.controller.api!,
                               incident: widget.incident,
                             ),

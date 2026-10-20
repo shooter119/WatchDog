@@ -1053,6 +1053,7 @@ function syncEventType(type) {
   return {
     incident_created: 'incident.created',
     incident_renamed: 'incident.updated',
+    key_site_link_changed: 'incident.updated',
     incident_archived: 'incident.archived',
     entry: 'entry.created',
     pressure: 'entry.pressure_updated',

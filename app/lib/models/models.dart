@@ -1,3 +1,5 @@
+import 'key_sites.dart';
+
 class Entry {
   final String id;
   final String name;
@@ -88,6 +90,8 @@ class Entry {
 }
 
 class Incident {
+  final IncidentKeySiteLink? keySiteLink;
+  final int keySiteLinkRevision;
   final String id;
   final Map<String, dynamic> info;
   final String number;
@@ -108,6 +112,8 @@ class Incident {
   final int unknownPersonnelStationCount;
 
   const Incident({
+    this.keySiteLink,
+    this.keySiteLinkRevision = 0,
     required this.id,
     this.info = const {},
     required this.number,
@@ -133,6 +139,12 @@ class Incident {
   bool get isActive => status == 'active';
 
   factory Incident.fromJson(Map<String, dynamic> json) => Incident(
+    keySiteLink: json['key_site_link'] is Map
+        ? IncidentKeySiteLink.fromJson(
+            Map<String, dynamic>.from(json['key_site_link'] as Map),
+          )
+        : null,
+    keySiteLinkRevision: (json['key_site_link_revision'] as num?)?.toInt() ?? 0,
     id: json['id']?.toString() ?? '',
     info: json['info'] is Map
         ? Map<String, dynamic>.from(json['info'] as Map)

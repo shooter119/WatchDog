@@ -312,6 +312,9 @@ app.use(async (req, res, next) => {
 
 if (adminAuth) app.use('/api/admin-app', require('./admin-router').createAdminAppRouter(adminAuth));
 if (keySites) app.use('/api/key-sites', require('./key-site-routes').createKeySiteAppRouter(keySites, keySiteFiles));
+if (keySites) app.use('/api/incidents', require('./incident-key-sites').createIncidentKeySiteRouter(
+  require('./incident-key-sites').createIncidentKeySites(require('./postgres-store'), db, keySites),
+));
 
 // Maps inherit the same session and unit authentication as business APIs.
 app.use('/api/maps', require('./orthomaps').createOrthomapRouter(

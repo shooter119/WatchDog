@@ -51,7 +51,7 @@ function attachmentRouter(sites, files, admin) {
   const router = express.Router({ mergeParams: true });
   const send = (kind, params = () => []) => wrap(async (req, res) => {
     const attachment = await files.attachmentFor(admin ? req.admin.id : req.auth?.memberId,
-      req.params.id, req.params.attachmentId, req.params.version, admin);
+      req.params.id, req.params.attachmentId, req.params.version, admin, req.query.incidentId || null);
     if (kind === 'source' && !admin) return res.status(403).json({ code: 'KEY_SITE_SOURCE_PRIVATE', error: '原始上传文件仅维护人员可下载，请阅读已发布的正式附件' });
     let file;
     try { file = await files.filePath(attachment, kind, params(req)); }
@@ -81,11 +81,17 @@ function createKeySiteAppRouter(sites, files) {
   const router = express.Router();
   router.use((req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
   router.get('/', wrap(async (req, res) => res.json(await sites.list(req.auth?.memberId, req.query))));
+  router.get('/access', wrap(async (req, res) => {
+    const member = await sites.reader(req.auth?.memberId);
+    res.json({ memberId: member.id, unitId: member.unit_id });
+  }));
+  router.get('/filters', wrap(async (req, res) => res.json(await sites.filters(req.auth?.memberId))));
+  router.get('/recent', wrap(async (req, res) => res.json({ sites: await sites.recent(req.auth?.memberId, String(req.query.ids || '').split(',').filter(Boolean)) })));
   const read = wrap(async (req, res) => {
-    const data = await sites.published(req.auth?.memberId, req.params.id, req.params.version);
+    const data = await sites.published(req.auth?.memberId, req.params.id, req.params.version, req.query.incidentId || null);
     const attachments = [];
     for (const id of data.attachment_ids) {
-      const row = await files.attachmentFor(req.auth?.memberId, req.params.id, id, data.version);
+      const row = await files.attachmentFor(req.auth?.memberId, req.params.id, id, data.version, false, req.query.incidentId || null);
       attachments.push({ id: row.id, module: row.module, filename: row.filename, mime: row.mime, metadata: row.metadata });
     }
     res.json({ ...data, attachments });

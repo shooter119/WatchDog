@@ -1,3 +1,5 @@
+import '../state/app_controller.dart';
+import 'incident_key_site_section.dart';
 import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
@@ -5,10 +7,12 @@ import '../theme/app_widgets.dart';
 import 'incident_import_page.dart';
 
 class IncidentDetailsPage extends StatefulWidget {
+  final AppController? controller;
   final ApiClient api;
   final Incident incident;
   const IncidentDetailsPage({
     super.key,
+    this.controller,
     required this.api,
     required this.incident,
   });
@@ -136,6 +140,11 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (widget.controller != null)
+              IncidentKeySiteSection(
+                controller: widget.controller!,
+                incident: widget.incident,
+              ),
             Text(
               widget.incident.displayName,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
