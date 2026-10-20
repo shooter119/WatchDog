@@ -5,7 +5,14 @@ const { keySiteLimits } = require('./key-site-limits');
 const fail = (message, code = 'KEY_SITE_FORBIDDEN', status = 403) => { throw forceError(message, code, status); };
 
 function createKeySites(store, auth, now = Date.now) {
-  const query = async (sql, args = []) => (await store.query(sql, args)).rows;
+  // Raw pg queries retain BIGINT strings; published API timestamps are JSON numbers.
+  // Keep this at the key-site boundary rather than changing cursor/ID precision globally.
+  const query = async (sql, args = []) => (await store.query(sql, args)).rows.map(row => {
+    if (typeof row.published_at !== 'string') return row;
+    const publishedAt = Number(row.published_at);
+    if (!Number.isSafeInteger(publishedAt)) fail('资料发布时间无效', 'KEY_SITE_INVALID_TIMESTAMP', 500);
+    return { ...row, published_at: publishedAt };
+  });
   async function reader(memberId) {
     const member = (await query("SELECT id,unit_id,real_name FROM unit_members WHERE id=$1 AND status='active' AND review_status='approved'", [memberId]))[0];
     if (!member) fail('请先完成有效成员认证', 'KEY_SITE_AUTH_REQUIRED', 401);

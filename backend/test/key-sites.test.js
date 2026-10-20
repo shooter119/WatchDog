@@ -357,3 +357,29 @@ test('标准记录HTTP保存发布保留独立储量与来源，旧发布版本�
   const latest = await sites.versionForAdmin('platform',site.id,2);
   assert.equal(latest.content.hazards[0].fields.designVolume,'43');
 });
+
+test('发布毫秒时间在列表、最近查看、版本和历史HTTP响应中均为JSON数字', async () => {
+  const site = await create('发布时间类型合成样例');
+  const content = shape.emptyContent();
+  content.cards.push({ title: '合成资料', body: '仅供接口契约回归' });
+  await save(site, content);
+  const version = await publish(site);
+  const timestamp = version.published_at;
+  assert.equal(typeof timestamp, 'number');
+  assert.ok(Number.isSafeInteger(timestamp) && timestamp > 1700000000000);
+  const routes = [
+    [`/api/key-sites?q=${encodeURIComponent(site.name)}`, result => result.sites[0]],
+    [`/api/key-sites/recent?ids=${site.id}`, result => result.sites[0]],
+    [`/api/key-sites/${site.id}`, result => result],
+    [`/api/key-sites/${site.id}/versions/1`, result => result],
+    [`/api/admin/key-sites/${site.id}/history`, result => result.versions[0]],
+    [`/api/admin/key-sites/${site.id}/history/1`, result => result],
+  ];
+  for (const [route, pick] of routes) {
+    const response = await request(route, route.startsWith('/api/key-sites') ? { session: null, member: 'reader' } : {});
+    assert.equal(response.status, 200, route);
+    const record = pick(await response.json());
+    assert.equal(typeof record.published_at, 'number', route);
+    assert.equal(record.published_at, timestamp, route);
+  }
+});
