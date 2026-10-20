@@ -3504,15 +3504,22 @@ void main() {
       await pumpTask(tester, c, textScale: 1.3);
       await tester.tap(find.byKey(const Key('toggle-incident-card')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('incident-card-scroll')), findsOneWidget);
+      expect(find.byKey(const Key('home-page-scroll')), findsOneWidget);
+      expect(find.byKey(const Key('incident-card-details')), findsOneWidget);
+      final card = tester.getRect(find.byKey(const Key('incident-card')));
+      final toolsTop = tester.getTopLeft(find.text('现场工具')).dy;
+      expect(toolsTop, greaterThan(card.bottom));
       expect(tester.takeException(), isNull);
+      final pageScrollable = find
+          .descendant(
+            of: find.byKey(const Key('home-page-scroll')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
       await tester.scrollUntilVisible(
         find.text('归档警情'),
         220,
-        scrollable: find.descendant(
-          of: find.byKey(const Key('incident-card-scroll')),
-          matching: find.byType(Scrollable),
-        ),
+        scrollable: pageScrollable,
       );
       expect(find.text('归档警情'), findsOneWidget);
       expect(find.text('第8消防救援站 8车40人'), findsOneWidget);

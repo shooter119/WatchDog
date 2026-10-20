@@ -90,6 +90,9 @@ class HomePageState extends State<HomePage> {
   // 表单内联校验错误（不遮挡确认卡片）
   String? _inlineError;
 
+  bool _incidentCardExpanded = false;
+  String? _incidentCardId;
+
   @override
   void initState() {
     super.initState();
@@ -1272,6 +1275,10 @@ class HomePageState extends State<HomePage> {
   Widget _buildContent(BuildContext context) {
     final cfg = widget.controller.calcConfig;
     final incident = widget.controller.currentIncident;
+    if (_incidentCardId != incident?.id) {
+      _incidentCardId = incident?.id;
+      _incidentCardExpanded = false;
+    }
     // 录入确认时把警情卡收起，确认区只保留人员和压力信息，避免重复占用屏幕。
     final compactEntryFlow =
         _recording ||
@@ -1313,32 +1320,36 @@ class HomePageState extends State<HomePage> {
                     connectionStatus,
                   ],
                 );
+          final taskBarExpanded =
+              incident != null && !compactEntryFlow && _incidentCardExpanded;
           final taskBar = incident == null || compactEntryFlow
               ? null
-              : ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: max(240, min(480, viewport.maxHeight * 0.58)),
-                  ),
-                  child: _TaskBar(
-                    controller: widget.controller,
-                    incident: incident,
-                    forces: widget.controller.forces,
-                    onRename: _renameIncident,
-                    onAddForce: () => _editForce(),
-                    onImageImport: () => _openImport(true),
-                    onTextImport: () => _openImport(false),
-                    onDetails: _openDetails,
-                    onEditForce: (force) => _editForce(force),
-                    onRemoveForce: (force) => _removeForce(force),
-                    onArchive: _confirmArchive,
-                    onExit: _confirmExitIncident,
-                  ),
+              : _TaskBar(
+                  controller: widget.controller,
+                  incident: incident,
+                  forces: widget.controller.forces,
+                  expanded: taskBarExpanded,
+                  onExpandedChanged: (expanded) {
+                    if (mounted) {
+                      setState(() => _incidentCardExpanded = expanded);
+                    }
+                  },
+                  onRename: _renameIncident,
+                  onAddForce: () => _editForce(),
+                  onImageImport: () => _openImport(true),
+                  onTextImport: () => _openImport(false),
+                  onDetails: _openDetails,
+                  onEditForce: (force) => _editForce(force),
+                  onRemoveForce: (force) => _removeForce(force),
+                  onArchive: _confirmArchive,
+                  onExit: _confirmExitIncident,
                 );
 
           // 横屏可用高度通常不足以同时放下警情卡、结果区和底部导航。
-          // 改为整页滚动，并给内部 Expanded 组件明确高度，避免 Column 溢出。
-          if (viewport.maxHeight < 520) {
+          // 警情卡展开后也改为整页滚动，让卡片按内容自然增高并把现场工具下推。
+          if (viewport.maxHeight < 520 || taskBarExpanded) {
             return SingleChildScrollView(
+              key: const Key('home-page-scroll'),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3217,6 +3228,8 @@ class _TaskBar extends StatefulWidget {
   final AppController controller;
   final Incident incident;
   final List<IncidentForce> forces;
+  final bool expanded;
+  final ValueChanged<bool>? onExpandedChanged;
   final VoidCallback onRename;
   final VoidCallback onAddForce;
   final VoidCallback onImageImport;
@@ -3231,6 +3244,8 @@ class _TaskBar extends StatefulWidget {
     required this.controller,
     required this.incident,
     required this.forces,
+    required this.expanded,
+    this.onExpandedChanged,
     required this.onRename,
     required this.onAddForce,
     required this.onImageImport,
@@ -3250,13 +3265,28 @@ class _TaskBarState extends State<_TaskBar> {
   bool _expanded = false;
 
   @override
+  void initState() {
+    super.initState();
+    _expanded = widget.expanded;
+  }
+
+  @override
   void didUpdateWidget(covariant _TaskBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.incident.id != widget.incident.id) _expanded = false;
+    if (oldWidget.incident.id != widget.incident.id ||
+        oldWidget.expanded != widget.expanded) {
+      _expanded = widget.expanded;
+    }
   }
 
   String get _location =>
       (widget.incident.info['location']?.toString() ?? '').trim();
+
+  void _toggleExpanded() {
+    final expanded = !_expanded;
+    setState(() => _expanded = expanded);
+    widget.onExpandedChanged?.call(expanded);
+  }
 
   @override
   Widget build(BuildContext context) => Container(
@@ -3277,7 +3307,7 @@ class _TaskBarState extends State<_TaskBar> {
           child: InkWell(
             key: const Key('toggle-incident-card'),
             borderRadius: BorderRadius.circular(8),
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: _toggleExpanded,
             child: Semantics(
               button: true,
               expanded: _expanded,
@@ -3340,175 +3370,169 @@ class _TaskBarState extends State<_TaskBar> {
           ),
         ),
         if (_expanded)
-          Flexible(
-            fit: FlexFit.loose,
-            child: SingleChildScrollView(
-              key: const Key('incident-card-scroll'),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+          Column(
+            key: const Key('incident-card-details'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_location.isNotEmpty)
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: Text(
-                              _location,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        )
-                      else
-                        const Spacer(),
-                      IconButton(
-                        key: const Key('rename-incident'),
-                        onPressed: widget.onRename,
-                        icon: const Icon(Icons.edit_outlined, size: 16),
-                        tooltip: '修改名称',
-                        constraints: const BoxConstraints(
-                          minWidth: 48,
-                          minHeight: 48,
-                        ),
-                      ),
-                    ],
-                  ),
-                  IncidentKeySiteSection(
-                    controller: widget.controller,
-                    incident: widget.incident,
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceSubtle.withValues(alpha: .5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        _IncidentAction(
-                          label: '登记力量',
-                          icon: Icons.group_add_outlined,
-                          onTap: widget.onAddForce,
-                        ),
-                        const SizedBox(
-                          height: 18,
-                          child: VerticalDivider(width: 1),
-                        ),
-                        _IncidentAction(
-                          label: '图片导入',
-                          icon: Icons.image_outlined,
-                          onTap: widget.onImageImport,
-                        ),
-                        const SizedBox(
-                          height: 18,
-                          child: VerticalDivider(width: 1),
-                        ),
-                        _IncidentAction(
-                          label: '文字导入',
-                          icon: Icons.description_outlined,
-                          onTap: widget.onTextImport,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Expanded(
+                  if (_location.isNotEmpty)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 12),
                         child: Text(
-                          '参战力量',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      Text(
-                        '${widget.forces.length}支队伍',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (widget.forces.isEmpty)
-                    Padding(
-                      padding: EdgeInsets.only(top: 1),
-                      child: Text(
-                        '尚未登记参战力量',
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.2,
-                          color: AppColors.textTertiary,
+                          _location,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     )
                   else
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (var i = 0; i < widget.forces.length; i++) ...[
-                          _ForceRow(
-                            force: widget.forces[i],
-                            onEdit: () => widget.onEditForce(widget.forces[i]),
-                            onRemove: () =>
-                                widget.onRemoveForce(widget.forces[i]),
-                          ),
-                          if (i < widget.forces.length - 1)
-                            const SizedBox(height: 8),
-                        ],
-                      ],
+                    const Spacer(),
+                  IconButton(
+                    key: const Key('rename-incident'),
+                    onPressed: widget.onRename,
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    tooltip: '修改名称',
+                    constraints: const BoxConstraints(
+                      minWidth: 48,
+                      minHeight: 48,
                     ),
-                  TextButton(
-                    onPressed: widget.onDetails,
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                      padding: EdgeInsets.zero,
-                    ),
-                    child: const Row(
-                      children: [
-                        Expanded(child: Text('警情详情')),
-                        Icon(Icons.chevron_right, size: 18),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextButton.icon(
-                          onPressed: widget.onExit,
-                          icon: const Icon(Icons.logout_outlined, size: 18),
-                          label: const Text('退出当前警情'),
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            minimumSize: const Size.fromHeight(48),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: TextButton.icon(
-                          onPressed: widget.onArchive,
-                          icon: const Icon(Icons.archive_outlined, size: 18),
-                          label: const Text('归档警情'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.alarm,
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            minimumSize: const Size.fromHeight(48),
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
                 ],
               ),
-            ),
+              IncidentKeySiteSection(
+                controller: widget.controller,
+                incident: widget.incident,
+              ),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSubtle.withValues(alpha: .5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    _IncidentAction(
+                      label: '登记力量',
+                      icon: Icons.group_add_outlined,
+                      onTap: widget.onAddForce,
+                    ),
+                    const SizedBox(
+                      height: 18,
+                      child: VerticalDivider(width: 1),
+                    ),
+                    _IncidentAction(
+                      label: '图片导入',
+                      icon: Icons.image_outlined,
+                      onTap: widget.onImageImport,
+                    ),
+                    const SizedBox(
+                      height: 18,
+                      child: VerticalDivider(width: 1),
+                    ),
+                    _IncidentAction(
+                      label: '文字导入',
+                      icon: Icons.description_outlined,
+                      onTap: widget.onTextImport,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '参战力量',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    '${widget.forces.length}支队伍',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                ],
+              ),
+              if (widget.forces.isEmpty)
+                Padding(
+                  padding: EdgeInsets.only(top: 1),
+                  child: Text(
+                    '尚未登记参战力量',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.2,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < widget.forces.length; i++) ...[
+                      _ForceRow(
+                        force: widget.forces[i],
+                        onEdit: () => widget.onEditForce(widget.forces[i]),
+                        onRemove: () => widget.onRemoveForce(widget.forces[i]),
+                      ),
+                      if (i < widget.forces.length - 1)
+                        const SizedBox(height: 8),
+                    ],
+                  ],
+                ),
+              TextButton(
+                onPressed: widget.onDetails,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  padding: EdgeInsets.zero,
+                ),
+                child: const Row(
+                  children: [
+                    Expanded(child: Text('警情详情')),
+                    Icon(Icons.chevron_right, size: 18),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: widget.onExit,
+                      icon: const Icon(Icons.logout_outlined, size: 18),
+                      label: const Text('退出当前警情'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: widget.onArchive,
+                      icon: const Icon(Icons.archive_outlined, size: 18),
+                      label: const Text('归档警情'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.alarm,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
       ],
     ),
