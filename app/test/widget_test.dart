@@ -3771,7 +3771,7 @@ void main() {
           status: 'active',
           createdAt: 1,
           lastActivityAt: 1,
-          info: {'original_category': '一级火灾扑救'},
+          info: {'original_category': '一级抢险救援'},
         );
       await pumpTask(tester, c, textScale: 1.3);
       await tester.tap(find.byKey(const Key('toggle-incident-card')));
@@ -3789,17 +3789,20 @@ void main() {
       final field = tester.widget<TextField>(
         find.byKey(const Key('incident-level-field')),
       );
-      expect(field.controller?.text, '一级火灾扑救');
+      expect(field.controller?.text, '一级抢险救援');
+      expect(find.text('一级抢险救援'), findsWidgets);
+      expect(find.text('二级抢险救援'), findsOneWidget);
+      expect(find.text('一级火灾扑救'), findsNothing);
 
-      await tester.tap(find.text('二级火灾扑救'));
+      await tester.tap(find.text('二级抢险救援'));
       await tester.pump();
       await tester.tap(find.byKey(const Key('incident-level-save')));
       await tester.pumpAndSettle();
 
-      expect(api.updatedData?['original_category'], '二级火灾扑救');
-      expect(api.updatedData?['level'], '二级火灾扑救');
-      expect(c.currentIncident?.info['original_category'], '二级火灾扑救');
-      expect(find.textContaining('二级火灾扑救'), findsWidgets);
+      expect(api.updatedData?['original_category'], '二级抢险救援');
+      expect(api.updatedData?['level'], '二级抢险救援');
+      expect(c.currentIncident?.info['original_category'], '二级抢险救援');
+      expect(find.textContaining('二级抢险救援'), findsWidgets);
       expect(tester.takeException(), isNull);
     });
 

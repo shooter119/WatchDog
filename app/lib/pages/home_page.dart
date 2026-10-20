@@ -1676,6 +1676,19 @@ class HomePageState extends State<HomePage> {
           ? currentCategory!
           : incident.info['level']?.toString().trim() ?? '',
     );
+    final currentText = edit.text.trim();
+    final levelPrefix = RegExp(r'^[一二三四五六七八九十]+级').firstMatch(currentText);
+    final categorySuffix = levelPrefix == null
+        ? currentText
+        : currentText.substring(levelPrefix.end).trim();
+    final levelOptions = categorySuffix.isEmpty
+        ? const ['一级', '二级', '三级', '四级']
+        : [
+            '一级$categorySuffix',
+            '二级$categorySuffix',
+            '三级$categorySuffix',
+            '四级$categorySuffix',
+          ];
     final level = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1697,12 +1710,7 @@ class HomePageState extends State<HomePage> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      for (final option in const [
-                        '一级火灾扑救',
-                        '二级火灾扑救',
-                        '三级火灾扑救',
-                        '四级火灾扑救',
-                      ])
+                      for (final option in levelOptions)
                         ChoiceChip(
                           label: Text(option),
                           selected: edit.text.trim() == option,
