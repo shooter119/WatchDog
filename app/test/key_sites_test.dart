@@ -465,6 +465,63 @@ void main() {
     api.dispose();
   });
 
+  testWidgets('新版资料只提示人工更新，确认后关联固定到核对版本', (tester) async {
+    final api = FakeApi()
+      ..linkState = {
+        'link': {
+          'siteId': 'one',
+          'name': '合成单位',
+          'address': '合成地址',
+          'version': 1,
+          'linkedBy': 'm',
+          'linkedByName': '合成成员',
+          'linkedAt': 1,
+        },
+        'revision': 1,
+        'history': [],
+        'newVersionAvailable': true,
+        'active': true,
+      };
+    final controller = FakeController(api);
+    const incident = Incident(
+      id: 'i',
+      number: '合成警情',
+      status: 'active',
+      createdAt: 1,
+      lastActivityAt: 1,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: IncidentKeySiteSection(
+            controller: controller,
+            incident: incident,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('资料 v1'), findsOneWidget);
+    expect(find.text('已有新版资料，请人工核对后更新'), findsOneWidget);
+    expect(controller.changes, 0);
+    await tester.tap(find.text('核对新版'));
+    await tester.pumpAndSettle();
+    expect(find.text('核对重点单位'), findsOneWidget);
+    expect(find.textContaining('确认关联已发布资料 v2'), findsOneWidget);
+    expect(controller.changes, 0);
+    await tester.tap(find.text('确认'));
+    await tester.pumpAndSettle();
+    expect(controller.changes, 1);
+    expect(controller.lastSelected!.siteId, 'one');
+    expect(controller.lastSelected!.version, 2);
+    expect(api.reads, contains(('one', null, null)));
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
+
   testWidgets('扫码之外的资料确认弹窗也随认证失效清除姓名地址', (tester) async {
     final api = FakeApi();
     final controller = FakeController(api);
