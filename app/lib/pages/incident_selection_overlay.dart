@@ -380,32 +380,31 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   ),
                   const SizedBox(height: 20),
                 ] else ...[
-                  Row(
-                    children: [
-                      Container(
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: AppColors.voice.withValues(alpha: 0.13),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.verified_user_outlined,
-                          color: AppColors.voice,
-                          size: 15,
-                        ),
+                  Center(
+                    child: Container(
+                      key: const Key('auth-sheet-handle'),
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.textTertiary.withValues(alpha: 0.42),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
                       ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        '先完成用户认证',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
+                  Text(
+                    '用户认证',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '使用单位账号继续',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                 ],
                 TextField(
                   key: const Key('auth-unit-name'),
@@ -483,8 +482,8 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             foregroundColor: AppColors.onPrimary,
           ),
         ),
-        if (widget.onEnterGuestMode != null) ...[
-          SizedBox(height: hasKeyboard ? 5 : 10),
+        if (!hasKeyboard && widget.onEnterGuestMode != null) ...[
+          const SizedBox(height: 10),
           OutlinedButton.icon(
             key: const Key('auth-guest-mode'),
             onPressed: _busy ? null : widget.onEnterGuestMode,
@@ -699,204 +698,227 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   );
                   final height = math.max(
                     1.0,
-                    math.min(constraints.maxHeight - 20, 640.0),
+                    math.min(
+                      constraints.maxHeight - (hasKeyboard ? 16 : 20),
+                      640.0,
+                    ),
                   );
                   final keyboardAuth =
                       widget.authenticationRequired && hasKeyboard;
+                  final keyboardWidth = math.max(
+                    1.0,
+                    math.min(constraints.maxWidth, 560.0),
+                  );
                   return Align(
                     alignment: keyboardAuth
                         ? Alignment.bottomCenter
                         : Alignment.center,
-                    child: ConstrainedBox(
-                      constraints: keyboardAuth
-                          ? BoxConstraints(maxWidth: width, maxHeight: height)
-                          : BoxConstraints.tightFor(
-                              width: width,
-                              height: height,
-                            ),
-                      child: Material(
-                        key: const Key('incident-selection-overlay'),
-                        color: AppColors.surface,
-                        elevation: 12,
-                        shadowColor: Colors.black.withValues(alpha: 0.3),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppRadius.xl),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            20,
-                            hasKeyboard ? 14 : 22,
-                            20,
-                            hasKeyboard ? 12 : 18,
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: keyboardAuth ? 8 : 0),
+                      child: ConstrainedBox(
+                        constraints: keyboardAuth
+                            ? BoxConstraints(
+                                minWidth: keyboardWidth,
+                                maxWidth: keyboardWidth,
+                                maxHeight: height,
+                              )
+                            : BoxConstraints.tightFor(
+                                width: width,
+                                height: height,
+                              ),
+                        child: Material(
+                          key: const Key('incident-selection-overlay'),
+                          color: AppColors.surface,
+                          elevation: keyboardAuth ? 16 : 12,
+                          shadowColor: Colors.black.withValues(alpha: 0.3),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: keyboardAuth
+                                ? const BorderRadius.vertical(
+                                    top: Radius.circular(AppRadius.xl),
+                                  )
+                                : BorderRadius.circular(AppRadius.xl),
                           ),
-                          child: widget.authenticationRequired
-                              ? (_pendingApp != null
-                                    ? _buildPendingApprovalView()
-                                    : _buildAuthentication())
-                              : Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Container(
-                                          width: 44,
-                                          height: 44,
-                                          decoration: BoxDecoration(
-                                            color: AppColors.voice.withValues(
-                                              alpha: 0.13,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            Icons
-                                                .local_fire_department_outlined,
-                                            color: AppColors.voice,
-                                            size: 26,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                '先选择一份警情',
-                                                style: TextStyle(
-                                                  fontSize: 21,
-                                                  fontWeight: FontWeight.w800,
-                                                ),
-                                              ),
-                                              SizedBox(height: 4),
-                                              Text(
-                                                '请选择新建或加入现有警情，现场记录才会归档到正确的位置。',
-                                                style: TextStyle(
-                                                  color:
-                                                      AppColors.textSecondary,
-                                                  fontSize: 13,
-                                                  height: 1.35,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    if (widget.loading) ...[
-                                      const SizedBox(height: 14),
+                          clipBehavior: Clip.antiAlias,
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              20,
+                              keyboardAuth ? 10 : (hasKeyboard ? 14 : 22),
+                              20,
+                              hasKeyboard ? 12 : 18,
+                            ),
+                            child: widget.authenticationRequired
+                                ? (_pendingApp != null
+                                      ? _buildPendingApprovalView()
+                                      : _buildAuthentication())
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
                                       Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          SizedBox(
-                                            width: 14,
-                                            height: 14,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
+                                          Container(
+                                            width: 44,
+                                            height: 44,
+                                            decoration: BoxDecoration(
+                                              color: AppColors.voice.withValues(
+                                                alpha: 0.13,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                            ),
+                                            child: Icon(
+                                              Icons
+                                                  .local_fire_department_outlined,
+                                              color: AppColors.voice,
+                                              size: 26,
                                             ),
                                           ),
-                                          SizedBox(width: 8),
-                                          Text(
-                                            '正在同步现有警情…',
-                                            style: TextStyle(
-                                              color: AppColors.textSecondary,
-                                              fontSize: 12,
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  '先选择一份警情',
+                                                  style: TextStyle(
+                                                    fontSize: 21,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                                SizedBox(height: 4),
+                                                Text(
+                                                  '请选择新建或加入现有警情，现场记录才会归档到正确的位置。',
+                                                  style: TextStyle(
+                                                    color:
+                                                        AppColors.textSecondary,
+                                                    fontSize: 13,
+                                                    height: 1.35,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
                                       ),
-                                    ],
-                                    if (_error != null) ...[
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        _error!,
-                                        key: const Key(
-                                          'incident-selection-error',
-                                        ),
-                                        style: TextStyle(
-                                          color: AppColors.alarm,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                    const SizedBox(height: 16),
-                                    Expanded(
-                                      child: incidents.isEmpty
-                                          ? const _EmptyIncidentState()
-                                          : ListView.separated(
-                                              key: const Key(
-                                                'incident-selection-list',
+                                      if (widget.loading) ...[
+                                        const SizedBox(height: 14),
+                                        Row(
+                                          children: [
+                                            SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
                                               ),
-                                              padding: EdgeInsets.zero,
-                                              itemCount: incidents.length,
-                                              separatorBuilder: (_, __) =>
-                                                  const Divider(height: 1),
-                                              itemBuilder: (context, index) {
-                                                final incident =
-                                                    incidents[index];
-                                                return _IncidentOption(
-                                                  incident: incident,
-                                                  enabled: !_busy,
-                                                  onTap: () =>
-                                                      _select(incident),
-                                                );
-                                              },
                                             ),
-                                    ),
-                                    const SizedBox(height: 14),
-                                    FilledButton.icon(
-                                      onPressed: _busy ? null : _create,
-                                      icon: const Icon(Icons.add),
-                                      label: const Text('新建警情'),
-                                      style: FilledButton.styleFrom(
-                                        minimumSize: const Size.fromHeight(52),
-                                        backgroundColor: AppColors.voice,
-                                        foregroundColor: AppColors.onPrimary,
+                                            SizedBox(width: 8),
+                                            Text(
+                                              '正在同步现有警情…',
+                                              style: TextStyle(
+                                                color: AppColors.textSecondary,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                      if (_error != null) ...[
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          _error!,
+                                          key: const Key(
+                                            'incident-selection-error',
+                                          ),
+                                          style: TextStyle(
+                                            color: AppColors.alarm,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 16),
+                                      Expanded(
+                                        child: incidents.isEmpty
+                                            ? const _EmptyIncidentState()
+                                            : ListView.separated(
+                                                key: const Key(
+                                                  'incident-selection-list',
+                                                ),
+                                                padding: EdgeInsets.zero,
+                                                itemCount: incidents.length,
+                                                separatorBuilder: (_, __) =>
+                                                    const Divider(height: 1),
+                                                itemBuilder: (context, index) {
+                                                  final incident =
+                                                      incidents[index];
+                                                  return _IncidentOption(
+                                                    incident: incident,
+                                                    enabled: !_busy,
+                                                    onTap: () =>
+                                                        _select(incident),
+                                                  );
+                                                },
+                                              ),
                                       ),
-                                    ),
-                                    if (widget.onOpenKeySites != null)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 8),
-                                        child: OutlinedButton.icon(
+                                      const SizedBox(height: 14),
+                                      FilledButton.icon(
+                                        onPressed: _busy ? null : _create,
+                                        icon: const Icon(Icons.add),
+                                        label: const Text('新建警情'),
+                                        style: FilledButton.styleFrom(
+                                          minimumSize: const Size.fromHeight(
+                                            52,
+                                          ),
+                                          backgroundColor: AppColors.voice,
+                                          foregroundColor: AppColors.onPrimary,
+                                        ),
+                                      ),
+                                      if (widget.onOpenKeySites != null)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 8,
+                                          ),
+                                          child: OutlinedButton.icon(
+                                            onPressed: _busy
+                                                ? null
+                                                : widget.onOpenKeySites,
+                                            icon: const Icon(
+                                              Icons.domain_outlined,
+                                            ),
+                                            label: const Text('查阅重点单位资料'),
+                                          ),
+                                        ),
+                                      if (widget.onOpenSettings != null)
+                                        TextButton.icon(
                                           onPressed: _busy
                                               ? null
-                                              : widget.onOpenKeySites,
+                                              : widget.onOpenSettings,
                                           icon: const Icon(
-                                            Icons.domain_outlined,
+                                            Icons.person_outline,
                                           ),
-                                          label: const Text('查阅重点单位资料'),
-                                        ),
-                                      ),
-                                    if (widget.onOpenSettings != null)
-                                      TextButton.icon(
-                                        onPressed: _busy
-                                            ? null
-                                            : widget.onOpenSettings,
-                                        icon: const Icon(Icons.person_outline),
-                                        label: const Text('个人与设置'),
-                                        style: TextButton.styleFrom(
-                                          minimumSize: const Size.fromHeight(
-                                            48,
+                                          label: const Text('个人与设置'),
+                                          style: TextButton.styleFrom(
+                                            minimumSize: const Size.fromHeight(
+                                              48,
+                                            ),
                                           ),
                                         ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        incidents.isEmpty
+                                            ? '当前没有进行中的警情，可以创建一份新的现场档案。'
+                                            : '如果列表中没有目标警情，也可以新建一份现场档案。',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: AppColors.textTertiary,
+                                          fontSize: 12,
+                                        ),
                                       ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      incidents.isEmpty
-                                          ? '当前没有进行中的警情，可以创建一份新的现场档案。'
-                                          : '如果列表中没有目标警情，也可以新建一份现场档案。',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: AppColors.textTertiary,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                    ],
+                                  ),
+                          ),
                         ),
                       ),
                     ),

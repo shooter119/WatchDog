@@ -2798,7 +2798,18 @@ void main() {
       final card = tester.getRect(
         find.byKey(const Key('incident-selection-overlay')),
       );
-      expect(card.bottom, lessThanOrEqualTo(420.5));
+      expect(card.width, closeTo(320, 0.5));
+      expect(card.bottom, closeTo(412, 1));
+      expect(find.byKey(const Key('auth-sheet-handle')), findsOneWidget);
+      expect(find.byKey(const Key('auth-guest-mode')), findsNothing);
+      final material = tester.widget<Material>(
+        find.byKey(const Key('incident-selection-overlay')),
+      );
+      final shape = material.shape! as RoundedRectangleBorder;
+      final borderRadius = shape.borderRadius as BorderRadius;
+      expect(borderRadius.bottomLeft, Radius.zero);
+      expect(borderRadius.bottomRight, Radius.zero);
+      expect(borderRadius.topLeft, const Radius.circular(AppRadius.xl));
       for (final key in const [
         Key('auth-unit-name'),
         Key('auth-real-name'),
