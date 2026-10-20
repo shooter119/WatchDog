@@ -96,6 +96,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   bool _saveWithoutReview = false;
   bool _stateUnknown = false;
   bool _screenHeld = false;
+  CameraCaptureOrientation _captureOrientation =
+      CameraCaptureOrientation.landscape;
 
   /// 已确认可以离开：置位后放开 PopScope，再执行真正的 pop。
   bool _leaving = false;
@@ -111,17 +113,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    // 现场拍小视频习惯横握手机，固定横屏可以避免成片方向来回翻转，
-    // 也能保证水印版式在成片里始终是横向的。
-    unawaited(
-      SystemChrome.setPreferredOrientations(const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]),
-    );
     WidgetsBinding.instance.addObserver(this);
     _subscription = CameraBridge.events.listen(_onRecordEvent);
-    _bootstrap();
+    unawaited(_initialize());
   }
 
   @override
@@ -240,6 +234,24 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         _statusText = '无法确认录制状态，请点击“重试确认”；确认前请勿退出';
       });
     }
+  }
+
+  Future<void> _initialize() async {
+    final config = await WatermarkSettings.load();
+    if (!mounted) return;
+    setState(() => _captureOrientation = config.captureOrientation);
+    unawaited(
+      SystemChrome.setPreferredOrientations(switch (config.captureOrientation) {
+        CameraCaptureOrientation.landscape => const [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ],
+        CameraCaptureOrientation.portrait => const [
+          DeviceOrientation.portraitUp,
+        ],
+      }),
+    );
+    await _bootstrap();
   }
 
   Future<void> _bootstrap() async {
@@ -790,10 +802,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final creationParams = <String, Object?>{
       'watermark': _watermark.toMap(),
       'maxDurationMs': CameraBridge.maxRecordingDuration.inMilliseconds,
+      'captureOrientation': _captureOrientation.storageValue,
     };
 
-    final landscape =
-        MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
     return PopScope(
       canPop: _leaving,
       onPopInvokedWithResult: (didPop, _) async {
@@ -803,19 +814,23 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: landscape
+        body: _captureOrientation == CameraCaptureOrientation.landscape
             ? Row(
+                key: const Key('camera-landscape-layout'),
                 children: [
                   Expanded(child: _preview(creationParams)),
                   SizedBox(width: 220, child: _bottomBar(vertical: true)),
                 ],
               )
             : Column(
+                key: const Key('camera-portrait-layout'),
                 children: [
-                  // 取景区与控制区分开：水印固定在画面左下角，
-                  // 若控件浮在画面上就会压住水印，现场核对时反而看不清。
-                  Expanded(child: _preview(creationParams)),
-                  _bottomBar(),
+                  AspectRatio(
+                    key: const Key('camera-portrait-preview'),
+                    aspectRatio: 16 / 9,
+                    child: _preview(creationParams),
+                  ),
+                  Expanded(child: _bottomBar()),
                 ],
               ),
       ),
@@ -950,8 +965,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  Flexible(child: _permissionBadges()),
+                  if (_hasPermissionBadges) ...[
+                    const SizedBox(width: 4),
+                    Flexible(child: _permissionBadges()),
+                  ],
                 ],
               ),
             ),
@@ -959,7 +976,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: Align(
-                  alignment: Alignment.centerLeft,
+                  alignment:
+                      _captureOrientation == CameraCaptureOrientation.portrait
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
                   child: _incidentChip(unlinked),
                 ),
               ),
@@ -1028,6 +1048,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final title = widget.controller.currentIncident?.title ?? '';
     final label = unlinked || title.isEmpty ? '未关联警情' : title;
     return Container(
+      key: const Key('camera-incident-chip'),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.black54,
@@ -1063,6 +1084,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   /// 麦克风/定位被拒时给出可见状态，避免「录了没声音、地址是空的」却毫无解释。
+  bool get _hasPermissionBadges =>
+      !_permissions.microphone ||
+      !_permissions.location ||
+      _locating ||
+      !_permissions.preciseLocation;
+
   Widget _permissionBadges() {
     final badges = <Widget>[];
     if (!_permissions.microphone) {
@@ -1100,9 +1127,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             children: [
               Icon(icon, size: 13, color: Colors.white70),
               const SizedBox(width: 4),
-              Text(
-                label,
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
               ),
             ],
           ),
@@ -1153,106 +1184,116 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       ),
       child: SafeArea(
         top: false,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: vertical
-                ? MainAxisAlignment.center
-                : MainAxisAlignment.start,
-            children: [
-              if (_stateUnknown)
-                TextButton(
-                  onPressed: _reconcileRecording,
-                  child: const Text('重试确认'),
-                ),
-              if (_pendingRender != null && !_processing)
-                TextButton.icon(
-                  style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
-                  onPressed: _retryPendingRender,
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: const Text('重新生成水印版'),
-                ),
-              if (!vertical) _modeSwitch(),
-              const SizedBox(height: 14),
-              if (_statusText != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    _statusText!,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              if (_processing)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: LinearProgressIndicator(
-                    value: _processingProgress <= 0
-                        ? null
-                        : _processingProgress,
-                    minHeight: 3,
-                    color: const Color(0xFFFF9500),
-                    backgroundColor: Colors.white12,
-                  ),
-                ),
-              if (vertical) ...[
-                _modeSwitch(),
-                const SizedBox(height: 18),
-                _shutter(),
-                const SizedBox(height: 18),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+        child: CustomScrollView(
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Column(
+                  key: const Key('camera-controls'),
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _roundIcon(
-                      icon: _torch ? Icons.flash_on : Icons.flash_off,
-                      tooltip: _torch ? '关闭手电筒' : '打开手电筒',
-                      onTap: (_capturing || _processing || _starting)
-                          ? null
-                          : _toggleTorch,
-                    ),
-                    const SizedBox(width: 12),
-                    _roundIcon(
-                      icon: Icons.cameraswitch_outlined,
-                      tooltip: '切换镜头',
-                      onTap:
-                          (_recording ||
-                              _starting ||
-                              _capturing ||
-                              _processing ||
-                              _stateUnknown)
-                          ? null
-                          : CameraBridge.switchCamera,
-                    ),
+                    if (_stateUnknown)
+                      TextButton(
+                        onPressed: _reconcileRecording,
+                        child: const Text('重试确认'),
+                      ),
+                    if (_pendingRender != null && !_processing)
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                        ),
+                        onPressed: _retryPendingRender,
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        label: const Text('重新生成水印版'),
+                      ),
+                    if (!vertical) _modeSwitch(),
+                    const SizedBox(height: 14),
+                    if (_statusText != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _statusText!,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    if (_processing)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: LinearProgressIndicator(
+                          value: _processingProgress <= 0
+                              ? null
+                              : _processingProgress,
+                          minHeight: 3,
+                          color: const Color(0xFFFF9500),
+                          backgroundColor: Colors.white12,
+                        ),
+                      ),
+                    if (vertical) ...[
+                      _modeSwitch(),
+                      const SizedBox(height: 18),
+                      _shutter(),
+                      const SizedBox(height: 18),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _roundIcon(
+                            icon: _torch ? Icons.flash_on : Icons.flash_off,
+                            tooltip: _torch ? '关闭手电筒' : '打开手电筒',
+                            onTap: (_capturing || _processing || _starting)
+                                ? null
+                                : _toggleTorch,
+                          ),
+                          const SizedBox(width: 12),
+                          _roundIcon(
+                            icon: Icons.cameraswitch_outlined,
+                            tooltip: '切换镜头',
+                            onTap:
+                                (_recording ||
+                                    _starting ||
+                                    _capturing ||
+                                    _processing ||
+                                    _stateUnknown)
+                                ? null
+                                : CameraBridge.switchCamera,
+                          ),
+                        ],
+                      ),
+                    ] else
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _roundIcon(
+                            icon: _torch ? Icons.flash_on : Icons.flash_off,
+                            tooltip: _torch ? '关闭手电筒' : '打开手电筒',
+                            onTap: (_capturing || _processing || _starting)
+                                ? null
+                                : _toggleTorch,
+                          ),
+                          _shutter(),
+                          _roundIcon(
+                            icon: Icons.cameraswitch_outlined,
+                            tooltip: '切换镜头',
+                            onTap:
+                                (_recording ||
+                                    _starting ||
+                                    _capturing ||
+                                    _processing ||
+                                    _stateUnknown)
+                                ? null
+                                : CameraBridge.switchCamera,
+                          ),
+                        ],
+                      ),
                   ],
                 ),
-              ] else
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _roundIcon(
-                      icon: _torch ? Icons.flash_on : Icons.flash_off,
-                      tooltip: _torch ? '关闭手电筒' : '打开手电筒',
-                      onTap: (_capturing || _processing || _starting)
-                          ? null
-                          : _toggleTorch,
-                    ),
-                    _shutter(),
-                    _roundIcon(
-                      icon: Icons.cameraswitch_outlined,
-                      tooltip: '切换镜头',
-                      onTap:
-                          (_recording ||
-                              _starting ||
-                              _capturing ||
-                              _processing ||
-                              _stateUnknown)
-                          ? null
-                          : CameraBridge.switchCamera,
-                    ),
-                  ],
-                ),
-            ],
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );

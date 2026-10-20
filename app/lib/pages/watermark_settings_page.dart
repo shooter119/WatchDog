@@ -225,9 +225,12 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                     }),
                   ),
                   const SizedBox(height: 18),
+                  const SectionTitle(text: '拍摄界面方向'),
+                  _orientationPicker(),
+                  const SizedBox(height: 18),
                   Text(
                     '水印在按下快门或开始录像那一刻固定，成片中的时间、地址不会随时间跳动。'
-                    '核对页只提供「保存并分享」和「仅保存」：两者都会把带水印版与无水印版成对保存到手机相册；保存并分享只分享带水印文件，且不附带口述文字。',
+                    '核对页只提供「保存并分享」和「仅保存」：两者都会把带水印版与无水印版成对保存到手机相册；保存成功后 App 内工作文件会在后台清理，手机相册是最终保存位置。',
                     style: TextStyle(
                       fontSize: 12,
                       color: AppColors.textSecondary,
@@ -400,6 +403,96 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _orientationPicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '两种模式成片都是横版 16:9，区别是取景和操作方式。修改后下次进入水印相机生效。',
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.5,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        RadioGroup<CameraCaptureOrientation>(
+          groupValue: _settings.captureOrientation,
+          onChanged: (value) {
+            if (_saving ||
+                value == null ||
+                value == _settings.captureOrientation) {
+              return;
+            }
+            setState(() {
+              _dirty = true;
+              _settings = _settings.copyWith(captureOrientation: value);
+            });
+          },
+          child: Column(
+            children: [
+              _orientationTile(
+                key: const Key('capture-orientation-landscape'),
+                value: CameraCaptureOrientation.landscape,
+                title: '横屏拍摄（16:9）',
+                subtitle: '自动横屏，保留完整横版视野，控制区在画面右侧',
+              ),
+              const SizedBox(height: 8),
+              _orientationTile(
+                key: const Key('capture-orientation-portrait'),
+                value: CameraCaptureOrientation.portrait,
+                title: '竖屏拍摄（16:9中心裁切）',
+                subtitle: '锁定竖直，控制区在画面下方；成片仍为横版，但会裁掉上下视野',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _orientationTile({
+    required Key key,
+    required CameraCaptureOrientation value,
+    required String title,
+    required String subtitle,
+  }) {
+    final selected = _settings.captureOrientation == value;
+    return RadioListTile<CameraCaptureOrientation>(
+      key: key,
+      value: value,
+      enabled: !_saving,
+      selected: selected,
+      isThreeLine: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+          color: selected ? AppColors.voice : AppColors.border,
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      tileColor: selected ? AppColors.surface : Colors.transparent,
+      activeColor: AppColors.voice,
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: AppColors.textPrimary,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.4,
+          color: AppColors.textSecondary,
+        ),
       ),
     );
   }

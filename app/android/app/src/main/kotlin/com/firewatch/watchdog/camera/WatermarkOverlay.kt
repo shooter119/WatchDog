@@ -161,69 +161,57 @@ object WatermarkOverlay {
         val buffer = frame.size
         if (buffer.width <= 0 || buffer.height <= 0) return
         val rotation = ((frame.rotationDegrees % 360) + 360) % 360
-        val uprightWidth = if (rotation % 180 == 0) buffer.width else buffer.height
-        val uprightHeight = if (rotation % 180 == 0) buffer.height else buffer.width
-        if (uprightWidth <= 0 || uprightHeight <= 0) return
-
-        // 直立 → 缓冲区 的变换矩阵。
-        // 实测 rotationDegrees 是「缓冲区需要顺时针转多少度才直立」，
-        // 而这里是从直立坐标往缓冲区贴图，方向相反，必须用 360 - rotation。
-        val uprightToBuffer = (360 - rotation) % 360
-        val matrix = Matrix()
-        matrix.setRotate(uprightToBuffer.toFloat())
-        when (uprightToBuffer) {
-            90 -> matrix.postTranslate(buffer.width.toFloat(), 0f)
-            180 -> matrix.postTranslate(buffer.width.toFloat(), buffer.height.toFloat())
-            270 -> matrix.postTranslate(0f, buffer.height.toFloat())
-        }
-        if (frame.isMirroring) matrix.postScale(-1f, 1f, uprightWidth / 2f, uprightHeight / 2f)
-
-        // 缓冲区里的裁剪框 → 直立坐标（预览实际可见的范围）
-        val inverse = Matrix()
-        if (!matrix.invert(inverse)) return
         val crop = frame.cropRect
-        val corners = floatArrayOf(
-            crop.left.toFloat(), crop.top.toFloat(),
-            crop.right.toFloat(), crop.top.toFloat(),
-            crop.left.toFloat(), crop.bottom.toFloat(),
-            crop.right.toFloat(), crop.bottom.toFloat(),
+        val geometry = WatermarkFrameGeometry.create(
+            bufferWidth = buffer.width,
+            bufferHeight = buffer.height,
+            cropLeft = crop.left,
+            cropTop = crop.top,
+            cropRight = crop.right,
+            cropBottom = crop.bottom,
+            rotationDegrees = rotation,
+            mirroring = frame.isMirroring,
         )
-        inverse.mapPoints(corners)
-        var minX = corners[0]; var maxX = corners[0]
-        var minY = corners[1]; var maxY = corners[1]
-        for (i in 2 until corners.size step 2) {
-            minX = min(minX, corners[i]); maxX = kotlin.math.max(maxX, corners[i])
-            minY = min(minY, corners[i + 1]); maxY = kotlin.math.max(maxY, corners[i + 1])
-        }
-        val visible = if (maxX - minX <= 1f || maxY - minY <= 1f) {
-            RectF(0f, 0f, uprightWidth.toFloat(), uprightHeight.toFloat())
-        } else {
-            RectF(
-                minX.coerceAtLeast(0f),
-                minY.coerceAtLeast(0f),
-                maxX.coerceAtMost(uprightWidth.toFloat()),
-                maxY.coerceAtMost(uprightHeight.toFloat()),
-            )
-        }
+        if (geometry.displayWidth <= 0 || geometry.displayHeight <= 0) return
 
         val key = buildString {
-            append(uprightWidth).append('x').append(uprightHeight)
-            append('|').append(visible)
+            append(geometry.displayWidth).append('x').append(geometry.displayHeight)
             append('|').append(model.hashCode())
         }
         val bitmap = if (key == cachedKey && cachedBitmap != null) {
             cachedBitmap!!
         } else {
             val fresh = Bitmap.createBitmap(
-                uprightWidth,
-                uprightHeight,
+                geometry.displayWidth,
+                geometry.displayHeight,
                 Bitmap.Config.ARGB_8888,
             )
-            drawInArea(Canvas(fresh), model, visible)
+            drawInArea(
+                Canvas(fresh),
+                model,
+                RectF(
+                    0f,
+                    0f,
+                    geometry.displayWidth.toFloat(),
+                    geometry.displayHeight.toFloat(),
+                ),
+                constrainToTargetAspect = false,
+            )
             cachedBitmap?.recycle()
             cachedBitmap = fresh
             cachedKey = key
             fresh
+        }
+
+        val matrix = Matrix()
+        if (!matrix.setPolyToPoly(
+            geometry.sourcePoints(),
+            0,
+            geometry.destinationPoints(),
+            0,
+            3,
+        )) {
+            return
         }
 
         if (DEBUG_LOG.compareAndSet(false, true)) {
@@ -231,10 +219,9 @@ object WatermarkOverlay {
                 "WMWatermark",
                 "buffer=" + buffer.width + "x" + buffer.height +
                     " rot=" + rotation +
-                    " upright=" + uprightWidth + "x" + uprightHeight +
+                    " display=" + geometry.displayWidth + "x" + geometry.displayHeight +
                     " crop=" + frame.cropRect +
-                    " mirror=" + frame.isMirroring +
-                    " visible=" + visible,
+                    " mirror=" + frame.isMirroring,
             )
         }
 
@@ -252,7 +239,12 @@ object WatermarkOverlay {
         cachedKey = null
     }
 
-    private fun drawInArea(canvas: Canvas, model: WatermarkModel, area: RectF) {
+    private fun drawInArea(
+        canvas: Canvas,
+        model: WatermarkModel,
+        area: RectF,
+        constrainToTargetAspect: Boolean = true,
+    ) {
         if (area.width() <= 0f || area.height() <= 0f) return
 
         val rows = buildRows(model)
@@ -261,7 +253,7 @@ object WatermarkOverlay {
         // 相机缓冲区可能是 4:3，而成片按 16:9 裁剪；直接在缓冲区底部画，
         // 预览里完整的卡片到了照片里会被裁掉下半截。这里先把 16:9 安全区
         // 算出来，卡片贴着安全区底部，照片、视频和预览都能完整看到。
-        val safe = safeArea(area)
+        val safe = if (constrainToTargetAspect) safeArea(area) else area
 
         var metrics = measureCard(rows, model, safe.width() * CARD_WIDTH_RATIO)
         // 所有字段都开、地址和天气又换行时卡片会明显变高；按可见高度兜底

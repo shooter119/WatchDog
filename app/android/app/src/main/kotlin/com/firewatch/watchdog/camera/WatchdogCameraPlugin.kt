@@ -537,10 +537,13 @@ class CameraPreviewView(
     init {
         val owner = context.findLifecycleOwner()
             ?: throw IllegalStateException("相机预览需要 LifecycleOwner 上下文")
+        val captureOrientation =
+            (params?.get("captureOrientation") as? String) ?: "landscape"
         session = CameraSession(
             context = context,
             lifecycleOwner = owner,
             previewView = previewView,
+            captureOrientation = captureOrientation,
             callbacks = object : CameraSession.Callbacks {
                 override fun onRecordingEvent(event: Map<String, Any?>) = emit(event)
                 override fun onError(code: String, message: String) {

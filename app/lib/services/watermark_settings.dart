@@ -2,6 +2,21 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// 拍摄界面方向。两种模式最终都输出横版 16:9；
+/// 区别是竖屏模式会从竖幅画面中裁切出横向取景区。
+enum CameraCaptureOrientation {
+  landscape('landscape'),
+  portrait('portrait');
+
+  const CameraCaptureOrientation(this.storageValue);
+
+  final String storageValue;
+
+  static CameraCaptureOrientation fromStorage(Object? value) {
+    return value == portrait.storageValue ? portrait : landscape;
+  }
+}
+
 /// 水印相机参数。
 ///
 /// 刻意与账号信息解耦：单位抬头、拍摄部门都可以单独填写，不强制绑定登录身份。
@@ -22,6 +37,7 @@ class WatermarkSettings {
   final bool showLocation;
   final bool showCoordinates;
   final bool showLogo;
+  final CameraCaptureOrientation captureOrientation;
 
   const WatermarkSettings({
     this.unitTitle = '',
@@ -32,6 +48,7 @@ class WatermarkSettings {
     this.showLocation = true,
     this.showCoordinates = true,
     this.showLogo = true,
+    this.captureOrientation = CameraCaptureOrientation.landscape,
   });
 
   static const WatermarkSettings defaults = WatermarkSettings();
@@ -45,6 +62,7 @@ class WatermarkSettings {
     bool? showLocation,
     bool? showCoordinates,
     bool? showLogo,
+    CameraCaptureOrientation? captureOrientation,
   }) {
     return WatermarkSettings(
       unitTitle: unitTitle ?? this.unitTitle,
@@ -55,6 +73,7 @@ class WatermarkSettings {
       showLocation: showLocation ?? this.showLocation,
       showCoordinates: showCoordinates ?? this.showCoordinates,
       showLogo: showLogo ?? this.showLogo,
+      captureOrientation: captureOrientation ?? this.captureOrientation,
     );
   }
 
@@ -67,6 +86,7 @@ class WatermarkSettings {
     'showLocation': showLocation,
     'showCoordinates': showCoordinates,
     'showLogo': showLogo,
+    'captureOrientation': captureOrientation.storageValue,
   };
 
   static WatermarkSettings fromJson(Map<String, dynamic> json) {
@@ -81,6 +101,9 @@ class WatermarkSettings {
       showLocation: flag('showLocation'),
       showCoordinates: flag('showCoordinates'),
       showLogo: flag('showLogo'),
+      captureOrientation: CameraCaptureOrientation.fromStorage(
+        json['captureOrientation'],
+      ),
     );
   }
 

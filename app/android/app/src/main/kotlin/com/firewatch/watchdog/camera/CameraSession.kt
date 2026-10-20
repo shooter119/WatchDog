@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.hardware.display.DisplayManager
 import android.view.Surface
+import android.util.Rational
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.View
@@ -22,6 +23,7 @@ import androidx.camera.core.SurfaceRequest
 import androidx.camera.core.SurfaceOutput
 import com.google.common.util.concurrent.ListenableFuture
 import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.ViewPort
 import androidx.camera.effects.OverlayEffect
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
@@ -49,6 +51,7 @@ class CameraSession(
     private val lifecycleOwner: LifecycleOwner,
     private val previewView: PreviewView,
     private val callbacks: Callbacks,
+    captureOrientation: String,
 ) {
     interface Callbacks {
         fun onRecordingEvent(event: Map<String, Any?>)
@@ -74,6 +77,7 @@ class CameraSession(
     @Volatile
     private var disposed = false
     private var started = false
+    private val portraitCropMode = captureOrientation == "portrait"
 
     /** 当前生效的水印；录制开始时冻结时间戳并保持不变。 */
     @Volatile
@@ -121,6 +125,7 @@ class CameraSession(
 
         // 预览、照片、录像统一 16:9：三者共用同一个 OverlayEffect，
         // 若宽高比不同（例如照片 4:3、录像 16:9），水印在成片里会被裁掉边缘。
+        // 竖屏模式再通过 ViewPort 从竖幅画面中心裁出 16:9，三路成片保持同一切片。
         val preview = Preview.Builder()
             .setTargetRotation(rotation)
             .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
@@ -167,11 +172,10 @@ class CameraSession(
         // 与相机帧混合输出。这里绝不能再调用 drawFrameAsync：
         // 那会把同一帧二次消费，触发 "Frame is already empty" 崩溃。
         effect.setOnDrawListener { frame ->
-            val canvas = frame.overlayCanvas
-            if (canvas == null || disposed) {
+            if (disposed) {
                 false
             } else {
-                WatermarkOverlay.draw(canvas, frame, watermark)
+                WatermarkOverlay.draw(frame.overlayCanvas, frame, watermark)
                 true
             }
         }
@@ -197,12 +201,19 @@ class CameraSession(
             effect.targets, effect.transformation, effect.outputOption,
             effect.executor, processor, effect.errorListener,
         ) {}
-        val group = UseCaseGroup.Builder()
+        val groupBuilder = UseCaseGroup.Builder()
             .addUseCase(preview)
             .addUseCase(capture)
             .addUseCase(video)
             .addEffect(trackedEffect)
-            .build()
+        if (portraitCropMode) {
+            groupBuilder.setViewPort(
+                ViewPort.Builder(Rational(16, 9), rotation)
+                    .setScaleType(ViewPort.FILL_CENTER)
+                    .build(),
+            )
+        }
+        val group = groupBuilder.build()
 
         this.preview = preview
         imageCapture = capture
@@ -226,8 +237,14 @@ class CameraSession(
     private fun isReadyForBind(): Boolean {
         if (disposed || provider == null || previewView.display == null) return false
         if (previewView.width <= 0 || previewView.height <= 0) return false
-        if (context.resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE ||
-            previewView.width <= previewView.height) {
+        val configurationReady = if (portraitCropMode) {
+            // 竖屏取景区本身是 16:9 横向矩形，因此不能再要求 height > width。
+            context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        } else {
+            context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+                previewView.width > previewView.height
+        }
+        if (!configurationReady) {
             return false
         }
         return true
