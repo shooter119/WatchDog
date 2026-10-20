@@ -3112,9 +3112,6 @@ class _IncidentPicker extends StatelessWidget {
                     ),
                     itemBuilder: (context, index) {
                       final incident = activeIncidents[index];
-                      final hasManualTitle = (incident.title ?? '')
-                          .trim()
-                          .isNotEmpty;
                       return Material(
                         color: AppColors.surface,
                         child: InkWell(
@@ -3138,9 +3135,7 @@ class _IncidentPicker extends StatelessWidget {
                                       ),
                                       const SizedBox(height: 5),
                                       Text(
-                                        hasManualTitle
-                                            ? '${incident.number} · 处置中'
-                                            : '处置中',
+                                        '处置中',
                                         style: TextStyle(
                                           color: AppColors.voice,
                                           fontSize: 13,
@@ -3260,6 +3255,9 @@ class _TaskBarState extends State<_TaskBar> {
     if (oldWidget.incident.id != widget.incident.id) _expanded = false;
   }
 
+  String get _location =>
+      (widget.incident.info['location']?.toString() ?? '').trim();
+
   @override
   Widget build(BuildContext context) => Container(
     key: const Key('incident-card'),
@@ -3350,24 +3348,25 @@ class _TaskBarState extends State<_TaskBar> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.schedule_outlined,
-                        size: 14,
-                        color: AppColors.textTertiary,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          widget.incident.number,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textTertiary,
+                      if (_location.isNotEmpty)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(
+                              _location,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
+                        )
+                      else
+                        const Spacer(),
                       IconButton(
                         key: const Key('rename-incident'),
                         onPressed: widget.onRename,
@@ -3380,24 +3379,6 @@ class _TaskBarState extends State<_TaskBar> {
                       ),
                     ],
                   ),
-                  if (widget.incident.info.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      [
-                            widget.incident.info['original_category'],
-                            widget.incident.info['location'],
-                          ]
-                          .whereType<String>()
-                          .where((s) => s.isNotEmpty)
-                          .join(' · '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
                   IncidentKeySiteSection(
                     controller: widget.controller,
                     incident: widget.incident,

@@ -983,7 +983,6 @@ class _IncidentOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasManualTitle = (incident.title ?? '').trim().isNotEmpty;
     return Material(
       color: AppColors.surface,
       child: InkWell(
@@ -1025,7 +1024,7 @@ class _IncidentOption extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      hasManualTitle ? '${incident.number} · 处置中' : '处置中',
+                      '处置中',
                       style: TextStyle(
                         color: AppColors.voice,
                         fontSize: 12,

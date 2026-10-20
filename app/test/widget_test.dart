@@ -3392,6 +3392,7 @@ void main() {
               id: 'i1',
               number: '2026-8-9-8-59',
               title: '小区火灾',
+              info: {'original_category': '一级火灾扑救', 'location': '幸福街道幸福小区地下车库'},
               status: 'active',
               createdAt: 1,
               lastActivityAt: 1,
@@ -3400,7 +3401,8 @@ void main() {
       expect(find.byKey(const Key('incident-card')), findsOneWidget);
       expect(find.text('小区火灾'), findsOneWidget);
       expect(find.text('2026-8-9-8-59'), findsNothing);
-      expect(find.text('力量待登记'), findsOneWidget);
+      expect(find.textContaining('力量待登记'), findsOneWidget);
+      expect(find.textContaining('一级火灾扑救'), findsOneWidget);
       expect(find.text('登记力量'), findsNothing);
       final collapsedHeight = tester
           .getSize(find.byKey(const Key('incident-card')))
@@ -3408,7 +3410,9 @@ void main() {
       expect(collapsedHeight, lessThan(120));
       await tester.tap(find.byKey(const Key('toggle-incident-card')));
       await tester.pumpAndSettle();
-      expect(find.text('2026-8-9-8-59'), findsOneWidget);
+      expect(find.text('2026-8-9-8-59'), findsNothing);
+      expect(find.textContaining('一级火灾扑救'), findsNWidgets(1));
+      expect(find.text('幸福街道幸福小区地下车库'), findsOneWidget);
       expect(find.text('登记力量'), findsOneWidget);
       await tester.tap(find.byKey(const Key('toggle-incident-card')));
       await tester.pumpAndSettle();
@@ -3558,6 +3562,7 @@ void main() {
         await tester.pumpAndSettle();
       }
       expect(find.text('幸福小区住宅楼地下车库及周边商铺火灾现场处置警情'), findsOneWidget);
+      expect(find.text('2026年8月9日13时24分1#警情'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
