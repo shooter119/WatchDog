@@ -96,10 +96,10 @@ stopped=1
 "${compose[@]}" exec -T database pg_dump -U watchdog -d watchdog -Fc > "$backup/database.dump"
 "${compose[@]}" exec -T database pg_restore --list < "$backup/database.dump" > "$backup/database.contents"
 mkdir "$backup/app-data"
-docker cp "$cid:/app/data/." "$backup/app-data/"
+docker cp -a "$cid:/app/data/." "$backup/app-data/"
 tar -czf "$backup/private-data.tgz" -C "$backup/app-data" .
 if [[ -z "$old_volume" ]]; then
-  docker run --rm -u 0 --entrypoint sh -v "$volume:/restore" -v "$backup/app-data:/seed:ro" "$old_image" -c 'cp -a /seed/. /restore/'
+  docker run --rm -u 0 --entrypoint sh -v "$volume:/restore" -v "$backup/app-data:/seed:ro" "$old_image" -c 'cp -a /seed/. /restore/ && chown -R 1000:1000 /restore && chmod 700 /restore'
 fi
 docker image tag "watchdog-backend:candidate-$stamp" "${project}-backend"
 activated=1
@@ -112,6 +112,7 @@ for attempt in $(seq 1 40); do
   sleep 2
 done
 [[ "$healthy" == 1 ]]
+docker exec "$current" node -e 'const fs=require("node:fs"),p=require("node:path");const root=p.resolve(process.env.WATCHDOG_DATA_DIR||"/app/data","private-key-sites");fs.mkdirSync(root,{recursive:true,mode:0o700});fs.accessSync(root,fs.constants.W_OK);console.log("private storage writable")'
 # Preserve the bind-mounted file inode so Caddy reads the new contents.
 cat "$backup/candidate/deploy/vps/Caddyfile" > deploy/vps/Caddyfile
 changed_caddy=1
