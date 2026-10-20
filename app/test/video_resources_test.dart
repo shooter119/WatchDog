@@ -115,6 +115,23 @@ class _VideoController extends AppController {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('PostgreSQL BIGINT 字符串可解析为整数', () {
+    final resource = VideoResource.fromJson({
+      'id': 'camera-1',
+      'name': '现场监控',
+      'stream_url': 'https://video.example.test/live.flv',
+      'description': '',
+      'active': true,
+      'sort_order': '10',
+      'version': '2',
+      'updated_at': '1792510609327',
+    });
+
+    expect(resource.sortOrder, 10);
+    expect(resource.version, 2);
+    expect(resource.updatedAt, 1792510609327);
+  });
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('首页提供视频资源模块', (tester) async {

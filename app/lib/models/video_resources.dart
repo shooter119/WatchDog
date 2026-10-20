@@ -25,8 +25,15 @@ class VideoResource {
     streamUrl: json['stream_url']?.toString() ?? '',
     description: json['description']?.toString() ?? '',
     active: json['active'] != false,
-    sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
-    version: (json['version'] as num?)?.toInt() ?? 1,
-    updatedAt: (json['updated_at'] as num?)?.toInt() ?? 0,
+    sortOrder: _integer(json['sort_order'], 0),
+    version: _integer(json['version'], 1),
+    // PostgreSQL returns BIGINT values through pg as strings.
+    updatedAt: _integer(json['updated_at'], 0),
   );
+
+  static int _integer(Object? value, int fallback) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
 }
