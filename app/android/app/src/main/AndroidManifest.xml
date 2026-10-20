@@ -91,5 +91,10 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- Android 11+ 需要显式声明拨号查询，用于从警情详情打开系统拨号盘。 -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
     </queries>
 </manifest>

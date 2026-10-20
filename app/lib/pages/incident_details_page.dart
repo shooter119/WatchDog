@@ -1,20 +1,26 @@
-import '../state/app_controller.dart';
-import 'incident_key_site_section.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../api/api_client.dart';
 import '../models/models.dart';
+import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import 'incident_import_page.dart';
+import 'incident_key_site_section.dart';
+
+typedef PhoneLauncher = Future<bool> Function(Uri uri);
 
 class IncidentDetailsPage extends StatefulWidget {
   final AppController? controller;
   final ApiClient api;
   final Incident incident;
+  final PhoneLauncher? phoneLauncher;
   const IncidentDetailsPage({
     super.key,
     this.controller,
     required this.api,
     required this.incident,
+    this.phoneLauncher,
   });
   @override
   State<IncidentDetailsPage> createState() => _IncidentDetailsPageState();
@@ -24,7 +30,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
   late final ApiClient _api = widget.api.forIncident(widget.incident.id);
   Map<String, dynamic>? _detail;
   String? _error;
-  bool _reveal = false, _busy = false;
+  bool _busy = false;
   @override
   void initState() {
     super.initState();
@@ -48,6 +54,25 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
       }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
+    }
+  }
+
+  Future<void> _dialPhone(String rawPhone) async {
+    final phone = rawPhone.trim();
+    if (phone.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    final launcher =
+        widget.phoneLauncher ??
+        (value) => launchUrl(value, mode: LaunchMode.externalApplication);
+    try {
+      if (await launcher(uri)) return;
+    } catch (_) {
+      // Fall through to the same user-visible error for unsupported devices.
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法打开拨号界面')));
     }
   }
 
@@ -138,7 +163,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
           children: [
             if (widget.controller != null)
               IncidentKeySiteSection(
@@ -147,9 +172,9 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
               ),
             Text(
               widget.incident.displayName,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             if (_detail?['offline'] == true)
               Text(
                 '当前显示本机缓存，联网后刷新可获取最新资料。',
@@ -165,41 +190,26 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
               if (data.isEmpty) const Text('尚未补充警情资料，可从首页导入图片或文字。'),
               for (final field in incidentFieldLabels.entries)
                 if (data[field.key]?.toString().isNotEmpty == true)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      field.value,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    subtitle: SelectableText(
-                      data[field.key].toString(),
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
+                  _DetailField(
+                    label: field.value,
+                    value: data[field.key].toString(),
                   ),
               if (contacts.isNotEmpty) ...[
-                const Divider(),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('岗位人员与联系方式'),
-                  subtitle: const Text('联系方式仅用于本警情查看'),
-                  value: _reveal,
-                  onChanged: (v) => setState(() => _reveal = v),
+                const Divider(height: 20),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    '岗位人员与联系方式',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
-                for (final c in contacts)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('${c['role']} · ${c['name']}'),
-                    subtitle: Text(
-                      _reveal
-                          ? c['phone'].toString()
-                          : _maskPhone(c['phone'].toString()),
-                    ),
+                for (var i = 0; i < contacts.length; i++)
+                  _ContactRow(
+                    key: ValueKey('incident-contact-$i'),
+                    role: contacts[i]['role']?.toString() ?? '',
+                    name: contacts[i]['name']?.toString() ?? '',
+                    phone: contacts[i]['phone']?.toString() ?? '',
+                    onCall: _dialPhone,
                   ),
               ],
               for (final field in {
@@ -215,9 +225,12 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
                     title: Text(field.value),
                     children: [
                       for (final item in data[field.key] as List)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(item.toString()),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(item.toString()),
+                          ),
                         ),
                     ],
                   ),
@@ -246,6 +259,107 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
   }
 }
 
-String _maskPhone(String value) => value.length < 7
-    ? '••••'
-    : '${value.substring(0, 3)}••••${value.substring(value.length - 4)}';
+class _DetailField extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DetailField({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 1),
+        SelectableText(
+          value,
+          style: TextStyle(
+            fontSize: 15,
+            height: 1.35,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ContactRow extends StatelessWidget {
+  final String role;
+  final String name;
+  final String phone;
+  final ValueChanged<String> onCall;
+
+  const _ContactRow({
+    super.key,
+    required this.role,
+    required this.name,
+    required this.phone,
+    required this.onCall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final normalizedPhone = phone.trim();
+    final label = [
+      role,
+      name,
+    ].where((value) => value.trim().isNotEmpty).join(' · ');
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: normalizedPhone.isEmpty ? null : () => onCall(normalizedPhone),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (label.isNotEmpty)
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      if (normalizedPhone.isNotEmpty) ...[
+                        const SizedBox(height: 1),
+                        Text(
+                          normalizedPhone,
+                          style: TextStyle(
+                            fontSize: 15,
+                            height: 1.25,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.actionPrimary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (normalizedPhone.isNotEmpty)
+                  Icon(
+                    Icons.call_outlined,
+                    size: 20,
+                    color: AppColors.actionPrimary,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
