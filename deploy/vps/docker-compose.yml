@@ -21,6 +21,7 @@ services:
       context: ../../backend
       args:
         NODE_IMAGE: docker.m.daocloud.io/library/node:24-bookworm-slim
+        DEBIAN_MIRROR: https://mirrors.aliyun.com
     restart: unless-stopped
     env_file:
       - ../../backend/.env.production

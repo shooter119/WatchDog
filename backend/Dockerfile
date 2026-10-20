@@ -4,7 +4,12 @@ FROM ${NODE_IMAGE}
 WORKDIR /app
 
 # Private document conversion and CJK rendering; credentials stay in the service environment.
-RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils libreoffice-writer fonts-noto-cjk \
+ARG DEBIAN_MIRROR=https://deb.debian.org
+# Slim has no system CA bundle. Bootstrap from Node's bundled public roots,
+# then install Debian's CA package; HTTPS verification stays enabled throughout.
+RUN node -e "const fs=require('node:fs');fs.mkdirSync('/etc/ssl/certs',{recursive:true});fs.writeFileSync('/etc/ssl/certs/ca-certificates.crt',require('node:tls').rootCertificates.join('\n')+'\n')" \
+    && sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates poppler-utils libreoffice-writer fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --chown=node:node package.json package-lock.json ./

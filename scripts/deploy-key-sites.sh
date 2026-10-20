@@ -24,7 +24,7 @@ const fs = require('node:fs'), assert = require('node:assert/strict');
 const root = process.argv[2], log = fs.readFileSync(`${root}/backend.log`, 'utf8');
 assert.ok(Number(/ℹ tests (\d+)/.exec(log)?.[1]) >= 252); assert.match(log, /ℹ fail 0/);
 const done = fs.readFileSync(`${root}/app.jsonl`, 'utf8').split('\n').map(line => { try { return JSON.parse(line); } catch { return {}; } });
-assert.ok(done.filter(item => item.type === 'testDone' && !item.hidden && !item.skipped).length >= 351);
+assert.ok(done.filter(item => item.type === 'testDone' && !item.hidden && !item.skipped).length >= 352);
 assert.ok(done.some(item => item.type === 'done' && item.success === true));
 assert.match(fs.readFileSync(`${root}/analyze.log`, 'utf8'), /No issues found/);
 JS
@@ -43,6 +43,7 @@ cid="$("${compose[@]}" ps -q backend)"; caddy="$("${compose[@]}" ps -q caddy)"
 old_image="$(docker inspect --format '{{.Image}}' "$cid")"
 project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$cid")"
 volume="${project}_import-data"
+printf '%s\n' "$project" > "$backup/compose-project"
 old_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{.Name}}{{end}}{{end}}' "$cid")"
 [[ -z "$old_volume" || "$old_volume" == "$volume" ]] || { echo '私有卷名称与预期不一致'; exit 1; }
 docker volume create "$volume" >/dev/null
@@ -57,7 +58,7 @@ mkdir "$backup/candidate"
 tar -xzf "$backup/candidate.tgz" -C "$backup/candidate"
 docker cp "$backup/candidate/deploy/vps/Caddyfile" "$caddy:/tmp/watchdog-$stamp.Caddyfile"
 docker exec "$caddy" caddy validate --config "/tmp/watchdog-$stamp.Caddyfile" --adapter caddyfile
-docker build --build-arg NODE_IMAGE=docker.m.daocloud.io/library/node:24-bookworm-slim -t "watchdog-backend:candidate-$stamp" "$backup/candidate/backend"
+docker build --build-arg NODE_IMAGE=docker.m.daocloud.io/library/node:24-bookworm-slim --build-arg DEBIAN_MIRROR=https://mirrors.aliyun.com -t "watchdog-backend:candidate-$stamp" "$backup/candidate/backend"
 cp -a "$backup/candidate/backend/." backend/
 cp "$backup/candidate/deploy/vps/docker-compose.yml" deploy/vps/docker-compose.yml
 cat > "$backup/rollback.sh" <<'ROLLBACK'
@@ -66,8 +67,7 @@ set -euo pipefail
 root="$1"; backup="$2"
 cd "$root"
 compose=(docker compose -f deploy/vps/docker-compose.yml)
-cid="$("${compose[@]}" ps -q backend)"
-project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$cid")"
+project="$(cat "$backup/compose-project")"
 caddy="$("${compose[@]}" ps -q caddy)"
 docker image tag "$(cat "$backup/old-image-id")" "${project}-backend"
 "${compose[@]}" up -d --no-deps --no-build backend
