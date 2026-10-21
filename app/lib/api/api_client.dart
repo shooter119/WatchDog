@@ -1314,11 +1314,41 @@ class ApiClient {
         .toList();
   }
 
+  Future<bool> fetchMemberReviewCapability() async {
+    final res = await _client
+        .get(_uri('/api/unit-members/capability'), headers: _headers)
+        .timeout(const Duration(seconds: 12));
+    final body = _decodeJson(res, fallback: '获取审批权限失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取审批权限失败');
+    }
+    if (body is! Map || body['can_review_members'] is! bool) {
+      throw _responseShapeException(res, '审批权限响应格式异常');
+    }
+    return body['can_review_members'] as bool;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMemberReviewHistory({
+    int offset = 0,
+  }) async {
+    final res = await _client
+        .get(
+          _uri('/api/unit-members/review-history?offset=$offset'),
+          headers: _headers,
+        )
+        .timeout(const Duration(seconds: 12));
+    final body = _decodeJson(res, fallback: '获取审批记录失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取审批记录失败');
+    }
+    if (body is! List) throw _responseShapeException(res, '审批记录响应格式异常');
+    return body.map((row) => Map<String, dynamic>.from(row as Map)).toList();
+  }
+
   Future<List<UnitMember>> fetchPendingMembers() async {
-    final res = await _client.get(
-      _uri('/api/unit-members/pending'),
-      headers: _headers,
-    );
+    final res = await _client
+        .get(_uri('/api/unit-members/pending'), headers: _headers)
+        .timeout(const Duration(seconds: 12));
     final body = _decodeJson(res, fallback: '获取待审批成员列表失败');
     if (res.statusCode != 200) {
       throw _apiException(res, body: body, fallback: '获取待审批成员列表失败');
@@ -1326,15 +1356,19 @@ class ApiClient {
     if (body is! List) throw _responseShapeException(res, '待审列表响应格式异常');
     return body
         .whereType<Map<String, dynamic>>()
-        .map(UnitMember.fromJson)
+        .map(
+          (row) => UnitMember.fromJson({
+            ...row,
+            'created_at': row['updated_at'] ?? row['created_at'],
+          }),
+        )
         .toList();
   }
 
   Future<UnitMember> approveMember(String memberId) async {
-    final res = await _client.post(
-      _uri('/api/unit-members/$memberId/approve'),
-      headers: _headers,
-    );
+    final res = await _client
+        .post(_uri('/api/unit-members/$memberId/approve'), headers: _headers)
+        .timeout(const Duration(seconds: 12));
     final body = _decodeJson(res, fallback: '审批成员失败');
     if (res.statusCode != 200) {
       throw _apiException(res, body: body, fallback: '审批成员失败');
@@ -1348,13 +1382,16 @@ class ApiClient {
   }
 
   Future<UnitMember> rejectMember(String memberId, {String? reason}) async {
-    final res = await _client.post(
-      _uri('/api/unit-members/$memberId/reject'),
-      headers: _headers,
-      body: jsonEncode({
-        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
-      }),
-    );
+    final res = await _client
+        .post(
+          _uri('/api/unit-members/$memberId/reject'),
+          headers: _headers,
+          body: jsonEncode({
+            if (reason != null && reason.trim().isNotEmpty)
+              'reason': reason.trim(),
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
     final body = _decodeJson(res, fallback: '驳回成员申请失败');
     if (res.statusCode != 200) {
       throw _apiException(res, body: body, fallback: '驳回成员申请失败');

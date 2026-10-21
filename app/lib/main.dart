@@ -138,6 +138,8 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(controller.handleAppResumed());
+    } else {
+      controller.handleAppPaused();
     }
   }
 

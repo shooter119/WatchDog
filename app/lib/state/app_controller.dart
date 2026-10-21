@@ -162,6 +162,7 @@ class AppController extends ChangeNotifier {
   KeySiteRecents get keySiteRecents => KeySiteRecents.instance;
   void _revokeProtectedData() {
     adminCapability = null;
+    _clearMemberReview();
     _adminCapabilityTimer?.cancel();
     _protectedDataRevoked = true;
     _protectedDataEpoch++;
@@ -172,6 +173,34 @@ class AppController extends ChangeNotifier {
   bool _syncStarted = false;
   bool _isGuest = false;
   bool get isGuest => _isGuest;
+  String memberReviewUnitName = '';
+  bool canReviewMembers = false;
+  bool memberReviewLoading = false;
+  String? memberReviewError;
+  List<UnitMember> pendingMembers = [];
+  List<Map<String, dynamic>> memberReviewHistory = [];
+  Future<void>? _memberReviewFuture;
+  bool _memberReviewAgain = false;
+  int _memberReviewGeneration = 0;
+  bool _appInForeground = true;
+
+  void _clearMemberReview() {
+    memberReviewUnitName = '';
+    _memberReviewGeneration++;
+    _memberReviewFuture = null;
+    _memberReviewAgain = false;
+    canReviewMembers = false;
+    memberReviewLoading = false;
+    memberReviewError = null;
+    pendingMembers = [];
+    memberReviewHistory = [];
+    pendingMemberCount = 0;
+  }
+
+  void handleAppPaused() {
+    _appInForeground = false;
+  }
+
   int pendingMemberCount = 0;
 
   static const Duration sessionRefreshCheckInterval = Duration(minutes: 15);
@@ -312,10 +341,12 @@ class AppController extends ChangeNotifier {
     _startSessionRefreshTimer();
     unawaited(refreshAdminCapability());
     _adminCapabilityTimer?.cancel();
-    _adminCapabilityTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => unawaited(refreshAdminCapability()),
-    );
+    _adminCapabilityTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_appInForeground) {
+        unawaited(refreshAdminCapability());
+        unawaited(refreshPendingMembersCount());
+      }
+    });
     startSync();
     // 认证前的名单请求会被服务端拒绝；认证完成后重新拉取，拿到单位当前名单。
     unawaited(loadRoster());
@@ -346,6 +377,8 @@ class AppController extends ChangeNotifier {
 
   /// App 从后台回到前台时立即核对会话，避免后台挂起期间错过定时续期。
   Future<void> handleAppResumed() async {
+    _appInForeground = true;
+    unawaited(refreshPendingMembersCount());
     try {
       await _refreshSession();
     } catch (error) {
@@ -610,19 +643,89 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  /// 管理员刷新待审批成员数（用于小红点）
-  Future<void> refreshPendingMembersCount() async {
-    if (_disposed || !_authenticated || api == null) return;
-    final role = await Settings.userRole;
-    if (role != 'manager' && role != 'admin') {
-      pendingMemberCount = 0;
-      return;
+  /// Shared unit inbox. Coalesce requests and repeat once if a sync event arrived in flight.
+  Future<void> refreshPendingMembersCount() {
+    if (_disposed ||
+        !_authenticated ||
+        api == null ||
+        _isGuest ||
+        _protectedDataRevoked) {
+      return Future.value();
     }
+    if (_memberReviewFuture != null) {
+      _memberReviewAgain = true;
+      return _memberReviewFuture!;
+    }
+    final generation = _memberReviewGeneration;
+    Future<void> drain() async {
+      try {
+        do {
+          _memberReviewAgain = false;
+          await _refreshMemberReview();
+        } while (_memberReviewAgain &&
+            !_disposed &&
+            generation == _memberReviewGeneration);
+      } finally {
+        if (generation == _memberReviewGeneration) _memberReviewFuture = null;
+      }
+    }
+
+    final future = drain();
+    _memberReviewFuture = future;
+    return future;
+  }
+
+  Future<void> _refreshMemberReview() async {
+    final activeApi = api!;
+    final epoch = protectedDataEpoch;
+    final generation = _memberReviewGeneration;
+    bool current() =>
+        !_disposed &&
+        _authenticated &&
+        !_isGuest &&
+        !_protectedDataRevoked &&
+        api == activeApi &&
+        epoch == protectedDataEpoch &&
+        generation == _memberReviewGeneration;
+    memberReviewLoading = true;
+    _notify();
     try {
-      final pending = await api!.fetchPendingMembers();
+      final allowed = await activeApi.fetchMemberReviewCapability();
+      if (!current()) return;
+      canReviewMembers = allowed;
+      if (!allowed) {
+        pendingMembers = [];
+        memberReviewHistory = [];
+        pendingMemberCount = 0;
+        memberReviewError = null;
+        return;
+      }
+      final unitName = await Settings.unitName;
+      final pending = await activeApi.fetchPendingMembers();
+      final history = await activeApi.fetchMemberReviewHistory();
+      if (!current()) return;
+      memberReviewUnitName = unitName;
+      pendingMembers = pending;
       pendingMemberCount = pending.length;
-      _notify();
-    } catch (_) {}
+      memberReviewHistory = history;
+      memberReviewError = null;
+    } catch (error) {
+      if (!current()) return;
+      memberReviewError = error.toString();
+      // Never retain personal data after authorization fails or becomes uncertain.
+      if (error is ApiException &&
+          (error.statusCode == 401 || error.statusCode == 403)) {
+        canReviewMembers = false;
+        pendingMembers = [];
+        memberReviewHistory = [];
+        pendingMemberCount = 0;
+      }
+    } finally {
+      if (current()) {
+        memberReviewLoading = false;
+        _notify();
+      }
+    }
   }
 
   Future<void> changeKeySiteLink(
@@ -676,7 +779,7 @@ class AppController extends ChangeNotifier {
     await _clearScheduledNotifications();
 
     _isGuest = false;
-    pendingMemberCount = 0;
+    _clearMemberReview();
     await Settings.setIsGuestMode(false);
     await Settings.setUserRole('member');
     await Settings.setCurrentIncidentId('');
@@ -1037,6 +1140,7 @@ class AppController extends ChangeNotifier {
   }
 
   void _applySyncSnapshot(Map<String, dynamic> snapshot) {
+    unawaited(refreshPendingMembersCount());
     if (_disposed) return;
     final roster = snapshot['roster'] is Map
         ? Map<String, dynamic>.from(snapshot['roster'] as Map)
@@ -1109,7 +1213,11 @@ class AppController extends ChangeNotifier {
     if (_disposed) return;
     final payload = event.payload;
     switch (event.eventType) {
+      case 'members.applications_changed':
+        unawaited(refreshPendingMembersCount());
+        break;
       case 'admin.capability_changed':
+        unawaited(refreshPendingMembersCount());
         if (adminCapability != null &&
             payload['memberId'] != adminCapability!.memberId) {
           break;

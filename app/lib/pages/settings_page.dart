@@ -21,6 +21,7 @@ import 'about_page.dart';
 import 'archived_incidents_page.dart';
 import 'op_log_page.dart';
 import 'roster_page.dart';
+import 'member_review_page.dart';
 import 'stats_page.dart';
 import 'unit_stations_page.dart';
 import 'video_resource_admin_page.dart';
@@ -92,6 +93,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     // 启动自动检查完成后刷新「检查更新」卡片提示（有新版/已最新）
     widget.controller.addListener(_onControllerChanged);
+    unawaited(widget.controller.refreshPendingMembersCount());
     _load();
   }
 
@@ -733,13 +735,33 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const SizedBox(height: 9),
 
+          if (widget.controller.canReviewMembers ||
+              widget.controller.memberReviewError != null) ...[
+            _SettingsLinkCard(
+              icon: Icons.how_to_reg_outlined,
+              title: '入队审批',
+              subtitle: widget.controller.memberReviewError != null
+                  ? '审批信息加载失败，点击重试'
+                  : widget.controller.pendingMemberCount > 0
+                  ? '${widget.controller.pendingMemberCount} 条待处理 · 本单位管理员共同审批'
+                  : '可审批本单位申请 · 暂无待处理',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      MemberReviewPage(controller: widget.controller),
+                ),
+              ),
+            ),
+            const SizedBox(height: 9),
+          ],
           _buildFieldGrid([
             _SettingsShortcut(
               icon: Icons.group_outlined,
               title: '人员与热词',
               subtitle: widget.controller.pendingMemberCount > 0
                   ? '${widget.controller.pendingMemberCount} 名队员待审批'
-                  : '名单审批与热词',
+                  : '人员名单与语音热词',
               badge: widget.controller.pendingMemberCount > 0,
               onTap: () => Navigator.push(
                 context,

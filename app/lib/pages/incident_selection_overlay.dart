@@ -255,7 +255,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         setState(() => _pendingApp = pending);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('入队申请已提交，等待站长审批')));
+        ).showSnackBar(SnackBar(content: Text('已提交至$unitName，等待管理员审批')));
       }
     } catch (e) {
       if (mounted) await _showAuthenticationError('$e');

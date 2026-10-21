@@ -1140,7 +1140,7 @@ void main() {
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
       await _scrollToVisible(tester, list, find.text('人员与热词'));
-      final subtitle = find.text('名单审批与热词');
+      final subtitle = find.text('人员名单与语音热词');
       expect(subtitle, findsOneWidget);
       expect(tester.getSize(subtitle).height, greaterThan(25));
       expect(tester.takeException(), isNull);

@@ -3,8 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../api/api_client.dart';
-import '../services/settings.dart';
+import 'member_review_page.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
@@ -21,62 +20,11 @@ class _RosterPageState extends State<RosterPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tab = TabController(length: 2, vsync: this);
   final TextEditingController _input = TextEditingController();
-  List<UnitMember> _pendingMembers = [];
-
   @override
   void initState() {
     super.initState();
     widget.controller.loadRoster();
-    _loadPendingMembers();
-  }
-
-  Future<void> _loadPendingMembers() async {
-    final role = await Settings.userRole;
-    if (role != 'manager' && role != 'admin') return;
-    if (widget.controller.api == null) return;
-    try {
-      final list = await widget.controller.api!.fetchPendingMembers();
-      if (mounted) setState(() => _pendingMembers = list);
-    } catch (_) {}
-  }
-
-  Future<void> _approveMember(UnitMember member) async {
-    try {
-      await widget.controller.api!.approveMember(member.id);
-      setState(() {
-        _pendingMembers.removeWhere((m) => m.id == member.id);
-      });
-      await widget.controller.refreshPendingMembersCount();
-      await widget.controller.loadRoster();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已同意「${member.realName}」入队并更新语音名单')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('审批失败: $e')));
-      }
-    }
-  }
-
-  Future<void> _rejectMember(UnitMember member) async {
-    try {
-      await widget.controller.api!.rejectMember(member.id);
-      setState(() {
-        _pendingMembers.removeWhere((m) => m.id == member.id);
-      });
-      await widget.controller.refreshPendingMembersCount();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已驳回「${member.realName}」的申请')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('操作失败: $e')));
-      }
-    }
+    widget.controller.refreshPendingMembersCount();
   }
 
   @override
@@ -307,7 +255,7 @@ class _RosterPageState extends State<RosterPage>
     final items = isFirefighter
         ? widget.controller.firefighters
         : widget.controller.hotwords;
-    final hasPending = isFirefighter && _pendingMembers.isNotEmpty;
+    final hasPending = isFirefighter && widget.controller.canReviewMembers;
 
     if (items.isEmpty && !hasPending) {
       return Center(
@@ -415,110 +363,19 @@ class _RosterPageState extends State<RosterPage>
     );
   }
 
-  Widget _buildPendingSection() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.amber.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: Colors.amber.withValues(alpha: 0.35)),
+  Widget _buildPendingSection() => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: FilledButton.icon(
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MemberReviewPage(controller: widget.controller),
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.pending_actions_rounded, color: Colors.amber, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                '待审批申请 (${_pendingMembers.length})',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.amber),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ..._pendingMembers.map(_buildPendingItem),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPendingItem(UnitMember member) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      member.realName,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    if (member.stationName.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceSubtle,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          member.stationName,
-                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (member.phone.isNotEmpty || member.applyReason.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    [
-                      if (member.phone.isNotEmpty) '电话: ${member.phone}',
-                      if (member.applyReason.isNotEmpty) member.applyReason,
-                    ].join(' · '),
-                    style: TextStyle(fontSize: 11.5, color: AppColors.textTertiary),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          FilledButton.tonal(
-            key: Key('approve-${member.id}'),
-            onPressed: () => _approveMember(member),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-              minimumSize: const Size(56, 32),
-              backgroundColor: AppColors.voice.withValues(alpha: 0.15),
-              foregroundColor: AppColors.voice,
-            ),
-            child: const Text('同意', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(width: 6),
-          OutlinedButton(
-            key: Key('reject-${member.id}'),
-            onPressed: () => _rejectMember(member),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-              minimumSize: const Size(56, 32),
-            ),
-            child: Text('驳回', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-          ),
-        ],
-      ),
-    );
-  }
+      icon: const Icon(Icons.how_to_reg),
+      label: Text('入队审批 (${widget.controller.pendingMemberCount})'),
+    ),
+  );
 }
 
 class _TabLabel extends StatelessWidget {

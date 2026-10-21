@@ -613,6 +613,24 @@ function listUnitMembers(unitId) {
   ).all(String(unitId || ''));
 }
 
+db.exec(`CREATE TABLE IF NOT EXISTS member_review_history (
+ id TEXT PRIMARY KEY, unit_id TEXT NOT NULL, member_id TEXT NOT NULL, real_name TEXT NOT NULL,
+ review_status TEXT NOT NULL, reviewer_name TEXT NOT NULL, reviewed_at INTEGER NOT NULL
+)`);
+function listMemberReviewHistory(unitId, offset = 0) {
+ return db.prepare('SELECT * FROM member_review_history WHERE unit_id=? ORDER BY reviewed_at DESC,id LIMIT 50 OFFSET ?').all(unitId, Math.max(0, Math.min(100000, Number(offset) || 0)));
+}
+function recordMemberReview(member, reviewerId) {
+ const reviewer = db.prepare('SELECT real_name FROM unit_members WHERE id=?').get(reviewerId || '');
+ db.prepare('INSERT INTO member_review_history VALUES(?,?,?,?,?,?,?)').run(randomUUID(),member.unit_id,member.id,member.real_name,member.review_status,reviewer?.real_name || '',member.reviewed_at);
+}
+function lockPendingMember(id, unitId) {
+ const member = db.prepare('SELECT * FROM unit_members WHERE id=? AND unit_id=?').get(id,unitId);
+ if (!member) throw Object.assign(new Error('待审批成员不存在'), { status:404, code:'MEMBER_NOT_FOUND' });
+ if (member.review_status !== 'pending') throw Object.assign(new Error('该申请已处理，请刷新列表'), { status:409, code:'MEMBER_APPLICATION_ALREADY_REVIEWED' });
+ return member;
+}
+
 function listPendingUnitMembers(unitId) {
   return db.prepare(
     'SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE unit_id = ? AND review_status = \'pending\' ORDER BY created_at ASC'
@@ -661,10 +679,10 @@ function applyUnitMember({ unitId, realName, stationName = '', phone = '', apply
 }
 
 function approveUnitMember(id, unitId, reviewerMemberId = null, { reviewerName = null, clientOpId = null } = {}) {
+  return transaction(() => {
   const mid = String(id || '');
   const uid = String(unitId || '');
-  const member = db.prepare('SELECT id, unit_id, real_name FROM unit_members WHERE id = ? AND unit_id = ?').get(mid, uid);
-  if (!member) throw new Error('待审批成员不存在');
+  const member = lockPendingMember(mid, uid);
 
   const now = Date.now();
   db.prepare(
@@ -677,17 +695,25 @@ function approveUnitMember(id, unitId, reviewerMemberId = null, { reviewerName =
     'INSERT INTO firefighters (id, unit_id, name, source, created_by_member_id, created_by_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(unit_id, name) DO UPDATE SET updated_at = excluded.updated_at'
   ).run(ffId, uid, member.real_name, 'user', reviewerMemberId ? String(reviewerMemberId) : null, reviewerName || null, now, now);
 
-  return db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ?').get(mid);
+  const result = db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ?').get(mid);
+  recordMemberReview(result, reviewerMemberId);
+  return result;
+  });
 }
 
 function rejectUnitMember(id, unitId, reviewerMemberId = null, reason = '') {
+  return transaction(() => {
   const mid = String(id || '');
   const uid = String(unitId || '');
+  lockPendingMember(mid, uid);
   const now = Date.now();
   db.prepare(
     'UPDATE unit_members SET review_status = ?, status = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ? AND unit_id = ?'
   ).run('rejected', 'disabled', reviewerMemberId ? String(reviewerMemberId) : null, now, now, mid, uid);
-  return db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ?').get(mid);
+  const result = db.prepare('SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE id = ?').get(mid);
+  recordMemberReview(result, reviewerMemberId);
+  return result;
+  });
 }
 
 function addUnitMember({ id = randomUUID(), unitId, realName, role = 'member', stationName = '', phone = '', createdByMemberId = null, createdByName = null, clientOpId = null }) {
@@ -1574,6 +1600,7 @@ backfillIncidentEvents();
 dedupeLegacyIncidentEvents();
 
 module.exports = {
+  listMemberReviewHistory,
   getUnit,
   findUnit,
   findUnitMember,

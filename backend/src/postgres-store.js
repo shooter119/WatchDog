@@ -33,7 +33,7 @@ const ready = migrate(pool);
 const numericColumns = new Set([
   'created_at', 'updated_at', 'occurred_at', 'recorded_at', 'entry_at', 'exit_at',
   'exited_at', 'archived_at', 'last_activity_at', 'expires_at', 'last_seen_at',
-  'revoked_at', 'reported_at', 'completed_at', 'lease_until', 'response_status',
+  'reviewed_at', 'revoked_at', 'reported_at', 'completed_at', 'lease_until', 'response_status',
   'duration_min', 'auto_archived', 'unresolved_active_count', 'version',
   'vehicle_count', 'personnel_count', 'roster_version',
 ]);

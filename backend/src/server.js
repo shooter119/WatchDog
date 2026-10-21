@@ -2220,10 +2220,40 @@ app.get('/api/unit-members', async (req, res) => {
   res.json(await db.listUnitMembers(req.unit.id));
 });
 
-app.get('/api/unit-members/pending', async (req, res) => {
-  if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
-  if (!requireManagementRole(req, res)) return;
-  res.json(await db.listPendingUnitMembers(req.unit.id));
+async function canReviewMembers(req) {
+  if (!req.unit || !req.auth?.memberId) return false;
+  if (db.canReviewUnitMembers) return db.canReviewUnitMembers(req.auth.memberId, req.unit.id);
+  const members = await db.listUnitMembers(req.unit.id);
+  return members.some(m => m.id === req.auth.memberId && m.status === 'active'
+    && m.review_status === 'approved' && ['admin','manager'].includes(m.role));
+}
+async function requireMemberReview(req, res) {
+  if (await canReviewMembers(req)) return true;
+  res.status(403).json({ error: '无本单位成员审批权限', code: 'MEMBER_REVIEW_FORBIDDEN' });
+  return false;
+}
+function memberReviewError(error, res, next) {
+  if (error.status) return res.status(error.status).json({ error: error.message, code: error.code, review: error.review });
+  next(error);
+}
+app.get('/api/unit-members/capability', async (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  try { res.json({ can_review_members: await canReviewMembers(req) }); } catch (e) { next(e); }
+});
+app.get('/api/unit-members/review-history', async (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    if (!await requireMemberReview(req, res)) return;
+    res.json(await db.listMemberReviewHistory(req.unit.id, req.query.offset));
+  } catch (e) { next(e); }
+});
+
+app.get('/api/unit-members/pending', async (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    if (!await requireMemberReview(req, res)) return;
+    res.json(await db.listPendingUnitMembers(req.unit.id));
+  } catch (e) { next(e); }
 });
 
 app.post('/api/unit-members', async (req, res, next) => {
@@ -2255,8 +2285,8 @@ app.post('/api/unit-members', async (req, res, next) => {
 
 app.post('/api/unit-members/:id/approve', async (req, res, next) => {
   if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
-  if (!requireManagementRole(req, res)) return;
   try {
+    if (!await requireMemberReview(req, res)) return;
     const member = await db.approveUnitMember(req.params.id, req.unit.id, req.auth?.memberId, {
       reviewerName: req.auth?.realName,
       clientOpId: req.header('x-op-id'),
@@ -2264,19 +2294,19 @@ app.post('/api/unit-members/:id/approve', async (req, res, next) => {
     res.json({ approved: true, member });
   } catch (error) {
     if (error.message === '待审批成员不存在') return res.status(404).json({ error: error.message, code: 'MEMBER_NOT_FOUND' });
-    next(error);
+    memberReviewError(error, res, next);
   }
 });
 
 app.post('/api/unit-members/:id/reject', async (req, res, next) => {
   if (!req.unit) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
-  if (!requireManagementRole(req, res)) return;
   try {
+    if (!await requireMemberReview(req, res)) return;
     const reason = req.body?.reason ? String(req.body.reason).trim().slice(0, 255) : '';
     const member = await db.rejectUnitMember(req.params.id, req.unit.id, req.auth?.memberId, reason);
     res.json({ rejected: true, member });
   } catch (error) {
-    next(error);
+    memberReviewError(error, res, next);
   }
 });
 

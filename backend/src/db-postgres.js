@@ -170,6 +170,45 @@ async function listUnitMembers(unitId) {
   });
 }
 
+async function canReviewUnitMembers(memberId, unitId) {
+  const result = await db.query(`SELECT m.id FROM unit_members m
+    LEFT JOIN admin_grants g ON g.member_id=m.id
+    WHERE m.id=$1 AND m.unit_id=$2 AND m.status='active' AND m.review_status='approved'
+    AND (m.role IN ('manager','admin') OR g.role='platform_admin')`, [memberId, unitId]);
+  return result.rows.length > 0;
+}
+
+async function listMemberReviewHistory(unitId, offset = 0) {
+  return (await db.query(`SELECT id,member_id,real_name,review_status,reviewer_name,reviewed_at
+    FROM member_review_history WHERE unit_id=$1 ORDER BY reviewed_at DESC,id LIMIT 50 OFFSET $2`,
+  [unitId, Math.max(0, Math.min(100000, Math.trunc(Number(offset) || 0)))])).rows.map(row => ({ ...row, reviewed_at: Number(row.reviewed_at) }));
+}
+
+async function recordMemberReview(member, reviewerId, reviewerName = '') {
+  await db.query(`INSERT INTO member_review_history
+    (id,unit_id,member_id,real_name,review_status,reviewer_id,reviewer_name,reviewed_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [randomUUID(),member.unit_id,member.id,member.real_name,
+    member.review_status,reviewerId,reviewerName,member.reviewed_at]);
+  await appendSyncEvent({ unitId: member.unit_id, eventType: 'members.applications_changed', payload: {} });
+}
+
+function reviewedConflict(member, reviewerName = '') {
+  return Object.assign(new Error(`该申请已由${reviewerName || '其他管理员'}${member.review_status === 'approved' ? '同意' : '驳回'}，请刷新列表`), {
+    status: 409, code: 'MEMBER_APPLICATION_ALREADY_REVIEWED',
+    review: { review_status: member.review_status, reviewer_name: reviewerName, reviewed_at: member.reviewed_at == null ? null : Number(member.reviewed_at) },
+  });
+}
+
+async function lockPendingMember(id, unitId) {
+  const member = (await db.query('SELECT * FROM unit_members WHERE id=$1 AND unit_id=$2 FOR UPDATE', [id, unitId])).rows[0];
+  if (!member) throw Object.assign(new Error('待审批成员不存在'), { status: 404, code: 'MEMBER_NOT_FOUND' });
+  if (member.review_status !== 'pending') {
+    const reviewer = member.reviewed_by ? await getUnitMember(member.reviewed_by, unitId) : null;
+    throw reviewedConflict(member, reviewer?.real_name || '');
+  }
+  return member;
+}
+
 async function listPendingUnitMembers(unitId) {
   return db.select('unit_members', {
     filters: { unit_id: String(unitId || ''), review_status: 'pending' },
@@ -182,57 +221,66 @@ async function applyUnitMember({ unitId, realName, stationName = '', phone = '',
   const uid = String(unitId || '').trim();
   if (!uid || !name) throw new Error('单位和姓名不能为空');
 
-  const pendingCountResult = await db.query(
-    'SELECT COUNT(*)::int AS count FROM unit_members WHERE unit_id = $1 AND review_status = $2',
-    [uid, 'pending']
-  );
-  const pendingCount = pendingCountResult.rows[0]?.count || 0;
-  if (pendingCount >= 50) {
-    const err = new Error('当前单位待审批申请已达上限(50条)，请联系管理员处理后再试');
-    err.code = 'PENDING_QUEUE_FULL';
-    throw err;
-  }
-
-  const existing = await getUnitMemberByName(uid, name);
-  const cleanStation = String(stationName || '').trim().slice(0, 64);
-  const cleanPhone = String(phone || '').trim().slice(0, 32);
-  const cleanReason = String(applyReason || '').trim().slice(0, 255);
-
-  if (existing) {
-    if (existing.review_status === 'approved' && existing.status === 'active') {
-      const err = new Error('该成员已在单位名单中，可直接登录');
-      err.code = 'MEMBER_EXISTS';
+  return db.transaction(async () => {
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 119009))', [uid]);
+    const duplicate = await getUnitMemberByName(uid, name);
+    if (duplicate?.review_status === 'pending') return duplicate;
+    const pendingCountResult = await db.query(
+      'SELECT COUNT(*)::int AS count FROM unit_members WHERE unit_id = $1 AND review_status = $2',
+      [uid, 'pending']
+    );
+    const pendingCount = pendingCountResult.rows[0]?.count || 0;
+    if (pendingCount >= 50) {
+      const err = new Error('当前单位待审批申请已达上限(50条)，请联系管理员处理后再试');
+      err.code = 'PENDING_QUEUE_FULL';
       throw err;
     }
-    if (existing.review_status === 'pending') {
-      return existing;
+
+    const existing = await getUnitMemberByName(uid, name);
+    const cleanStation = String(stationName || '').trim().slice(0, 64);
+    const cleanPhone = String(phone || '').trim().slice(0, 32);
+    const cleanReason = String(applyReason || '').trim().slice(0, 255);
+
+    if (existing) {
+      if (existing.review_status === 'approved' && existing.status === 'active') {
+        const err = new Error('该成员已在单位名单中，可直接登录');
+        err.code = 'MEMBER_EXISTS';
+        throw err;
+      }
+      if (existing.review_status === 'pending') {
+        return existing;
+      }
+      const values = {
+        review_status: 'pending',
+        status: 'disabled',
+        station_name: cleanStation,
+        phone: cleanPhone,
+        apply_reason: cleanReason,
+        reviewed_by: null,
+        reviewed_at: null,
+        updated_at: Date.now(),
+      };
+      const res = await db.update('unit_members', { id: existing.id, unit_id: uid }, values);
+      const member = res.rows[0] || await getUnitMember(existing.id, uid);
+      await appendSyncEvent({ unitId: uid, eventType: 'members.applications_changed', payload: {} });
+      return member;
     }
-    const values = {
-      review_status: 'pending',
+
+    const member = await insertOne('unit_members', {
+      id: randomUUID(),
+      unit_id: uid,
+      real_name: name,
+      role: 'member',
       status: 'disabled',
+      review_status: 'pending',
       station_name: cleanStation,
       phone: cleanPhone,
       apply_reason: cleanReason,
-      reviewed_by: null,
-      reviewed_at: null,
+      created_at: Date.now(),
       updated_at: Date.now(),
-    };
-    const res = await db.update('unit_members', { id: existing.id, unit_id: uid }, values);
-    return res.rows[0] || getUnitMember(existing.id, uid);
-  }
-
-  return insertOne('unit_members', {
-    id: randomUUID(),
-    unit_id: uid,
-    real_name: name,
-    role: 'member',
-    status: 'disabled',
-    review_status: 'pending',
-    station_name: cleanStation,
-    phone: cleanPhone,
-    apply_reason: cleanReason,
-    created_at: Date.now(),
-    updated_at: Date.now(),
+  });
+  await appendSyncEvent({ unitId: uid, eventType: 'members.applications_changed', payload: {} });
+  return member;
   });
 }
 
@@ -240,11 +288,8 @@ async function approveUnitMember(id, unitId, reviewerMemberId = null, { reviewer
   const mid = String(id || '');
   const uid = String(unitId || '');
   return db.transaction(async () => {
-    const member = await db.select('unit_members', {
-      filters: { id: mid, unit_id: uid },
-      single: true,
-    });
-    if (!member) throw new Error('待审批成员不存在');
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 119009))', [uid]);
+    const member = await lockPendingMember(mid, uid);
     const values = {
       review_status: 'approved',
       status: 'active',
@@ -269,7 +314,7 @@ async function approveUnitMember(id, unitId, reviewerMemberId = null, { reviewer
     }], { onConflict: 'unit_id,name', ignoreDuplicates: true });
 
     await db.query('UPDATE units SET roster_version = roster_version + 1, updated_at = $1 WHERE id = $2', [Date.now(), uid]);
-    const eventPayload = ffRow || { id: ffId, name: member.real_name, unit_id: uid, source: 'user' };
+    const eventPayload = ffRow || (await db.select('firefighters', { filters: { unit_id: uid, name: member.real_name }, limit: 1 }))[0];
     await appendRosterSyncEvent({
       unitId: uid,
       eventType: 'roster.firefighter_added',
@@ -278,22 +323,23 @@ async function approveUnitMember(id, unitId, reviewerMemberId = null, { reviewer
       clientOpId,
     });
 
+    await recordMemberReview(updatedMember, reviewerMemberId, reviewerName || '');
     return updatedMember;
   });
 }
 
 async function rejectUnitMember(id, unitId, reviewerMemberId = null, reason = '') {
-  const mid = String(id || '');
-  const uid = String(unitId || '');
-  const values = {
-    review_status: 'rejected',
-    status: 'disabled',
-    reviewed_by: reviewerMemberId ? String(reviewerMemberId) : null,
-    reviewed_at: Date.now(),
-    updated_at: Date.now(),
-  };
-  const result = await db.update('unit_members', { id: mid, unit_id: uid }, values);
-  return result.rows[0] || getUnitMember(mid, uid);
+  return db.transaction(async () => {
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 119009))', [unitId]);
+    await lockPendingMember(id, unitId);
+    const result = await db.update('unit_members', { id, unit_id: unitId }, {
+      review_status: 'rejected', status: 'disabled', reviewed_by: reviewerMemberId,
+      reviewed_at: Date.now(), updated_at: Date.now(),
+    });
+    const reviewer = reviewerMemberId ? await getUnitMember(reviewerMemberId, unitId) : null;
+    await recordMemberReview(result.rows[0], reviewerMemberId, reviewer?.real_name || '');
+    return result.rows[0];
+  });
 }
 
 async function addUnitMember({ id = randomUUID(), unitId, realName, role = 'member', stationName = '', phone = '', createdByMemberId = null, createdByName = null, clientOpId = null }) {
@@ -1387,6 +1433,7 @@ module.exports = {
   getIncident, createIncident, createIncidentWithEvent, listIncidents, findRecentActiveIncident, updateIncidentTitle, updateIncidentTitleWithEvent,
   setIncidentSuggestedTitle, touchIncidentActivity, archiveIncident, archiveIncidentWithEvent, archiveStaleIncidents,
   appendIncidentEvent, getIncidentEvent, getIncidentEventByClientOp, listIncidentEvents,
+  canReviewUnitMembers, listMemberReviewHistory,
   appendSyncEvent, appendRosterSyncEvent, listSyncEvents, getSyncEvent, getSyncEventByClientOp, getSyncCheckpoint, oldestSyncSequence,
   listenSync: db.listenSync,
   dedupeLegacyIncidentEvents, listStations, addStation, listIncidentForces, getIncidentForce,
