@@ -666,7 +666,7 @@ class _SettingsPageState extends State<SettingsPage> {
     // 只切换配色，不进入自动保存链路，也不写 settings_modified_at。
     final currentId = ThemeController.instance.currentId;
     return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.s3),
+      padding: const EdgeInsets.all(AppSpacing.s4),
       child: Row(
         children: [
           for (final palette in AppPalette.values) ...[
@@ -719,9 +719,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.s1),
-          const _SettingsEyebrow('现场处置 / 本机状态'),
-          const SizedBox(height: AppSpacing.s2),
+          const SizedBox(height: AppSpacing.s3),
           _buildIdentityCard(),
           const SizedBox(height: 22),
           const SectionTitle(text: '现场设置'),
@@ -785,7 +783,7 @@ class _SettingsPageState extends State<SettingsPage> {
               icon: Icons.bar_chart_outlined,
               title: '数据统计',
               subtitle: entries.isEmpty
-                  ? '暂无记录'
+                  ? null
                   : '本场 $activeEntries 次 · $uniqueNames 人',
               onTap: () => Navigator.push(
                 context,
@@ -1358,7 +1356,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.s1),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     maxLines: 2,
@@ -1988,27 +1986,6 @@ class _IdentityCardTexturePainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
-class _SettingsEyebrow extends StatelessWidget {
-  final String text;
-
-  const _SettingsEyebrow(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s1),
-      child: Text(
-        text,
-        style: AppTextStyles.caption.copyWith(
-          color: AppColors.textSecondary,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.4,
-        ),
-      ),
-    );
-  }
-}
-
 class _SettingsIconBox extends StatelessWidget {
   final IconData icon;
   final bool badge;
@@ -2088,6 +2065,7 @@ class _SettingsShortcut extends StatelessWidget {
             const SizedBox(width: AppSpacing.s3),
             Expanded(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2104,7 +2082,7 @@ class _SettingsShortcut extends StatelessWidget {
                     ),
                   ),
                   if (hasSubtitle) ...[
-                    const SizedBox(height: AppSpacing.s1),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle!,
                       maxLines: compact ? 2 : 1,
@@ -2163,17 +2141,19 @@ class _SettingsLinkCard extends StatelessWidget {
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
                       ),
                     ),
                     if (hasSubtitle) ...[
-                      const SizedBox(height: AppSpacing.s1),
+                      const SizedBox(height: 2),
                       Text(
                         subtitle!,
                         maxLines: 2,
@@ -2287,6 +2267,7 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 44),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       _SettingsIconBox(icon: widget.icon),
                       const SizedBox(width: AppSpacing.s3),
@@ -2295,14 +2276,30 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              widget.title,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                              ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    widget.title,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.s2),
+                                Icon(
+                                  _expanded
+                                      ? Icons.keyboard_arrow_up_rounded
+                                      : Icons.keyboard_arrow_down_rounded,
+                                  size: 20,
+                                  color: AppColors.textTertiary,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: AppSpacing.s1),
+                            const SizedBox(height: 2),
                             Text(
                               widget.summary,
                               maxLines: 2,
@@ -2314,14 +2311,6 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(width: AppSpacing.s2),
-                      Icon(
-                        _expanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        size: 20,
-                        color: AppColors.textTertiary,
                       ),
                     ],
                   ),

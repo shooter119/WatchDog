@@ -134,7 +134,7 @@ class _BoardPageState extends State<BoardPage> {
               ],
             ),
           ),
-          const SizedBox(height: AppSpacing.s3),
+          const SizedBox(height: AppSpacing.s4),
           Expanded(
             child: active.isEmpty
                 ? _EmptyBoard(
@@ -296,7 +296,6 @@ class _OverviewBanner extends StatelessWidget {
           child: Text(
             value,
             style: AppTextStyles.h2.copyWith(
-              fontSize: 28,
               fontWeight: FontWeight.w800,
               fontFeatures: const [FontFeature.tabularFigures()],
               color: color,
@@ -386,7 +385,7 @@ class _EmptyBoard extends StatelessWidget {
     final voiceGuide = onGoVoice == null
         ? null
         : [
-            const SizedBox(height: AppSpacing.s5),
+            const SizedBox(height: AppSpacing.s4),
             SizedBox(
               height: 48,
               child: FilledButton.icon(
@@ -399,60 +398,70 @@ class _EmptyBoard extends StatelessWidget {
             ),
           ];
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Semantics(
-            container: true,
-            label: '当前在场人员 0 人',
-            child: Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '0',
-                    style: AppTextStyles.h1.copyWith(
-                      fontSize: 36,
-                      height: 1,
-                      fontWeight: FontWeight.w800,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      color: AppColors.textPrimary,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.s6,
+          AppSpacing.s4,
+          AppSpacing.s6,
+          AppSpacing.s8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Semantics(
+              container: true,
+              label: '当前在场人员 0 人',
+              child: Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.surface,
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '0',
+                      style: AppTextStyles.h2.copyWith(
+                        height: 1.0,
+                        fontWeight: FontWeight.w800,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: AppColors.textSecondary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.s1),
-                  Text(
-                    '在场',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.w600,
+                    const SizedBox(height: AppSpacing.s1),
+                    Text(
+                      '在场',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.s5),
-          Text(
-            '暂无人员在场',
-            style: AppTextStyles.bodyLg.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w700,
+            const SizedBox(height: AppSpacing.s4),
+            Text(
+              '暂无人员在场',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodyMd.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.s2),
-          Text(
-            requiresIncident ? '选择警情后可登记进场' : '按住底部语音按钮登记进场',
-            style: AppTextStyles.label.copyWith(color: AppColors.textTertiary),
-          ),
-          ...?voiceGuide,
-        ],
+            const SizedBox(height: AppSpacing.s1),
+            Text(
+              requiresIncident ? '选择警情后可登记进场' : '按住底部语音按钮登记进场',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textTertiary,
+              ),
+            ),
+            ...?voiceGuide,
+          ],
+        ),
       ),
     );
   }

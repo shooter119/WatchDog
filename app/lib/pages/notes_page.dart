@@ -139,58 +139,51 @@ class _NotesPageState extends State<NotesPage> {
                 selected: _filter == c,
                 onSelected: (_) => setState(() => _filter = c),
                 showCheckmark: false,
-                selectedColor: NoteColor.of(
-                  c == '全部' ? null : c,
-                ).withValues(alpha: 0.22),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s3,
+                  vertical: AppSpacing.s2,
+                ),
+                labelPadding: EdgeInsets.zero,
+                selectedColor: AppColors.actionPrimary,
+                backgroundColor: AppColors.surface,
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
                 labelStyle: AppTextStyles.label.copyWith(
-                  fontWeight: _filter == c ? FontWeight.w800 : FontWeight.w600,
                   color: _filter == c
-                      ? NoteColor.of(c == '全部' ? null : c)
-                      : AppColors.textSecondary,
+                      ? AppColors.onPrimary
+                      : AppColors.textPrimary,
                 ),
                 side: BorderSide(
                   color: _filter == c
-                      ? NoteColor.of(c == '全部' ? null : c)
+                      ? AppColors.actionPrimary
                       : AppColors.border,
                 ),
-                backgroundColor: AppColors.surface,
               ),
             ),
+          const SizedBox(width: AppSpacing.s4),
         ],
       ),
     );
   }
 
   Widget _buildEmpty() {
-    return ListView(
+    return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        const SizedBox(height: 120),
-        Icon(
-          Icons.note_alt_outlined,
-          size: 64,
-          color: AppColors.textTertiary.withValues(alpha: 0.5),
-        ),
-        const SizedBox(height: AppSpacing.s4),
-        Center(
-          child: Text(
-            '还没有日志记录',
-            style: AppTextStyles.bodyLg.copyWith(
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.s2),
-        Center(
-          child: Text(
-            widget.controller.requiresIncident
-                ? '请先选择或新建警情，再记录火场日志'
-                : '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右下角加号手动记录',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.label.copyWith(
-              color: AppColors.textTertiary,
-              height: 1.5,
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.s8),
+              child: AppEmptyState(
+                icon: Icons.note_alt_outlined,
+                title: '还没有日志记录',
+                hint: widget.controller.requiresIncident
+                    ? '请先选择或新建警情，再记录火场日志'
+                    : '按住底部语音按钮说话，非报数内容将自动记入日志',
+              ),
             ),
           ),
         ),
@@ -240,8 +233,6 @@ class _NotesPageState extends State<NotesPage> {
                     Text(
                       note == null ? '手动记录' : '编辑日志',
                       style: AppTextStyles.h2.copyWith(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
                       ),
                     ),
@@ -274,16 +265,28 @@ class _NotesPageState extends State<NotesPage> {
                             label: Text(c),
                             selected: category == c,
                             onSelected: (_) => setSheet(() => category = c),
-                            selectedColor: NoteColor.of(
-                              c,
-                            ).withValues(alpha: 0.22),
-                            labelStyle: AppTextStyles.label.copyWith(
-                              fontWeight: category == c
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.s3,
+                              vertical: AppSpacing.s2,
+                            ),
+                            labelPadding: EdgeInsets.zero,
+                            selectedColor: AppColors.actionPrimary,
+                            backgroundColor: AppColors.surface,
+                            surfaceTintColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
+                            ),
+                            side: BorderSide(
                               color: category == c
-                                  ? NoteColor.of(c)
-                                  : AppColors.textSecondary,
+                                  ? AppColors.actionPrimary
+                                  : AppColors.border,
+                            ),
+                            labelStyle: AppTextStyles.label.copyWith(
+                              color: category == c
+                                  ? AppColors.onPrimary
+                                  : AppColors.textPrimary,
                             ),
                             showCheckmark: false,
                           ),
@@ -508,7 +511,7 @@ class _TimelineNoteCard extends StatelessWidget {
                           _time,
                           style: AppTextStyles.caption.copyWith(
                             color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w600,
                             fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
