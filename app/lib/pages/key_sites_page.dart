@@ -360,6 +360,39 @@ class _SiteListState extends State<_SiteList> {
     );
   }
 
+  List<Widget> _groupedItems() {
+    if (_district.isNotEmpty) {
+      return _items.map(_row).toList();
+    }
+    const unlabeled = '未标注辖区';
+    final groups = <String, List<KeySiteSummary>>{};
+    final unlabeledItems = <KeySiteSummary>[];
+    for (final site in _items) {
+      final d = site.district.trim();
+      if (d.isEmpty) {
+        unlabeledItems.add(site);
+      } else {
+        groups.putIfAbsent(d, () => <KeySiteSummary>[]).add(site);
+      }
+    }
+    if (unlabeledItems.isNotEmpty) {
+      groups.putIfAbsent(unlabeled, () => <KeySiteSummary>[]).addAll(
+        unlabeledItems,
+      );
+    }
+    final widgets = <Widget>[];
+    for (final entry in groups.entries) {
+      widgets.add(
+        SectionTitle(
+          key: ValueKey('site-group-${entry.key}'),
+          text: entry.key,
+        ),
+      );
+      widgets.addAll(entry.value.map(_row));
+    }
+    return widgets;
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
@@ -414,7 +447,7 @@ class _SiteListState extends State<_SiteList> {
             ..._recent.map(_row),
             const SizedBox(height: 4),
           ],
-          ..._items.map(_row),
+          ..._groupedItems(),
           if (_error != null)
             KeySiteFailure(
               error: _error!,
