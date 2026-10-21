@@ -22,3 +22,5 @@
 国内VPS构建通过 `DEBIAN_MIRROR=https://mirrors.aliyun.com` 使用HTTPS软件镜像；默认Docker构建仍采用Debian官方HTTPS源。Node slim未预装系统CA时，以Node内置公共根证书建立HTTPS信任，再安装Debian `ca-certificates`；不关闭TLS校验或APT包签名校验。
 
 2026-10-20 已完成资料后台部署与匿名公网验收，当前有效备份为 `/opt/watchdog/backups/key-sites-20261020T013238Z/`。授权手机扫码、真实资料试点与Android实机尚未完成，详见 [验收记录](ADMIN-ACCEPTANCE.md)。
+
+2026-10-21 后端再次部署（提交 `b748553`，含登录失败分级、近似姓名建议、待审 `in_roster` 标记），备份 `/opt/watchdog/backups/key-sites-20261021T140708Z/`；本机缺 LibreOffice 转换器导致 `key-sites` 14 条用例必然失败，发版门禁改为"失败项必须全部落在已知环境失败集合内"，并已同步修正 `scripts/release.sh` 的公网校验重试。同日发布 App `1.11.0+93`：OTA 清单、APK（72,508,497 字节，SHA-256 `233286135dbf430257946f0a86260adeb6a29721ae1c0badb3889b4d7070fb68`）、官网版本与下载链接均已核对；用旧版 `1.10.0+2092` 实机确认能识别到 `v1.11.0+93`。
