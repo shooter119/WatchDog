@@ -352,12 +352,12 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('tool-定位分享'))).width,
       greaterThanOrEqualTo(48),
     );
-    expect(
-      tester.getTopLeft(find.byKey(const ValueKey('tool-定位分享'))).dy,
-      greaterThan(
-        tester.getBottomLeft(find.byKey(const ValueKey('tool-重点单位'))).dy,
-      ),
-    );
+    final topY = tester.getTopLeft(find.byKey(const ValueKey('tool-重点单位'))).dy;
+    for (final title in ['重点单位', '水印相机', '定位分享', '视频资源']) {
+      final finder = find.byKey(ValueKey('tool-$title'));
+      expect(tester.getTopLeft(finder).dy, topY);
+      expect(tester.getSize(finder).height, greaterThanOrEqualTo(48));
+    }
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();

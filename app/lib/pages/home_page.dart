@@ -2943,79 +2943,68 @@ class HomePageState extends State<HomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('现场工具', style: AppTextStyles.h2),
-        const SizedBox(height: 12),
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _fieldTool(
-                  '重点单位',
-                  '地图、预案与作战资料',
-                  Icons.domain_outlined,
-                  () => Navigator.push<void>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          KeySitesPage(controller: widget.controller),
+        const SectionTitle(text: '现场工具'),
+        Row(
+          children: [
+            Expanded(
+              child: _fieldTool(
+                '重点单位',
+                '地图、预案与作战资料',
+                Icons.domain_outlined,
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        KeySitesPage(controller: widget.controller),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _fieldTool(
+                '水印相机',
+                '照片与视频水印记录',
+                Icons.photo_camera_outlined,
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CameraPage(controller: widget.controller),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _fieldTool(
+                '定位分享',
+                '复制位置与高德导航链接',
+                Icons.share_location_outlined,
+                () => showLocationShareSheet(
+                  context,
+                  controller: widget.controller,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _fieldTool(
+                '视频资源',
+                '查看本单位授权监控与现场画面',
+                Icons.videocam_outlined,
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => VideoResourcesPage(
+                      controller: widget.controller,
+                      playback: widget.videoPlayback,
+                      onVideoFloating: widget.onVideoFloating,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _fieldTool(
-                  '水印相机',
-                  '照片与视频水印记录',
-                  Icons.photo_camera_outlined,
-                  () => Navigator.push<void>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CameraPage(controller: widget.controller),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _fieldTool(
-                  '定位分享',
-                  '复制位置与高德导航链接',
-                  Icons.share_location_outlined,
-                  () => showLocationShareSheet(
-                    context,
-                    controller: widget.controller,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _fieldTool(
-                  '视频资源',
-                  '查看本单位授权监控与现场画面',
-                  Icons.videocam_outlined,
-                  () => Navigator.push<void>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => VideoResourcesPage(
-                        controller: widget.controller,
-                        playback: widget.videoPlayback,
-                        onVideoFloating: widget.onVideoFloating,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
@@ -3026,39 +3015,41 @@ class HomePageState extends State<HomePage> {
     String subtitle,
     IconData icon,
     VoidCallback open,
-  ) => Material(
-    color: AppColors.surface,
-    borderRadius: BorderRadius.circular(AppRadius.md),
-    child: InkWell(
-      key: ValueKey('tool-$title'),
-      onTap: open,
+  ) => Tooltip(
+    message: subtitle,
+    child: Material(
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(AppRadius.md),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 140),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          border: Border.all(color: AppColors.border),
-          borderRadius: BorderRadius.circular(AppRadius.md),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 30, color: AppColors.voice),
-            const SizedBox(height: 18),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.4,
-                color: AppColors.textSecondary,
+      child: InkWell(
+        key: ValueKey('tool-$title'),
+        onTap: open,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 88),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.border, width: 1),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 26, color: AppColors.voice),
+              const SizedBox(height: 8),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ),
