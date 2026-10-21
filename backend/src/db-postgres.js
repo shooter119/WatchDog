@@ -1,5 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const db = require('./postgres-store');
+const { checkEntryVersion, entryError } = require('./entry-concurrency');
+const { durationMinutes, exitAtMs: calculateExitAt, measuredConsumptionLpm } = require('./calc');
 const { forceError, forceFields } = require('./force-fields');
 
 
@@ -414,7 +416,7 @@ async function getUnitMember(id, unitId) {
   });
 }
 
-async function createAuthSession({ id, tokenHash, unitId, memberId = null, deviceId = null, realName, role = 'member', createdAt = Date.now(), expiresAt }) {
+async function createAuthSession({ id, tokenHash, unitId, memberId = null, deviceId = null, deviceName = '', platform = '', realName, role = 'member', createdAt = Date.now(), expiresAt }) {
   const created = Number(createdAt) || Date.now();
   const expires = Number(expiresAt);
   if (!id || !tokenHash || !unitId || !realName || !Number.isFinite(expires)) {
@@ -422,6 +424,7 @@ async function createAuthSession({ id, tokenHash, unitId, memberId = null, devic
   }
   return insertOne('auth_sessions', {
     id: String(id), token_hash: String(tokenHash), unit_id: String(unitId), member_id: memberId ? String(memberId) : null,
+    device_name: String(deviceName).slice(0, 80), platform: String(platform).slice(0, 32),
     device_id: deviceId ? String(deviceId) : null, real_name: String(realName).trim().slice(0, 32),
     role: ['member', 'manager', 'admin'].includes(role) ? role : 'member', created_at: created,
     expires_at: expires, last_seen_at: created, revoked_at: null,
@@ -542,60 +545,108 @@ async function createEntry({ id, scene = 'default', name, pressureMpa, durationM
 
 async function createEntryWithEvent({ entry, event, activityAt = null } = {}) {
   return db.transaction(async () => {
+    await checkWritableIncident(entry.scene, event);
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [entry.scene + ':' + entry.name.trim().normalize('NFKC')]);
+    const existing = await findActiveByName(entry.scene, entry.name.trim());
+    if (existing) throw Object.assign(entryError('ENTRY_ALREADY_ACTIVE', '该人员已在场，请核对已有记录', existing), { entry: existing });
     const created = await createEntry(entry);
     if (activityAt != null) await touchIncidentActivity(event.incidentId, activityAt);
-    const recorded = await appendIncidentEvent(event);
+    const recorded = await appendIncidentEvent({ ...event, payload: { ...event.payload, version: created.version } });
     return { entry: created, event: recorded };
   });
 }
 
+async function checkWritableIncident(incidentId, event) {
+  const incident = (await db.query('SELECT status, archived_at FROM incidents WHERE id=$1 FOR UPDATE', [incidentId])).rows[0];
+  if (!incident || incident.status === 'active') return;
+  if (event?.source === 'offline' && Number(event.occurredAt) <= Number(incident.archived_at) && Date.now() <= Number(incident.archived_at) + 24 * 3600 * 1000) return;
+  throw entryError('INCIDENT_ARCHIVED', '警情已归档，不能修改当前记录', null);
+}
+
+async function lockEntry(id) {
+  await db.query('SELECT id FROM entries WHERE id=$1 FOR UPDATE', [id]);
+  return getEntry(id);
+}
+
 async function markExited(id, exitedAtMs) {
-  const result = await db.update('entries', { id, exited_at: { op: 'is', value: 'null' } }, { exited_at: exitedAtMs });
-  return result.rows[0] || getEntry(id);
+  return (await markExitedIfActive(id, exitedAtMs)).entry;
 }
 
-async function markExitedIfActive(id, exitedAtMs) {
-  const result = await db.update('entries', { id, exited_at: { op: 'is', value: 'null' } }, { exited_at: exitedAtMs });
-  return { entry: result.rows[0] || await getEntry(id), changed: result.rows.length > 0 };
-}
-
-async function exitEntryWithEvent({ entryId, exitedAtMs, incidentId, activityAt = null, event } = {}) {
+async function markExitedIfActive(id, exitedAtMs, expectedVersion = null) {
   return db.transaction(async () => {
-    const transition = await markExitedIfActive(entryId, exitedAtMs);
+    const current = await lockEntry(id);
+    checkEntryVersion(current, expectedVersion, { allowExited: true });
+    if (current.exited_at != null) return { entry: await getEntry(id), changed: false };
+    await db.query('UPDATE entries SET exited_at=$2, version=version+1 WHERE id=$1', [id, exitedAtMs]);
+    return { entry: await getEntry(id), changed: true };
+  });
+}
+
+async function exitEntryWithEvent({ entryId, exitedAtMs, incidentId, activityAt = null, event, expectedVersion = null } = {}) {
+  return db.transaction(async () => {
+    await checkWritableIncident(incidentId, event);
+    const transition = await markExitedIfActive(entryId, exitedAtMs, expectedVersion);
     if (!transition.changed) return { entry: transition.entry, event: null, changed: false };
     if (activityAt != null) await touchIncidentActivity(incidentId, activityAt);
-    const recorded = await appendIncidentEvent(event);
+    const recorded = await appendIncidentEvent({ ...event, payload: { ...event.payload, version: transition.entry.version } });
     return { entry: transition.entry, event: recorded, changed: true };
   });
 }
 
-async function updatePressureWithEvent({ entryId, scene, name, pressureMpa, reportedAtMs, durationMin, exitAtMs, consumptionActualLpm = null, incidentId, activityAt = null, event } = {}) {
+async function updatePressureWithEvent({ entryId, scene, name, pressureMpa, reportedAtMs, durationMin, exitAtMs, consumptionActualLpm = null, incidentId, activityAt = null, event, expectedVersion = null, calcConfig = null, newName = null } = {}) {
   return db.transaction(async () => {
-    await addPressureSample({ entryId, scene, name, pressureMpa, reportedAtMs });
-    const updated = await updateEntry(entryId, { pressureMpa, durationMin, exitAtMs, consumptionActualLpm });
+    await checkWritableIncident(incidentId, event);
+    const current = await lockEntry(entryId);
+    checkEntryVersion(current, expectedVersion);
+    if (Number(reportedAtMs) < Number(current.pressure_reported_at || current.entry_at)) {
+      throw entryError('STALE_PRESSURE', '该压力记录早于当前读数，请现场核对', await getEntry(entryId));
+    }
+    if (calcConfig) {
+      const previous = await lastPressureSample(entryId);
+      consumptionActualLpm = previous && Number(previous.reported_at) < Number(reportedAtMs)
+        ? measuredConsumptionLpm({ cylinderVolL: Number(current.cylinder_vol_l) || calcConfig.cylinderVolL, prevPressureMpa: previous.pressure_mpa, newPressureMpa: pressureMpa, intervalMs: reportedAtMs - Number(previous.reported_at) }) : null;
+      const params = { ...calcConfig, pressureMpa, cylinderVolL: Number(current.cylinder_vol_l) || calcConfig.cylinderVolL, consumptionLpm: consumptionActualLpm ?? calcConfig.consumptionLpm, entryAtMs: reportedAtMs };
+      durationMin = Math.round(durationMinutes(params));
+      exitAtMs = calculateExitAt(params);
+    }
+    if (newName && newName !== current.name) await checkRename(current, newName);
+    await addPressureSample({ entryId, scene, name: newName || current.name, pressureMpa, reportedAtMs });
+    await db.query('UPDATE entries SET pressure_mpa=$2,duration_min=$3,exit_at=$4,consumption_actual_lpm=$5,pressure_reported_at=$6,name=$7,version=version+1 WHERE id=$1', [entryId, pressureMpa, durationMin, exitAtMs, consumptionActualLpm, reportedAtMs, newName || current.name]);
+    const updated = await getEntry(entryId);
     if (activityAt != null) await touchIncidentActivity(incidentId, activityAt);
-    const recorded = await appendIncidentEvent(event);
+    const recorded = await appendIncidentEvent({ ...event, payload: { ...event.payload, version: updated.version, actual_consumption_lpm: consumptionActualLpm } });
     return { entry: updated, event: recorded };
   });
 }
 
-async function findActiveByName(scene, name) {
-  return db.select('entries', {
-    filters: { scene, name, exited_at: { op: 'is', value: 'null' } },
-    order: 'entry_at.asc', limit: 1, single: true,
-  });
+async function checkRename(current, name) {
+  await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [current.scene + ':' + name.trim().normalize('NFKC')]);
+  const existing = await findActiveByName(current.scene, name);
+  if (existing && existing.id !== current.id) throw entryError('ENTRY_ALREADY_ACTIVE', '该姓名已有在场记录', existing);
 }
 
-async function updateEntry(id, { name, pressureMpa, durationMin, exitAtMs, consumptionActualLpm }) {
-  const values = {};
-  if (name != null) values.name = name;
-  if (pressureMpa != null) values.pressure_mpa = pressureMpa;
-  if (durationMin != null) values.duration_min = durationMin;
-  if (exitAtMs != null) values.exit_at = exitAtMs;
-  if (consumptionActualLpm != null) values.consumption_actual_lpm = consumptionActualLpm;
-  if (Object.keys(values).length === 0) return getEntry(id);
-  const result = await db.update('entries', { id }, values);
-  return result.rows[0] || getEntry(id);
+async function findActiveByName(scene, name) {
+  const row = (await db.query('SELECT id FROM entries WHERE scene=$1 AND normalize(btrim(name), NFKC)=$2 AND exited_at IS NULL ORDER BY entry_at ASC LIMIT 1', [scene, String(name).trim().normalize('NFKC')])).rows[0];
+  return row ? getEntry(row.id) : undefined;
+}
+
+async function updateEntry(id, { name, pressureMpa, durationMin, exitAtMs, consumptionActualLpm, expectedVersion = null, event = null }) {
+  return db.transaction(async () => {
+    const snapshot = await getEntry(id);
+    if (snapshot) await checkWritableIncident(snapshot.scene, event);
+    const current = await lockEntry(id);
+    checkEntryVersion(current, expectedVersion);
+    if (name && name !== current.name) await checkRename(current, name);
+    const values = { version: Number(current.version) + 1 };
+    if (name != null) values.name = name;
+    if (pressureMpa != null) values.pressure_mpa = pressureMpa;
+    if (durationMin != null) values.duration_min = durationMin;
+    if (exitAtMs != null) values.exit_at = exitAtMs;
+    if (consumptionActualLpm != null) values.consumption_actual_lpm = consumptionActualLpm;
+    const updated = (await db.update('entries', { id }, values)).rows[0];
+    if (event) await appendIncidentEvent({ ...event, payload: { ...event.payload, version: updated.version } });
+    return updated;
+  });
 }
 
 async function addPressureSample({ entryId, scene = 'default', name, pressureMpa, reportedAtMs }) {
@@ -1102,6 +1153,7 @@ function syncEventType(type) {
     key_site_link_changed: 'incident.updated',
     incident_archived: 'incident.archived',
     entry: 'entry.created',
+    entry_update: 'entry.pressure_updated',
     pressure: 'entry.pressure_updated',
     exit: 'entry.exited',
     note: 'note.created',

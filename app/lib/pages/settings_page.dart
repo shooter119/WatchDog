@@ -5,6 +5,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'admin_scanner_page.dart';
 
+import 'login_devices_page.dart';
+import 'offline_review_page.dart';
 import '../services/alarm_service.dart';
 import '../services/foreground_keep_alive.dart';
 import '../services/local_asr_service.dart';
@@ -982,6 +984,21 @@ class _SettingsPageState extends State<SettingsPage> {
       unit: unit,
       level: level,
       canScan: backend != null,
+      reviewCount: widget.controller.offlineReviewCount,
+      onDevices: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => LoginDevicesPage(controller: widget.controller),
+          ),
+        );
+      },
+      onReview: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => OfflineReviewPage(controller: widget.controller),
+          ),
+        );
+      },
       onLeave: _leaveUnit,
       onJoin: widget.controller.leaveUnit,
       onScan: () async {
@@ -1610,6 +1627,9 @@ class _IdentityHeroCard extends StatelessWidget {
   final String name;
   final String unit;
   final String level;
+  final int reviewCount;
+  final Future<void> Function() onDevices;
+  final Future<void> Function() onReview;
   final Future<void> Function() onLeave;
   final Future<void> Function() onJoin;
   final Future<void> Function() onScan;
@@ -1621,6 +1641,9 @@ class _IdentityHeroCard extends StatelessWidget {
     required this.name,
     required this.unit,
     required this.level,
+    this.reviewCount = 0,
+    required this.onDevices,
+    required this.onReview,
     required this.onLeave,
     required this.onJoin,
     required this.onScan,
@@ -1752,8 +1775,18 @@ class _IdentityHeroCard extends StatelessWidget {
                               iconColor: foreground,
                               onSelected: (value) {
                                 if (value == 'leave') unawaited(onLeave());
+                                if (value == 'devices') unawaited(onDevices());
+                                if (value == 'review') unawaited(onReview());
                               },
                               itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'devices',
+                                  child: Text('登录设备'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'review',
+                                  child: Text('离线记录待核对'),
+                                ),
                                 PopupMenuItem(
                                   value: 'leave',
                                   child: Text('退出当前单位'),
@@ -1763,6 +1796,16 @@ class _IdentityHeroCard extends StatelessWidget {
                           if (canScan) _HeroScanAction(onTap: onScan),
                         ],
                       ),
+                      if (authenticated && reviewCount > 0)
+                        TextButton.icon(
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            foregroundColor: foreground,
+                          ),
+                          onPressed: () => unawaited(onReview()),
+                          icon: const Icon(Icons.fact_check_outlined),
+                          label: Text('$reviewCount 条离线记录待核对'),
+                        ),
                       if (guest) ...[
                         const SizedBox(height: 16),
                         SizedBox(

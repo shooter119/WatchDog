@@ -7,7 +7,7 @@ enum SameNameChoice { merge, force }
 
 /// 同名人员已在火场内确认弹窗：
 /// - merge：同一人（更正/重复登记），保留原记录按新压力重新倒计时
-/// - force：确实另有同名人员，另建一条记录
+/// - force：确实另有同名人员，返回输入区补充区分标识
 /// - null：取消
 Future<SameNameChoice?> showSameNameDialog(
   BuildContext context, {
@@ -28,10 +28,13 @@ Future<SameNameChoice?> showSameNameDialog(
         style: const TextStyle(height: 1.5, fontSize: 14),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, null),
+          child: const Text('取消'),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, SameNameChoice.force),
-          child: const Text('另有同名人员，另建记录'),
+          child: const Text('同名不同人，返回补充标识'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, SameNameChoice.merge),

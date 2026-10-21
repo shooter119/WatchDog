@@ -642,6 +642,7 @@ class HomePageState extends State<HomePage> {
       for (final e in active) {
         await widget.controller.markExited(
           e.id,
+          expectedVersion: e.version,
           opId: '${_opId ?? 'exit'}-${e.id}',
         );
         OpLogService.instance.record(
@@ -882,6 +883,7 @@ class HomePageState extends State<HomePage> {
     for (final e in active) {
       await widget.controller.markExited(
         e.id,
+        expectedVersion: e.version,
         opId: '${_opId ?? 'exit'}-${e.id}',
       );
       OpLogService.instance.record(
@@ -1179,7 +1181,8 @@ class HomePageState extends State<HomePage> {
       if (choice == SameNameChoice.merge) {
         return await _tryMerge(existing.first, p);
       }
-      return await _tryCreate(name, p, force: true, volumeL: volumeL);
+      if (mounted) setState(() => _error = '请在姓名中补充单位或编号，区分同名人员后重新登记');
+      return _SubmitResult.cancelled;
     }
     return await _tryCreate(name, p, volumeL: volumeL);
   }
@@ -1215,6 +1218,7 @@ class HomePageState extends State<HomePage> {
     try {
       await widget.controller.mergeEntryPressure(
         id: existing.id,
+        expectedVersion: existing.version,
         pressureMpa: p,
         opId: _opId,
       );
@@ -1258,7 +1262,8 @@ class HomePageState extends State<HomePage> {
       if (choice == SameNameChoice.merge) {
         return await _tryMerge(e.existing, p);
       }
-      return await _tryCreate(name, p, force: true, volumeL: volumeL);
+      if (mounted) setState(() => _error = '请在姓名中补充单位或编号，区分同名人员后重新登记');
+      return _SubmitResult.cancelled;
     } catch (e) {
       OpLogService.instance.record(
         _opId ?? '',

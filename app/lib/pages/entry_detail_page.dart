@@ -47,7 +47,7 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
     if (confirmed != true) return;
     try {
-      await widget.controller.markExited(e.id);
+      await widget.controller.markExited(e.id, expectedVersion: e.version);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(

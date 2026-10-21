@@ -33,6 +33,7 @@ const realtimeDevices = new Set();
 const syncSessions = new Set();
 const syncDevices = new Map();
 let syncListenerClose = null;
+let authDevices = null;
 const PORT = process.env.PORT || 3000;
 const metrics = {
   startedAt: Date.now(),
@@ -46,6 +47,11 @@ const metrics = {
   resyncRequired: 0,
   reconnects: 0,
   databaseErrors: 0,
+  entryVersionConflicts: 0,
+  entryUpgradeRequired: 0,
+  offlineReviewRequired: 0,
+  sessionRevocations: 0,
+  sessionRevokeFailures: 0,
 };
 const UNIT_AUTH_REQUIRED = String(
   process.env.WATCHDOG_UNIT_AUTH_REQUIRED ?? (process.env.NODE_ENV === 'test' ? '0' : '1'),
@@ -151,6 +157,11 @@ app.get('/api/metrics', (req, res) => {
     requests: metrics.requests,
     errors: metrics.errors,
     average_request_ms: metrics.requests ? Math.round(metrics.requestDurationsMs / metrics.requests) : 0,
+    entry_version_conflicts: metrics.entryVersionConflicts,
+    entry_upgrade_required: metrics.entryUpgradeRequired,
+    offline_review_required: metrics.offlineReviewRequired,
+    session_revocations: metrics.sessionRevocations,
+    session_revoke_failures: metrics.sessionRevokeFailures,
     websocket_connections: metrics.websocketConnections,
     websocket_replacements: metrics.websocketReplacements,
     events_published: metrics.eventsPublished,
@@ -244,6 +255,7 @@ app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
   },
 }));
 if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER || (process.env.NODE_ENV === 'test' ? 'sqlite' : 'postgres')).toLowerCase())) {
+  authDevices = require('./auth-devices').createAuthDevices(require('./postgres-store'));
   adminAuth = require('./admin-auth').createAdminAuth(require('./postgres-store'), Date.now, {
     onGrantChanged: member => db.appendRosterSyncEvent({ unitId: member.unit_id, eventType: 'admin.capability_changed',
       aggregateId: member.id, payload: { memberId: member.id } }),
@@ -384,6 +396,7 @@ async function authenticateRealtimeRequest(req) {
     unit = await db.getUnit(session.unit_id);
     if (!unit) throw Object.assign(new Error('认证单位不存在'), { code: 'SESSION_INVALID' });
     req.auth = {
+      sessionId: session.id,
       deviceId: session.device_id || null,
       realName: String(session.real_name || '').trim(),
       role: session.role || 'member',
@@ -402,7 +415,7 @@ async function authenticateRealtimeRequest(req) {
   if (!incident || (unit && incident.unit_id !== unit.id)) {
     throw Object.assign(new Error('警情不存在'), { code: 'INCIDENT_NOT_FOUND' });
   }
-  return { unit, incident, deviceId: req.auth?.deviceId || realtimeHeader(req, 'x-device-id') || null };
+  return { unit, incident, sessionId: req.auth?.sessionId || null, deviceId: req.auth?.deviceId || realtimeHeader(req, 'x-device-id') || null };
 }
 
 async function authenticateSyncRequest(req) {
@@ -453,6 +466,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
     return;
   }
   const state = {
+    ws,
     started: false,
     stopping: false,
     opId: realtimeHeader(req, 'x-op-id') || null,
@@ -464,9 +478,11 @@ realtimeWss.on('connection', (ws, req, auth) => {
     finalResultCount: 0,
     upstream: null,
     deviceId: auth.deviceId,
+    sessionId: auth.sessionId,
     sessionTimer: null,
     startTimer: null,
     heartbeat: setInterval(() => {
+      void validateSocketSession(state);
       try { if (ws.readyState === 1) ws.ping(); } catch (_) {}
     }, 10000),
   };
@@ -530,6 +546,7 @@ realtimeWss.on('connection', (ws, req, auth) => {
   };
 
   ws.on('message', (data, isBinary) => {
+    if (state.stopping || ws.readyState !== 1) return;
     try {
       if (isBinary) {
         const chunk = Buffer.from(data);
@@ -655,7 +672,34 @@ async function replaySyncSession(state) {
   }
 }
 
+function revokeSocket(state) {
+  state.stopping = true;
+  state.upstream?.close();
+  try {
+    state.ws.send(JSON.stringify({ type: 'auth_revoked', code: 'SESSION_INVALID' }));
+    state.ws.close(4003, 'SESSION_INVALID');
+  } catch (_) {}
+  const timer = setTimeout(() => { if (state.ws.readyState !== 3) state.ws.terminate(); }, 250);
+  timer.unref();
+}
+
+async function validateSocketSession(state) {
+  if (!state.sessionId || !authDevices) return;
+  try {
+    if (!await authDevices.active(state.sessionId)) {
+      revokeSocket(state);
+    }
+  } catch (_) { state.ws.close(1013, 'authentication unavailable'); }
+}
+
 async function dispatchSyncNotification(notification) {
+  if (notification.type === 'session_revoked') {
+    for (const state of [...syncSessions, ...realtimeSessions]) {
+      if (state.sessionId !== notification.session_id) continue;
+      revokeSocket(state);
+    }
+    return;
+  }
   if (!syncSupported()) return;
   const event = await db.getSyncEvent(notification.stream_key, notification.sequence);
   if (!event) return;
@@ -700,6 +744,7 @@ syncWss.on('connection', (ws, req, auth) => {
     ws,
     unitId: auth.unit.id,
     deviceId,
+    sessionId: auth.auth.sessionId,
     incidentId: null,
     unitCursor: '0',
     incidentCursor: '0',
@@ -714,6 +759,7 @@ syncWss.on('connection', (ws, req, auth) => {
   if (deviceId) syncDevices.set(deviceId, state);
   ws.on('pong', () => { state.lastPongAt = Date.now(); });
   state.heartbeat = setInterval(() => {
+    void validateSocketSession(state);
     if (Date.now() - state.lastPongAt > 45000) {
       try { ws.terminate(); } catch (_) {}
       return;
@@ -782,6 +828,7 @@ function operationRequestHash(req, incidentId, operationType, body = req.body) {
     unit_id: req.unit?.id || '',
     incident_id: incidentId || null,
     body: stableOperationValue(body || {}),
+    ...(req.headers['x-expected-version'] ? { expected_version_header: String(req.headers['x-expected-version']) } : {}),
   };
   return contentDigest(JSON.stringify(snapshot));
 }
@@ -833,6 +880,7 @@ function operationResultReference(result) {
     ok: result.ok === true,
     duplicate: result.duplicate === true,
     ...(result.event_id ? { event_id: String(result.event_id) } : {}),
+    ...(result.entry_id ? { entry_id: String(result.entry_id), entry_version: Number(result.entry_version) } : {}),
   };
 }
 
@@ -1287,6 +1335,8 @@ app.post('/api/auth/verify', async (req, res, next) => {
         unitId: unit.id,
         memberId: member?.id || null,
         deviceId: device,
+        deviceName: String(req.body?.device_name || '').slice(0, 80),
+        platform: String(req.body?.platform || '').slice(0, 32),
         realName: name,
         role: member?.role || 'member',
         createdAt: now,
@@ -1296,7 +1346,7 @@ app.post('/api/auth/verify', async (req, res, next) => {
     res.json({
       authenticated: true,
       unit: { id: unit.id, name: unit.name },
-      user: { real_name: name, role: member?.role || 'member' },
+      user: { id: member?.id || null, real_name: name, role: member?.role || 'member' },
       session_token: sessionToken,
       expires_at: sessionExpiresAt,
       idle_ttl_ms: SESSION_TTL_MS,
@@ -1345,6 +1395,19 @@ app.post('/api/auth/refresh', async (req, res, next) => {
   } catch (e) {
     next(e);
   }
+});
+
+app.get('/api/auth/identity', (req, res) => {
+  res.json({ member_id: req.auth?.memberId || null, unit_id: req.auth?.unitId || null });
+});
+app.get('/api/auth/devices', async (req, res, next) => {
+  try { res.json(await authDevices.list(req.auth)); } catch (error) { next(error); }
+});
+app.post('/api/auth/devices/revoke-others', async (req, res, next) => {
+  try { const result = await authDevices.revoke(req.auth, null, true); metrics.sessionRevocations += result.revoked; res.json(result); } catch (error) { metrics.sessionRevokeFailures++; next(error); }
+});
+app.post('/api/auth/devices/:id/revoke', async (req, res, next) => {
+  try { const result = await authDevices.revoke(req.auth, req.params.id); metrics.sessionRevocations += result.revoked; res.json(result); } catch (error) { metrics.sessionRevokeFailures++; next(error); }
 });
 
 app.post('/api/auth/logout', async (req, res, next) => {
@@ -1814,6 +1877,7 @@ app.get('/api/incidents/:id/timeline', async (req, res, next) => {
 // 已加入警情后的离线现场操作批量补传。服务端以 client_op_id 幂等，
 // 归档后的补传只接受发生在归档前、且在归档后 24 小时内送达的数据。
 app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
+  let tracked = null;
   try {
     const incident = await incidentForRequest(req, res, req.params.id);
     if (!incident) return;
@@ -1824,7 +1888,6 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
     const actor = await actorName(req);
     if (!actor) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
     const results = [];
-    let tracked = null;
     for (const operation of operations) {
       const rawOpId = String(operation?.client_op_id || '').trim();
       const opId = rawOpId.slice(0, 64);
@@ -1833,7 +1896,15 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
         results.push({ client_op_id: opId, accepted: false, error: '操作类型或 client_op_id 无效' });
         continue;
       }
+      if (req.auth && (operation.owner_member_id !== req.auth.memberId || operation.owner_unit_id !== req.auth.unitId)) {
+        results.push({ client_op_id: opId, accepted: false, code: 'OFFLINE_OWNER_MISMATCH', error: '离线记录身份不匹配，请原成员重新认证后核对' });
+        continue;
+      }
       const occurredAt = Number(operation.occurred_at) || now;
+      if (occurredAt > now + 60_000) {
+        results.push({ client_op_id: opId, accepted: false, code: 'INVALID_OPERATION_TIME', error: '记录时间晚于服务器时间，请核对设备时钟及原记录' });
+        continue;
+      }
       if (incident.status === 'archived') {
         const archivedAt = Number(incident.archived_at || 0);
         if (occurredAt > archivedAt || now > archivedAt + 24 * 3600 * 1000) {
@@ -1927,37 +1998,57 @@ app.post('/api/incidents/:id/offline-operations', async (req, res, next) => {
           results.push({ client_op_id: opId, accepted: false, error: 'client_op_id 已属于其他警情', code: 'CLIENT_OP_ID_CONFLICT' });
           continue;
         }
-        await completeTrackedOperation(tracked, { ok: true, duplicate: true, event_id: duplicate.id }, 200, duplicate.id);
-        results.push({ client_op_id: opId, accepted: true, duplicate: true, event_id: duplicate.id });
+        await completeTrackedOperation(tracked, { ok: true, duplicate: true, event_id: duplicate.id, entry_id: duplicate.payload?.entry_id, entry_version: duplicate.payload?.version }, 200, duplicate.id);
+        results.push({ client_op_id: opId, accepted: true, duplicate: true, event_id: duplicate.id, entry_id: duplicate.payload?.entry_id, entry_version: duplicate.payload?.version });
         continue;
       }
-      const eventArgs = { incidentId: incident.id, type, occurredAt, recordedAt: now, actorDeviceId: deviceKey(req), actorName: actor, source: 'offline', clientOpId: opId, payload: eventPayload };
-      let atomicResult = null;
-      if (entryArgs && typeof db.createEntryWithEvent === 'function') {
-        atomicResult = await db.createEntryWithEvent({ entry: entryArgs, event: eventArgs, activityAt: occurredAt });
-      } else if (exitEntryId && typeof db.exitEntryWithEvent === 'function') {
-        atomicResult = await db.exitEntryWithEvent({ entryId: exitEntryId, exitedAtMs: occurredAt, incidentId: incident.id, activityAt: occurredAt, event: eventArgs });
-      } else if (noteArgs && typeof db.createNoteWithEvent === 'function') {
-        atomicResult = await db.createNoteWithEvent({ note: noteArgs, event: eventArgs, activityAt: occurredAt });
-      } else if (pressureArgs && typeof db.updatePressureWithEvent === 'function') {
-        atomicResult = await db.updatePressureWithEvent({ ...pressureArgs, incidentId: incident.id, activityAt: occurredAt, event: eventArgs });
+      try {
+        let expectedVersion = payload.expected_version;
+        if (payload.predecessor_op_id) {
+          const previousOp = await db.getOperation(req.auth?.unitId || incident.unit_id || '', payload.predecessor_op_id);
+          const previousResult = typeof previousOp?.result_json === 'string' ? JSON.parse(previousOp.result_json) : previousOp?.result_json;
+          if (previousOp?.status !== 'succeeded' || previousOp.incident_id !== incident.id || previousOp.actor_name !== actor || previousOp.actor_device_id !== deviceKey(req) || previousResult?.entry_id !== payload.entry_id || !previousResult?.entry_version) {
+            throw Object.assign(new Error('前序离线操作尚未成功，请先核对'), { code: 'DEPENDENCY_CONFLICT', status: 409 });
+          }
+          expectedVersion = previousResult.entry_version;
+        }
+        if (authDevices && (exitEntryId || pressureArgs) && expectedVersion == null) {
+          throw Object.assign(new Error('旧离线记录缺少数据版本，请人工核对'), { code: 'OFFLINE_BASE_REQUIRED', status: 409, current: await db.getEntry(exitEntryId || pressureArgs.entryId) });
+        }
+        const eventArgs = { incidentId: incident.id, type, occurredAt, recordedAt: now, actorDeviceId: deviceKey(req), actorName: actor, source: 'offline', clientOpId: opId, payload: eventPayload };
+        let atomicResult = null;
+        if (entryArgs && typeof db.createEntryWithEvent === 'function') {
+          atomicResult = await db.createEntryWithEvent({ entry: entryArgs, event: eventArgs, activityAt: occurredAt });
+        } else if (exitEntryId && typeof db.exitEntryWithEvent === 'function') {
+          atomicResult = await db.exitEntryWithEvent({ entryId: exitEntryId, expectedVersion, exitedAtMs: occurredAt, incidentId: incident.id, activityAt: occurredAt, event: eventArgs });
+        } else if (noteArgs && typeof db.createNoteWithEvent === 'function') {
+          atomicResult = await db.createNoteWithEvent({ note: noteArgs, event: eventArgs, activityAt: occurredAt });
+        } else if (pressureArgs && typeof db.updatePressureWithEvent === 'function') {
+          atomicResult = await db.updatePressureWithEvent({ ...pressureArgs, expectedVersion, calcConfig: { ...CFG.calc, consumptionLpm: Number(payload.consumption_lpm) || CFG.calc.consumptionLpm }, incidentId: incident.id, activityAt: occurredAt, event: eventArgs });
+        }
+        if (atomicResult?.changed === false) {
+          await completeTrackedOperation(tracked, { ok: true, duplicate: true, entry_id: atomicResult.entry?.id, entry_version: atomicResult.entry?.version }, 200, atomicResult.event?.id);
+          results.push({ client_op_id: opId, accepted: true, duplicate: true, ...(atomicResult.event?.id ? { event_id: atomicResult.event.id } : {}) });
+          continue;
+        }
+        if (!atomicResult && entryArgs) await db.createEntry(entryArgs);
+        if (!atomicResult && noteArgs) await db.createNote(noteArgs);
+        if (!atomicResult && pressureArgs) {
+          await db.addPressureSample({ entryId: pressureArgs.entryId, scene: pressureArgs.scene, name: pressureArgs.name, pressureMpa: pressureArgs.pressureMpa, reportedAtMs: pressureArgs.reportedAtMs });
+          await db.updateEntry(pressureArgs.entryId, pressureArgs);
+        }
+        const event = atomicResult?.event || await db.appendIncidentEvent(eventArgs);
+        if (!atomicResult && incident.status === 'active') await db.touchIncidentActivity(incident.id, occurredAt);
+        await completeTrackedOperation(tracked, { ok: true, event_id: event.id, entry_id: atomicResult?.entry?.id, entry_version: atomicResult?.entry?.version }, 200, event.id);
+        results.push({ client_op_id: opId, accepted: true, event_id: event.id, entry_id: atomicResult?.entry?.id, entry_version: atomicResult?.entry?.version });
+      } catch (error) {
+        await releaseTrackedOperation(tracked);
+        if (!error.status || error.status >= 500) throw error;
+        results.push({ client_op_id: opId, accepted: false, code: error.code, error: error.message, current: error.current });
       }
-      if (atomicResult?.changed === false) {
-        await completeTrackedOperation(tracked, { ok: true, duplicate: true }, 200, atomicResult.event?.id);
-        results.push({ client_op_id: opId, accepted: true, duplicate: true, ...(atomicResult.event?.id ? { event_id: atomicResult.event.id } : {}) });
-        continue;
-      }
-      if (!atomicResult && entryArgs) await db.createEntry(entryArgs);
-      if (!atomicResult && noteArgs) await db.createNote(noteArgs);
-      if (!atomicResult && pressureArgs) {
-        await db.addPressureSample({ entryId: pressureArgs.entryId, scene: pressureArgs.scene, name: pressureArgs.name, pressureMpa: pressureArgs.pressureMpa, reportedAtMs: pressureArgs.reportedAtMs });
-        await db.updateEntry(pressureArgs.entryId, pressureArgs);
-      }
-      const event = atomicResult?.event || await db.appendIncidentEvent(eventArgs);
-      if (!atomicResult && incident.status === 'active') await db.touchIncidentActivity(incident.id, occurredAt);
-      await completeTrackedOperation(tracked, { ok: true, event_id: event.id }, 200, event.id);
-      results.push({ client_op_id: opId, accepted: true, event_id: event.id });
     }
+    metrics.offlineReviewRequired += results.filter(result => !result.accepted && result.code !== 'OPERATION_IN_PROGRESS').length;
+    metrics.entryVersionConflicts += results.filter(result => result.code === 'VERSION_CONFLICT').length;
     res.json({ incident_status: incident.status, results });
   } catch (e) {
     await releaseTrackedOperation(tracked).catch(() => {});
@@ -1971,6 +2062,7 @@ function formatTimelineEvent(event) {
   switch (event.type) {
     case 'entry': text = `${payload.name || '未知人员'}进场`; break;
     case 'exit': text = `${payload.name || '未知人员'}出场`; break;
+    case 'entry_update': text = `修改人员记录：${payload.name || '未知人员'}`; break;
     case 'pressure': text = `${payload.name || '未知人员'}压力复核${payload.pressure_mpa == null ? '' : `：${payload.pressure_mpa}MPa`}`; break;
     case 'note': text = payload.text || ''; break;
     case 'note_updated': text = `修改随手记：${payload.after?.text || payload.text || ''}`; break;
@@ -2803,7 +2895,7 @@ app.post('/api/entries', async (req, res, next) => {
   let tracked = null;
   try {
     const { name, pressure_mpa, source = 'voice', raw_text = null, force = false, volume_l, consumption_lpm } = req.body || {};
-    const incident = await requireIncident(req, res, { active: true });
+    const incident = await requireIncident(req, res);
     if (!incident) return;
     if (!await ensureOperationScope(req, res, incident.id)) return;
     let previous = null;
@@ -2864,6 +2956,10 @@ app.post('/api/entries', async (req, res, next) => {
       }
     }
 
+    if (incident.status !== 'active') {
+      await releaseTrackedOperation(tracked);
+      return res.status(409).json({ error: '警情已归档，不能继续写入现场数据', code: 'INCIDENT_ARCHIVED' });
+    }
     // 同名在场记录：防止同一人重复登记（改名合并走 PATCH，重复进场须 force）
     const existing = await db.findActiveByName(scene, cleanName);
     if (existing && !force) {
@@ -2873,15 +2969,16 @@ app.post('/api/entries', async (req, res, next) => {
       const mm = String(at.getMinutes()).padStart(2, '0');
       await logOp(req, 'warn', 'entry_conflict', '已有人员在场，拒绝重复进场', { entryId: existing.id });
       return res.status(409).json({
-        error: `「${existing.name}」已在火场内（${hh}:${mm} 进入，尚未出场）。请选择改名合并或确认重复进场`,
+        error: `「${existing.name}」已在火场内（${hh}:${mm} 进入，尚未出场）。请复核已有记录，或补充标识区分同名人员`,
         entry: existing,
       });
     }
 
     const now = Date.now();
     const durationMin = Math.round(durationMinutes({ ...calcParam, pressureMpa: p, cylinderVolL: vol || calcParam.cylinderVolL }));
+    const reviewedId = String(req.body?.entry_id || '');
     const entryArgs = {
-      id: crypto.randomUUID(),
+      id: req.body?.reviewed_client_op_id && /^offline-entry-[0-9]+$/.test(reviewedId) ? reviewedId : crypto.randomUUID(),
       scene,
       name: cleanName,
       pressureMpa: p,
@@ -2901,7 +2998,7 @@ app.post('/api/entries', async (req, res, next) => {
       actorName: await actorName(req),
       source: 'online',
       clientOpId: opKey(req),
-      payload: { entry_id: entryArgs.id, name: cleanName, pressure_mpa: p, source },
+      payload: { entry_id: entryArgs.id, name: cleanName, pressure_mpa: p, source, reviewed_client_op_id: req.body?.reviewed_client_op_id || null },
     };
     const atomicResult = typeof db.createEntryWithEvent === 'function'
       ? await db.createEntryWithEvent({ entry: entryArgs, event: eventArgs, activityAt: now })
@@ -2941,7 +3038,7 @@ app.post('/api/entries', async (req, res, next) => {
 app.patch('/api/entries/:id', async (req, res, next) => {
   let tracked = null;
   try {
-    const currentIncident = await requireIncident(req, res, { active: true });
+    const currentIncident = await requireIncident(req, res);
     if (!currentIncident) return;
     if (!await ensureOperationScope(req, res, currentIncident.id)) return;
     const entry = await db.getEntry(req.params.id);
@@ -2991,6 +3088,10 @@ app.patch('/api/entries/:id', async (req, res, next) => {
         return res.status(409).json({ error: '操作记录已存在但业务数据缺失，请联系管理员核查', code: 'CLIENT_OP_ID_INCOMPLETE' });
       }
     }
+    if (currentIncident.status !== 'active') {
+      await releaseTrackedOperation(tracked);
+      return res.status(409).json({ error: '警情已归档，不能继续写入现场数据', code: 'INCIDENT_ARCHIVED' });
+    }
     const now = Date.now();
     // 动态耗气率：每次压力报数存采样，与上次报数差分实测消耗率
     let actualLpm = null;
@@ -3019,19 +3120,22 @@ app.patch('/api/entries/:id', async (req, res, next) => {
       exitAtMs: p != null ? exitAtMs({ ...calcParam, pressureMpa: p, entryAtMs: now }) : null,
       consumptionActualLpm: actualLpm,
     };
-    const eventArgs = p == null ? null : {
+    const eventArgs = {
       incidentId: incident.id,
-      type: 'pressure',
+      type: p == null ? 'entry_update' : 'pressure',
       occurredAt: now,
       actorDeviceId: deviceKey(req),
       actorName: await actorName(req),
       source: 'online',
       clientOpId: opKey(req),
-      payload: { entry_id: entry.id, name: newName || entry.name, pressure_mpa: p, actual_consumption_lpm: actualLpm },
+      payload: { entry_id: entry.id, name: newName || entry.name, pressure_mpa: p, actual_consumption_lpm: actualLpm, reviewed_client_op_id: req.body?.reviewed_client_op_id || null },
     };
     const atomicResult = p != null && typeof db.updatePressureWithEvent === 'function'
       ? await db.updatePressureWithEvent({
         entryId: entry.id,
+        expectedVersion: req.body?.expected_version ?? req.headers['x-expected-version'],
+        newName,
+        calcConfig: { ...CFG.calc, consumptionLpm: consumption },
         scene: entry.scene,
         name: newName || entry.name,
         pressureMpa: p,
@@ -3047,12 +3151,12 @@ app.patch('/api/entries/:id', async (req, res, next) => {
     if (!atomicResult && p != null) {
       await db.addPressureSample({ entryId: entry.id, scene: entry.scene, name: newName || entry.name, pressureMpa: p, reportedAtMs: now });
     }
-    const updated = atomicResult?.entry || await db.updateEntry(entry.id, updateArgs);
+    const updated = atomicResult?.entry || await db.updateEntry(entry.id, { ...updateArgs, expectedVersion: req.body?.expected_version ?? req.headers['x-expected-version'], event: eventArgs });
     await logOp(req, 'info', 'entry_pressure_recheck', '压力报数复核', {
       entryId: entry.id,
       name: updated.name,
       pressureMpa: p,
-      actualConsumptionLpm: actualLpm,
+      actualConsumptionLpm: updated.consumption_actual_lpm,
       durationMin: updated.duration_min,
     });
     let event = atomicResult?.event || null;
@@ -3076,7 +3180,7 @@ app.patch('/api/entries/:id', async (req, res, next) => {
 app.post('/api/entries/:id/exit', async (req, res, next) => {
   let tracked = null;
   try {
-    const currentIncident = await requireIncident(req, res, { active: true });
+    const currentIncident = await requireIncident(req, res);
     if (!currentIncident) return;
     if (!await ensureOperationScope(req, res, currentIncident.id)) return;
     const entry = await db.getEntry(req.params.id);
@@ -3107,6 +3211,10 @@ app.post('/api/entries/:id/exit', async (req, res, next) => {
         return res.status(409).json({ error: '操作 ID 已用于其他操作，请重新提交', code: 'CLIENT_OP_ID_CONFLICT' });
       }
     }
+    if (currentIncident.status !== 'active') {
+      await releaseTrackedOperation(tracked);
+      return res.status(409).json({ error: '警情已归档，不能继续写入现场数据', code: 'INCIDENT_ARCHIVED' });
+    }
     const now = Date.now();
     await logOp(req, 'info', 'entry_exited', `登记出火场`, { entryId: entry.id, name: entry.name });
     const eventArgs = {
@@ -3117,10 +3225,10 @@ app.post('/api/entries/:id/exit', async (req, res, next) => {
       actorName: await actorName(req),
       source: 'online',
       clientOpId: opKey(req),
-      payload: { entry_id: entry.id, name: entry.name },
+      payload: { entry_id: entry.id, name: entry.name, reviewed_client_op_id: req.body?.reviewed_client_op_id || null },
     };
     const atomicResult = typeof db.exitEntryWithEvent === 'function'
-      ? await db.exitEntryWithEvent({ entryId: entry.id, exitedAtMs: now, incidentId: incident.id, activityAt: now, event: eventArgs })
+      ? await db.exitEntryWithEvent({ entryId: entry.id, expectedVersion: req.body?.expected_version ?? req.headers['x-expected-version'], exitedAtMs: now, incidentId: incident.id, activityAt: now, event: eventArgs })
       : null;
     const result = atomicResult?.entry || (await db.markExitedIfActive(entry.id, now)).entry;
     if (atomicResult && !atomicResult.changed) {
@@ -3288,7 +3396,7 @@ app.get('/api/notes', async (req, res) => {
 app.post('/api/notes', async (req, res, next) => {
   let tracked = null;
   try {
-    const incident = await requireIncident(req, res, { active: true });
+    const incident = await requireIncident(req, res);
     if (!incident) return;
     if (!await ensureOperationScope(req, res, incident.id)) return;
     let previous = null;
@@ -3335,6 +3443,10 @@ app.post('/api/notes', async (req, res, next) => {
         author = String(settings.real_name || '').trim().slice(0, 32);
       }
     }
+    if (incident.status !== 'active') {
+      await releaseTrackedOperation(tracked);
+      return res.status(409).json({ error: '警情已归档，不能继续写入现场数据', code: 'INCIDENT_ARCHIVED' });
+    }
     const noteArgs = {
       id: crypto.randomUUID(),
       scene: incident.id,
@@ -3355,7 +3467,7 @@ app.post('/api/notes', async (req, res, next) => {
           actorName: author || null,
           source: 'online',
           clientOpId: opKey(req),
-          payload: { note_id: noteArgs.id, text: clean, category: noteArgs.category, author },
+          payload: { note_id: noteArgs.id, text: clean, category: noteArgs.category, author, reviewed_client_op_id: req.body?.reviewed_client_op_id || null },
         },
       })
       : null;
@@ -3654,6 +3766,11 @@ if (syncSupported()) {
 }
 
 app.use(async (err, req, res, next) => {
+  if (err?.code === 'VERSION_CONFLICT') metrics.entryVersionConflicts++;
+  if (err?.code === 'CLIENT_UPGRADE_REQUIRED') metrics.entryUpgradeRequired++;
+  if (['VERSION_CONFLICT', 'CLIENT_UPGRADE_REQUIRED', 'STALE_PRESSURE', 'ENTRY_EXITED', 'ENTRY_ALREADY_ACTIVE', 'ENTRY_NOT_FOUND', 'DEVICE_NOT_FOUND', 'CURRENT_DEVICE', 'SESSION_REQUIRED', 'SESSION_INVALID'].includes(err?.code)) {
+    return res.status(err.status || 409).json({ error: err.message, code: err.code, current: err.current, entry: err.entry });
+  }
   metrics.databaseErrors += ['23505', 'ECONNREFUSED', '57P01', '08006'].includes(String(err?.code || '')) ? 1 : 0;
   logger.error(req.method, req.path, `request_id=${req.requestId}`, errorSummary(err));
   if (req.headers['x-op-id']) {

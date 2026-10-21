@@ -17,6 +17,7 @@ class _OfflinePressureApi extends ApiClient {
   final fetchEntriesStarted = Completer<void>();
   final fetchEntriesGate = Completer<List<Entry>>();
   bool updateAttempted = false;
+  int? sentVersion;
 
   @override
   Future<Entry> updateEntry({
@@ -25,8 +26,10 @@ class _OfflinePressureApi extends ApiClient {
     double? pressureMpa,
     double? consumptionLpm,
     String? opId,
+    int? expectedVersion,
   }) async {
     updateAttempted = true;
+    sentVersion = expectedVersion;
     throw TimeoutException('simulated offline');
   }
 
@@ -197,11 +200,14 @@ void main() {
 
     await api.fetchEntriesStarted.future;
     expect(api.updateAttempted, isTrue);
+    expect(api.sentVersion, entry.version);
     expect(enqueued, hasLength(1));
     expect(enqueued.single['type'], 'pressure');
     expect(enqueued.single['clientOpId'], 'offline-pressure-regression');
     expect(enqueued.single['payload'], {
       'entry_id': entry.id,
+      'expected_version': entry.version,
+      'name': entry.name,
       'pressure_mpa': 10,
       'volume_l': 9,
       'consumption_lpm': 80,

@@ -84,7 +84,11 @@ class _FakeController extends AppController {
   }
 
   @override
-  Future<void> markExited(String id, {String? opId}) async {
+  Future<void> markExited(
+    String id, {
+    String? opId,
+    int? expectedVersion,
+  }) async {
     exited.add(id);
     entries = entries.map((e) => e.id == id ? _exitedCopy(e) : e).toList();
     notifyListeners();
@@ -95,6 +99,7 @@ class _FakeController extends AppController {
     required String id,
     required double pressureMpa,
     String? opId,
+    int? expectedVersion,
   }) async {
     reported.add(pressureMpa);
     return entries.firstWhere((e) => e.id == id);
@@ -546,7 +551,7 @@ void main() {
       );
       await tester.tap(find.text('触发'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('另有同名人员，另建记录'));
+      await tester.tap(find.text('同名不同人，返回补充标识'));
       await tester.pumpAndSettle();
       expect(result, SameNameChoice.force);
 

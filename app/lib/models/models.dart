@@ -1,6 +1,7 @@
 import 'key_sites.dart';
 
 class Entry {
+  final int version;
   final String id;
   final String name;
   final double? pressureMpa;
@@ -19,6 +20,7 @@ class Entry {
   final double? consumptionActualLpm;
 
   Entry({
+    this.version = 1,
     required this.id,
     required this.name,
     this.pressureMpa,
@@ -34,6 +36,7 @@ class Entry {
   });
 
   Entry copyWith({
+    int? version,
     int? exitedAt,
     double? pressureMpa,
     int? durationMin,
@@ -41,6 +44,7 @@ class Entry {
     double? cylinderVolL,
     double? consumptionLpm,
   }) => Entry(
+    version: version ?? this.version,
     id: id,
     name: name,
     pressureMpa: pressureMpa ?? this.pressureMpa,
@@ -74,6 +78,7 @@ class Entry {
   }
 
   factory Entry.fromJson(Map<String, dynamic> json) => Entry(
+    version: (json['version'] as num?)?.toInt() ?? 1,
     id: json['id'] as String,
     name: json['name'] as String,
     pressureMpa: (json['pressure_mpa'] as num?)?.toDouble(),

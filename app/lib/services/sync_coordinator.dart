@@ -110,6 +110,11 @@ class SyncCoordinator {
   void _handleMessage(Map<String, dynamic> message) {
     if (_stopped) return;
     final type = message['type']?.toString();
+    if (type == 'auth_revoked') {
+      final error = ApiException('登录已被撤销，请重新认证', statusCode: 401, code: 'SESSION_INVALID');
+      onState(SyncConnectionState.error, error);
+      return;
+    }
     if (type == 'ready') {
       onState(SyncConnectionState.connected, null);
       return;

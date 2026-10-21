@@ -153,6 +153,7 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  int offlineReviewCount = 0;
   bool _protectedDataRevoked = false;
   int _protectedDataEpoch = 0;
   bool get canReadKeySites =>
@@ -161,6 +162,7 @@ class AppController extends ChangeNotifier {
   bool get protectedDataRevoked => _protectedDataRevoked;
   KeySiteRecents get keySiteRecents => KeySiteRecents.instance;
   void _revokeProtectedData() {
+    offlineReviewCount = 0;
     adminCapability = null;
     _clearMemberReview();
     _adminCapabilityTimer?.cancel();
@@ -563,6 +565,9 @@ class AppController extends ChangeNotifier {
     final userRole = (result['user'] is Map)
         ? (result['user']['role']?.toString() ?? 'member')
         : 'member';
+    await Settings.setMemberId(
+      result['user'] is Map ? result['user']['id']?.toString() ?? '' : '',
+    );
     await Settings.setUserRole(userRole);
     await Settings.setIsGuestMode(false);
     await Settings.clearPendingApplication();
@@ -787,6 +792,7 @@ class AppController extends ChangeNotifier {
     await Settings.setSessionToken('');
     await Settings.setSessionExpiresAt(0);
     await Settings.setRealName('');
+    await Settings.setMemberId('');
     await Settings.setUnitId('');
     await Settings.setUnitCode('');
     await Settings.setUnitName('');
@@ -1122,6 +1128,10 @@ class AppController extends ChangeNotifier {
   }
 
   void _handleSyncState(SyncConnectionState state, Object? error) {
+    if (error != null && ApiClient.isAuthenticationFailure(error)) {
+      unawaited(_invalidateAuthenticationOnce());
+      return;
+    }
     syncConnectionState = state;
     if (state == SyncConnectionState.connected) {
       _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
@@ -1378,6 +1388,11 @@ class AppController extends ChangeNotifier {
     // 一次性状态通知；这也避免短请求沿用上一轮“已连接”文案造成误导。
     _notify();
     try {
+      if (_offlineQueueDrainer == null && (await Settings.memberId).isEmpty) {
+        final identity = await a.fetchAuthIdentity();
+        if (!_isCurrentSession(a, generation)) return;
+        await Settings.setMemberId(identity['member_id']?.toString() ?? '');
+      }
       final fetchedActiveIncidents = await a.fetchIncidents(status: 'active');
       if (!_isCurrentSession(a, generation)) return;
       activeIncidents = fetchedActiveIncidents;
@@ -1394,6 +1409,11 @@ class AppController extends ChangeNotifier {
           (id) => a.forIncident(id),
           allowedIncidentIds: allowedIncidentIds,
         );
+        final reviewCount =
+            (await OfflineQueue.instance.reviewOperations()).length +
+            await OfflineQueue.instance.legacyReviewCount();
+        if (!_isCurrentSession(a, generation)) return;
+        offlineReviewCount = reviewCount;
       }
       if (!_isCurrentSession(a, generation)) return;
       if (savedId.isEmpty) {
@@ -1651,6 +1671,7 @@ class AppController extends ChangeNotifier {
     await Settings.setApiToken('');
     await Settings.setSessionToken('');
     await Settings.setSessionExpiresAt(0);
+    await Settings.setMemberId('');
     await Settings.setUnitId('');
     await Settings.setUnitCode('');
     final previousApi = api;
@@ -1817,9 +1838,14 @@ class AppController extends ChangeNotifier {
   }) async {
     final incident = currentIncident;
     if (incident == null) throw StateError('请先选择或新建警情');
+    final operationApi = api;
+    final owner = <String, String>{
+      'unit_id': operationApi?.unitId ?? '',
+      'member_id': await Settings.memberId,
+    };
     Entry e;
     try {
-      e = await api!.createEntry(
+      e = await operationApi!.createEntry(
         name: name,
         pressureMpa: pressureMpa,
         source: 'voice',
@@ -1837,6 +1863,7 @@ class AppController extends ChangeNotifier {
       final duration = (volume * pressureMpa * 10 / calcConfig.consumptionLpm)
           .round();
       await OfflineQueue.instance.enqueue(
+        owner: owner,
         incidentId: incident.id,
         type: 'entry',
         occurredAt: at,
@@ -1865,6 +1892,7 @@ class AppController extends ChangeNotifier {
     }
     // 提交成功立即插入本地列表并通知（看板即时显示倒计时），
     // 不依赖 sync 网络结果——网络不稳时同步失败也不影响本地展示
+    if (api != operationApi) return e;
     entries = [e, ...entries.where((x) => x.id != e.id)];
     _notify();
     await sync();
@@ -1876,9 +1904,12 @@ class AppController extends ChangeNotifier {
     required String id,
     required double pressureMpa,
     String? opId,
+    int? expectedVersion,
   }) async {
+    if (!entries.any((entry) => entry.id == id)) await sync();
     final e = await updatePressure(
       id: id,
+      expectedVersion: expectedVersion,
       pressureMpa: pressureMpa,
       opId: opId,
     );
@@ -1891,6 +1922,7 @@ class AppController extends ChangeNotifier {
     required String id,
     required double pressureMpa,
     String? opId,
+    int? expectedVersion,
   }) async {
     final op = opId ?? '';
     OpLogService.instance.record(
@@ -1900,16 +1932,32 @@ class AppController extends ChangeNotifier {
       data: {'entryId': id},
     );
     final current = entries.firstWhere((entry) => entry.id == id);
+    final incident = currentIncident;
+    final operationApi = api;
+    final owner = <String, String>{
+      'unit_id': operationApi?.unitId ?? '',
+      'member_id': await Settings.memberId,
+    };
     Entry e;
     try {
-      e = await api!.updateEntry(
+      e = await operationApi!.updateEntry(
         id: id,
+        expectedVersion: expectedVersion ?? current.version,
         pressureMpa: pressureMpa,
         consumptionLpm: calcConfig.consumptionLpm,
         opId: op,
       );
     } catch (error) {
-      if (!_isNetworkError(error) || currentIncident == null) rethrow;
+      if (error is ApiException &&
+          [
+            'VERSION_CONFLICT',
+            'ENTRY_EXITED',
+            'STALE_PRESSURE',
+          ].contains(error.code)) {
+        await sync();
+        rethrow;
+      }
+      if (!_isNetworkError(error) || incident == null) rethrow;
       final occurredAt = DateTime.now().millisecondsSinceEpoch;
       final volume = current.cylinderVolL ?? calcConfig.cylinderVolL;
       final consumption = current.consumptionLpm ?? calcConfig.consumptionLpm;
@@ -1918,6 +1966,8 @@ class AppController extends ChangeNotifier {
           : op;
       final payload = {
         'entry_id': id,
+        'expected_version': expectedVersion ?? current.version,
+        'name': current.name,
         'pressure_mpa': pressureMpa,
         'volume_l': volume,
         'consumption_lpm': consumption,
@@ -1925,7 +1975,7 @@ class AppController extends ChangeNotifier {
       final enqueue = _offlineOperationEnqueuer;
       if (enqueue != null) {
         await enqueue(
-          incidentId: currentIncident!.id,
+          incidentId: incident.id,
           type: 'pressure',
           occurredAt: occurredAt,
           clientOpId: clientOpId,
@@ -1933,7 +1983,8 @@ class AppController extends ChangeNotifier {
         );
       } else {
         await OfflineQueue.instance.enqueue(
-          incidentId: currentIncident!.id,
+          owner: owner,
+          incidentId: incident.id,
           type: 'pressure',
           occurredAt: occurredAt,
           clientOpId: clientOpId,
@@ -1955,26 +2006,57 @@ class AppController extends ChangeNotifier {
         consumptionLpm: consumption,
       );
     }
+    if (api != operationApi) return e;
     entries = [for (final entry in entries) entry.id == id ? e : entry];
     _notify();
     await sync();
     return e;
   }
 
-  Future<void> markExited(String id, {String? opId}) async {
+  Future<void> markExited(
+    String id, {
+    String? opId,
+    int? expectedVersion,
+  }) async {
+    final incident = currentIncident;
+    final current = entries.firstWhere((e) => e.id == id);
+    final operationApi = api;
+    final owner = <String, String>{
+      'unit_id': operationApi?.unitId ?? '',
+      'member_id': await Settings.memberId,
+    };
     try {
-      await api!.markExited(id, opId: opId);
+      await operationApi!.markExited(
+        id,
+        opId: opId,
+        expectedVersion: expectedVersion ?? current.version,
+      );
     } catch (error) {
-      if (!_isNetworkError(error) || currentIncident == null) rethrow;
+      if (error is ApiException &&
+          [
+            'VERSION_CONFLICT',
+            'ENTRY_EXITED',
+            'STALE_PRESSURE',
+          ].contains(error.code)) {
+        await sync();
+        rethrow;
+      }
+      if (!_isNetworkError(error) || incident == null) rethrow;
       final exitedAt = DateTime.now().millisecondsSinceEpoch;
       await OfflineQueue.instance.enqueue(
-        incidentId: currentIncident!.id,
+        owner: owner,
+        incidentId: incident.id,
         type: 'exit',
         occurredAt: exitedAt,
         clientOpId:
             opId ?? 'offline-exit-${DateTime.now().microsecondsSinceEpoch}',
-        payload: {'entry_id': id},
+        payload: {
+          'entry_id': id,
+          'expected_version': expectedVersion ?? current.version,
+          'name': current.name,
+        },
       );
+      if (api != operationApi) return;
       entries = [
         for (final entry in entries)
           entry.id == id ? entry.copyWith(exitedAt: exitedAt) : entry,
@@ -2205,20 +2287,36 @@ class AppController extends ChangeNotifier {
   Future<Note> addNote(String text, {String? category, String? opId}) async {
     final cat = category ?? NoteCategory.fromText(text);
     final author = await Settings.realName;
+    final incident = currentIncident;
+    final operationApi = api;
+    final owner = <String, String>{
+      'unit_id': operationApi?.unitId ?? '',
+      'member_id': await Settings.memberId,
+    };
     Note note;
     try {
-      note = await api!.createNote(
+      note = await operationApi!.createNote(
         text: text,
         category: cat,
         opId: opId,
         author: author,
       );
     } catch (error) {
-      if (!_isNetworkError(error) || currentIncident == null) rethrow;
+      if (error is ApiException &&
+          [
+            'VERSION_CONFLICT',
+            'ENTRY_EXITED',
+            'STALE_PRESSURE',
+          ].contains(error.code)) {
+        await sync();
+        rethrow;
+      }
+      if (!_isNetworkError(error) || incident == null) rethrow;
       final at = DateTime.now().millisecondsSinceEpoch;
       final noteId = 'offline-note-${DateTime.now().microsecondsSinceEpoch}';
       await OfflineQueue.instance.enqueue(
-        incidentId: currentIncident!.id,
+        owner: owner,
+        incidentId: incident.id,
         type: 'note',
         occurredAt: at,
         clientOpId: opId ?? noteId,
@@ -2235,6 +2333,7 @@ class AppController extends ChangeNotifier {
     }
     // 创建请求返回与实时 note.created 事件可能以任意顺序到达；按服务端
     // note.id 合并，避免同一条日志在本地列表中显示两次。
+    if (api != operationApi) return note;
     notes = [note, ...notes.where((item) => item.id != note.id)];
     _notify();
     return note;

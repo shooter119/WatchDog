@@ -5,6 +5,15 @@ import '../theme/app_palette.dart';
 import 'secure_store.dart';
 
 class Settings {
+  static Future<String> get memberId async =>
+      (await SharedPreferences.getInstance()).getString('auth_member_id') ?? '';
+  static Future<void> setMemberId(String value) async {
+    await (await SharedPreferences.getInstance()).setString(
+      'auth_member_id',
+      value,
+    );
+  }
+
   static const maxCylinderVolL = 20.0;
   static const maxFullPressureMpa = 40.0;
   static const maxConsumptionLpm = 300.0;
@@ -464,7 +473,10 @@ class Settings {
     await sp.setString(_kPendingAppRealName, realName.trim());
     await sp.setString(_kPendingAppStationName, (stationName ?? '').trim());
     await sp.setString(_kPendingAppPhone, (phone ?? '').trim());
-    await sp.setString(_kPendingAppSubmittedAt, DateTime.now().toIso8601String());
+    await sp.setString(
+      _kPendingAppSubmittedAt,
+      DateTime.now().toIso8601String(),
+    );
   }
 
   static Future<void> clearPendingApplication() async {

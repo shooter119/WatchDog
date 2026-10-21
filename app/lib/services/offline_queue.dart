@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../api/api_client.dart';
+import 'settings.dart';
 
 const _offlineOperationsTable = 'offline_operations';
 const _offlineQuarantineTable = 'offline_operations_quarantine';
@@ -46,6 +47,7 @@ Future<void> drainOfflineOperationRows(
   required OfflineOperationQuarantiner quarantine,
   required OfflineOperationRemover removeAccepted,
   Set<String>? allowedIncidentIds,
+  Future<void> Function(String, Map<String, dynamic>)? reject,
 }) async {
   final grouped = <String, List<Map<String, dynamic>>>{};
   for (final row in rows) {
@@ -64,6 +66,8 @@ Future<void> drainOfflineOperationRows(
       }
       final payload = Map<String, dynamic>.from(decoded);
       grouped.putIfAbsent(incidentId, () => []).add({
+        'owner_member_id': row['owner_member_id'],
+        'owner_unit_id': row['owner_unit_id'],
         'type': row['type'],
         'occurred_at': row['occurred_at'],
         'client_op_id': row['client_op_id'],
@@ -84,7 +88,8 @@ Future<void> drainOfflineOperationRows(
       continue;
     }
     try {
-      final response = await upload(entry.key, entry.value);
+      final batch = entry.value.take(100).toList();
+      final response = await upload(entry.key, batch);
       final rawResults = response['results'];
       if (rawResults is! List) continue;
       final resultByOp = <String, Map<String, dynamic>>{};
@@ -94,14 +99,15 @@ Future<void> drainOfflineOperationRows(
         if (opId == null || opId.isEmpty) continue;
         resultByOp[opId] = Map<String, dynamic>.from(rawResult);
       }
-      for (final op in entry.value) {
+      for (final op in batch) {
         final opId = op['client_op_id']?.toString();
         if (opId == null || opId.isEmpty) continue;
         final result = resultByOp[opId];
-        if (result != null &&
-            (result['accepted'] == true ||
-                result['code'] == 'OFFLINE_WINDOW_EXPIRED')) {
+        if (result?['accepted'] == true) {
           await removeAccepted(opId);
+        } else if (result != null &&
+            result['code'] != 'OPERATION_IN_PROGRESS') {
+          await reject?.call(opId, result);
         }
       }
     } catch (_) {
@@ -112,17 +118,36 @@ Future<void> drainOfflineOperationRows(
 
 class OfflineQueue {
   OfflineQueue._();
+  OfflineQueue.forDatabase({
+    required DatabaseFactory factory,
+    required String path,
+  }) : _factory = factory,
+       _path = path;
+  DatabaseFactory? _factory;
+  String? _path;
+
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
+
   static final OfflineQueue instance = OfflineQueue._();
   Database? _db;
 
   Future<Database> get _database async {
     if (_db != null) return _db!;
-    final dir = await getApplicationDocumentsDirectory();
-    _db = await openDatabase(
-      p.join(dir.path, 'watchdog_offline.db'),
-      version: 2,
-      onCreate: (db, _) async {
-        await db.execute('''
+    final location =
+        _path ??
+        p.join(
+          (await getApplicationDocumentsDirectory()).path,
+          'watchdog_offline.db',
+        );
+    _db = await (_factory ?? databaseFactory).openDatabase(
+      location,
+      options: OpenDatabaseOptions(
+        version: 3,
+        onCreate: (db, _) async {
+          await db.execute('''
           CREATE TABLE offline_operations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             incident_id TEXT NOT NULL,
@@ -133,15 +158,41 @@ class OfflineQueue {
             created_at INTEGER NOT NULL
           )
         ''');
-        await db.execute(_offlineQuarantineTableSql);
-      },
-      onUpgrade: (db, oldVersion, _) async {
-        if (oldVersion < 2) {
           await db.execute(_offlineQuarantineTableSql);
-        }
-      },
+          await _upgradeOwnership(db);
+        },
+        onUpgrade: (db, oldVersion, _) async {
+          if (oldVersion < 2) {
+            await db.execute(_offlineQuarantineTableSql);
+          }
+          if (oldVersion < 3) await _upgradeOwnership(db);
+        },
+      ),
     );
     return _db!;
+  }
+
+  static Future<void> _upgradeOwnership(Database db) async {
+    await db.execute(
+      "ALTER TABLE offline_operations ADD COLUMN owner_unit_id TEXT NOT NULL DEFAULT ''",
+    );
+    await db.execute(
+      "ALTER TABLE offline_operations ADD COLUMN owner_member_id TEXT NOT NULL DEFAULT ''",
+    );
+    await db.execute(
+      "ALTER TABLE offline_operations ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'",
+    );
+    await db.execute('ALTER TABLE offline_operations ADD COLUMN result TEXT');
+    await db.execute(
+      'ALTER TABLE offline_operations ADD COLUMN resolution TEXT',
+    );
+    await db.execute(
+      'ALTER TABLE offline_operations ADD COLUMN retry_request TEXT',
+    );
+    await db.update(_offlineOperationsTable, {
+      'status': 'review',
+      'result': jsonEncode({'error': '旧记录缺少可靠成员归属，请原记录人核对'}),
+    });
   }
 
   Future<void> enqueue({
@@ -150,31 +201,148 @@ class OfflineQueue {
     required int occurredAt,
     required String clientOpId,
     required Map<String, dynamic> payload,
+    Map<String, String>? owner,
   }) async {
     final db = await _database;
-    await db.insert(_offlineOperationsTable, {
-      'incident_id': incidentId,
-      'type': type,
-      'occurred_at': occurredAt,
-      'client_op_id': clientOpId,
-      'payload': jsonEncode(payload),
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    final unitId = owner?['unit_id'] ?? await Settings.unitId;
+    final memberId = owner?['member_id'] ?? await Settings.memberId;
+    await db.transaction((txn) async {
+      final data = Map<String, dynamic>.from(payload);
+      final previous = await txn.query(
+        _offlineOperationsTable,
+        where:
+            'incident_id=? AND owner_unit_id=? AND owner_member_id=? AND status<>?',
+        whereArgs: [incidentId, unitId, memberId, 'resolved'],
+        orderBy: 'id DESC',
+      );
+      for (final row in previous) {
+        final old = jsonDecode(row['payload'] as String);
+        if (data['entry_id'] != null && old['entry_id'] == data['entry_id']) {
+          data['predecessor_op_id'] = row['client_op_id'];
+          break;
+        }
+      }
+      await txn.insert(_offlineOperationsTable, {
+        'incident_id': incidentId,
+        'type': type,
+        'occurred_at': occurredAt,
+        'client_op_id': clientOpId,
+        'payload': jsonEncode(data),
+        'owner_unit_id': unitId,
+        'owner_member_id': memberId,
+        'status': memberId.isEmpty || unitId.isEmpty ? 'review' : 'pending',
+        'result': memberId.isEmpty || unitId.isEmpty
+            ? jsonEncode({'error': '缺少成员身份，请重新认证后核对'})
+            : null,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    });
   }
 
   Future<int> pendingCount() async => (await _database)
-      .rawQuery('SELECT COUNT(*) AS count FROM $_offlineOperationsTable')
+      .rawQuery(
+        "SELECT COUNT(*) AS count FROM $_offlineOperationsTable WHERE status='pending'",
+      )
       .then((rows) => (rows.first['count'] as int?) ?? 0);
 
   /// 读取某一警情尚未补传的原始操作，供同步后重新叠加本地乐观状态。
   /// 返回顺序固定为入队顺序，调用方据此重放进场、压力复核和出场操作。
-  Future<List<Map<String, Object?>>> pendingOperations(String incidentId) async =>
+  Future<List<Map<String, Object?>>> pendingOperations(
+    String incidentId,
+  ) async => (await _database).query(
+    _offlineOperationsTable,
+    where:
+        "incident_id=? AND owner_unit_id=? AND owner_member_id=? AND status='pending'",
+    whereArgs: [incidentId, await Settings.unitId, await Settings.memberId],
+    orderBy: 'id ASC',
+  );
+
+  Future<List<Map<String, Object?>>> reviewOperations() async =>
       (await _database).query(
         _offlineOperationsTable,
-        where: 'incident_id = ?',
-        whereArgs: [incidentId],
+        where: "status='review' AND owner_unit_id=? AND owner_member_id=?",
+        whereArgs: [await Settings.unitId, await Settings.memberId],
         orderBy: 'id ASC',
       );
+
+  Future<List<Map<String, Object?>>> legacyOperations() async =>
+      (await _database).query(
+        _offlineOperationsTable,
+        where: "status='review' AND (owner_unit_id='' OR owner_member_id='')",
+        orderBy: 'id ASC',
+      );
+
+  Future<void> claimLegacy(String opId) async {
+    final member = await Settings.memberId;
+    final unit = await Settings.unitId;
+    if (member.isEmpty || unit.isEmpty) throw StateError('请重新认证后核对');
+    await (await _database).update(
+      _offlineOperationsTable,
+      {
+        'owner_member_id': member,
+        'owner_unit_id': unit,
+        'resolution': 'original_actor_confirmed',
+      },
+      where:
+          "client_op_id=? AND status='review' AND (owner_member_id='' OR owner_unit_id='')",
+      whereArgs: [opId],
+    );
+  }
+
+  Future<Map<String, dynamic>> prepareReview(
+    String opId,
+    Map<String, dynamic> request,
+  ) async {
+    final db = await _database;
+    final unit = await Settings.unitId;
+    final member = await Settings.memberId;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        _offlineOperationsTable,
+        where:
+            "client_op_id=? AND status='review' AND owner_unit_id=? AND owner_member_id=?",
+        whereArgs: [opId, unit, member],
+      );
+      if (rows.isEmpty) throw StateError('记录身份或状态已改变，请刷新后核对');
+      final existing = rows.single['retry_request'];
+      if (existing is String) {
+        return Map<String, dynamic>.from(jsonDecode(existing) as Map);
+      }
+      await txn.update(
+        _offlineOperationsTable,
+        {'retry_request': jsonEncode(request)},
+        where: 'client_op_id=?',
+        whereArgs: [opId],
+      );
+      return request;
+    });
+  }
+
+  Future<void> clearReviewRequest(String opId) async {
+    await (await _database).update(
+      _offlineOperationsTable,
+      {'retry_request': null},
+      where: 'client_op_id=? AND owner_unit_id=? AND owner_member_id=?',
+      whereArgs: [opId, await Settings.unitId, await Settings.memberId],
+    );
+  }
+
+  Future<int> legacyReviewCount() async => (await _database)
+      .rawQuery(
+        "SELECT COUNT(*) AS count FROM offline_operations WHERE status='review' AND (owner_unit_id='' OR owner_member_id='')",
+      )
+      .then((rows) => (rows.first['count'] as int?) ?? 0);
+
+  Future<void> resolveReview(String opId, String resolution) async {
+    final db = await _database;
+    await db.update(
+      _offlineOperationsTable,
+      {'status': 'resolved', 'resolution': resolution},
+      where:
+          "client_op_id=? AND owner_unit_id=? AND owner_member_id=? AND status='review'",
+      whereArgs: [opId, await Settings.unitId, await Settings.memberId],
+    );
+  }
 
   /// 读取被隔离的原始记录，供诊断/人工恢复使用；不会返回到补传队列。
   Future<List<Map<String, Object?>>> quarantinedOperations() async =>
@@ -218,7 +386,12 @@ class OfflineQueue {
     Set<String>? allowedIncidentIds,
   }) async {
     final db = await _database;
-    final rows = await db.query(_offlineOperationsTable, orderBy: 'id ASC');
+    final rows = await db.query(
+      _offlineOperationsTable,
+      where: "status='pending' AND owner_unit_id=? AND owner_member_id=?",
+      whereArgs: [await Settings.unitId, await Settings.memberId],
+      orderBy: 'id ASC',
+    );
     await drainOfflineOperationRows(
       rows,
       allowedIncidentIds: allowedIncidentIds,
@@ -231,8 +404,17 @@ class OfflineQueue {
         }
       },
       quarantine: (row, error) => _quarantineRow(db, row, error),
-      removeAccepted: (clientOpId) => db.delete(
+      reject: (opId, result) async {
+        await db.update(
+          _offlineOperationsTable,
+          {'status': 'review', 'result': jsonEncode(result)},
+          where: 'client_op_id=?',
+          whereArgs: [opId],
+        );
+      },
+      removeAccepted: (clientOpId) => db.update(
         _offlineOperationsTable,
+        {'status': 'resolved', 'resolution': 'uploaded'},
         where: 'client_op_id = ?',
         whereArgs: [clientOpId],
       ),

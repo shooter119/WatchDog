@@ -446,6 +446,9 @@ class ApiClient {
       statusCode: res.statusCode,
       code: _responseCode(res, body),
       requestId: res.headers['x-request-id'],
+      current: body is Map && body['current'] is Map
+          ? Map<String, dynamic>.from(body['current'] as Map)
+          : null,
     );
     if (isAuthenticationFailure(error)) onAuthenticationFailure?.call(error);
     return error;
@@ -587,6 +590,83 @@ class ApiClient {
     return ParseResult.fromJson(body as Map<String, dynamic>);
   }
 
+  Future<void> submitReviewedOperation({
+    required String type,
+    required Map<String, dynamic> payload,
+    required String originalOpId,
+    required String newOpId,
+    int? expectedVersion,
+  }) async {
+    final id = Uri.encodeComponent(payload['entry_id']?.toString() ?? '');
+    final path = type == 'note'
+        ? '/api/notes'
+        : type == 'entry'
+        ? '/api/entries'
+        : type == 'exit'
+        ? '/api/entries/$id/exit'
+        : '/api/entries/$id';
+    final data = {
+      ...payload,
+      'reviewed_client_op_id': originalOpId,
+      if (expectedVersion != null) 'expected_version': expectedVersion,
+    };
+    data.remove('predecessor_op_id');
+    final res =
+        await (type == 'pressure'
+                ? _client.patch(
+                    _uri(path),
+                    headers: _opHeaders(newOpId),
+                    body: jsonEncode(data),
+                  )
+                : _client.post(
+                    _uri(path),
+                    headers: _opHeaders(newOpId),
+                    body: jsonEncode(data),
+                  ))
+            .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(res, fallback: '重新提交失败');
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw _apiException(res, body: body, fallback: '重新提交失败');
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchAuthIdentity() async {
+    final res = await _client
+        .get(_uri('/api/auth/identity'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取成员身份失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取成员身份失败');
+    }
+    return Map<String, dynamic>.from(body as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchLoginDevices() async {
+    final res = await _client
+        .get(_uri('/api/auth/devices'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取登录设备失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取登录设备失败');
+    }
+    return (body as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<void> revokeLoginDevice(String? id) async {
+    final path = id == null
+        ? 'revoke-others'
+        : '${Uri.encodeComponent(id)}/revoke';
+    final res = await _client
+        .post(_uri('/api/auth/devices/$path'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '退出设备失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '退出设备失败');
+    }
+  }
+
   Future<List<Entry>> fetchEntries({bool activeOnly = false}) async {
     final res = await _client
         .get(
@@ -653,12 +733,14 @@ class ApiClient {
     double? pressureMpa,
     double? consumptionLpm,
     String? opId,
+    int? expectedVersion,
   }) async {
     final res = await _client
         .patch(
           _uri('/api/entries/$id'),
           headers: _opHeaders(opId),
           body: jsonEncode({
+            if (expectedVersion != null) 'expected_version': expectedVersion,
             if (name != null) 'name': name,
             if (pressureMpa != null) 'pressure_mpa': pressureMpa,
             if (consumptionLpm != null) 'consumption_lpm': consumptionLpm,
@@ -675,9 +757,19 @@ class ApiClient {
     return Entry.fromJson(body as Map<String, dynamic>);
   }
 
-  Future<void> markExited(String id, {String? opId}) async {
+  Future<void> markExited(
+    String id, {
+    String? opId,
+    int? expectedVersion,
+  }) async {
     final res = await _client
-        .post(_uri('/api/entries/$id/exit'), headers: _opHeaders(opId))
+        .post(
+          _uri('/api/entries/$id/exit'),
+          headers: _opHeaders(opId),
+          body: jsonEncode({
+            if (expectedVersion != null) 'expected_version': expectedVersion,
+          }),
+        )
         .timeout(const Duration(seconds: 15));
     if (res.statusCode != 200) {
       final body = _decodeJson(res, fallback: '登记出火场失败');
@@ -1247,6 +1339,9 @@ class ApiClient {
           'unit_name': unitName,
           'unit_code': unitCode,
           'real_name': realName,
+          'device_name':
+              '${Platform.isAndroid ? 'Android 设备' : Platform.operatingSystem}${deviceId.isEmpty ? '' : ' · ${deviceId.substring(deviceId.length > 6 ? deviceId.length - 6 : 0)}'}',
+          'platform': Platform.operatingSystem,
         }),
       ),
       timeout: const Duration(seconds: 12),
@@ -1962,7 +2057,14 @@ class ApiException implements Exception {
   final int? statusCode;
   final String? code;
   final String? requestId;
-  ApiException(this.message, {this.statusCode, this.code, this.requestId});
+  final Map<String, dynamic>? current;
+  ApiException(
+    this.message, {
+    this.statusCode,
+    this.code,
+    this.requestId,
+    this.current,
+  });
   @override
   String toString() => message;
 }
