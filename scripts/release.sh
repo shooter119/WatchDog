@@ -301,7 +301,7 @@ print(f"index.html 已更新为 {version} / {apk_url}")
 PY
     rsync -az --delete "$WEBSITE_DIR/" "${OTA_HOST}:${WEBSITE_REMOTE_DIR}/"
     ssh "$OTA_HOST" "cd '$(dirname "$COMPOSE_FILE")/../..' && docker compose -f '${COMPOSE_FILE}' build website >/dev/null && docker compose -f '${COMPOSE_FILE}' up -d website >/dev/null && echo website_rebuilt"
-    PAGE="$(curl -fsS --max-time 20 "${PUBLIC_BASE}/")"
+    PAGE="$(curl -fsS --retry 8 --retry-delay 2 --retry-all-errors --max-time 20 "${PUBLIC_BASE}/")"
     echo "$PAGE" | grep -q "id=\"site-version\">${VERSION}+${BUILD}<" \
       || die "官网版本未更新（OTA 已发布，仅官网未同步）：请检查 ${OTA_HOST} 上的 website 容器"
     echo "$PAGE" | grep -q "${APK_NAME}" \
