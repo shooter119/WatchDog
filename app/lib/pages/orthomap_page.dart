@@ -58,7 +58,12 @@ class _OrthomapPageState extends State<OrthomapPage> {
         }
         final maps = snapshot.data!;
         if (maps.isEmpty) {
-          return const Center(child: Text('本单位暂无地图，请联系管理员导入影像'));
+          return const Center(
+            child: AppEmptyState(
+              icon: Icons.map_outlined,
+              title: '本单位暂无地图，请联系管理员导入影像',
+            ),
+          );
         }
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),

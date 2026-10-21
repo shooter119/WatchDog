@@ -35,7 +35,13 @@ class AdminScannerPage extends StatelessWidget {
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AppBar(title: const Text('扫一扫')),
-          body: const Center(child: Text('无有效后台授权，请返回后重新认证或联系平台管理员')),
+          body: const Center(
+            child: AppEmptyState(
+              icon: Icons.qr_code_scanner_outlined,
+              title: '无有效后台授权',
+              hint: '请返回后重新认证或联系平台管理员',
+            ),
+          ),
         );
       }
       return _Scanner(

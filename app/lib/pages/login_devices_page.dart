@@ -82,7 +82,12 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('登录设备')),
       body: !_authorized
-          ? const Center(child: Text('登录已失效，请返回重新认证'))
+          ? const Center(
+              child: AppEmptyState(
+                icon: Icons.devices_other_outlined,
+                title: '登录已失效，请返回重新认证',
+              ),
+            )
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [

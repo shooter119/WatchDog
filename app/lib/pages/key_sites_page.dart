@@ -92,16 +92,11 @@ class KeySiteGate extends StatelessWidget {
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AppBar(title: const Text('重点单位')),
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.s6),
-              child: Text(
-                '仅已认证的有效成员可查阅\n请加入单位或重新完成认证',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.bodyMd.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
+          body: const Center(
+            child: AppEmptyState(
+              icon: Icons.verified_user_outlined,
+              title: '仅已认证的有效成员可查阅',
+              hint: '请加入单位或重新完成认证',
             ),
           ),
         );

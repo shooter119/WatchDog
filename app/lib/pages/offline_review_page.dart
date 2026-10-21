@@ -291,7 +291,12 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('离线记录待核对')),
       body: !_authorized
-          ? const Center(child: Text('登录已失效，请返回重新认证'))
+          ? const Center(
+              child: AppEmptyState(
+                icon: Icons.cloud_off_outlined,
+                title: '登录已失效，请返回重新认证',
+              ),
+            )
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
