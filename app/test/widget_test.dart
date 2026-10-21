@@ -60,6 +60,7 @@ class _FakeController extends AppController {
   bool fakeNeedsAuthentication = false;
   bool fakeIsGuest = false;
   bool fakeCanReadKeySites = false;
+  int createIncidentCalls = 0;
 
   @override
   bool get canReadKeySites => fakeCanReadKeySites;
@@ -118,6 +119,21 @@ class _FakeController extends AppController {
     notes = [note, ...notes];
     notifyListeners();
     return note;
+  }
+
+  @override
+  Future<Incident> createIncident() async {
+    createIncidentCalls++;
+    const incident = Incident(
+      id: 'new-timestamp-incident',
+      number: '2026年10月21日14时30分1#警情',
+      status: 'active',
+      createdAt: 1,
+      lastActivityAt: 1,
+    );
+    currentIncident = incident;
+    notifyListeners();
+    return incident;
   }
 
   @override
@@ -2677,7 +2693,59 @@ void main() {
       await tester.tap(find.text('日志'), warnIfMissed: false);
       await tester.pump();
       expect(find.text('火场日志'), findsNothing);
-      expect(find.text('先选择一份警情'), findsOneWidget);
+      expect(find.text('选择警情或直接进入'), findsOneWidget);
+      expect(find.text('直接进入 App'), findsOneWidget);
+      expect(find.text('查阅重点单位资料'), findsNothing);
+    });
+
+    testWidgets('从启动层直接进入后可使用导航并显示无警情首页', (tester) async {
+      final c = _FakeController(currentIncident: null)..currentIncident = null;
+      await tester.pumpWidget(WatchDogApp(controller: c));
+      await tester.pump();
+
+      await tester.tap(find.text('直接进入 App'));
+      await tester.pump();
+
+      expect(find.byKey(const Key('incident-selection-overlay')), findsNothing);
+      expect(find.text('暂无正在处置的警情'), findsOneWidget);
+      expect(
+        find.byKey(const Key('choose-incident-from-home')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('choose-incident-from-home')));
+      await tester.pump();
+      expect(
+        find.byKey(const Key('incident-selection-overlay')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('直接进入 App'));
+      await tester.pump();
+
+      await tester.tap(find.text('日志'));
+      await tester.pump();
+      expect(find.text('火场日志'), findsOneWidget);
+      expect(find.text('请先选择或新建警情，再记录火场日志'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('notes-manual-log-fab')));
+      await tester.pump();
+      expect(
+        find.byKey(const Key('incident-selection-overlay')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('从启动层新建警情直接使用时间戳名称', (tester) async {
+      final c = _FakeController(currentIncident: null)..currentIncident = null;
+      await tester.pumpWidget(WatchDogApp(controller: c));
+      await tester.pump();
+
+      await tester.tap(find.text('新建警情'));
+      await tester.pumpAndSettle();
+
+      expect(c.createIncidentCalls, 1);
+      expect(find.text('补充警情名称'), findsNothing);
+      expect(find.text('2026年10月21日14时30分1#警情'), findsOneWidget);
+      expect(find.byKey(const Key('incident-selection-overlay')), findsNothing);
     });
 
     testWidgets('已认证未选警情可进入设置并返回原选择层，不自动加入警情', (tester) async {
@@ -2692,7 +2760,7 @@ void main() {
       expect(c.currentIncident, isNull);
       await tester.pageBack();
       await tester.pumpAndSettle();
-      expect(find.text('先选择一份警情'), findsOneWidget);
+      expect(find.text('选择警情或直接进入'), findsOneWidget);
       expect(c.currentIncident, isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });
@@ -3478,7 +3546,7 @@ void main() {
       expect(find.text('处置中'), findsNothing);
     });
 
-    testWidgets('320dp大字号下当前警情和选择列表名称完整换行', (tester) async {
+    testWidgets('320dp大字号下警情名称和无警情空态完整显示', (tester) async {
       tester.view.physicalSize = const Size(320, 720);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -3500,29 +3568,13 @@ void main() {
       expect(tester.getSize(find.text(longName)).height, greaterThan(24));
       expect(tester.takeException(), isNull);
 
-      c
-        ..currentIncident = null
-        ..activeIncidents = const [
-          Incident(
-            id: 'i2',
-            number: '2026-8-9-9-10',
-            title: longName,
-            status: 'active',
-            createdAt: 1,
-            lastActivityAt: 1,
-          ),
-        ];
+      c.currentIncident = null;
       await pumpTask(tester, c, textScale: 1.3);
-      final pickerTitle = tester.widget<Text>(find.text(longName));
-      expect(pickerTitle.maxLines, isNull);
+      expect(find.text('暂无正在处置的警情'), findsOneWidget);
       expect(
-        find.ancestor(
-          of: find.text(longName),
-          matching: find.byType(FittedBox),
-        ),
-        findsNothing,
+        find.byKey(const Key('choose-incident-from-home')),
+        findsOneWidget,
       );
-      expect(tester.getSize(find.text(longName)).height, greaterThan(24));
       expect(tester.takeException(), isNull);
     });
 
@@ -3583,48 +3635,25 @@ void main() {
       api.dispose();
     });
 
-    testWidgets('无当前警情显示活跃列表和新建入口', (tester) async {
-      final c = _FakeController(currentIncident: null)
-        ..currentIncident = null
-        ..activeIncidents = const [
-          Incident(
-            id: 'i1',
-            number: '2026-8-9-8-59',
-            status: 'active',
-            createdAt: 1,
-            lastActivityAt: 1,
-          ),
-        ];
+    testWidgets('未选警情首页显示指定空态和选择入口', (tester) async {
+      final c = _FakeController(currentIncident: null)..currentIncident = null;
       await pumpTask(tester, c);
-      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
-        await tester.tap(find.byKey(const Key('toggle-incident-card')));
-        await tester.pumpAndSettle();
-      }
-      expect(find.byKey(const Key('incident-picker')), findsOneWidget);
-      expect(find.text('2026-8-9-8-59'), findsOneWidget);
-      expect(find.text('新建警情'), findsOneWidget);
+      expect(find.byKey(const Key('no-incident-card')), findsOneWidget);
+      expect(find.text('暂无正在处置的警情'), findsOneWidget);
+      expect(
+        find.byKey(const Key('choose-incident-from-home')),
+        findsOneWidget,
+      );
+      expect(find.text('现场工具'), findsOneWidget);
     });
 
-    testWidgets('选择警情列表长名称完整换行', (tester) async {
-      final c = _FakeController(currentIncident: null)
-        ..currentIncident = null
-        ..activeIncidents = const [
-          Incident(
-            id: 'long-incident',
-            number: '2026年8月9日13时24分1#警情',
-            title: '幸福小区住宅楼地下车库及周边商铺火灾现场处置警情',
-            status: 'active',
-            createdAt: 1,
-            lastActivityAt: 1,
-          ),
-        ];
+    testWidgets('未选警情时现场工具仍可访问', (tester) async {
+      final c = _FakeController(currentIncident: null)..currentIncident = null;
       await pumpTask(tester, c);
-      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
-        await tester.tap(find.byKey(const Key('toggle-incident-card')));
-        await tester.pumpAndSettle();
-      }
-      expect(find.text('幸福小区住宅楼地下车库及周边商铺火灾现场处置警情'), findsOneWidget);
-      expect(find.text('2026年8月9日13时24分1#警情'), findsNothing);
+      expect(find.byKey(const Key('tool-重点单位')), findsOneWidget);
+      expect(find.byKey(const Key('tool-水印相机')), findsOneWidget);
+      expect(find.byKey(const Key('tool-定位分享')), findsOneWidget);
+      expect(find.byKey(const Key('tool-视频资源')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -3684,19 +3713,6 @@ void main() {
       );
       expect(forceRow, findsOneWidget);
       expect(tester.widget<InkWell>(forceRow).excludeFromSemantics, isTrue);
-    });
-
-    testWidgets('新建警情后可看到补充名称提示', (tester) async {
-      final c = _FakeController(currentIncident: null)
-        ..currentIncident = null
-        ..api = _FakeApi(incidentId: '');
-      await pumpTask(tester, c);
-      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
-        await tester.tap(find.byKey(const Key('toggle-incident-card')));
-        await tester.pumpAndSettle();
-      }
-      expect(find.text('新建警情'), findsOneWidget);
-      expect(tester.takeException(), isNull);
     });
 
     testWidgets('活动警情提供修改名称入口', (tester) async {

@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'pages/board_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/home_page.dart';
-import 'pages/key_sites_page.dart';
 import 'pages/incident_selection_overlay.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
@@ -190,12 +189,20 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
         _homeKey.currentState?.finishRecording();
       }
     } else {
+      if (_tab != 3 && controller.requiresIncident) {
+        controller.requestIncidentSelection();
+        return;
+      }
       _goVoice();
     }
   }
 
   void _voiceLongPressStart(LongPressStartDetails _) {
     if (controller.needsIncidentSelection) return;
+    if (_tab != 3 && controller.requiresIncident) {
+      controller.requestIncidentSelection();
+      return;
+    }
     HapticFeedback.mediumImpact();
     if (_processing) return;
     // 问答页就地录音：转写文本直接发给辅助 AI
@@ -215,6 +222,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 
   void _voiceLongPressEnd(LongPressEndDetails _) {
     if (controller.needsIncidentSelection) return;
+    if (_tab != 3 && controller.requiresIncident) return;
     if (_pendingVoice) {
       // 切页后的首帧录音尚未启动时松手，取消自动录音请求。
       setState(() => _pendingVoice = false);
@@ -230,6 +238,10 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   /// 语音识别为火场日志：自动记入 + 跳日志页
   Future<void> _routeNote(String text) async {
     if (controller.needsIncidentSelection) return;
+    if (controller.requiresIncident) {
+      controller.requestIncidentSelection();
+      return;
+    }
     var saved = false;
     try {
       await controller.addNote(text);
@@ -507,15 +519,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                               ),
                             )
                           : null,
-                      onOpenKeySites: controller.canReadKeySites
-                          ? () => Navigator.push<void>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    KeySitesPage(controller: controller),
-                              ),
-                            )
-                          : null,
+                      onEnterWithoutIncident: controller.enterWithoutIncident,
                       authenticationRequired: controller.needsAuthentication,
                       activeIncidents: controller.activeIncidents,
                       loading:

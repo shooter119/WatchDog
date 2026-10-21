@@ -54,6 +54,7 @@ class _BoardPageState extends State<BoardPage> {
         return sa != sb ? sa.compareTo(sb) : a.exitAt.compareTo(b.exitAt);
       });
     final danger = active.where((e) => statusOf(e) != 'normal').toList();
+    final requiresIncident = widget.controller.requiresIncident;
     // 真机逻辑宽度约 320dp，标题与紧凑连接状态仍可同排；只有更窄的
     // 视口或明显放大的字体才切换为上下布局，避免状态胶囊占满横向空间。
     final compactHeader =
@@ -130,7 +131,12 @@ class _BoardPageState extends State<BoardPage> {
           const SizedBox(height: 16),
           Expanded(
             child: active.isEmpty
-                ? _EmptyBoard(onGoVoice: widget.onGoVoice)
+                ? _EmptyBoard(
+                    onGoVoice: requiresIncident
+                        ? widget.controller.requestIncidentSelection
+                        : widget.onGoVoice,
+                    requiresIncident: requiresIncident,
+                  )
                 : RefreshIndicator(
                     onRefresh: _onRefresh,
                     child: ListView.builder(
@@ -362,8 +368,9 @@ class _DangerAlertBar extends StatelessWidget {
 
 class _EmptyBoard extends StatelessWidget {
   final VoidCallback? onGoVoice;
+  final bool requiresIncident;
 
-  const _EmptyBoard({this.onGoVoice});
+  const _EmptyBoard({this.onGoVoice, this.requiresIncident = false});
 
   @override
   Widget build(BuildContext context) {
@@ -375,8 +382,10 @@ class _EmptyBoard extends StatelessWidget {
               height: 48,
               child: FilledButton.icon(
                 onPressed: onGoVoice,
-                icon: const Icon(Icons.mic_rounded),
-                label: const Text('去警情处置'),
+                icon: requiresIncident
+                    ? const Icon(Icons.add_circle_outline)
+                    : const Icon(Icons.mic_rounded),
+                label: Text(requiresIncident ? '选择或新建警情' : '去警情处置'),
               ),
             ),
           ];
@@ -432,7 +441,7 @@ class _EmptyBoard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '按住底部语音按钮登记进场',
+            requiresIncident ? '选择警情后可登记进场' : '按住底部语音按钮登记进场',
             style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
           ),
           ...?voiceGuide,
@@ -511,8 +520,8 @@ class _EntryCard extends StatelessWidget {
           color: status == 'alarm'
               ? Colors.white.withValues(alpha: 0.95)
               : (status == 'warn'
-                  ? Colors.white.withValues(alpha: 0.7)
-                  : Colors.white.withValues(alpha: 0.4)),
+                    ? Colors.white.withValues(alpha: 0.7)
+                    : Colors.white.withValues(alpha: 0.4)),
           width: status == 'alarm' ? 1.6 : 1.0,
         ),
         boxShadow: [

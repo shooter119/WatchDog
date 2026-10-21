@@ -172,7 +172,9 @@ class _NotesPageState extends State<NotesPage> {
         const SizedBox(height: 8),
         Center(
           child: Text(
-            '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右下角加号手动记录',
+            widget.controller.requiresIncident
+                ? '请先选择或新建警情，再记录火场日志'
+                : '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右下角加号手动记录',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppColors.textTertiary,
@@ -186,6 +188,10 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _openEditor(Note? note) async {
+    if (note == null && widget.controller.requiresIncident) {
+      widget.controller.requestIncidentSelection();
+      return;
+    }
     final controller = TextEditingController(text: note?.text ?? '');
     var category = note?.category ?? NoteCategory.other;
     final result = await showModalBottomSheet<Map<String, dynamic>>(

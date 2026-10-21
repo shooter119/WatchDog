@@ -212,6 +212,10 @@ class HomePageState extends State<HomePage> {
   /// 开始录音（长按触发）
   Future<void> beginRecording() async {
     widget.onAutoRecordConsumed?.call();
+    if (widget.controller.requiresIncident) {
+      widget.controller.requestIncidentSelection();
+      return;
+    }
     if (_recording ||
         _processing ||
         _recordingRequested ||
@@ -1334,8 +1338,12 @@ class HomePageState extends State<HomePage> {
                 );
           final taskBarExpanded =
               incident != null && !compactEntryFlow && _incidentCardExpanded;
-          final taskBar = incident == null || compactEntryFlow
+          final Widget? taskBar = compactEntryFlow
               ? null
+              : incident == null
+              ? _NoIncidentTaskBar(
+                  onChooseIncident: widget.controller.requestIncidentSelection,
+                )
               : _TaskBar(
                   controller: widget.controller,
                   incident: incident,
@@ -1368,23 +1376,12 @@ class HomePageState extends State<HomePage> {
                 children: [
                   pageHeader,
                   const SizedBox(height: 8),
-                  if (incident == null)
-                    SizedBox(
-                      height: max(320.0, viewport.maxHeight - 72),
-                      child: _IncidentPicker(
-                        activeIncidents: widget.controller.activeIncidents,
-                        onSelect: _selectIncident,
-                        onCreate: _createIncident,
-                      ),
-                    )
-                  else ...[
-                    if (taskBar != null) taskBar,
-                    if (taskBar != null) const SizedBox(height: 8),
-                    SizedBox(
-                      height: max(260.0, viewport.maxHeight - 96),
-                      child: _buildResultCard(context, cfg),
-                    ),
-                  ],
+                  if (taskBar != null) taskBar,
+                  if (taskBar != null) const SizedBox(height: 8),
+                  SizedBox(
+                    height: max(260.0, viewport.maxHeight - 96),
+                    child: _buildResultCard(context, cfg),
+                  ),
                 ],
               ),
             );
@@ -1396,23 +1393,9 @@ class HomePageState extends State<HomePage> {
               children: [
                 pageHeader,
                 const SizedBox(height: 4),
-                if (incident == null)
-                  Expanded(
-                    flex: 4,
-                    child: _IncidentPicker(
-                      activeIncidents: widget.controller.activeIncidents,
-                      onSelect: _selectIncident,
-                      onCreate: _createIncident,
-                    ),
-                  )
-                else if (taskBar != null)
-                  taskBar,
+                if (taskBar != null) taskBar,
                 const SizedBox(height: 4),
-                Expanded(
-                  child: incident == null
-                      ? const SizedBox.shrink()
-                      : _buildResultCard(context, cfg),
-                ),
+                Expanded(child: _buildResultCard(context, cfg)),
               ],
             ),
           );
@@ -1442,8 +1425,7 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _createIncident({bool bubbleError = false}) async {
     try {
-      final incident = await widget.controller.createIncident();
-      if (mounted) await _renameIncident(incident: incident, prompt: true);
+      await widget.controller.createIncident();
     } on IncidentCreateConflictException catch (e) {
       if (!mounted) return;
       final join = await showDialog<bool>(
@@ -1489,17 +1471,14 @@ class HomePageState extends State<HomePage> {
   /// 启动警情选择浮层复用首页已有的新建流程。
   Future<void> createIncidentFromGate() => _createIncident(bubbleError: true);
 
-  Future<void> _renameIncident({
-    Incident? incident,
-    bool prompt = false,
-  }) async {
-    final target = incident ?? widget.controller.currentIncident;
+  Future<void> _renameIncident() async {
+    final target = widget.controller.currentIncident;
     if (target == null) return;
     final edit = TextEditingController(text: target.title ?? '');
     final title = await showDialog<String?>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(prompt ? '补充警情名称' : '修改警情名称'),
+        title: const Text('修改警情名称'),
         content: TextField(
           controller: edit,
           autofocus: true,
@@ -3184,188 +3163,87 @@ class _PulseMic extends StatelessWidget {
   }
 }
 
-class _IncidentPicker extends StatelessWidget {
-  final List<Incident> activeIncidents;
-  final ValueChanged<Incident> onSelect;
-  final VoidCallback onCreate;
-  const _IncidentPicker({
-    required this.activeIncidents,
-    required this.onSelect,
-    required this.onCreate,
-  });
+class _NoIncidentTaskBar extends StatelessWidget {
+  final VoidCallback onChooseIncident;
+
+  const _NoIncidentTaskBar({required this.onChooseIncident});
 
   @override
   Widget build(BuildContext context) {
-    final isEmpty = activeIncidents.isEmpty;
-    return Padding(
-      key: const Key('incident-picker'),
-      padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+    final compact =
+        MediaQuery.sizeOf(context).width < 360 ||
+        MediaQuery.textScalerOf(context).scale(1.0) > 1.2;
+    final summary = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: AppColors.voice.withValues(alpha: 0.11),
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(
+            Icons.local_fire_department_outlined,
+            color: AppColors.voice,
+            size: 24,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 4,
-                height: 22,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: AppColors.voice,
-                    borderRadius: BorderRadius.all(Radius.circular(2)),
-                  ),
+              Text(
+                '警情名称',
+                style: TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              SizedBox(width: 10),
-              Text(
-                '选择正在处置的警情',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+              const SizedBox(height: 3),
+              const Text(
+                '暂无正在处置的警情',
+                softWrap: true,
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            '加入后，现场记录都会归入这份档案。',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.folder_copy_outlined,
-                          size: 88,
-                          color: AppColors.textTertiary,
-                        ),
-                        SizedBox(height: 18),
-                        Text(
-                          '当前没有进行中的警情',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          '如果你是第一位到达的用户，可以新建警情',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.separated(
-                    padding: EdgeInsets.zero,
-                    itemCount: activeIncidents.length,
-                    separatorBuilder: (_, __) => Divider(
-                      height: 1,
-                      indent: 12,
-                      endIndent: 12,
-                      color: AppColors.border,
-                    ),
-                    itemBuilder: (context, index) {
-                      final incident = activeIncidents[index];
-                      return Material(
-                        color: AppColors.surface,
-                        child: InkWell(
-                          onTap: () => onSelect(incident),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        incident.displayName,
-                                        softWrap: true,
-                                        style: const TextStyle(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 5),
-                                      Text(
-                                        '处置中',
-                                        style: TextStyle(
-                                          color: AppColors.voice,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () => onSelect(incident),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: AppColors.voice,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    minimumSize: const Size(64, 48),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        '加入',
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      SizedBox(width: 2),
-                                      Icon(Icons.chevron_right, size: 20),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          const SizedBox(height: 12),
-          if (isEmpty)
-            FilledButton.icon(
-              onPressed: onCreate,
-              icon: const Icon(Icons.add),
-              label: const Text('新建警情'),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.voice,
-                foregroundColor: AppColors.onPrimary,
-                minimumSize: const Size.fromHeight(50),
-              ),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: onCreate,
-              icon: const Icon(Icons.add),
-              label: const Text('新建警情'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.voice,
-                side: BorderSide(color: AppColors.voice),
-                minimumSize: const Size.fromHeight(50),
-              ),
-            ),
-          const SizedBox(height: 5),
-          Center(
-            child: Text(
-              isEmpty ? '系统将自动生成临时名称' : '新建后可补充中文名称',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-          ),
-        ],
+        ),
+      ],
+    );
+    final action = OutlinedButton.icon(
+      key: const Key('choose-incident-from-home'),
+      onPressed: onChooseIncident,
+      icon: const Icon(Icons.add_circle_outline),
+      label: const Text('选择或新建警情'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.voice,
+        minimumSize: const Size(0, 48),
       ),
+    );
+    return Container(
+      key: const Key('no-incident-card'),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppShadow.card,
+      ),
+      child: compact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [summary, const SizedBox(height: 10), action],
+            )
+          : Row(
+              children: [
+                Expanded(child: summary),
+                const SizedBox(width: 12),
+                action,
+              ],
+            ),
     );
   }
 }

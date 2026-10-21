@@ -8,15 +8,15 @@ import '../models/models.dart';
 import '../services/settings.dart';
 import '../theme/app_widgets.dart';
 
-/// 启动时的强制认证/警情选择层。
+/// 启动时的认证/警情选择层。
 ///
 /// 首次安装先显示单位认证，认证成功后在同一个浮层切换为警情选择。
-/// 支持以游客身份先行体验单机功能，或提交入队申请等待站长审批。
+/// 支持选择现有警情、新建警情或直接进入 App；游客可先行体验单机功能。
 class IncidentSelectionOverlay extends StatefulWidget {
   final bool authenticationRequired;
   final List<Incident> activeIncidents;
   final bool loading;
-  final VoidCallback? onOpenKeySites;
+  final VoidCallback? onEnterWithoutIncident;
   final VoidCallback? onOpenSettings;
   final Future<void> Function(Incident incident) onSelect;
   final Future<void> Function() onCreate;
@@ -47,7 +47,7 @@ class IncidentSelectionOverlay extends StatefulWidget {
     this.onAuthenticate,
     this.onEnterGuestMode,
     this.onApply,
-    this.onOpenKeySites,
+    this.onEnterWithoutIncident,
     this.onOpenSettings,
   });
 
@@ -670,7 +670,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
       scopesRoute: true,
       explicitChildNodes: true,
       namesRoute: true,
-      label: widget.authenticationRequired ? '用户认证' : '选择警情',
+      label: widget.authenticationRequired ? '用户认证' : '选择警情或直接进入',
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -782,7 +782,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                                   CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  '先选择一份警情',
+                                                  '选择警情或直接进入',
                                                   style: TextStyle(
                                                     fontSize: 21,
                                                     fontWeight: FontWeight.w800,
@@ -790,7 +790,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                                 ),
                                                 SizedBox(height: 4),
                                                 Text(
-                                                  '请选择新建或加入现有警情，现场记录才会归档到正确的位置。',
+                                                  '需要处置时再选择或新建警情；也可以先进入 App 使用其他功能。',
                                                   style: TextStyle(
                                                     color:
                                                         AppColors.textSecondary,
@@ -875,7 +875,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                           foregroundColor: AppColors.onPrimary,
                                         ),
                                       ),
-                                      if (widget.onOpenKeySites != null)
+                                      if (widget.onEnterWithoutIncident != null)
                                         Padding(
                                           padding: const EdgeInsets.only(
                                             top: 8,
@@ -883,11 +883,15 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                           child: OutlinedButton.icon(
                                             onPressed: _busy
                                                 ? null
-                                                : widget.onOpenKeySites,
+                                                : widget.onEnterWithoutIncident,
                                             icon: const Icon(
-                                              Icons.domain_outlined,
+                                              Icons.arrow_forward_outlined,
                                             ),
-                                            label: const Text('查阅重点单位资料'),
+                                            label: const Text('直接进入 App'),
+                                            style: OutlinedButton.styleFrom(
+                                              minimumSize:
+                                                  const Size.fromHeight(52),
+                                            ),
                                           ),
                                         ),
                                       if (widget.onOpenSettings != null)
@@ -908,8 +912,8 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                       const SizedBox(height: 4),
                                       Text(
                                         incidents.isEmpty
-                                            ? '当前没有进行中的警情，可以创建一份新的现场档案。'
-                                            : '如果列表中没有目标警情，也可以新建一份现场档案。',
+                                            ? '当前没有进行中的警情。新建警情会自动使用时间戳名称。'
+                                            : '如果列表中没有目标警情，可新建；系统会自动使用时间戳名称。',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           color: AppColors.textTertiary,
@@ -960,7 +964,7 @@ class _EmptyIncidentState extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '如果你是第一位到达的用户，可以新建警情。',
+            '如果你是第一位到达的用户，可以新建警情；也可以直接进入 App。',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),

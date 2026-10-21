@@ -174,6 +174,7 @@ class AppController extends ChangeNotifier {
 
   bool _syncStarted = false;
   bool _isGuest = false;
+  bool _enteredWithoutIncident = false;
   bool get isGuest => _isGuest;
   String memberReviewUnitName = '';
   bool canReviewMembers = false;
@@ -209,8 +210,27 @@ class AppController extends ChangeNotifier {
   static const Duration sessionRefreshLeadTime = Duration(hours: 1);
 
   /// 首次安装先完成单位验证码 + 实名认证，或选择游客模式，再进入警情选择。
+  /// 已认证用户也可明确选择暂不加入警情，先使用 App 的通用功能。
   bool get needsAuthentication => !_authenticated && !_isGuest;
-  bool get needsIncidentSelection => !_isGuest && currentIncident == null;
+  bool get needsIncidentSelection =>
+      !_isGuest && currentIncident == null && !_enteredWithoutIncident;
+
+  /// 处警记录必须绑定警情；通用功能不受此限制。
+  bool get requiresIncident => !_isGuest && currentIncident == null;
+
+  /// 从启动层直接进入 App，不选择也不新建警情。
+  void enterWithoutIncident() {
+    if (currentIncident != null || _isGuest) return;
+    _enteredWithoutIncident = true;
+    _notify();
+  }
+
+  /// 从首页或其他处警入口重新打开警情选择层。
+  void requestIncidentSelection() {
+    if (currentIncident != null || _isGuest) return;
+    _enteredWithoutIncident = false;
+    _notify();
+  }
 
   /// 辅助问答使用独立请求通道，不阻塞业务实时连接。
   bool get assistantBusy => _assistantBusy;
@@ -572,6 +592,7 @@ class AppController extends ChangeNotifier {
     await Settings.setIsGuestMode(false);
     await Settings.clearPendingApplication();
     _isGuest = false;
+    _enteredWithoutIncident = false;
 
     await Settings.setSessionToken(sessionToken);
     await Settings.setSessionExpiresAt(sessionExpiresAt);
@@ -761,6 +782,7 @@ class AppController extends ChangeNotifier {
   /// 主动退出当前单位：清理本机认证信息和当前警情，回到启动认证浮层。
   Future<void> leaveUnit() async {
     _revokeProtectedData();
+    _enteredWithoutIncident = false;
     final activeApi = api;
     await OpLogService.instance.flushLocal();
     _sessionGeneration++;
@@ -1653,6 +1675,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> _invalidateAuthentication() async {
     _revokeProtectedData();
+    _enteredWithoutIncident = false;
     _sessionGeneration++;
     await _syncCoordinator?.stop();
     _syncCoordinator = null;
@@ -2070,6 +2093,7 @@ class AppController extends ChangeNotifier {
     await _refreshSession();
     if (needsAuthentication) throw StateError('认证会话已过期，请重新认证');
     await Settings.setCurrentIncidentId(id);
+    _enteredWithoutIncident = false;
     _sessionGeneration++;
     _syncFuture = null;
     _keepAliveFuture = null;
@@ -2132,6 +2156,7 @@ class AppController extends ChangeNotifier {
       rethrow;
     }
     await Settings.setCurrentIncidentId(incident.id);
+    _enteredWithoutIncident = false;
     _sessionGeneration++;
     _syncFuture = null;
     _keepAliveFuture = null;
@@ -2163,6 +2188,7 @@ class AppController extends ChangeNotifier {
     _sessionGeneration++;
     _syncFuture = null;
     _keepAliveFuture = null;
+    _enteredWithoutIncident = true;
     currentIncident = null;
     entries = [];
     notes = [];
@@ -2179,6 +2205,7 @@ class AppController extends ChangeNotifier {
     _sessionGeneration++;
     _syncFuture = null;
     _keepAliveFuture = null;
+    _enteredWithoutIncident = true;
     currentIncident = null;
     entries = [];
     notes = [];
