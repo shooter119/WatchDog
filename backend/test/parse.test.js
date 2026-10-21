@@ -336,3 +336,37 @@ test('analyzeVisionWithDeepSeek 使用 deepseek-flash 和 input_image 并解析�
   assert.equal(result.relevance, 'related');
   assert.equal(result.disclaimer, '以上为图片辅助分析，不替代现场专业判断');
 });
+
+test('危化品图片即使带警情背景也只按纯 UN 编号自动查询', async () => {
+  const requests = [];
+  globalThis.fetch = async (_url, opts) => {
+    const body = JSON.parse(opts.body);
+    requests.push(body);
+    return { ok: true, json: async () => requests.length === 1
+      ? { output_text: JSON.stringify({ relevance: 'related', hazmat_un_numbers: ['1234', '1234', '33', '1234 注入'], facts: ['标牌'] }) }
+      : { output: [{ type: 'web_search_call', status: 'completed' }], output_text: '查询结果及来源 https://example.org/guide' } };
+  };
+  const result = await analyzeVisionWithDeepSeek({ apiKey: 'k', imageDataUrl: 'data:image/jpeg;base64,abc', message: '现场地址和人员保密', search: false, hazmatSearch: true });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].tools, undefined);
+  assert.equal(requests[1].tool_choice, 'required');
+  assert.deepEqual(requests[1].input, [{ role: 'user', content: '查询危险货物 UN 编号：1234' }]);
+  assert.match(result.suggestions.at(-1), /查询结果及来源/);
+});
+
+test('模糊标牌不查询；联网失败或未实际搜索报告未核实', async () => {
+  for (const mode of ['blurred', 'failed', 'no_search', 'disabled']) {
+    let count = 0;
+    globalThis.fetch = async () => {
+      count++;
+      if (count === 1) return { ok: true, json: async () => ({ output_text: JSON.stringify({ relevance: 'related', facts: ['可见标牌'], hazmat_un_numbers: mode === 'blurred' ? ['12?4', 1234] : ['1234'] }) }) };
+      if (mode === 'failed') throw new Error('unavailable');
+      return { ok: true, json: async () => ({ output_text: '未搜索的猜测' }) };
+    };
+    const result = await analyzeVisionWithDeepSeek({ apiKey: 'k', imageDataUrl: 'data:image/jpeg;base64,abc', search: false, hazmatSearch: mode !== 'disabled' });
+    assert.deepEqual(result.facts, ['可见标牌']);
+    assert.equal(count, ['blurred', 'disabled'].includes(mode) ? 1 : 2);
+    if (mode !== 'blurred') assert.match(result.to_confirm.at(-1), /尚未核实/);
+    assert.ok(!result.suggestions.join('').includes('猜测'));
+  }
+});

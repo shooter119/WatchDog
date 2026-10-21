@@ -2735,6 +2735,7 @@ app.post('/api/chat/vision', visionUpload.single('image'), async (req, res, next
       imageDataUrl: `data:${mime};base64,${req.file.buffer.toString('base64')}`,
       message: message + contextInstruction(context),
       search: context ? false : CFG.llm.chatSearch,
+      hazmatSearch: CFG.llm.chatSearch,
     });
     await logOp(req, 'info', 'vision_done', '图片辅助分析完成', {
       relevance: analysis.relevance,
