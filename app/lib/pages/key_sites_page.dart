@@ -282,12 +282,12 @@ class _SiteListState extends State<_SiteList> {
   }
 
   Widget _row(KeySiteSummary site) {
+    final versionLabel = site.version > 0 ? 'v${site.version}' : '';
     final metaParts = [
-      if (site.district.isNotEmpty) site.district,
-      if (site.type.isNotEmpty) site.type,
-      'v${site.version}',
-      if (site.address.isNotEmpty) site.address,
-    ];
+      site.district,
+      site.type,
+      versionLabel,
+    ].where((s) => s.isNotEmpty).toList();
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: AppCard(
@@ -323,15 +323,28 @@ class _SiteListState extends State<_SiteList> {
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    metaParts.join(' · '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textTertiary,
+                  if (site.address.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      site.address,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                     ),
-                  ),
+                  ],
+                  if (metaParts.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      metaParts.join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textTertiary,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

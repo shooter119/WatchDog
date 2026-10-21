@@ -222,37 +222,13 @@ class _IncidentLinkState extends State<_IncidentLink> {
         children: [
           const SectionTitle(text: '关联重点单位'),
           if (link != null) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    link.name,
-                    softWrap: true,
-                    style: AppTextStyles.bodyMd.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceSubtle,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                  child: Text(
-                    'v${link.version}',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
+            Text(
+              link.name,
+              softWrap: true,
+              style: AppTextStyles.bodyMd.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
             ),
             if (_state?['newVersionAvailable'] == true) ...[
               const SizedBox(height: 4),
