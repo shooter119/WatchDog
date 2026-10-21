@@ -246,7 +246,7 @@ ssh "$OTA_HOST" "set -e
 rm -f "$MANIFEST_TMP"
 
 step "公网校验"
-REMOTE_MANIFEST="$(curl -fsS --max-time 20 "${PUBLIC_BASE}/ota/latest.json")"
+REMOTE_MANIFEST="$(curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --max-time 20 "${PUBLIC_BASE}/ota/latest.json")"
 TAG="$TAG" VERSION_CODE="$VERSION_CODE" SIZE_BYTES="$SIZE_BYTES" SHA256="$SHA256" \
   REMOTE_MANIFEST="$REMOTE_MANIFEST" python3 - <<'PY'
 import json, os, sys
@@ -264,7 +264,7 @@ for key, want in expect.items():
         sys.exit(1)
 print("清单字段一致：", ", ".join(f"{k}={v}" for k, v in expect.items()))
 PY
-HEADERS="$(curl -fsSI --max-time 20 "$APK_URL")"
+HEADERS="$(curl -fsSI --retry 5 --retry-delay 2 --retry-all-errors --max-time 20 "$APK_URL")"
 echo "$HEADERS" | grep -qi "^HTTP/2 200\|^HTTP/1.1 200" || die "APK 公网响应不是 200"
 LEN="$(echo "$HEADERS" | awk 'BEGIN{IGNORECASE=1} /^content-length:/{gsub(/\r/,""); print $2}')"
 [[ "$LEN" == "$SIZE_BYTES" ]] || die "公网 Content-Length ${LEN} 与本地 ${SIZE_BYTES} 不一致"
