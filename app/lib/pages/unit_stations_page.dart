@@ -135,8 +135,99 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
     });
   }
 
+  Widget _buildStationRow(Map<String, dynamic> station) {
+    final isInactive = station['active'] == false;
+    final aliases = (station['aliases'] as List? ?? [])
+        .map((s) => s.toString().trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        onTap: _manage ? () => _edit(station) : null,
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    station['name'].toString(),
+                    style: AppTextStyles.bodyMd.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  if (isInactive || aliases.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (isInactive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.caution.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
+                            ),
+                            child: Text(
+                              '已停用',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.caution,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        for (final alias in aliases)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceSubtle,
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
+                            ),
+                            child: Text(
+                              alias,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (_manage) ...[
+              const SizedBox(width: 8),
+              Icon(
+                Icons.edit_outlined,
+                size: 18,
+                color: AppColors.textSecondary,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.background,
     appBar: AppBar(
       title: const Text('单位常用队伍'),
       actions: [
@@ -150,39 +241,70 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
     body: RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
-          Text(
-            '本单位成员均可新增。已有队伍的名称、别名和停用由管理员维护；修改不影响历史警情。',
-            style: TextStyle(color: AppColors.textSecondary, height: 1.5),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceSubtle,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Text(
+              '本单位成员均可新增。已有队伍的名称、别名和停用由管理员维护；修改不影响历史警情。',
+              style: AppTextStyles.caption.copyWith(
+                fontSize: 12.5,
+                color: AppColors.textTertiary,
+                height: 1.5,
+              ),
+            ),
           ),
-          if (_busy) const LinearProgressIndicator(),
+          const SizedBox(height: 12),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: LinearProgressIndicator(),
+            ),
           if (_error != null)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(_error!, style: TextStyle(color: AppColors.alarm)),
-            ),
-          for (final station in _stations)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(station['name'].toString()),
-              subtitle: Text(
-                [
-                  if (station['active'] == false) '已停用',
-                  ...(station['aliases'] as List? ?? []).map(
-                    (s) => s.toString(),
-                  ),
-                ].join(' · '),
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                _error!,
+                style: AppTextStyles.bodyMd.copyWith(color: AppColors.alarm),
               ),
-              trailing: _manage
-                  ? const Icon(Icons.edit_outlined, size: 18)
-                  : null,
-              onTap: _manage ? () => _edit(station) : null,
             ),
+          for (final station in _stations) _buildStationRow(station),
           if (!_busy && _stations.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 32),
-              child: Text('暂无常用队伍，可在此新增，也可导入警情时保存。'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 88,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.surface,
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Icon(
+                      Icons.groups_outlined,
+                      size: 40,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    '暂无常用队伍，可在此新增，也可导入警情时保存。',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodyMd.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ),

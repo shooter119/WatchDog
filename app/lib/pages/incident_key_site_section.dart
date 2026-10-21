@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../models/models.dart';
 import '../models/key_sites.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
 import 'key_sites_page.dart';
 
 class IncidentKeySiteSection extends StatelessWidget {
@@ -199,6 +200,7 @@ class _IncidentLinkState extends State<_IncidentLink> {
       ),
     ),
   );
+
   @override
   Widget build(BuildContext context) {
     final raw = _state?['link'];
@@ -209,19 +211,83 @@ class _IncidentLinkState extends State<_IncidentLink> {
       minimumSize: const Size(48, 48),
       padding: const EdgeInsets.symmetric(horizontal: 8),
     );
+    final compactOutlined = OutlinedButton.styleFrom(
+      minimumSize: const Size(48, 48),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+    );
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('关联重点单位', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SectionTitle(text: '关联重点单位'),
           if (link != null) ...[
-            Text(link.name, softWrap: true),
-            if (_state?['newVersionAvailable'] == true)
-              const Text('已有新版资料，请人工核对后更新'),
-            if (_state?['active'] == false) const Text('重点单位已停用，保留历史引用'),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    link.name,
+                    softWrap: true,
+                    style: AppTextStyles.bodyMd.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                  child: Text(
+                    'v${link.version}',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_state?['newVersionAvailable'] == true) ...[
+              const SizedBox(height: 4),
+              Text(
+                '已有新版资料，请人工核对后更新',
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 12.5,
+                  color: AppColors.caution,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            if (_state?['active'] == false) ...[
+              const SizedBox(height: 4),
+              Text(
+                '重点单位已停用，保留历史引用',
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 12.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+            const SizedBox(height: 6),
           ],
-          if (_error != null) Text(keySiteError(_error!)),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                keySiteError(_error!),
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 12.5,
+                  color: AppColors.alarm,
+                ),
+              ),
+            ),
           if (link != null && widget.incident.isActive)
             Row(
               children: [
@@ -229,7 +295,8 @@ class _IncidentLinkState extends State<_IncidentLink> {
                   child: OutlinedButton.icon(
                     key: const Key('key-site-open'),
                     onPressed: () => _open(link.siteId, link.version),
-                    icon: const Icon(Icons.folder_open),
+                    style: compactOutlined,
+                    icon: const Icon(Icons.folder_open, size: 18),
                     label: const Text('单位资料'),
                   ),
                 ),
@@ -257,13 +324,15 @@ class _IncidentLinkState extends State<_IncidentLink> {
                   OutlinedButton.icon(
                     key: const Key('key-site-open'),
                     onPressed: () => _open(link.siteId, link.version),
-                    icon: const Icon(Icons.folder_open),
+                    style: compactOutlined,
+                    icon: const Icon(Icons.folder_open, size: 18),
                     label: const Text('单位资料'),
                   ),
                 if (widget.incident.isActive)
                   TextButton(
                     key: const Key('key-site-search'),
                     onPressed: _busy || _state == null ? null : _change,
+                    style: compactAction,
                     child: const Text('搜索并关联'),
                   ),
               ],
@@ -284,8 +353,9 @@ class _IncidentLinkState extends State<_IncidentLink> {
           if (_error != null)
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton(
+              child: OutlinedButton(
                 onPressed: _busy ? null : _load,
+                style: compactOutlined,
                 child: const Text('重试'),
               ),
             ),
