@@ -171,10 +171,20 @@ class _RosterPageState extends State<RosterPage>
       appBar: AppBar(
         title: const Text('名单与热词'),
         actions: [
-          TextButton.icon(
-            onPressed: _batchImport,
-            icon: const Icon(Icons.paste, size: 18),
-            label: const Text('批量导入'),
+          Padding(
+            padding: const EdgeInsets.only(right: AppSpacing.s2),
+            child: TextButton.icon(
+              onPressed: _batchImport,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+                textStyle: AppTextStyles.label.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              icon: const Icon(Icons.paste, size: 18),
+              label: const Text('批量导入'),
+            ),
           ),
         ],
       ),
@@ -187,7 +197,12 @@ class _RosterPageState extends State<RosterPage>
               AnimatedBuilder(
                 animation: _tab,
                 builder: (context, _) => Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.s4,
+                    AppSpacing.s3,
+                    AppSpacing.s4,
+                    AppSpacing.s2,
+                  ),
                   child: Row(
                     children: [
                       Expanded(
@@ -205,9 +220,9 @@ class _RosterPageState extends State<RosterPage>
                           textInputAction: TextInputAction.done,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppSpacing.s2),
                       SizedBox(
-                        height: 50,
+                        height: 52,
                         child: FilledButton.icon(
                           onPressed: _add,
                           icon: const Icon(Icons.add),
@@ -252,12 +267,11 @@ class _RosterPageState extends State<RosterPage>
   }
 
   Widget _buildRosterNotice() => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.only(bottom: AppSpacing.s3),
     child: Text(
       '本名单只用于提升语音识别准确率，不授予登录权限；成员能否登录由『设置 → 入队审批』批准决定。',
       style: AppTextStyles.caption.copyWith(
         color: AppColors.textTertiary,
-        fontSize: 12.5,
         height: 1.4,
       ),
     ),
@@ -271,7 +285,12 @@ class _RosterPageState extends State<RosterPage>
 
     if (items.isEmpty && !hasPending) {
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.s4,
+          AppSpacing.s3,
+          AppSpacing.s4,
+          AppSpacing.s6,
+        ),
         children: [
           _buildRosterNotice(),
           const SizedBox(height: 56),
@@ -292,12 +311,11 @@ class _RosterPageState extends State<RosterPage>
                   color: AppColors.textTertiary,
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: AppSpacing.s4),
               Text(
                 isFirefighter ? '暂无消防员，先添加几人吧' : '暂无专业术语',
-                style: TextStyle(
+                style: AppTextStyles.bodyMd.copyWith(
                   color: AppColors.textSecondary,
-                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -310,7 +328,12 @@ class _RosterPageState extends State<RosterPage>
     final headerCount = 1 + (hasPending ? 1 : 0);
     final totalCount = items.length + headerCount;
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s4,
+        AppSpacing.s3,
+        AppSpacing.s4,
+        AppSpacing.s6,
+      ),
       itemCount: totalCount,
       itemBuilder: (context, i) {
         if (i == 0) {
@@ -326,52 +349,56 @@ class _RosterPageState extends State<RosterPage>
             ? (item as dynamic).name
             : (item as dynamic).word;
         final String source = (item as dynamic).source;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.surfaceSubtle,
-                ),
-                child: Icon(
-                  isFirefighter ? Icons.person_outline : Icons.tag,
-                  size: 19,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+        return Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.s2),
+          child: AppCard(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.s4,
+              AppSpacing.s2,
+              AppSpacing.s2,
+              AppSpacing.s2,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.surfaceSubtle,
+                    ),
+                    child: Icon(
+                      isFirefighter ? Icons.person_outline : Icons.tag,
+                      size: 20,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (source != 'builtin')
-                IconButton(
-                  icon: Icon(
-                    Icons.delete_outline,
-                    color: AppColors.alarm,
-                    size: 21,
+                  const SizedBox(width: AppSpacing.s3),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: AppTextStyles.bodyMd.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  onPressed: () => _remove(id, isFirefighter, label),
-                  tooltip: '删除',
-                ),
-            ],
+                  if (source != 'builtin')
+                    IconButton(
+                      icon: Icon(
+                        Icons.delete_outline,
+                        color: AppColors.alarm,
+                        size: 20,
+                      ),
+                      onPressed: () => _remove(id, isFirefighter, label),
+                      tooltip: '删除',
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -379,7 +406,7 @@ class _RosterPageState extends State<RosterPage>
   }
 
   Widget _buildPendingSection() => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.only(bottom: AppSpacing.s3),
     child: FilledButton.icon(
       onPressed: () => Navigator.push(
         context,
@@ -405,17 +432,19 @@ class _TabLabel extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(text),
-        const SizedBox(width: 6),
+        const SizedBox(width: AppSpacing.s2),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s2,
+            vertical: 2,
+          ),
           decoration: BoxDecoration(
             color: AppColors.surfaceSubtle,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
           child: Text(
             '$count',
-            style: TextStyle(
-              fontSize: 11,
+            style: AppTextStyles.caption.copyWith(
               fontWeight: FontWeight.w700,
               color: AppColors.textSecondary,
             ),
@@ -482,13 +511,12 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
         children: [
           Text(
             '每行一个姓名，支持粘贴 Excel 姓名列；\n整表复制时自动取每行第一个单元格。\n重复姓名自动跳过。',
-            style: TextStyle(
+            style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
-              fontSize: 12.5,
               height: 1.5,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.s3),
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxFieldHeight),
             child: TextField(
@@ -499,7 +527,7 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
               decoration: const InputDecoration(alignLabelWithHint: true),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.s1),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(

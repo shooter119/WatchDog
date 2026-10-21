@@ -2437,8 +2437,13 @@ void main() {
         await tester.pump();
         expect(tester.takeException(), isNull);
       }
-      expect(find.text('第 1 问'), findsOneWidget);
       expect(find.text('回答：第 3 问'), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text('第 1 问'),
+        find.byType(ListView).last,
+        const Offset(0, 240),
+      );
+      expect(find.text('第 1 问'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -3719,10 +3724,11 @@ void main() {
       expect(find.byType(InputChip), findsNothing);
       final forceRow = find.ancestor(
         of: find.byTooltip('编辑参战力量'),
-        matching: find.byType(InkWell),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is InkWell && widget.excludeFromSemantics,
+        ),
       );
       expect(forceRow, findsOneWidget);
-      expect(tester.widget<InkWell>(forceRow).excludeFromSemantics, isTrue);
     });
 
     testWidgets('活动警情提供修改名称入口', (tester) async {

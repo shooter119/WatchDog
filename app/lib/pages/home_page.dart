@@ -720,15 +720,25 @@ class HomePageState extends State<HomePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        insetPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s6,
+          vertical: AppSpacing.s6,
+        ),
         contentPadding: EdgeInsets.zero,
         titlePadding: EdgeInsets.zero,
         actionsPadding: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+        ),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.s6,
+              AppSpacing.s6,
+              AppSpacing.s6,
+              AppSpacing.s5,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -745,19 +755,19 @@ class HomePageState extends State<HomePage> {
                       child: Icon(
                         Icons.exit_to_app_rounded,
                         color: AppColors.caution,
-                        size: 26,
+                        size: 24,
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: AppSpacing.s3),
                     const Expanded(
                       child: Text('全员离场确认', style: AppTextStyles.h2),
                     ),
                   ],
                 ),
-                const SizedBox(height: 22),
+                const SizedBox(height: AppSpacing.s5),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(AppSpacing.s4),
                   decoration: BoxDecoration(
                     color: AppColors.caution.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(AppRadius.md),
@@ -772,7 +782,7 @@ class HomePageState extends State<HomePage> {
                         color: AppColors.textPrimary,
                         size: 24,
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: AppSpacing.s3),
                       Text(
                         '当前在场 ${active.length} 人',
                         style: AppTextStyles.bodyLg,
@@ -780,21 +790,21 @@ class HomePageState extends State<HomePage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: AppSpacing.s4),
                 Text(
                   '在场人员',
                   style: AppTextStyles.label.copyWith(
                     color: AppColors.textTertiary,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.s2),
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: AppSpacing.s2,
+                  runSpacing: AppSpacing.s2,
                   children: active
                       .map(
                         (entry) => Chip(
-                          avatar: const Icon(Icons.person_rounded, size: 17),
+                          avatar: const Icon(Icons.person_rounded, size: 16),
                           label: Text(entry.name),
                           backgroundColor: AppColors.surfaceSubtle,
                           side: BorderSide.none,
@@ -804,19 +814,19 @@ class HomePageState extends State<HomePage> {
                       )
                       .toList(),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: AppSpacing.s4),
                 Text(
                   '语音原文',
                   style: AppTextStyles.label.copyWith(
                     color: AppColors.textTertiary,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.s2),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
+                    horizontal: AppSpacing.s4,
+                    vertical: AppSpacing.s3,
                   ),
                   decoration: BoxDecoration(
                     color: AppColors.surfaceSubtle.withValues(alpha: 0.72),
@@ -829,9 +839,9 @@ class HomePageState extends State<HomePage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: AppSpacing.s5),
                 const Text('确认后将为以上人员统一登记离场。', style: AppTextStyles.bodyMd),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.s4),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -839,10 +849,10 @@ class HomePageState extends State<HomePage> {
                       onPressed: () => Navigator.pop(ctx, false),
                       child: const Text('取消'),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: AppSpacing.s2),
                     FilledButton.icon(
                       onPressed: () => Navigator.pop(ctx, true),
-                      icon: const Icon(Icons.check_rounded, size: 19),
+                      icon: const Icon(Icons.check_rounded, size: 18),
                       label: const Text('确认离场'),
                     ),
                   ],
@@ -1312,7 +1322,7 @@ class HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text('警情处置', style: AppTextStyles.h1),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpacing.s2),
                     Align(
                       alignment: Alignment.centerRight,
                       widthFactor: 1,
@@ -1363,14 +1373,19 @@ class HomePageState extends State<HomePage> {
           if (viewport.maxHeight < 520 || taskBarExpanded) {
             return SingleChildScrollView(
               key: const Key('home-page-scroll'),
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.s4,
+                AppSpacing.s3,
+                AppSpacing.s4,
+                AppSpacing.s6,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   pageHeader,
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.s2),
                   if (taskBar != null) taskBar,
-                  if (taskBar != null) const SizedBox(height: 8),
+                  if (taskBar != null) const SizedBox(height: AppSpacing.s3),
                   SizedBox(
                     height: max(260.0, viewport.maxHeight - 96),
                     child: _buildResultCard(context, cfg),
@@ -1381,13 +1396,18 @@ class HomePageState extends State<HomePage> {
           }
 
           return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.s4,
+              AppSpacing.s3,
+              AppSpacing.s4,
+              0,
+            ),
             child: Column(
               children: [
                 pageHeader,
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.s2),
                 if (taskBar != null) taskBar,
-                const SizedBox(height: 4),
+                if (taskBar != null) const SizedBox(height: AppSpacing.s3),
                 Expanded(child: _buildResultCard(context, cfg)),
               ],
             ),
@@ -2065,27 +2085,30 @@ class HomePageState extends State<HomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _PulseMic(intensity: _amp),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.s6),
             Text(
               '请清晰说出：姓名 + 气瓶压力',
-              style: TextStyle(
+              style: AppTextStyles.bodyLg.copyWith(
                 color: AppColors.textSecondary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.s2),
             Text(
               '或：出火场人员姓名',
-              style: TextStyle(color: AppColors.textTertiary, fontSize: 14),
+              style: AppTextStyles.bodyMd.copyWith(
+                color: AppColors.textTertiary,
+                fontSize: 14,
+              ),
             ),
             if (_transcript != null && _transcript!.trim().isNotEmpty) ...[
-              const SizedBox(height: 22),
+              const SizedBox(height: AppSpacing.s5),
               Container(
                 constraints: const BoxConstraints(maxWidth: 360),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
+                  horizontal: AppSpacing.s4,
+                  vertical: AppSpacing.s3,
                 ),
                 decoration: BoxDecoration(
                   color: AppColors.voice.withValues(alpha: 0.08),
@@ -2094,37 +2117,32 @@ class HomePageState extends State<HomePage> {
                 child: Text(
                   _transcript!,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: AppTextStyles.bodyLg.copyWith(
                     color: AppColors.textPrimary,
-                    fontSize: 17,
                     height: 1.45,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.s3),
             Text(
               _recordingSeconds >= _recordingWarningDuration.inSeconds
                   ? '还剩 ${max(0, _maxRecordingDuration.inSeconds - _recordingSeconds)} 秒，时间到将自动结束'
                   : '最长录音 60 秒 · 已录 $_recordingSeconds 秒',
               key: const Key('home-recording-limit'),
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: AppTextStyles.label.copyWith(
                 color: _recordingSeconds >= _recordingWarningDuration.inSeconds
                     ? AppColors.caution
                     : AppColors.textTertiary,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
               ),
             ),
             if (_peopleEditors.isNotEmpty) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.s2),
               Text(
                 '已录入 ${_peopleEditors.length} 人，本次语音将追加到名单',
-                style: TextStyle(
+                style: AppTextStyles.label.copyWith(
                   color: AppColors.voice,
-                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -2143,8 +2161,13 @@ class HomePageState extends State<HomePage> {
               height: 44,
               child: CircularProgressIndicator(strokeWidth: 3),
             ),
-            const SizedBox(height: 18),
-            Text('语音转文字中…', style: TextStyle(color: AppColors.textSecondary)),
+            const SizedBox(height: AppSpacing.s4),
+            Text(
+              '语音转文字中…',
+              style: AppTextStyles.bodyMd.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
           ],
         ),
       );
@@ -2152,7 +2175,7 @@ class HomePageState extends State<HomePage> {
     if (_error != null) {
       return Center(
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(AppSpacing.s5),
           decoration: BoxDecoration(
             color: AppColors.caution.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(AppRadius.md),
@@ -2164,24 +2187,23 @@ class HomePageState extends State<HomePage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.error_outline, color: AppColors.caution, size: 36),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.s3),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: AppTextStyles.bodyMd.copyWith(
                   color: AppColors.textPrimary,
-                  fontSize: 15,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: AppSpacing.s4),
               if (_permDenied) ...[
                 FilledButton.icon(
                   onPressed: () => ScreenOn.openAppSettings(),
                   icon: const Icon(Icons.settings_outlined),
                   label: const Text('去系统设置'),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.s2),
               ],
               OutlinedButton.icon(
                 onPressed: _retry,
@@ -2189,7 +2211,7 @@ class HomePageState extends State<HomePage> {
                 label: const Text('重新语音输入'),
               ),
               if (_peopleEditors.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.s2),
                 TextButton(
                   onPressed: _showPendingConfirm,
                   child: const Text('返回确认'),
@@ -2208,14 +2230,14 @@ class HomePageState extends State<HomePage> {
         return _buildActiveCombatLiveOverview(context, activeEntries);
       }
       return SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.only(bottom: AppSpacing.s6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildFieldTools(context),
             if (_peopleEditors.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(top: 16),
+                padding: const EdgeInsets.only(top: AppSpacing.s4),
                 child: FilledButton.icon(
                   onPressed: _showPendingConfirm,
                   icon: const Icon(Icons.fact_check_outlined),
@@ -2228,44 +2250,41 @@ class HomePageState extends State<HomePage> {
     }
 
     return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: AppSpacing.s6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AppCard(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(AppSpacing.s4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
                     Icon(Icons.graphic_eq, size: 16, color: AppColors.voice),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: AppSpacing.s2),
                     Text(
                       '转写结果',
-                      style: TextStyle(
+                      style: AppTextStyles.caption.copyWith(
                         color: AppColors.textTertiary,
-                        fontSize: 12,
-                        letterSpacing: 0.5,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.s2),
                 Text(
                   _transcript!,
-                  style: TextStyle(
-                    fontSize: 17,
-                    height: 1.4,
+                  style: AppTextStyles.bodyLg.copyWith(
                     color: AppColors.textPrimary,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.s3),
           if (_parsed!.action == 'exit')
             AppCard(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.s4),
               color: AppColors.safe.withValues(alpha: 0.10),
               side: BorderSide(color: AppColors.safe, width: 1),
               child: Column(
@@ -2273,13 +2292,13 @@ class HomePageState extends State<HomePage> {
                   Row(
                     children: [
                       Icon(Icons.logout, color: AppColors.safe),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppSpacing.s3),
                       Expanded(
                         child: Text(
                           _parsed!.people.isEmpty
                               ? '识别为全员离场指令，正在等待确认'
                               : '识别为出火场指令：${_parsed!.people.map((p) => p.name).join('、')}',
-                          style: TextStyle(
+                          style: AppTextStyles.bodyLg.copyWith(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: AppColors.textPrimary,
@@ -2288,7 +2307,7 @@ class HomePageState extends State<HomePage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.s3),
                   SizedBox(
                     width: double.infinity,
                     height: 48,
@@ -2308,13 +2327,12 @@ class HomePageState extends State<HomePage> {
                   Text(
                     '未识别到人员信息，请重新语音输入',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: AppTextStyles.bodyMd.copyWith(
                       color: AppColors.textPrimary,
-                      fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: AppSpacing.s4),
                   OutlinedButton.icon(
                     onPressed: _retry,
                     icon: const Icon(Icons.replay),
@@ -2327,18 +2345,18 @@ class HomePageState extends State<HomePage> {
             _buildMultiCard(context, cfg)
           else
             AppCard(
-              padding: const EdgeInsets.fromLTRB(12, 14, 12, 16),
+              padding: const EdgeInsets.all(AppSpacing.s4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _personEditorRow(0, _peopleEditors[0]),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.s2),
                   _personHints(_peopleEditors[0], cfg),
                   if (_inlineError != null) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.s2),
                     _inlineErrorBox(_inlineError!),
                   ],
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.s4),
                   SizedBox(
                     width: double.infinity,
                     height: 56,
@@ -2351,7 +2369,7 @@ class HomePageState extends State<HomePage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.s2),
                   SizedBox(
                     width: double.infinity,
                     height: 48,
@@ -2381,7 +2399,7 @@ class HomePageState extends State<HomePage> {
   /// 多人一次性确认卡片：全部人员平铺列出（可下滑核对），一个按钮全部提交
   Widget _buildMultiCard(BuildContext context, CalcConfig cfg) {
     return AppCard(
-      padding: const EdgeInsets.fromLTRB(12, 14, 12, 16),
+      padding: const EdgeInsets.all(AppSpacing.s4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2389,24 +2407,22 @@ class HomePageState extends State<HomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.fact_check_outlined, size: 16, color: AppColors.voice),
-              const SizedBox(width: 6),
+              const SizedBox(width: AppSpacing.s2),
               Expanded(
                 child: Text(
                   '确认名单（${_peopleEditors.length} 人）：请下滑核对后一次性确认',
                   softWrap: true,
-                  style: TextStyle(
+                  style: AppTextStyles.caption.copyWith(
                     color: AppColors.textTertiary,
-                    fontSize: 12,
-                    letterSpacing: 0.5,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.s3),
           for (final (i, ed) in _peopleEditors.indexed) ...[
             _personEditorRow(i, ed),
-            const SizedBox(height: 2),
+            const SizedBox(height: AppSpacing.s1),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -2415,20 +2431,23 @@ class HomePageState extends State<HomePage> {
                 label: const Text('移除该人员'),
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s2,
+                  ),
                   minimumSize: const Size(0, 48),
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.s1),
             _personHints(ed, cfg),
-            if (i < _peopleEditors.length - 1) const Divider(height: 24),
+            if (i < _peopleEditors.length - 1)
+              const Divider(height: AppSpacing.s6),
           ],
           if (_inlineError != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.s2),
             _inlineErrorBox(_inlineError!),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.s4),
           SizedBox(
             width: double.infinity,
             height: 56,
@@ -2441,7 +2460,7 @@ class HomePageState extends State<HomePage> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.s2),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -2477,24 +2496,18 @@ class HomePageState extends State<HomePage> {
 
     return SingleChildScrollView(
       key: const Key('active-combat-scroll'),
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.only(bottom: AppSpacing.s6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.fromBorderSide(
-                BorderSide(color: AppColors.border),
-              ),
-              boxShadow: AppShadow.card,
-            ),
-            padding: const EdgeInsets.all(16),
+          AppCard(
+            radius: AppRadius.md,
+            padding: const EdgeInsets.all(AppSpacing.s4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
                       width: 32,
@@ -2503,45 +2516,49 @@ class HomePageState extends State<HomePage> {
                         shape: BoxShape.circle,
                         color: AppColors.voice,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.mic_rounded,
                         size: 18,
-                        color: Colors.white,
+                        color: AppColors.onPrimary,
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: AppSpacing.s2),
                     Expanded(
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Flexible(
                             child: Text(
                               '现场监控',
-                              style: TextStyle(
+                              style: AppTextStyles.bodyLg.copyWith(
                                 color: AppColors.textPrimary,
                                 fontSize: 16,
+                                height: 1.2,
                                 fontWeight: FontWeight.w800,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: AppSpacing.s2),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 1.5,
+                              horizontal: AppSpacing.s2,
+                              vertical: AppSpacing.s1,
                             ),
                             decoration: BoxDecoration(
                               color: AppColors.voice.withValues(
-                                alpha: 0.15,
+                                alpha: 0.14,
                               ),
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
                             ),
                             child: Text(
                               '在场${activeEntries.length}人',
-                              style: TextStyle(
+                              style: AppTextStyles.caption.copyWith(
                                 color: AppColors.voice,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                                height: 1.1,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -2553,17 +2570,17 @@ class HomePageState extends State<HomePage> {
                         onPressed: widget.onEntryConfirmed,
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                            horizontal: AppSpacing.s2,
+                            vertical: AppSpacing.s1,
                           ),
-                          minimumSize: Size.zero,
+                          minimumSize: const Size(48, 48),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        icon: const Icon(Icons.dashboard_outlined, size: 14),
-                        label: const Text(
+                        icon: const Icon(Icons.dashboard_outlined, size: 16),
+                        label: Text(
                           '看板',
-                          style: TextStyle(
-                            fontSize: 12,
+                          style: AppTextStyles.label.copyWith(
+                            color: AppColors.actionPrimary,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -2571,34 +2588,33 @@ class HomePageState extends State<HomePage> {
                   ],
                 ),
                 if (dangerEntries.isNotEmpty) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.s3),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                      horizontal: AppSpacing.s3,
+                      vertical: AppSpacing.s2,
                     ),
                     decoration: BoxDecoration(
                       color: AppColors.alarm.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(AppRadius.sm),
                       border: Border.all(
                         color: AppColors.alarm.withValues(alpha: 0.3),
-                        width: 0.8,
+                        width: 1,
                       ),
                     ),
                     child: Row(
                       children: [
                         Icon(
                           Icons.warning_amber_rounded,
-                          size: 15,
+                          size: 16,
                           color: AppColors.alarm,
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: AppSpacing.s2),
                         Expanded(
                           child: Text(
                             '${dangerEntries.length} 名队员气瓶已进入警报或预警，请注意！',
-                            style: TextStyle(
+                            style: AppTextStyles.caption.copyWith(
                               color: AppColors.alarm,
-                              fontSize: 11.5,
                               fontWeight: FontWeight.w600,
                             ),
                             maxLines: 1,
@@ -2609,15 +2625,15 @@ class HomePageState extends State<HomePage> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.s3),
                 for (var i = 0; i < activeEntries.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 8),
+                  if (i > 0) const SizedBox(height: AppSpacing.s2),
                   _activeEntryCard(context, activeEntries[i], cfg),
                 ],
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.s4),
           _buildFieldTools(context),
         ],
       ),
@@ -2638,7 +2654,7 @@ class HomePageState extends State<HomePage> {
             backgroundColor: AppColors.background,
             shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.vertical(
-                top: Radius.circular(AppRadius.xl),
+                top: Radius.circular(AppRadius.lg),
               ),
             ),
             builder: (_) => ReportPressureSheet(
@@ -2648,7 +2664,11 @@ class HomePageState extends State<HomePage> {
           );
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          constraints: const BoxConstraints(minHeight: 56),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s3,
+            vertical: AppSpacing.s2,
+          ),
           decoration: BoxDecoration(
             color: s.color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -2661,18 +2681,18 @@ class HomePageState extends State<HomePage> {
             children: [
               Text(
                 entry.name,
-                style: TextStyle(
+                style: AppTextStyles.bodyLg.copyWith(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.s2),
               StatusBadge(
                 status: status,
                 onColorCard: false,
-                fontSize: 10.5,
-                height: 20,
+                fontSize: 12,
+                height: 24,
               ),
               const Spacer(),
               Column(
@@ -2680,21 +2700,23 @@ class HomePageState extends State<HomePage> {
                 children: [
                   CountdownText(
                     ms: entry.remainingMs,
-                    color: s.fg == Colors.white ? s.color : s.fg,
+                    color: status == 'normal'
+                        ? AppColors.textPrimary
+                        : s.color,
                     size: 16,
                     timeoutText: '已超时',
                   ),
+                  const SizedBox(height: AppSpacing.s1),
                   Text(
                     '${(entry.pressureMpa ?? 0).toStringAsFixed(1)} MPa',
-                    style: TextStyle(
-                      fontSize: 10.5,
+                    style: AppTextStyles.caption.copyWith(
                       color: AppColors.textTertiary,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.s2),
               Icon(
                 Icons.chevron_right_rounded,
                 size: 18,
@@ -2739,13 +2761,13 @@ class HomePageState extends State<HomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _IndexBadge(index: index),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.s2),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     nameField,
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.s2),
                     pressureField,
                   ],
                 ),
@@ -2757,9 +2779,9 @@ class HomePageState extends State<HomePage> {
         return Row(
           children: [
             _IndexBadge(index: index),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpacing.s2),
             Expanded(child: nameField),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpacing.s2),
             SizedBox(width: 104, child: pressureField),
           ],
         );
@@ -2771,7 +2793,10 @@ class HomePageState extends State<HomePage> {
   Widget _inlineErrorBox(String message) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s2,
+      ),
       decoration: BoxDecoration(
         color: AppColors.alarm.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -2780,8 +2805,7 @@ class HomePageState extends State<HomePage> {
       child: Text(
         message,
         textAlign: TextAlign.center,
-        style: TextStyle(
-          fontSize: 13,
+        style: AppTextStyles.label.copyWith(
           color: AppColors.alarm,
           fontWeight: FontWeight.w700,
           height: 1.5,
@@ -2805,10 +2829,8 @@ class HomePageState extends State<HomePage> {
       borderRadius: BorderRadius.circular(AppRadius.sm),
       border: Border.all(color: AppColors.caution.withValues(alpha: 0.4)),
     );
-    final style = TextStyle(
-      fontSize: 13,
+    final style = AppTextStyles.label.copyWith(
       color: AppColors.textSecondary,
-      fontWeight: FontWeight.w600,
       height: 1.4,
     );
     return Column(
@@ -2817,7 +2839,10 @@ class HomePageState extends State<HomePage> {
         if (name.isEmpty && ed.sourceName != null)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s3,
+              vertical: AppSpacing.s2,
+            ),
             decoration: boxStyle,
             child: Text(
               '「${ed.sourceName}」不在名单内，已清空姓名栏，请手动补全正确姓名',
@@ -2827,7 +2852,10 @@ class HomePageState extends State<HomePage> {
         if (dup.isNotEmpty)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s3,
+              vertical: AppSpacing.s2,
+            ),
             decoration: boxStyle,
             child: Text(
               '「${dup.first.name}」已在火场内，确认时将弹窗选择：重新倒计时 / 另建记录',
@@ -2837,7 +2865,10 @@ class HomePageState extends State<HomePage> {
         if (p != null && p > 0 && p <= 40)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s3,
+              vertical: AppSpacing.s2,
+            ),
             decoration: boxStyle,
             child: Row(
               children: [
@@ -2846,50 +2877,48 @@ class HomePageState extends State<HomePage> {
                   size: 16,
                   color: AppColors.textTertiary,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpacing.s2),
                 Text(
                   '容量',
-                  style: TextStyle(
-                    fontSize: 12.5,
+                  style: AppTextStyles.caption.copyWith(
                     color: AppColors.textTertiary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: AppSpacing.s1),
                 SizedBox(
-                  width: 62,
-                  height: 34,
+                  width: 64,
+                  height: 36,
                   child: TextField(
                     controller: ed.volumeCtrl,
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13.5,
+                    style: AppTextStyles.label.copyWith(
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary,
                     ),
                     decoration: const InputDecoration(
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 6,
+                        horizontal: AppSpacing.s1,
+                        vertical: AppSpacing.s2,
                       ),
                       border: OutlineInputBorder(),
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: AppSpacing.s1),
                 Text(
                   'L',
-                  style: TextStyle(
-                    fontSize: 12.5,
+                  style: AppTextStyles.caption.copyWith(
                     color: AppColors.textTertiary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: AppSpacing.s2),
                 Expanded(
                   child: Text(
                     '可用时间 ${cfg.durationMinFor(p, cylinderVolL: v).round()} 分钟',
@@ -2902,16 +2931,15 @@ class HomePageState extends State<HomePage> {
         else
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s3,
+              vertical: AppSpacing.s2,
+            ),
             decoration: boxStyle,
             child: Text(
               '未识别到气瓶压力，请手动填写（如 20）',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
+              style: style,
             ),
           ),
       ],
@@ -2939,7 +2967,7 @@ class HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _fieldTool(
                 '水印相机',
@@ -2953,7 +2981,7 @@ class HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _fieldTool(
                 '定位分享',
@@ -2965,7 +2993,7 @@ class HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _fieldTool(
                 '视频资源',
@@ -3005,7 +3033,10 @@ class HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(AppRadius.md),
         child: Container(
           constraints: const BoxConstraints(minHeight: 88),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s2,
+            vertical: AppSpacing.s3,
+          ),
           decoration: BoxDecoration(
             border: Border.all(color: AppColors.border, width: 1),
             borderRadius: BorderRadius.circular(AppRadius.md),
@@ -3013,15 +3044,14 @@ class HomePageState extends State<HomePage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 26, color: AppColors.voice),
-              const SizedBox(height: 8),
+              Icon(icon, size: 24, color: AppColors.voice),
+              const SizedBox(height: AppSpacing.s2),
               FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
                   title,
                   maxLines: 1,
-                  style: TextStyle(
-                    fontSize: 13,
+                  style: AppTextStyles.label.copyWith(
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
                   ),
@@ -3088,9 +3118,8 @@ class _IndexBadge extends StatelessWidget {
       decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.voice),
       child: Text(
         '${index + 1}',
-        style: TextStyle(
+        style: AppTextStyles.caption.copyWith(
           color: AppColors.onPrimary,
-          fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -3147,11 +3176,11 @@ class _NoIncidentTaskBar extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
-          width: 42,
-          height: 42,
+          width: AppSpacing.s10,
+          height: AppSpacing.s10,
           decoration: BoxDecoration(
             color: AppColors.voice.withValues(alpha: 0.11),
-            borderRadius: BorderRadius.circular(13),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Icon(
             Icons.local_fire_department_outlined,
@@ -3159,12 +3188,15 @@ class _NoIncidentTaskBar extends StatelessWidget {
             size: 24,
           ),
         ),
-        const SizedBox(width: 12),
-        const Expanded(
+        const SizedBox(width: AppSpacing.s3),
+        Expanded(
           child: Text(
             '暂无正在处置的警情',
             softWrap: true,
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+            style: AppTextStyles.bodyLg.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
       ],
@@ -3179,24 +3211,26 @@ class _NoIncidentTaskBar extends StatelessWidget {
         minimumSize: const Size(0, 48),
       ),
     );
-    return Container(
+    return AppCard(
       key: const Key('no-incident-card'),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
-        boxShadow: AppShadow.card,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s3,
       ),
+      radius: AppRadius.lg,
       child: compact
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [summary, const SizedBox(height: 10), action],
+              children: [
+                summary,
+                const SizedBox(height: AppSpacing.s3),
+                action,
+              ],
             )
           : Row(
               children: [
                 Expanded(child: summary),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.s3),
                 action,
               ],
             ),
@@ -3269,15 +3303,13 @@ class _TaskBarState extends State<_TaskBar> {
   }
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => AppCard(
     key: const Key('incident-card'),
-    padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
-    decoration: BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      border: Border.all(color: AppColors.border),
-      boxShadow: AppShadow.card,
+    padding: const EdgeInsets.symmetric(
+      horizontal: AppSpacing.s4,
+      vertical: AppSpacing.s2,
     ),
+    radius: AppRadius.lg,
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3286,13 +3318,13 @@ class _TaskBarState extends State<_TaskBar> {
           color: Colors.transparent,
           child: InkWell(
             key: const Key('toggle-incident-card'),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
             onTap: _toggleExpanded,
             child: Semantics(
               button: true,
               expanded: _expanded,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s1),
                 child: Row(
                   children: [
                     Expanded(
@@ -3302,12 +3334,12 @@ class _TaskBarState extends State<_TaskBar> {
                           Text(
                             widget.incident.displayName,
                             softWrap: true,
-                            style: const TextStyle(
-                              fontSize: 17,
+                            style: AppTextStyles.bodyLg.copyWith(
+                              color: AppColors.textPrimary,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: AppSpacing.s1),
                           Text(
                             [
                               if ((widget.incident.info['original_category']
@@ -3322,19 +3354,17 @@ class _TaskBarState extends State<_TaskBar> {
                             ].join(' · '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
+                            style: AppTextStyles.caption.copyWith(
                               color: AppColors.textSecondary,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: AppSpacing.s2),
                     Text(
                       _expanded ? '收起' : '展开',
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: AppTextStyles.caption.copyWith(
                         color: AppColors.textSecondary,
                       ),
                     ),
@@ -3354,21 +3384,18 @@ class _TaskBarState extends State<_TaskBar> {
             key: const Key('incident-card-details'),
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const Divider(height: AppSpacing.s2),
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   if (_location.isNotEmpty)
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          _location,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
+                      child: Text(
+                        _location,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     )
@@ -3379,6 +3406,8 @@ class _TaskBarState extends State<_TaskBar> {
                     onPressed: widget.onRename,
                     icon: const Icon(Icons.edit_outlined, size: 16),
                     tooltip: '修改名称',
+                    padding: EdgeInsets.zero,
+                    alignment: Alignment.centerRight,
                     constraints: const BoxConstraints(
                       minWidth: 48,
                       minHeight: 48,
@@ -3389,7 +3418,7 @@ class _TaskBarState extends State<_TaskBar> {
               Container(
                 decoration: BoxDecoration(
                   color: AppColors.surfaceSubtle.withValues(alpha: .5),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
                 child: Row(
                   children: [
@@ -3399,7 +3428,7 @@ class _TaskBarState extends State<_TaskBar> {
                       onTap: widget.onAddForce,
                     ),
                     const SizedBox(
-                      height: 18,
+                      height: 20,
                       child: VerticalDivider(width: 1),
                     ),
                     _IncidentAction(
@@ -3408,7 +3437,7 @@ class _TaskBarState extends State<_TaskBar> {
                       onTap: widget.onImportInfo,
                     ),
                     const SizedBox(
-                      height: 18,
+                      height: 20,
                       child: VerticalDivider(width: 1),
                     ),
                     _IncidentAction(
@@ -3419,24 +3448,27 @@ class _TaskBarState extends State<_TaskBar> {
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.s2),
               IncidentKeySiteSection(
                 controller: widget.controller,
                 incident: widget.incident,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.s2),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       '参战力量',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                      style: AppTextStyles.label.copyWith(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   Text(
                     '${widget.forces.length}支队伍',
-                    style: TextStyle(
-                      fontSize: 12,
+                    style: AppTextStyles.caption.copyWith(
                       color: AppColors.textTertiary,
                     ),
                   ),
@@ -3444,30 +3476,32 @@ class _TaskBarState extends State<_TaskBar> {
               ),
               if (widget.forces.isEmpty)
                 Padding(
-                  padding: EdgeInsets.only(top: 1),
+                  padding: const EdgeInsets.only(top: AppSpacing.s1),
                   child: Text(
                     '尚未登记参战力量',
-                    style: TextStyle(
-                      fontSize: 11,
-                      height: 1.2,
+                    style: AppTextStyles.caption.copyWith(
                       color: AppColors.textTertiary,
                     ),
                   ),
                 )
               else
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (var i = 0; i < widget.forces.length; i++) ...[
-                      _ForceRow(
-                        force: widget.forces[i],
-                        onEdit: () => widget.onEditForce(widget.forces[i]),
-                        onRemove: () => widget.onRemoveForce(widget.forces[i]),
-                      ),
-                      if (i < widget.forces.length - 1)
-                        const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.s2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < widget.forces.length; i++) ...[
+                        _ForceRow(
+                          force: widget.forces[i],
+                          onEdit: () => widget.onEditForce(widget.forces[i]),
+                          onRemove: () =>
+                              widget.onRemoveForce(widget.forces[i]),
+                        ),
+                        if (i < widget.forces.length - 1)
+                          const SizedBox(height: AppSpacing.s2),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               TextButton(
                 onPressed: widget.onDetails,
@@ -3475,14 +3509,22 @@ class _TaskBarState extends State<_TaskBar> {
                   minimumSize: const Size.fromHeight(48),
                   padding: EdgeInsets.zero,
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Expanded(child: Text('警情详情')),
-                    Icon(Icons.chevron_right, size: 18),
+                    Expanded(
+                      child: Text(
+                        '警情详情',
+                        style: AppTextStyles.label.copyWith(
+                          color: AppColors.actionPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right, size: 18),
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
+              const Divider(height: AppSpacing.s2),
               Row(
                 children: [
                   Expanded(
@@ -3492,7 +3534,9 @@ class _TaskBarState extends State<_TaskBar> {
                       label: const Text('退出当前警情'),
                       style: TextButton.styleFrom(
                         visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s1,
+                        ),
                         minimumSize: const Size.fromHeight(48),
                       ),
                     ),
@@ -3505,7 +3549,9 @@ class _TaskBarState extends State<_TaskBar> {
                       style: TextButton.styleFrom(
                         foregroundColor: AppColors.alarm,
                         visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s1,
+                        ),
                         minimumSize: const Size.fromHeight(48),
                       ),
                     ),
@@ -3534,18 +3580,22 @@ class _IncidentAction extends StatelessWidget {
       onPressed: onTap,
       style: TextButton.styleFrom(
         minimumSize: const Size(0, 48),
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s1),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(icon, size: 16),
-          const SizedBox(width: 4),
+          const SizedBox(width: AppSpacing.s1),
           Flexible(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              style: AppTextStyles.label.copyWith(
+                color: AppColors.actionPrimary,
+              ),
             ),
           ),
         ],
@@ -3569,18 +3619,23 @@ class _ForceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = '${force.stationName} ${force.quantityLabel}';
     final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
     );
 
     return Material(
-      color: AppColors.surface,
+      color: AppColors.surfaceSubtle.withValues(alpha: 0.6),
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         excludeFromSemantics: true,
         onTap: onEdit,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.s2,
+            AppSpacing.s1,
+            AppSpacing.s1,
+            AppSpacing.s1,
+          ),
           child: Row(
             children: [
               Container(
@@ -3588,16 +3643,16 @@ class _ForceRow extends StatelessWidget {
                 height: 32,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceSubtle,
+                  color: AppColors.surface,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   Icons.local_shipping_outlined,
-                  size: 19,
+                  size: 18,
                   color: AppColors.textSecondary,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppSpacing.s2),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3606,9 +3661,10 @@ class _ForceRow extends StatelessWidget {
                       label,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: AppTextStyles.bodyMd.copyWith(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
                       ),
                     ),
                   ],
@@ -3617,7 +3673,7 @@ class _ForceRow extends StatelessWidget {
               IconButton(
                 onPressed: onEdit,
                 tooltip: '编辑参战力量',
-                icon: const Icon(Icons.edit_outlined, size: 19),
+                icon: const Icon(Icons.edit_outlined, size: 18),
                 color: AppColors.textTertiary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
@@ -3626,7 +3682,7 @@ class _ForceRow extends StatelessWidget {
               IconButton(
                 onPressed: onRemove,
                 tooltip: '删除参战力量',
-                icon: const Icon(Icons.close, size: 21),
+                icon: const Icon(Icons.close, size: 20),
                 color: AppColors.textTertiary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,

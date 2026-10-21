@@ -62,7 +62,7 @@ Widget _buildKeySiteEmpty({
         ),
         child: Icon(icon, size: 40, color: AppColors.textTertiary),
       ),
-      const SizedBox(height: 18),
+      const SizedBox(height: AppSpacing.s4),
       Text(
         message,
         textAlign: TextAlign.center,
@@ -284,72 +284,81 @@ class _SiteListState extends State<_SiteList> {
       versionLabel,
     ].where((s) => s.isNotEmpty).toList();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: AppSpacing.s2),
       child: AppCard(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s3,
+          vertical: AppSpacing.s2,
+        ),
         onTap: () => _open(site),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceSubtle,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                ),
+                child: Icon(
+                  Icons.domain_outlined,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
               ),
-              child: Icon(
-                Icons.domain_outlined,
+              const SizedBox(width: AppSpacing.s3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      site.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodyMd.copyWith(
+                        height: 1.3,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (site.address.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.s1),
+                      Text(
+                        site.address,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          height: 1.3,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                    if (metaParts.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.s1),
+                      Text(
+                        metaParts.join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          height: 1.3,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s2),
+              Icon(
+                Icons.chevron_right,
                 size: 18,
-                color: AppColors.textSecondary,
+                color: AppColors.textTertiary,
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    site.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.bodyMd.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  if (site.address.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      site.address,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                  if (metaParts.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      metaParts.join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 6),
-            Icon(
-              Icons.chevron_right,
-              size: 18,
-              color: AppColors.textTertiary,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -377,6 +386,9 @@ class _SiteListState extends State<_SiteList> {
     }
     final widgets = <Widget>[];
     for (final entry in groups.entries) {
+      if (widgets.isNotEmpty) {
+        widgets.add(const SizedBox(height: AppSpacing.s2));
+      }
       widgets.add(
         SectionTitle(
           key: ValueKey('site-group-${entry.key}'),
@@ -415,7 +427,7 @@ class _SiteListState extends State<_SiteList> {
               _debounce = Timer(const Duration(milliseconds: 350), _load);
             },
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.s2),
           Row(
             children: [
               Expanded(
@@ -424,7 +436,7 @@ class _SiteListState extends State<_SiteList> {
                   _load();
                 }),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppSpacing.s2),
               Expanded(
                 child: _filter('类型', _type, _types, (value) {
                   _type = value;
@@ -433,14 +445,14 @@ class _SiteListState extends State<_SiteList> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.s3),
           if (_recent.isNotEmpty &&
               _search.text.trim().isEmpty &&
               _district.isEmpty &&
               _type.isEmpty) ...[
             const SectionTitle(text: '本机最近查看'),
             ..._recent.map(_row),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.s3),
           ],
           ..._groupedItems(),
           if (_error != null)
@@ -450,7 +462,7 @@ class _SiteListState extends State<_SiteList> {
             ),
           if (_loading)
             const Padding(
-              padding: EdgeInsets.all(24),
+              padding: EdgeInsets.all(AppSpacing.s6),
               child: Center(child: CircularProgressIndicator()),
             ),
           if (!_loading && _error == null && _items.isEmpty)
@@ -460,7 +472,7 @@ class _SiteListState extends State<_SiteList> {
             ),
           if (!_loading && _more && _error == null)
             Padding(
-              padding: const EdgeInsets.only(top: 2),
+              padding: const EdgeInsets.only(top: AppSpacing.s1),
               child: OutlinedButton(
                 onPressed: () => _load(append: true),
                 child: const Text('加载更多'),
@@ -476,50 +488,66 @@ class _SiteListState extends State<_SiteList> {
     String value,
     List<String> values,
     ValueChanged<String> changed,
-  ) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-    decoration: BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.pill),
-      border: Border.all(color: AppColors.border),
-    ),
-    child: DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        isExpanded: true,
-        isDense: true,
-        dropdownColor: AppColors.surface,
-        style: AppTextStyles.label.copyWith(color: AppColors.textPrimary),
-        icon: Icon(
-          Icons.expand_more,
-          size: 18,
-          color: AppColors.textSecondary,
-        ),
-        value: values.contains(value) ? value : '',
-        items: [
-          DropdownMenuItem(
-            value: '',
-            child: Text(
-              '全部$title',
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.label.copyWith(color: AppColors.textPrimary),
-            ),
+  ) => ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 40),
+    child: Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s2,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          isDense: true,
+          dropdownColor: AppColors.surface,
+          style: AppTextStyles.bodyMd.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
           ),
-          ...values.map(
-            (v) => DropdownMenuItem(
-              value: v,
+          icon: Icon(
+            Icons.expand_more,
+            size: 18,
+            color: AppColors.textSecondary,
+          ),
+          value: values.contains(value) ? value : '',
+          items: [
+            DropdownMenuItem(
+              value: '',
               child: Text(
-                v,
+                '全部$title',
                 overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.label.copyWith(
+                style: AppTextStyles.bodyMd.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
                 ),
               ),
             ),
-          ),
-        ],
-        onChanged: (v) {
-          if (v != null) changed(v);
-        },
+            ...values.map(
+              (v) => DropdownMenuItem(
+                value: v,
+                child: Text(
+                  v,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyMd.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+          onChanged: (v) {
+            if (v != null) changed(v);
+          },
+        ),
       ),
     ),
   );
@@ -607,24 +635,24 @@ class _SiteDetailState extends State<_SiteDetail> {
   }
 
   Widget _buildCautionBanner(String message) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    padding: const EdgeInsets.symmetric(
+      horizontal: AppSpacing.s3,
+      vertical: AppSpacing.s2,
+    ),
     decoration: BoxDecoration(
       color: AppColors.caution.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       border: Border.all(color: AppColors.caution.withValues(alpha: 0.35)),
     ),
     child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 1),
-          child: Icon(
-            Icons.warning_amber_rounded,
-            size: 16,
-            color: AppColors.caution,
-          ),
+        Icon(
+          Icons.warning_amber_rounded,
+          size: 16,
+          color: AppColors.caution,
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.s2),
         Expanded(
           child: Text(
             message,
@@ -661,7 +689,7 @@ class _SiteDetailState extends State<_SiteDetail> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             AppCard(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(AppSpacing.s4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -672,7 +700,7 @@ class _SiteDetailState extends State<_SiteDetail> {
                     ),
                   ),
                   if (site.address.isNotEmpty) ...[
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpacing.s2),
                     Text(
                       site.address,
                       style: AppTextStyles.bodyMd.copyWith(
@@ -680,16 +708,16 @@ class _SiteDetailState extends State<_SiteDetail> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.s3),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
+                    spacing: AppSpacing.s2,
+                    runSpacing: AppSpacing.s2,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
+                          horizontal: AppSpacing.s2,
+                          vertical: AppSpacing.s1,
                         ),
                         decoration: BoxDecoration(
                           color: AppColors.surfaceSubtle,
@@ -715,19 +743,19 @@ class _SiteDetailState extends State<_SiteDetail> {
               ),
             ),
             if (!site.active) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.s2),
               _buildCautionBanner('该单位已停用，当前仅供警情历史引用查阅'),
             ],
             if (site.latestVersion > site.version) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.s2),
               _buildCautionBanner(
                 '已有 v${site.latestVersion}，本警情仍引用 v${site.version}。请返回警情关联区人工核对后更新。',
               ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.s3),
             LayoutBuilder(
               builder: (context, constraints) {
-                final spacing = 10.0;
+                const spacing = AppSpacing.s2;
                 final colWidth = math.max(
                   120.0,
                   (constraints.maxWidth - spacing) / 2,
@@ -740,12 +768,9 @@ class _SiteDetailState extends State<_SiteDetail> {
                       SizedBox(
                         width: colWidth,
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(minHeight: 76),
+                          constraints: const BoxConstraints(minHeight: 72),
                           child: AppCard(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
+                            padding: const EdgeInsets.all(AppSpacing.s3),
                             onTap: () => Navigator.push<void>(
                               context,
                               MaterialPageRoute(
@@ -762,13 +787,14 @@ class _SiteDetailState extends State<_SiteDetail> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     Icon(
                                       _moduleIcon(module.key),
                                       size: 18,
                                       color: AppColors.actionPrimary,
                                     ),
-                                    const SizedBox(width: 6),
+                                    const SizedBox(width: AppSpacing.s2),
                                     Expanded(
                                       child: Text(
                                         module.value,
@@ -776,6 +802,7 @@ class _SiteDetailState extends State<_SiteDetail> {
                                         overflow: TextOverflow.ellipsis,
                                         style: AppTextStyles.bodyMd.copyWith(
                                           fontSize: 14,
+                                          height: 1.25,
                                           fontWeight: FontWeight.w700,
                                           color: AppColors.textPrimary,
                                         ),
@@ -783,8 +810,9 @@ class _SiteDetailState extends State<_SiteDetail> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: AppSpacing.s2),
                                 Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     Expanded(
                                       child: Text(
@@ -792,10 +820,12 @@ class _SiteDetailState extends State<_SiteDetail> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: AppTextStyles.caption.copyWith(
+                                          height: 1.2,
                                           color: AppColors.textTertiary,
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(width: AppSpacing.s1),
                                     Icon(
                                       Icons.chevron_right,
                                       size: 16,
@@ -888,7 +918,7 @@ class _ModuleContentState extends State<_ModuleContent> {
               color: AppColors.textTertiary,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.s2),
           if (widget.module == 'hazards') ...[
             TextField(
               decoration: const InputDecoration(
@@ -897,7 +927,7 @@ class _ModuleContentState extends State<_ModuleContent> {
               ),
               onChanged: (q) => setState(() => _query = q),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.s3),
           ],
           if (entries.isEmpty)
             _buildKeySiteEmpty(
@@ -907,20 +937,23 @@ class _ModuleContentState extends State<_ModuleContent> {
           if (widget.module == 'plans' && entries.isNotEmpty) ...[
             const SectionTitle(text: '结构化目录'),
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.only(bottom: AppSpacing.s3),
               child: AppCard(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(AppSpacing.s3),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     for (final e in entries.asMap().entries)
                       Padding(
                         padding: EdgeInsets.only(
-                          bottom: e.key == entries.length - 1 ? 0 : 4,
+                          bottom:
+                              e.key == entries.length - 1 ? 0 : AppSpacing.s1,
                         ),
                         child: Text(
                           '${e.key + 1}. ${e.value.title}',
-                          style: AppTextStyles.label.copyWith(
+                          style: AppTextStyles.bodyMd.copyWith(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                             color: AppColors.textPrimary,
                           ),
                         ),
@@ -932,19 +965,19 @@ class _ModuleContentState extends State<_ModuleContent> {
           ],
           ...entries.map(
             (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.only(bottom: AppSpacing.s3),
               child: AppCard(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(AppSpacing.s4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (entry.kind.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.only(bottom: AppSpacing.s2),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
+                            horizontal: AppSpacing.s2,
+                            vertical: AppSpacing.s1,
                           ),
                           decoration: BoxDecoration(
                             color: AppColors.noteInfo.withValues(alpha: 0.14),
@@ -961,32 +994,38 @@ class _ModuleContentState extends State<_ModuleContent> {
                       ),
                     Text(
                       entry.title,
-                      style: AppTextStyles.bodyLg.copyWith(
+                      style: AppTextStyles.bodyMd.copyWith(
+                        fontSize: 16,
+                        height: 1.35,
                         fontWeight: FontWeight.w700,
                         color: AppColors.textPrimary,
                       ),
                     ),
                     if (entry.body.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.only(top: AppSpacing.s2),
                         child: SelectableText(
                           entry.body,
                           style: AppTextStyles.bodyMd.copyWith(
                             color: AppColors.textPrimary,
+                            height: 1.52,
                           ),
                         ),
                       ),
                     if (entry.fields.entries.any((f) => f.value.isNotEmpty))
-                      const SizedBox(height: 6),
+                      const SizedBox(height: AppSpacing.s2),
                     ...entry.fields.entries
                         .where((f) => f.value.isNotEmpty)
                         .map(
                           (field) => Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.s1,
+                            ),
                             child: SelectableText.rich(
                               TextSpan(
                                 style: AppTextStyles.bodyMd.copyWith(
-                                  fontSize: 13.5,
+                                  fontSize: 13,
+                                  height: 1.5,
                                   color: AppColors.textPrimary,
                                 ),
                                 children: [
@@ -1018,13 +1057,13 @@ class _ModuleContentState extends State<_ModuleContent> {
                             ? null
                             : attachments.first;
                         return Padding(
-                          padding: const EdgeInsets.only(top: 10),
+                          padding: const EdgeInsets.only(top: AppSpacing.s2),
                           child: OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
+                              minimumSize: const Size(48, 48),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
+                                horizontal: AppSpacing.s3,
+                                vertical: AppSpacing.s2,
                               ),
                             ),
                             onPressed: attachment == null
@@ -1143,7 +1182,10 @@ class _DocumentViewerState extends State<_DocumentViewer> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s2,
+            ),
             child: Text(
               '${widget.site.name} · v${widget.site.version}${widget.map ? ' · 图片像素坐标，不提供定位导航' : ''}',
               style: AppTextStyles.caption.copyWith(
@@ -1184,12 +1226,12 @@ class _DocumentViewerState extends State<_DocumentViewer> {
           SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(AppSpacing.s2),
               child: Wrap(
                 alignment: WrapAlignment.center,
                 crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 12,
-                runSpacing: 8,
+                spacing: AppSpacing.s3,
+                runSpacing: AppSpacing.s2,
                 children: [
                   IconButton(
                     tooltip: '上一页',
@@ -1212,7 +1254,9 @@ class _DocumentViewerState extends State<_DocumentViewer> {
                   ),
                   Text(
                     '第 $_page / $count 页',
-                    style: AppTextStyles.label.copyWith(
+                    style: AppTextStyles.bodyMd.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                       color: AppColors.textSecondary,
                     ),
                   ),
@@ -1236,6 +1280,9 @@ class _DocumentViewerState extends State<_DocumentViewer> {
                     ),
                   ),
                   OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                    ),
                     onPressed: () => setState(() {
                       _transform.value = Matrix4.identity();
                       _reset++;

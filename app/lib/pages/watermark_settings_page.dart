@@ -149,10 +149,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
         body: _loading
             ? const Center(child: CircularProgressIndicator())
             : ListView(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
                   _previewCard(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 22),
                   const SectionTitle(text: '水印内容'),
                   _textField(
                     controller: _unitTitle,
@@ -172,50 +172,77 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                     hint: '留空则不显示',
                     helper: '水印正文中的人员署名；留空不显示，不改变登录姓名',
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 22),
                   const SectionTitle(text: '显示字段'),
-                  _switchTile(
-                    title: '拍摄时间',
-                    value: _settings.showTime,
-                    onChanged: (v) => setState(() {
-                      _dirty = true;
-                      _settings = _settings.copyWith(showTime: v);
-                    }),
+                  AppCard(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        _switchTile(
+                          title: '拍摄时间',
+                          value: _settings.showTime,
+                          onChanged: (v) => setState(() {
+                            _dirty = true;
+                            _settings = _settings.copyWith(showTime: v);
+                          }),
+                        ),
+                        const Divider(
+                          height: 1,
+                          indent: AppSpacing.s4,
+                          endIndent: AppSpacing.s4,
+                        ),
+                        _switchTile(
+                          title: '天气',
+                          value: _settings.showWeather,
+                          onChanged: (v) => setState(() {
+                            _dirty = true;
+                            _settings = _settings.copyWith(showWeather: v);
+                          }),
+                        ),
+                        const Divider(
+                          height: 1,
+                          indent: AppSpacing.s4,
+                          endIndent: AppSpacing.s4,
+                        ),
+                        _switchTile(
+                          title: '地点',
+                          value: _settings.showLocation,
+                          onChanged: (v) => setState(() {
+                            _dirty = true;
+                            _settings = _settings.copyWith(showLocation: v);
+                          }),
+                        ),
+                        const Divider(
+                          height: 1,
+                          indent: AppSpacing.s4,
+                          endIndent: AppSpacing.s4,
+                        ),
+                        _switchTile(
+                          title: '经纬度',
+                          value: _settings.showCoordinates,
+                          onChanged: (v) => setState(() {
+                            _dirty = true;
+                            _settings = _settings.copyWith(showCoordinates: v);
+                          }),
+                        ),
+                        const Divider(
+                          height: 1,
+                          indent: AppSpacing.s4,
+                          endIndent: AppSpacing.s4,
+                        ),
+                        _switchTile(
+                          title: '左侧标识',
+                          subtitle: '关闭后只保留文字，适合不对外发布的内部记录',
+                          value: _settings.showLogo,
+                          onChanged: (v) => setState(() {
+                            _dirty = true;
+                            _settings = _settings.copyWith(showLogo: v);
+                          }),
+                        ),
+                      ],
+                    ),
                   ),
-                  _switchTile(
-                    title: '天气',
-                    value: _settings.showWeather,
-                    onChanged: (v) => setState(() {
-                      _dirty = true;
-                      _settings = _settings.copyWith(showWeather: v);
-                    }),
-                  ),
-                  _switchTile(
-                    title: '地点',
-                    value: _settings.showLocation,
-                    onChanged: (v) => setState(() {
-                      _dirty = true;
-                      _settings = _settings.copyWith(showLocation: v);
-                    }),
-                  ),
-                  _switchTile(
-                    title: '经纬度',
-                    value: _settings.showCoordinates,
-                    onChanged: (v) => setState(() {
-                      _dirty = true;
-                      _settings = _settings.copyWith(showCoordinates: v);
-                    }),
-                  ),
-                  _switchTile(
-                    title: '左侧标识',
-                    subtitle: '关闭后只保留文字，适合不对外发布的内部记录',
-                    value: _settings.showLogo,
-                    onChanged: (v) => setState(() {
-                      _dirty = true;
-                      _settings = _settings.copyWith(showLogo: v);
-                    }),
-                  ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 22),
                   const SectionTitle(text: '拍摄界面方向'),
                   _orientationPicker(),
                 ],
@@ -234,22 +261,24 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       department: _department.text.trim(),
       actorName: _actor.text.trim(),
     );
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.s4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('效果预览', style: TextStyle(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
+          Text(
+            '效果预览',
+            style: AppTextStyles.label.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s3),
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(AppSpacing.s3),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
               gradient: const LinearGradient(
                 colors: [Color(0xFF8FA6B8), Color(0xFF43535F)],
               ),
@@ -410,7 +439,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
             title: '横屏拍摄（16:9）',
             subtitle: '自动横屏，保留完整横版视野',
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.s2),
           _orientationTile(
             key: const Key('capture-orientation-portrait'),
             value: CameraCaptureOrientation.portrait,
@@ -429,39 +458,48 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
     String? subtitle,
   }) {
     final selected = _settings.captureOrientation == value;
-    return RadioListTile<CameraCaptureOrientation>(
-      key: key,
-      value: value,
-      enabled: !_saving,
-      selected: selected,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(
-          color: selected ? AppColors.voice : AppColors.border,
-          width: selected ? 1.5 : 1,
-        ),
+    return AppCard(
+      padding: EdgeInsets.zero,
+      radius: AppRadius.md,
+      side: BorderSide(
+        color: selected ? AppColors.voice : AppColors.border,
+        width: selected ? 1.5 : 1,
       ),
-      tileColor: selected ? AppColors.surface : Colors.transparent,
-      activeColor: AppColors.voice,
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          color: AppColors.textPrimary,
-        ),
-      ),
-      subtitle: subtitle == null
-          ? null
-          : Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: AppColors.textSecondary,
-              ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
+        child: RadioListTile<CameraCaptureOrientation>(
+          key: key,
+          value: value,
+          enabled: !_saving,
+          selected: selected,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s4,
+            vertical: AppSpacing.s2,
+          ),
+          activeColor: AppColors.voice,
+          title: Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              height: 1.35,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              color: AppColors.textPrimary,
             ),
+          ),
+          subtitle: subtitle == null
+              ? null
+              : Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.s1),
+                  child: Text(
+                    subtitle,
+                    style: AppTextStyles.caption.copyWith(
+                      height: 1.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+        ),
+      ),
     );
   }
 
@@ -472,7 +510,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
     String? helper,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: AppSpacing.s3),
       child: TextField(
         controller: controller,
         enabled: !_saving,
@@ -485,15 +523,17 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
           helperText: helper,
           helperMaxLines: 6,
           hintMaxLines: 4,
-          helperStyle: TextStyle(color: AppColors.textSecondary),
+          helperStyle: AppTextStyles.caption.copyWith(
+            color: AppColors.textSecondary,
+          ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: AppColors.textSecondary),
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            borderSide: BorderSide(color: AppColors.border),
           ),
           filled: true,
           fillColor: AppColors.surface,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(AppRadius.md),
             borderSide: BorderSide(color: AppColors.border),
           ),
         ),
@@ -510,16 +550,30 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 56),
       child: SwitchListTile(
-        contentPadding: EdgeInsets.zero,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s4,
+          vertical: 2,
+        ),
         title: Text(
           title,
-          style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
         ),
         subtitle: subtitle == null
             ? null
-            : Text(
-                subtitle,
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            : Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.s1),
+                child: Text(
+                  subtitle,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.45,
+                  ),
+                ),
               ),
         value: value,
         activeThumbColor: AppColors.textPrimary,

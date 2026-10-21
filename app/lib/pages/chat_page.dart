@@ -782,39 +782,53 @@ class ChatPageState extends State<ChatPage> {
         children: [
           _buildHeader(context),
           if (widget.controller.currentIncident?.info.isNotEmpty == true)
-            TextButton.icon(
-              onPressed: () {
-                final api = widget.controller.api;
-                final incident = widget.controller.currentIncident;
-                if (api != null && incident != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => IncidentDetailsPage(
-                        api: api,
-                        incident: incident,
-                        controller: widget.controller,
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.s1),
+              child: TextButton.icon(
+                onPressed: () {
+                  final api = widget.controller.api;
+                  final incident = widget.controller.currentIncident;
+                  if (api != null && incident != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => IncidentDetailsPage(
+                          api: api,
+                          incident: incident,
+                          controller: widget.controller,
+                        ),
                       ),
-                    ),
-                  );
-                }
-              },
-              icon: const Icon(Icons.info_outline, size: 15),
-              label: const Text(
-                '已结合当前警情资料 · 查看背景',
-                style: TextStyle(fontSize: 12),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.info_outline, size: 15),
+                label: Text(
+                  '已结合当前警情资料 · 查看背景',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.actionPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ),
           if (_recording) _buildRecordingHint(),
           Expanded(child: _buildBody()),
           Container(
             width: double.infinity,
-            color: AppColors.surface,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              border: Border(top: BorderSide(color: AppColors.border)),
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s2,
+            ),
             child: Text(
               '水元素建议仅供参考，现场以指挥员口令和现行规程为准。',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textTertiary,
+              ),
             ),
           ),
         ],
@@ -827,8 +841,16 @@ class ChatPageState extends State<ChatPage> {
     return Container(
       key: const Key('chat-recording-limit'),
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.fromLTRB(
+        AppSpacing.s4,
+        0,
+        AppSpacing.s4,
+        AppSpacing.s2,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s2,
+      ),
       decoration: BoxDecoration(
         color: (warning ? AppColors.caution : AppColors.voice).withValues(
           alpha: 0.10,
@@ -840,9 +862,8 @@ class ChatPageState extends State<ChatPage> {
             ? '录音还剩 ${max(0, _maxRecordingDuration.inSeconds - _recordingSeconds)} 秒，时间到将自动结束'
             : '录音中 · 最长 60 秒 · 已录 $_recordingSeconds 秒',
         textAlign: TextAlign.center,
-        style: TextStyle(
+        style: AppTextStyles.caption.copyWith(
           color: warning ? AppColors.caution : AppColors.voice,
-          fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -852,7 +873,12 @@ class ChatPageState extends State<ChatPage> {
   Widget _buildHeader(BuildContext context) {
     return Container(
       key: const Key('chat-header'),
-      padding: const EdgeInsets.fromLTRB(12, 8, 8, 4),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s3,
+        AppSpacing.s2,
+        AppSpacing.s2,
+        AppSpacing.s1,
+      ),
       child: Row(
         children: [
           IconButton(
@@ -862,11 +888,14 @@ class ChatPageState extends State<ChatPage> {
             color: AppColors.textSecondary,
             visualDensity: VisualDensity.compact,
           ),
-          const Expanded(
+          Expanded(
             child: Text(
               '辅助',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              style: AppTextStyles.h2.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
             ),
           ),
           IconButton(
@@ -881,6 +910,7 @@ class ChatPageState extends State<ChatPage> {
             onPressed: _showLegacyHistory,
             tooltip: '历史通用对话',
             icon: const Icon(Icons.history, size: 20),
+            color: AppColors.textTertiary,
           ),
           IconButton(
             key: const Key('chat-vision-button'),
@@ -921,10 +951,13 @@ class ChatPageState extends State<ChatPage> {
           Container(
             width: double.infinity,
             color: AppColors.alarm.withValues(alpha: 0.08),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s2,
+            ),
             child: Text(
               _error!,
-              style: TextStyle(fontSize: 12, color: AppColors.alarm),
+              style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
             ),
           ),
         if (_recording || (_processing && _transcript != null))
@@ -932,7 +965,12 @@ class ChatPageState extends State<ChatPage> {
         Expanded(
           child: ListView.builder(
             controller: _scroll,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.s4,
+              AppSpacing.s3,
+              AppSpacing.s4,
+              AppSpacing.s6,
+            ),
             itemCount: _messages.length,
             itemBuilder: (context, i) {
               final m = _messages[i];
@@ -959,28 +997,35 @@ class ChatPageState extends State<ChatPage> {
     final hasText = text != null && text.isNotEmpty;
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.fromLTRB(
+        AppSpacing.s4,
+        AppSpacing.s1,
+        AppSpacing.s4,
+        AppSpacing.s2,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s3,
+      ),
       decoration: BoxDecoration(
         color: AppColors.voice.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppColors.voice.withValues(alpha: 0.22)),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(
             hasText ? Icons.graphic_eq_rounded : Icons.mic_none_rounded,
             size: 18,
             color: AppColors.voice,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.s2),
           Expanded(
             child: Text(
               hasText ? text : '正在识别语音…',
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.45,
+              style: AppTextStyles.bodyMd.copyWith(
+                height: 1.5,
                 color: AppColors.textPrimary,
               ),
             ),
@@ -992,19 +1037,27 @@ class ChatPageState extends State<ChatPage> {
 
   Widget _buildWelcome() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s4,
+        AppSpacing.s3,
+        AppSpacing.s4,
+        AppSpacing.s6,
+      ),
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s2,
+            vertical: AppSpacing.s2,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const AssistantAvatar(size: 112),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.s4),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
+                  horizontal: AppSpacing.s3,
+                  vertical: AppSpacing.s1,
                 ),
                 decoration: BoxDecoration(
                   color: AppColors.avatarBackdrop,
@@ -1012,47 +1065,48 @@ class ChatPageState extends State<ChatPage> {
                 ),
                 child: Text(
                   '现场安全 · 快速研判',
-                  style: TextStyle(
+                  style: AppTextStyles.caption.copyWith(
                     color: AppColors.textSecondary,
-                    fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.3,
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-              const Text(
+              const SizedBox(height: AppSpacing.s3),
+              Text(
                 '你好，我是水元素',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                style: AppTextStyles.h2.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: AppSpacing.s2),
               Text(
                 '火场里遇到困难，按住底部语音按钮说话，\n或在这里输入问题，我来帮你支招。',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
+                style: AppTextStyles.bodyMd.copyWith(
                   color: AppColors.textSecondary,
                   height: 1.5,
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: AppSpacing.s5),
               _VisionCallout(onTap: _pickVisionImage),
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpacing.s4),
               const _SampleQuestion('气瓶压力下降太快怎么办？'),
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.s2),
               const _SampleQuestion('浓烟太大看不清路，有什么办法？'),
-              const SizedBox(height: 10),
+              const SizedBox(height: AppSpacing.s2),
               const _SampleQuestion('破拆卷帘门有哪些注意事项？'),
             ],
           ),
         ),
         if (_error != null)
           Padding(
-            padding: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.only(top: AppSpacing.s3),
             child: Text(
               _error!,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: AppColors.alarm),
+              style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
             ),
           ),
       ],
@@ -1097,7 +1151,7 @@ class _MessageBubble extends StatelessWidget {
     final timeText =
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.only(bottom: AppSpacing.s3),
       child: Row(
         mainAxisAlignment: isUser
             ? MainAxisAlignment.end
@@ -1105,7 +1159,10 @@ class _MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
-            const AssistantAvatar(size: 30, margin: EdgeInsets.only(right: 8)),
+            const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.s1, right: AppSpacing.s2),
+              child: AssistantAvatar(size: 32),
+            ),
           ],
           Flexible(
             child: Column(
@@ -1113,35 +1170,22 @@ class _MessageBubble extends StatelessWidget {
                   ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
-                Container(
+                AppCard(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 9,
+                    horizontal: AppSpacing.s4,
+                    vertical: AppSpacing.s3,
                   ),
-                  decoration: BoxDecoration(
-                    color: isUser ? AppColors.actionPrimary : AppColors.surface,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(AppRadius.md),
-                      topRight: const Radius.circular(AppRadius.md),
-                      bottomLeft: Radius.circular(
-                        isUser ? AppRadius.md : AppRadius.sm,
-                      ),
-                      bottomRight: Radius.circular(
-                        isUser ? AppRadius.sm : AppRadius.md,
-                      ),
-                    ),
-                    border: isUser ? null : Border.all(color: AppColors.border),
-                    boxShadow: AppShadow.card,
-                  ),
+                  color: isUser ? AppColors.actionPrimary : AppColors.surface,
+                  side: isUser
+                      ? BorderSide(color: AppColors.actionPrimary, width: 1)
+                      : BorderSide(color: AppColors.border, width: 1),
+                  radius: AppRadius.md,
                   child: isUser
                       ? Text(
                           message.content,
-                          style: TextStyle(
-                            fontSize: 15,
+                          style: AppTextStyles.bodyMd.copyWith(
                             height: 1.5,
-                            color: isUser
-                                ? AppColors.onPrimary
-                                : AppColors.textPrimary,
+                            color: AppColors.onPrimary,
                           ),
                         )
                       : MarkdownBody(
@@ -1150,26 +1194,22 @@ class _MessageBubble extends StatelessWidget {
                               MarkdownStyleSheet.fromTheme(
                                 Theme.of(context),
                               ).copyWith(
-                                p: TextStyle(
-                                  fontSize: 15,
+                                p: AppTextStyles.bodyMd.copyWith(
                                   height: 1.5,
                                   color: AppColors.textPrimary,
                                 ),
-                                h1: TextStyle(
-                                  fontSize: 17,
-                                  height: 1.4,
+                                h1: AppTextStyles.h2.copyWith(
+                                  height: 1.5,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.textPrimary,
                                 ),
-                                h2: TextStyle(
-                                  fontSize: 16,
-                                  height: 1.4,
+                                h2: AppTextStyles.bodyLg.copyWith(
+                                  height: 1.5,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.textPrimary,
                                 ),
-                                h3: TextStyle(
-                                  fontSize: 15,
-                                  height: 1.4,
+                                h3: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.textPrimary,
                                 ),
@@ -1181,8 +1221,7 @@ class _MessageBubble extends StatelessWidget {
                                   fontStyle: FontStyle.italic,
                                   color: AppColors.textPrimary,
                                 ),
-                                blockquote: TextStyle(
-                                  fontSize: 14,
+                                blockquote: AppTextStyles.bodyMd.copyWith(
                                   height: 1.5,
                                   color: AppColors.textSecondary,
                                 ),
@@ -1197,13 +1236,11 @@ class _MessageBubble extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                                listBullet: TextStyle(
-                                  fontSize: 15,
+                                listBullet: AppTextStyles.bodyMd.copyWith(
                                   height: 1.5,
                                   color: AppColors.textSecondary,
                                 ),
-                                code: TextStyle(
-                                  fontSize: 13,
+                                code: AppTextStyles.label.copyWith(
                                   fontFamily: 'Menlo',
                                   color: AppColors.textPrimary,
                                   backgroundColor: AppColors.surfaceSubtle,
@@ -1217,47 +1254,48 @@ class _MessageBubble extends StatelessWidget {
                                   ),
                                 ),
                                 codeblockPadding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
+                                  horizontal: AppSpacing.s3,
+                                  vertical: AppSpacing.s2,
                                 ),
                               ),
                         ),
                 ),
                 if (followUpLabel != null && onFollowUpTap != null) ...[
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: AppSpacing.s2),
                     child: Material(
                       color: AppColors.voice.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(AppRadius.pill),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(AppRadius.pill),
                         onTap: () => onFollowUpTap!(followUp!),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 7,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.north_east_rounded,
-                                size: 15,
-                                color: AppColors.voice,
-                              ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  followUpLabel,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.textPrimary,
-                                    height: 1.3,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 48),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.s3,
+                              vertical: AppSpacing.s2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.north_east_rounded,
+                                  size: 15,
+                                  color: AppColors.voice,
+                                ),
+                                const SizedBox(width: AppSpacing.s2),
+                                Flexible(
+                                  child: Text(
+                                    followUpLabel,
+                                    style: AppTextStyles.label.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1265,7 +1303,11 @@ class _MessageBubble extends StatelessWidget {
                   ),
                 ],
                 Padding(
-                  padding: const EdgeInsets.only(top: 2, left: 2, right: 2),
+                  padding: const EdgeInsets.only(
+                    top: AppSpacing.s1,
+                    left: AppSpacing.s1,
+                    right: AppSpacing.s1,
+                  ),
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: Row(
@@ -1281,17 +1323,16 @@ class _MessageBubble extends StatelessWidget {
                           iconSize: 16,
                           visualDensity: VisualDensity.compact,
                           constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
+                            minWidth: 32,
+                            minHeight: 32,
                           ),
-                          padding: const EdgeInsets.all(5),
+                          padding: const EdgeInsets.all(AppSpacing.s1),
                           color: AppColors.textTertiary,
                         ),
-                        const SizedBox(width: 3),
+                        const SizedBox(width: AppSpacing.s1),
                         Text(
                           timeText,
-                          style: TextStyle(
-                            fontSize: 10.5,
+                          style: AppTextStyles.caption.copyWith(
                             color: AppColors.textTertiary,
                           ),
                         ),
@@ -1314,18 +1355,20 @@ class _ThinkingBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 22,
-            height: 22,
+          const AssistantAvatar(size: 32, margin: EdgeInsets.only(right: AppSpacing.s2)),
+          const SizedBox(
+            width: 20,
+            height: 20,
             child: CircularProgressIndicator(strokeWidth: 2.5),
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.s2),
           Text(
             '水元素思考中…',
-            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            style: AppTextStyles.label.copyWith(color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -1343,40 +1386,44 @@ class _VisionCallout extends StatelessWidget {
     return AppCard(
       key: const Key('chat-vision-callout'),
       onTap: onTap,
-      padding: const EdgeInsets.fromLTRB(14, 13, 12, 12),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s3,
+      ),
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: AppColors.voice.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             child: Icon(Icons.camera_alt_outlined, color: AppColors.voice),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpacing.s3),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   '拍照分析现场',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                  style: AppTextStyles.bodyMd.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
-                SizedBox(height: 3),
+                const SizedBox(height: AppSpacing.s1),
                 Text(
                   '识别装备、环境和潜在安全风险',
-                  style: TextStyle(
-                    fontSize: 12,
+                  style: AppTextStyles.label.copyWith(
                     color: AppColors.textSecondary,
                   ),
                 ),
-                SizedBox(height: 3),
+                const SizedBox(height: AppSpacing.s1),
                 Text(
                   '图片仅临时处理，不保存原图',
-                  style: TextStyle(
-                    fontSize: 10.5,
+                  style: AppTextStyles.caption.copyWith(
                     color: AppColors.textTertiary,
                   ),
                 ),
@@ -1398,9 +1445,9 @@ class _SampleQuestion extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       key: ValueKey('chat-sample-question-$text'),
-      height: 52,
+      height: 56,
       child: AppCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
         onTap: () {
           final page = context.findAncestorStateOfType<ChatPageState>();
           page?.submitQuestion(text);
@@ -1409,27 +1456,25 @@ class _SampleQuestion extends StatelessWidget {
           children: [
             Icon(
               Icons.chat_bubble_outline_rounded,
-              size: 17,
+              size: 18,
               color: AppColors.voice,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpacing.s3),
             Expanded(
               child: Text(
                 text,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13.5,
-                  height: 1.25,
+                style: AppTextStyles.bodyMd.copyWith(
                   color: AppColors.textSecondary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpacing.s2),
             Icon(
               Icons.arrow_forward_rounded,
-              size: 17,
+              size: 18,
               color: AppColors.textTertiary,
             ),
           ],

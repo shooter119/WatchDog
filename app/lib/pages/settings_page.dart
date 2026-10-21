@@ -666,7 +666,7 @@ class _SettingsPageState extends State<SettingsPage> {
     // 只切换配色，不进入自动保存链路，也不写 settings_modified_at。
     final currentId = ThemeController.instance.currentId;
     return AppCard(
-      padding: EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppSpacing.s3),
       child: Row(
         children: [
           for (final palette in AppPalette.values) ...[
@@ -681,7 +681,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             if (palette.id != AppPalette.values.last.id)
-              const SizedBox(width: 10),
+              const SizedBox(width: AppSpacing.s2),
           ],
         ],
       ),
@@ -701,13 +701,13 @@ class _SettingsPageState extends State<SettingsPage> {
 
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('设置', style: AppTextStyles.h1),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppSpacing.s2),
               _SaveStatusBadge(state: _saveState),
               const Spacer(),
               ConnectionStatus(
@@ -719,13 +719,12 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.s1),
           const _SettingsEyebrow('现场处置 / 本机状态'),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.s2),
           _buildIdentityCard(),
           const SizedBox(height: 22),
           const SectionTitle(text: '现场设置'),
-          const SizedBox(height: 9),
           _SettingsLinkCard(
             icon: Icons.branding_watermark_outlined,
             title: '水印设置',
@@ -734,7 +733,7 @@ class _SettingsPageState extends State<SettingsPage> {
               MaterialPageRoute(builder: (_) => const WatermarkSettingsPage()),
             ),
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: AppSpacing.s2),
 
           if (widget.controller.canReviewMembers ||
               widget.controller.memberReviewError != null) ...[
@@ -754,7 +753,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             ),
-            const SizedBox(height: 9),
+            const SizedBox(height: AppSpacing.s2),
           ],
           _buildFieldGrid([
             _SettingsShortcut(
@@ -806,7 +805,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
           ]),
-          const SizedBox(height: 9),
+          const SizedBox(height: AppSpacing.s2),
           _SettingsLinkCard(
             icon: Icons.local_fire_department_outlined,
             title: '单位常用队伍',
@@ -819,7 +818,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           if (_canManageVideoResources) ...[
-            const SizedBox(height: 9),
+            const SizedBox(height: AppSpacing.s2),
             _SettingsLinkCard(
               key: const Key('video-resource-settings'),
               icon: Icons.videocam_outlined,
@@ -842,14 +841,14 @@ class _SettingsPageState extends State<SettingsPage> {
             summary: _calculationSummary,
             child: _buildCalculationBody(),
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: AppSpacing.s2),
           _SettingsAccordion(
             icon: Icons.mic_none_outlined,
             title: '语音识别',
             summary: _asrCloud ? '云端优先 · 失败自动切换本地' : '强制本地识别 · 使用离线模型',
             child: _buildVoiceBody(),
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: AppSpacing.s2),
           _SettingsAccordion(
             icon: Icons.notifications_none_outlined,
             title: '提醒方式',
@@ -871,9 +870,9 @@ class _SettingsPageState extends State<SettingsPage> {
                 : '现场协同服务器 · 等待连接',
             child: _buildServerBody(),
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: AppSpacing.s2),
           _buildUpdateCard(),
-          const SizedBox(height: 9),
+          const SizedBox(height: AppSpacing.s2),
           _SettingsLinkCard(
             icon: Icons.info_outline,
             title: '关于项目',
@@ -882,21 +881,22 @@ class _SettingsPageState extends State<SettingsPage> {
               MaterialPageRoute(builder: (_) => const AboutPage()),
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: AppSpacing.s6),
           Column(
             children: [
               Text(
                 '火场智控 v$_displayVersion',
-                style: TextStyle(
+                style: AppTextStyles.caption.copyWith(
                   color: AppColors.textSecondary,
-                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.s1),
               Text(
                 '一线消防员开发 · 开源项目',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
             ],
           ),
@@ -1023,7 +1023,7 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           for (var i = 0; i < cards.length; i++) ...[
             cards[i],
-            if (i < cards.length - 1) const SizedBox(height: 9),
+            if (i < cards.length - 1) const SizedBox(height: AppSpacing.s2),
           ],
         ],
       );
@@ -1034,8 +1034,8 @@ class _SettingsPageState extends State<SettingsPage> {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        crossAxisSpacing: 9,
-        mainAxisSpacing: 9,
+        crossAxisSpacing: AppSpacing.s2,
+        mainAxisSpacing: AppSpacing.s2,
         // 与普通入口卡片保持同一收紧行高（60dp），四块等高；大字号时按比例增高。
         mainAxisExtent: (60 * scale.clamp(1.0, 1.25)).toDouble(),
       ),
@@ -1059,7 +1059,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 focusNode: _volumeFocus,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _field(
                 _full,
@@ -1090,7 +1090,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 focusNode: _warnFocus,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _field(
                 _alarm,
@@ -1106,16 +1106,43 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Widget _switchRow({
+    required IconData icon,
+    required String title,
+    required bool value,
+    required Color activeThumbColor,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 56),
+      child: SwitchListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s4,
+          vertical: 2,
+        ),
+        secondary: Icon(icon, size: 20, color: AppColors.textSecondary),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.35,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        activeThumbColor: activeThumbColor,
+        value: value,
+        onChanged: onChanged,
+      ),
+    );
+  }
+
   Widget _buildVoiceBody() {
     return Column(
       children: [
-        SwitchListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: Icon(Icons.cloud_outlined, color: AppColors.textSecondary),
-          title: const Text(
-            '联网语音识别',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
+        _switchRow(
+          icon: Icons.cloud_outlined,
+          title: '联网语音识别',
           activeThumbColor: AppColors.voice,
           value: _asrCloud,
           onChanged: (v) async {
@@ -1130,17 +1157,10 @@ class _SettingsPageState extends State<SettingsPage> {
             _autoSave();
           },
         ),
-        const Divider(height: 1, indent: 14, endIndent: 14),
-        SwitchListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: Icon(
-            Icons.shield_outlined,
-            color: AppColors.textSecondary,
-          ),
-          title: const Text(
-            '联网语义解析',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
+        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+        _switchRow(
+          icon: Icons.shield_outlined,
+          title: '联网语义解析',
           activeThumbColor: AppColors.voice,
           value: _parseCloud,
           onChanged: (v) {
@@ -1149,7 +1169,7 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         if (widget.controller.localAsr != null) ...[
-          const Divider(height: 1, indent: 14, endIndent: 14),
+          const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
           _buildModelTile(),
         ],
       ],
@@ -1159,16 +1179,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildAlertBody() {
     return Column(
       children: [
-        SwitchListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: Icon(
-            Icons.volume_up_outlined,
-            color: AppColors.textSecondary,
-          ),
-          title: const Text(
-            '语音播报',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
+        _switchRow(
+          icon: Icons.volume_up_outlined,
+          title: '语音播报',
           activeThumbColor: AppColors.actionPrimary,
           value: _tts,
           onChanged: (v) {
@@ -1176,17 +1189,10 @@ class _SettingsPageState extends State<SettingsPage> {
             _autoSave();
           },
         ),
-        const Divider(height: 1, indent: 14, endIndent: 14),
-        SwitchListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: Icon(
-            Icons.notifications_none_outlined,
-            color: AppColors.textSecondary,
-          ),
-          title: const Text(
-            '报警音',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
+        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+        _switchRow(
+          icon: Icons.notifications_none_outlined,
+          title: '报警音',
           activeThumbColor: AppColors.actionPrimary,
           value: _sound,
           onChanged: (v) {
@@ -1194,17 +1200,10 @@ class _SettingsPageState extends State<SettingsPage> {
             _autoSave();
           },
         ),
-        const Divider(height: 1, indent: 14, endIndent: 14),
-        SwitchListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: Icon(
-            Icons.light_mode_outlined,
-            color: AppColors.textSecondary,
-          ),
-          title: const Text(
-            '屏幕常亮',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
+        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+        _switchRow(
+          icon: Icons.light_mode_outlined,
+          title: '屏幕常亮',
           activeThumbColor: AppColors.actionPrimary,
           value: _keepScreenOn,
           onChanged: (v) {
@@ -1212,27 +1211,30 @@ class _SettingsPageState extends State<SettingsPage> {
             _autoSave();
           },
         ),
-        const Divider(height: 1, indent: 14, endIndent: 14),
-        SwitchListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-          secondary: Icon(
-            Icons.shield_moon_outlined,
-            color: AppColors.textSecondary,
-          ),
-          title: const Text(
-            '后台值守模式',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
+        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+        _switchRow(
+          icon: Icons.shield_moon_outlined,
+          title: '后台值守模式',
           activeThumbColor: AppColors.safe,
           value: _keepAlive,
           onChanged: _toggleKeepAlive,
         ),
         if (!_keepAlive)
           Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: Text(
-              '开启时请允许通知与电池白名单，否则保活可能被系统中断',
-              style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.s4,
+              0,
+              AppSpacing.s4,
+              AppSpacing.s3,
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '开启时请允许通知与电池白名单，否则保活可能被系统中断',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textTertiary,
+                ),
+              ),
             ),
           ),
         if (!widget.controller.alarm.exactAlarmAvailable)
@@ -1268,16 +1270,18 @@ class _SettingsPageState extends State<SettingsPage> {
   }) {
     return Column(
       children: [
-        const Divider(height: 1, indent: 14, endIndent: 14),
+        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
         ListTile(
           dense: true,
           onTap: onTap,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s4,
+            vertical: AppSpacing.s1,
+          ),
           leading: Icon(icon, color: AppColors.caution, size: 20),
           title: Text(
             title,
-            style: TextStyle(
-              fontSize: 13,
+            style: AppTextStyles.label.copyWith(
               color: AppColors.textSecondary,
               fontWeight: FontWeight.w700,
             ),
@@ -1326,36 +1330,48 @@ class _SettingsPageState extends State<SettingsPage> {
     }
     return AppCard(
       onTap: _checkingUpdate ? null : _checkUpdate,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      child: Row(
-        children: [
-          _SettingsIconBox(
-            icon: _checkingUpdate
-                ? Icons.downloading_outlined
-                : Icons.system_update_alt_rounded,
-            badge: pending != null && !_checkingUpdate,
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '版本更新',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: subtitleColor),
-                ),
-              ],
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s3,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 40),
+        child: Row(
+          children: [
+            _SettingsIconBox(
+              icon: _checkingUpdate
+                  ? Icons.downloading_outlined
+                  : Icons.system_update_alt_rounded,
+              badge: pending != null && !_checkingUpdate,
             ),
-          ),
-          Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
-        ],
+            const SizedBox(width: AppSpacing.s3),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '版本更新',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption.copyWith(color: subtitleColor),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s1),
+            Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
+          ],
+        ),
       ),
     );
   }
@@ -1395,7 +1411,10 @@ class _SettingsPageState extends State<SettingsPage> {
           ? null
           : (_downloadProgress! * 100).round();
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s4,
+          vertical: AppSpacing.s3,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1407,11 +1426,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 color: AppColors.textPrimary,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.s2),
             LinearProgressIndicator(
               value: _downloadProgress,
               minHeight: 6,
-              borderRadius: BorderRadius.circular(3),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
           ],
         ),
@@ -1420,6 +1439,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (installed == null) {
       return ListTile(
         dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
         leading: Icon(
           Icons.cloud_download_outlined,
           color: AppColors.textTertiary,
@@ -1434,6 +1454,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (installed) {
       return ListTile(
         dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
         leading: Icon(
           Icons.check_circle_outline,
           color: AppColors.safe,
@@ -1457,7 +1478,12 @@ class _SettingsPageState extends State<SettingsPage> {
       );
     }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s4,
+        AppSpacing.s2,
+        AppSpacing.s4,
+        AppSpacing.s3,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1468,31 +1494,29 @@ class _SettingsPageState extends State<SettingsPage> {
                 color: AppColors.caution,
                 size: 20,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppSpacing.s2),
               Expanded(
                 child: Text(
                   '本地 ASR 主模型未下载（约 75MB；另有可选的 9.8MB 降噪模型）\n下载后断网也能语音录入',
-                  style: TextStyle(
-                    fontSize: 13,
+                  style: AppTextStyles.label.copyWith(
                     color: AppColors.textSecondary,
-                    height: 1.4,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
             ],
           ),
           if (_downloadError != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.s2),
             Text(
               _downloadError!,
-              style: TextStyle(
-                fontSize: 12,
+              style: AppTextStyles.caption.copyWith(
                 color: AppColors.alarm,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ],
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.s3),
           SizedBox(
             height: 48,
             child: FilledButton.tonalIcon(
@@ -1523,16 +1547,15 @@ class _SaveStatusBadge extends StatelessWidget {
       _SaveState.saving => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
+          const SizedBox(
             width: 12,
             height: 12,
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          SizedBox(width: 5),
+          const SizedBox(width: AppSpacing.s1),
           Text(
             '保存中',
-            style: TextStyle(
-              fontSize: 11,
+            style: AppTextStyles.caption.copyWith(
               color: AppColors.textTertiary,
               fontWeight: FontWeight.w600,
             ),
@@ -1543,11 +1566,10 @@ class _SaveStatusBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.check_circle_outline, size: 14, color: AppColors.safe),
-          SizedBox(width: 5),
+          const SizedBox(width: AppSpacing.s1),
           Text(
             '已保存',
-            style: TextStyle(
-              fontSize: 11,
+            style: AppTextStyles.caption.copyWith(
               color: AppColors.safe,
               fontWeight: FontWeight.w600,
             ),
@@ -1558,11 +1580,10 @@ class _SaveStatusBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.error_outline, size: 14, color: AppColors.alarm),
-          SizedBox(width: 5),
+          const SizedBox(width: AppSpacing.s1),
           Text(
             '保存失败',
-            style: TextStyle(
-              fontSize: 11,
+            style: AppTextStyles.caption.copyWith(
               color: AppColors.alarm,
               fontWeight: FontWeight.w600,
             ),
@@ -1582,12 +1603,11 @@ class _GroupLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 10),
+      padding: const EdgeInsets.only(top: AppSpacing.s1, bottom: AppSpacing.s2),
       child: Text(
         text,
-        style: TextStyle(
+        style: AppTextStyles.caption.copyWith(
           color: AppColors.textSecondary,
-          fontSize: 12,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.5,
         ),
@@ -1630,18 +1650,11 @@ class _IdentityHeroCard extends StatelessWidget {
     final foreground = AppColors.heroOnDark;
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.26),
-            blurRadius: 28,
-            spreadRadius: -4,
-            offset: const Offset(0, 14),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        boxShadow: AppShadow.float,
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         child: Container(
           key: const Key('identity-hero'),
           decoration: BoxDecoration(
@@ -1685,7 +1698,12 @@ class _IdentityHeroCard extends StatelessWidget {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.s4,
+                    AppSpacing.s4,
+                    AppSpacing.s4,
+                    AppSpacing.s4,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -1697,8 +1715,8 @@ class _IdentityHeroCard extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Wrap(
-                                  spacing: 8,
-                                  runSpacing: 5,
+                                  spacing: AppSpacing.s2,
+                                  runSpacing: AppSpacing.s1,
                                   crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Text(
@@ -1714,19 +1732,19 @@ class _IdentityHeroCard extends StatelessWidget {
                                     _HeroRoleBadge(level: level),
                                   ],
                                 ),
-                                const SizedBox(height: 7),
+                                const SizedBox(height: AppSpacing.s2),
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Padding(
-                                      padding: const EdgeInsets.only(top: 1),
+                                      padding: const EdgeInsets.only(top: 2),
                                       child: Icon(
                                         Icons.apartment_rounded,
-                                        size: 15,
+                                        size: 16,
                                         color: AppColors.heroMuted,
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
+                                    const SizedBox(width: AppSpacing.s2),
                                     Expanded(
                                       child: Text(
                                         unit,
@@ -1783,7 +1801,7 @@ class _IdentityHeroCard extends StatelessWidget {
                           label: Text('$reviewCount 条离线记录待核对'),
                         ),
                       if (guest) ...[
-                        const SizedBox(height: 16),
+                        const SizedBox(height: AppSpacing.s4),
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
@@ -1803,7 +1821,9 @@ class _IdentityHeroCard extends StatelessWidget {
                                 color: AppColors.heroOnDarkBorder,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.md,
+                                ),
                               ),
                               textStyle: const TextStyle(
                                 fontSize: 14,
@@ -1833,7 +1853,10 @@ class _HeroRoleBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s2,
+        vertical: AppSpacing.s1,
+      ),
       decoration: BoxDecoration(
         color: AppColors.heroOnDark.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -1847,12 +1870,11 @@ class _HeroRoleBadge extends StatelessWidget {
             size: 13,
             color: AppColors.heroOnDark,
           ),
-          const SizedBox(width: 5),
+          const SizedBox(width: AppSpacing.s1),
           Text(
             level,
-            style: TextStyle(
+            style: AppTextStyles.caption.copyWith(
               color: AppColors.heroOnDark,
-              fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1871,14 +1893,17 @@ class _HeroScanAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       key: const Key('admin-scan'),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: () => unawaited(onTap()),
       child: Container(
-        constraints: const BoxConstraints(minWidth: 58, minHeight: 62),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        constraints: const BoxConstraints(minWidth: 56, minHeight: 60),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s2,
+          vertical: AppSpacing.s2,
+        ),
         decoration: BoxDecoration(
           color: AppColors.heroOnDark.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(color: AppColors.heroOnDarkBorder),
         ),
         child: Column(
@@ -1889,12 +1914,11 @@ class _HeroScanAction extends StatelessWidget {
               size: 24,
               color: AppColors.heroOnDark,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.s1),
             Text(
               '扫一扫',
-              style: TextStyle(
+              style: AppTextStyles.caption.copyWith(
                 color: AppColors.heroOnDark,
-                fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -1972,12 +1996,11 @@ class _SettingsEyebrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s1),
       child: Text(
         text,
-        style: TextStyle(
+        style: AppTextStyles.caption.copyWith(
           color: AppColors.textSecondary,
-          fontSize: 11,
           fontWeight: FontWeight.w800,
           letterSpacing: 1.4,
         ),
@@ -1995,17 +2018,17 @@ class _SettingsIconBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 35,
-      height: 35,
+      width: 36,
+      height: 36,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: 35,
-            height: 35,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
               color: AppColors.surfaceSubtle,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             child: Icon(icon, size: 18, color: AppColors.textPrimary),
           ),
@@ -2014,8 +2037,8 @@ class _SettingsIconBox extends StatelessWidget {
               right: -2,
               top: -2,
               child: Container(
-                width: 9,
-                height: 9,
+                width: 8,
+                height: 8,
                 decoration: BoxDecoration(
                   color: AppColors.alarm,
                   shape: BoxShape.circle,
@@ -2052,14 +2075,17 @@ class _SettingsShortcut extends StatelessWidget {
     final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
     return AppCard(
       onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s2,
+      ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 40),
+        constraints: const BoxConstraints(minHeight: 44),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             _SettingsIconBox(icon: icon, badge: badge),
-            const SizedBox(width: 11),
+            const SizedBox(width: AppSpacing.s3),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -2078,13 +2104,12 @@ class _SettingsShortcut extends StatelessWidget {
                     ),
                   ),
                   if (hasSubtitle) ...[
-                    const SizedBox(height: 3),
+                    const SizedBox(height: AppSpacing.s1),
                     Text(
                       subtitle!,
                       maxLines: compact ? 2 : 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
+                      style: AppTextStyles.caption.copyWith(
                         color: AppColors.textTertiary,
                       ),
                     ),
@@ -2092,7 +2117,7 @@ class _SettingsShortcut extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 5),
+            const SizedBox(width: AppSpacing.s1),
             Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
           ],
         ),
@@ -2124,14 +2149,17 @@ class _SettingsLinkCard extends StatelessWidget {
       opacity: enabled ? 1 : 0.45,
       child: AppCard(
         onTap: enabled ? onTap : null,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s4,
+          vertical: AppSpacing.s2,
+        ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 40),
+          constraints: const BoxConstraints(minHeight: 44),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _SettingsIconBox(icon: icon),
-              const SizedBox(width: 11),
+              const SizedBox(width: AppSpacing.s3),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2145,13 +2173,12 @@ class _SettingsLinkCard extends StatelessWidget {
                       ),
                     ),
                     if (hasSubtitle) ...[
-                      const SizedBox(height: 3),
+                      const SizedBox(height: AppSpacing.s1),
                       Text(
                         subtitle!,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
+                        style: AppTextStyles.caption.copyWith(
                           color: AppColors.textTertiary,
                         ),
                       ),
@@ -2159,6 +2186,7 @@ class _SettingsLinkCard extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: AppSpacing.s1),
               Icon(
                 Icons.chevron_right,
                 size: 20,
@@ -2178,21 +2206,21 @@ class _SyncNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(top: 1),
-      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.only(top: AppSpacing.s1),
+      padding: const EdgeInsets.all(AppSpacing.s3),
       decoration: BoxDecoration(
         color: AppColors.safe.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.sync_outlined, size: 17, color: AppColors.online),
-          const SizedBox(width: 8),
+          Icon(Icons.sync_outlined, size: 18, color: AppColors.online),
+          const SizedBox(width: AppSpacing.s2),
           Expanded(
             child: Text.rich(
               TextSpan(
-                children: [
+                children: const [
                   TextSpan(
                     text: '现场协同同步已开启\n',
                     style: TextStyle(fontWeight: FontWeight.w800),
@@ -2200,9 +2228,8 @@ class _SyncNotice extends StatelessWidget {
                   TextSpan(text: '本机修改优先保存，联网后自动与现场协同服务器同步。'),
                 ],
               ),
-              style: TextStyle(
+              style: AppTextStyles.caption.copyWith(
                 color: AppColors.textSecondary,
-                fontSize: 10,
                 height: 1.5,
               ),
             ),
@@ -2237,99 +2264,93 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
   @override
   Widget build(BuildContext context) {
     final disableAnimations = MediaQuery.of(context).disableAnimations;
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        boxShadow: AppShadow.card,
-      ),
-      child: Material(
-        color: AppColors.surface,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          side: BorderSide(color: AppColors.border),
-        ),
-        child: Column(
-          children: [
-            Semantics(
-              container: true,
-              button: true,
-              excludeSemantics: true,
-              expanded: _expanded,
-              label: '${widget.title}，${_expanded ? '已展开' : '已收起'}',
-              hint: _expanded ? '点击收起设置' : '点击展开设置',
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          Semantics(
+            container: true,
+            button: true,
+            excludeSemantics: true,
+            expanded: _expanded,
+            label: '${widget.title}，${_expanded ? '已展开' : '已收起'}',
+            hint: _expanded ? '点击收起设置' : '点击展开设置',
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: InkWell(
+              excludeFromSemantics: true,
               onTap: () => setState(() => _expanded = !_expanded),
-              child: InkWell(
-                excludeFromSemantics: true,
-                onTap: () => setState(() => _expanded = !_expanded),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 11,
-                  ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 44),
-                    child: Row(
-                      children: [
-                        _SettingsIconBox(icon: widget.icon),
-                        const SizedBox(width: 11),
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.title,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s4,
+                  vertical: AppSpacing.s3,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  child: Row(
+                    children: [
+                      _SettingsIconBox(icon: widget.icon),
+                      const SizedBox(width: AppSpacing.s3),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.title,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
                               ),
-                              const SizedBox(height: 3),
-                              Text(
-                                widget.summary,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textTertiary,
-                                ),
+                            ),
+                            const SizedBox(height: AppSpacing.s1),
+                            Text(
+                              widget.summary,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 6),
-                        Icon(
-                          _expanded
-                              ? Icons.keyboard_arrow_up_rounded
-                              : Icons.keyboard_arrow_down_rounded,
-                          size: 20,
-                          color: AppColors.textTertiary,
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: AppSpacing.s2),
+                      Icon(
+                        _expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 20,
+                        color: AppColors.textTertiary,
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-            AnimatedCrossFade(
-              duration: disableAnimations
-                  ? Duration.zero
-                  : const Duration(milliseconds: 220),
-              firstCurve: Curves.easeOut,
-              secondCurve: Curves.easeIn,
-              sizeCurve: Curves.easeOut,
-              crossFadeState: _expanded
-                  ? CrossFadeState.showFirst
-                  : CrossFadeState.showSecond,
-              firstChild: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                child: widget.child,
+          ),
+          AnimatedCrossFade(
+            duration: disableAnimations
+                ? Duration.zero
+                : const Duration(milliseconds: 220),
+            firstCurve: Curves.easeOut,
+            secondCurve: Curves.easeIn,
+            sizeCurve: Curves.easeOut,
+            crossFadeState: _expanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.s4,
+                0,
+                AppSpacing.s4,
+                AppSpacing.s4,
               ),
-              secondChild: const SizedBox(width: double.infinity),
+              child: widget.child,
             ),
-          ],
-        ),
+            secondChild: const SizedBox(width: double.infinity),
+          ),
+        ],
       ),
     );
   }
@@ -2364,7 +2385,7 @@ class _ThemeOption extends StatelessWidget {
           duration: disableAnimations
               ? Duration.zero
               : const Duration(milliseconds: 150),
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(AppSpacing.s3),
           decoration: BoxDecoration(
             color: palette.surface,
             borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -2387,7 +2408,7 @@ class _ThemeOption extends StatelessWidget {
                     Container(
                       width: 16,
                       height: 16,
-                      margin: const EdgeInsets.only(right: 4),
+                      margin: const EdgeInsets.only(right: AppSpacing.s1),
                       decoration: BoxDecoration(
                         color: color,
                         borderRadius: BorderRadius.circular(4),
@@ -2403,19 +2424,20 @@ class _ThemeOption extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.s2),
               Text(
                 palette.label,
-                style: TextStyle(
-                  fontSize: 13,
+                style: AppTextStyles.label.copyWith(
                   fontWeight: FontWeight.w800,
                   color: palette.textPrimary,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: AppSpacing.s1),
               Text(
                 palette.id == 'daylight' ? '高可视亮色' : '暖纸陶土',
-                style: TextStyle(fontSize: 10, color: palette.textTertiary),
+                style: AppTextStyles.caption.copyWith(
+                  color: palette.textTertiary,
+                ),
               ),
             ],
           ),

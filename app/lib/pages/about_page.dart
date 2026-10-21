@@ -14,10 +14,10 @@ class AboutPage extends StatelessWidget {
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('关于我们')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: const [
           _HeroCard(),
-          SizedBox(height: 18),
+          SizedBox(height: 22),
           SectionTitle(text: '为什么会有这个 App'),
           _SectionCard(
             body:
@@ -27,7 +27,7 @@ class AboutPage extends StatelessWidget {
                 '我们太清楚那种手忙脚乱的感觉了。\n\n'
                 '安全员真的没时间翻记录本。我们做了这个 App，从头到尾只坚持一件事：让你张嘴说话，剩下的交给它。',
           ),
-          SizedBox(height: 18),
+          SizedBox(height: 22),
           SectionTitle(text: '它是怎么用的'),
           _SectionCard(
             body:
@@ -41,17 +41,17 @@ class AboutPage extends StatelessWidget {
                 '同一成员可多设备同时登录，新设备登录不使旧设备下线；设置页用户操作可管理登录设备、核对离线冲突记录。新版本的人员操作带版本校验，旧读数冲突时保留记录，需人工核对后重新提交。\n\n'
                 '多台设备加入同一场警情档案后，指挥员和安全员可以实时协同记录进退场、压力和火场日志；处置结束后，档案自动归档并保留完整复盘时间线。',
           ),
-          SizedBox(height: 18),
+          SizedBox(height: 22),
           SectionTitle(text: '它能帮你什么'),
           _FeaturesCard(),
-          SizedBox(height: 18),
+          SizedBox(height: 22),
           SectionTitle(text: '场景'),
           _SectionCard(
             body:
                 '室内烟火特性训练、楼层火灾进攻、化工装置处置……'
                 '凡是需要安全员盯着气瓶和人员的现场，都适用。训练场上练顺手了，真打火场才不慌。',
           ),
-          SizedBox(height: 18),
+          SizedBox(height: 22),
           SectionTitle(text: '关于这个项目'),
           _SectionCard(
             body:
@@ -60,7 +60,7 @@ class AboutPage extends StatelessWidget {
                 '我们不是软件公司，就是一群想让安全员轻松一点的战友。如果你的队伍也用得上，欢迎提需求、提 bug——'
                 '每一个意见，都可能救下一个兄弟。项目网站：fireman119.xyz。',
           ),
-          SizedBox(height: 18),
+          SizedBox(height: 22),
           SectionTitle(text: '开源许可'),
           _SectionCard(
             body:
@@ -68,7 +68,7 @@ class AboutPage extends StatelessWidget {
                 '第三方组件各自遵循其原始许可：本地语音识别使用 sherpa-onnx（Apache-2.0），界面与基础能力依赖 Flutter 生态（BSD/MIT/Apache-2.0）。'
                 '完整清单见仓库根目录的 THIRD_PARTY_NOTICES.md。',
           ),
-          SizedBox(height: 18),
+          SizedBox(height: 22),
           SectionTitle(text: '后端部署'),
           _SectionCard(
             body:
@@ -89,27 +89,27 @@ class _HeroCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(AppSpacing.s5),
       child: Column(
         children: [
           const FireControlLogo(size: 64),
-          const SizedBox(height: 14),
+          const SizedBox(height: AppSpacing.s3),
           Text(
             '火场智控',
-            style: TextStyle(
-              fontSize: 18,
+            style: AppTextStyles.h2.copyWith(
               fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.s2),
           Text(
             '一款由消防员开发、给消防员用的 App',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13.5,
+            style: AppTextStyles.label.copyWith(
+              fontSize: 14,
               color: AppColors.textSecondary,
-              height: 1.5,
+              fontWeight: FontWeight.w500,
+              height: 1.55,
             ),
           ),
         ],
@@ -127,13 +127,13 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.s4),
       child: Text(
         body,
-        style: TextStyle(
+        style: AppTextStyles.bodyMd.copyWith(
           fontSize: 14,
           color: AppColors.textSecondary,
-          height: 1.65,
+          height: 1.58,
         ),
       ),
     );
@@ -234,13 +234,21 @@ class _FeaturesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s1),
       child: Column(
         children: [
           for (final (i, item) in _items.indexed) ...[
-            if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
+            if (i > 0)
+              const Divider(
+                height: 1,
+                indent: AppSpacing.s4,
+                endIndent: AppSpacing.s4,
+              ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s4,
+                vertical: AppSpacing.s3,
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -248,7 +256,7 @@ class _FeaturesCard extends StatelessWidget {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                       color: AppColors.surfaceSubtle,
                     ),
                     child: Icon(
@@ -257,26 +265,26 @@ class _FeaturesCard extends StatelessWidget {
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: AppSpacing.s3),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           item.$2,
-                          style: TextStyle(
+                          style: AppTextStyles.bodyMd.copyWith(
                             fontSize: 15,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                             color: AppColors.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: AppSpacing.s1),
                         Text(
                           item.$3,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: AppColors.textTertiary,
-                            height: 1.45,
+                          style: AppTextStyles.label.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                            height: 1.56,
                           ),
                         ),
                       ],

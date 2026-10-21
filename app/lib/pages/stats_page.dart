@@ -97,7 +97,12 @@ class _StatsPageState extends State<StatsPage> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.s4,
+                AppSpacing.s2,
+                AppSpacing.s4,
+                0,
+              ),
               child: Row(
                 children: [
                   ConnectionStatus(
@@ -115,10 +120,15 @@ class _StatsPageState extends State<StatsPage> {
                 onRefresh: widget.controller.refreshNow,
                 child: ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.s4,
+                    AppSpacing.s3,
+                    AppSpacing.s4,
+                    100,
+                  ),
                   children: [
                     _buildSummary(filtered.length, totalMs, activeCount),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 22),
                     SectionTitle(
                       text: _sortByDuration ? '时长排行' : '次数排行',
                       trailing: Semantics(
@@ -152,12 +162,11 @@ class _StatsPageState extends State<StatsPage> {
                                       size: 15,
                                       color: AppColors.textTertiary,
                                     ),
-                                    const SizedBox(width: 4),
+                                    const SizedBox(width: AppSpacing.s1),
                                     Text(
                                       _sortByDuration ? '按总时长' : '按次数',
-                                      style: TextStyle(
+                                      style: AppTextStyles.caption.copyWith(
                                         color: AppColors.textTertiary,
-                                        fontSize: 12,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
@@ -171,13 +180,14 @@ class _StatsPageState extends State<StatsPage> {
                     ),
                     if (people.isEmpty)
                       Padding(
-                        padding: EdgeInsets.symmetric(vertical: 40),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.s10,
+                        ),
                         child: Center(
                           child: Text(
                             '所选范围内暂无进出记录',
-                            style: TextStyle(
+                            style: AppTextStyles.bodyMd.copyWith(
                               color: AppColors.textTertiary,
-                              fontSize: 14,
                             ),
                           ),
                         ),
@@ -185,7 +195,7 @@ class _StatsPageState extends State<StatsPage> {
                     else
                       for (final (i, p) in people.indexed)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.only(bottom: AppSpacing.s2),
                           child: _PersonRow(rank: i + 1, person: p),
                         ),
                   ],
@@ -201,22 +211,24 @@ class _StatsPageState extends State<StatsPage> {
   /// 时间范围筛选
   Widget _buildFilters() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s1,
+      ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
             for (final r in _ranges)
               Padding(
-                padding: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.only(right: AppSpacing.s2),
                 child: ChoiceChip(
                   label: Text(r),
                   selected: _range == r,
                   onSelected: (_) => setState(() => _range = r),
                   showCheckmark: false,
                   selectedColor: AppColors.actionPrimary,
-                  labelStyle: TextStyle(
-                    fontSize: 13,
+                  labelStyle: AppTextStyles.label.copyWith(
                     fontWeight: _range == r ? FontWeight.w800 : FontWeight.w600,
                     color: _range == r
                         ? AppColors.heroOnDark
@@ -270,7 +282,7 @@ class _StatsPageState extends State<StatsPage> {
         children: [
           for (var i = 0; i < cards.length; i++) ...[
             cards[i],
-            if (i < cards.length - 1) const SizedBox(height: 10),
+            if (i < cards.length - 1) const SizedBox(height: AppSpacing.s2),
           ],
         ],
       );
@@ -279,7 +291,7 @@ class _StatsPageState extends State<StatsPage> {
       children: [
         for (var i = 0; i < cards.length; i++) ...[
           Expanded(child: cards[i]),
-          if (i < cards.length - 1) const SizedBox(width: 10),
+          if (i < cards.length - 1) const SizedBox(width: AppSpacing.s2),
         ],
       ],
     );
@@ -312,28 +324,33 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s3,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 18, color: color),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.s2),
           Text(
             value,
             maxLines: compact ? null : 1,
             overflow: compact ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 17,
+            style: AppTextStyles.h2.copyWith(
               fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: AppSpacing.s1),
           Text(
             label,
             maxLines: compact ? null : 1,
             overflow: compact ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textTertiary,
+            ),
           ),
         ],
       ),
@@ -366,98 +383,107 @@ class _PersonRow extends StatelessWidget {
       _ => AppColors.textTertiary,
     };
     return AppCard(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact =
-              constraints.maxWidth < 360 ||
-              MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
-          final rankBadge = Container(
-            width: 26,
-            height: 26,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: rankColor.withValues(alpha: isTop ? 0.18 : 0.08),
-            ),
-            child: Text(
-              '$rank',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: rankColor,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s3,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 36),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact =
+                constraints.maxWidth < 360 ||
+                MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
+            final rankBadge = Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: rankColor.withValues(alpha: isTop ? 0.18 : 0.08),
               ),
-            ),
-          );
-          final metrics = Column(
-            crossAxisAlignment: compact
-                ? CrossAxisAlignment.start
-                : CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${person.count} 次 · ${_fmt(person.totalMs)}',
-                softWrap: true,
-                style: TextStyle(
-                  fontSize: 13,
+              child: Text(
+                '$rank',
+                style: AppTextStyles.label.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+                  color: rankColor,
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
-              Text(
-                '平均 ${_fmt(person.avgMs)}',
-                softWrap: true,
-                style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
-              ),
-            ],
-          );
-          if (compact) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            );
+            final metrics = Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: compact
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.end,
               children: [
-                rankBadge,
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        person.name,
-                        softWrap: true,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      metrics,
-                    ],
+                Text(
+                  '${person.count} 次 · ${_fmt(person.totalMs)}',
+                  softWrap: true,
+                  style: AppTextStyles.label.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s1),
+                Text(
+                  '平均 ${_fmt(person.avgMs)}',
+                  softWrap: true,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textTertiary,
                   ),
                 ),
               ],
             );
-          }
-          return Row(
-            children: [
-              rankBadge,
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  person.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+            if (compact) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  rankBadge,
+                  const SizedBox(width: AppSpacing.s3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          person.name,
+                          softWrap: true,
+                          style: AppTextStyles.bodyMd.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.s2),
+                        metrics,
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                rankBadge,
+                const SizedBox(width: AppSpacing.s3),
+                Expanded(
+                  child: Text(
+                    person.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodyMd.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              metrics,
-            ],
-          );
-        },
+                const SizedBox(width: AppSpacing.s2),
+                metrics,
+              ],
+            );
+          },
+        ),
       ),
     );
   }

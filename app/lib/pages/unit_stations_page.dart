@@ -142,12 +142,15 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
         .where((s) => s.isNotEmpty)
         .toList();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: AppSpacing.s2),
       child: AppCard(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s3,
+          vertical: AppSpacing.s2,
+        ),
         onTap: _manage ? () => _edit(station) : null,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 36),
+          constraints: const BoxConstraints(minHeight: 44),
           child: Row(
             children: [
               Expanded(
@@ -158,21 +161,22 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                     Text(
                       station['name'].toString(),
                       style: AppTextStyles.bodyMd.copyWith(
+                        height: 1.3,
                         fontWeight: FontWeight.w700,
                         color: AppColors.textPrimary,
                       ),
                     ),
                     if (isInactive || aliases.isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: AppSpacing.s1),
                       Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
+                        spacing: AppSpacing.s2,
+                        runSpacing: AppSpacing.s1,
                         children: [
                           if (isInactive)
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
+                                horizontal: AppSpacing.s2,
+                                vertical: AppSpacing.s1,
                               ),
                               decoration: BoxDecoration(
                                 color: AppColors.caution.withValues(alpha: 0.14),
@@ -183,6 +187,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                               child: Text(
                                 '已停用',
                                 style: AppTextStyles.caption.copyWith(
+                                  height: 1.2,
                                   color: AppColors.caution,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -191,8 +196,8 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                           for (final alias in aliases)
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
+                                horizontal: AppSpacing.s2,
+                                vertical: AppSpacing.s1,
                               ),
                               decoration: BoxDecoration(
                                 color: AppColors.surfaceSubtle,
@@ -203,6 +208,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                               child: Text(
                                 alias,
                                 style: AppTextStyles.caption.copyWith(
+                                  height: 1.2,
                                   color: AppColors.textSecondary,
                                 ),
                               ),
@@ -214,7 +220,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                 ),
               ),
               if (_manage) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.s2),
                 Icon(
                   Icons.edit_outlined,
                   size: 18,
@@ -247,7 +253,10 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s3,
+              vertical: AppSpacing.s2,
+            ),
             decoration: BoxDecoration(
               color: AppColors.surfaceSubtle,
               borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -256,21 +265,20 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
             child: Text(
               '仅管理员可编辑；修改不影响历史警情',
               style: AppTextStyles.caption.copyWith(
-                fontSize: 12.5,
                 color: AppColors.textTertiary,
                 height: 1.5,
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.s3),
           if (_busy)
             const Padding(
-              padding: EdgeInsets.only(bottom: 10),
+              padding: EdgeInsets.only(bottom: AppSpacing.s2),
               child: LinearProgressIndicator(),
             ),
           if (_error != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.only(bottom: AppSpacing.s2),
               child: Text(
                 _error!,
                 style: AppTextStyles.bodyMd.copyWith(color: AppColors.alarm),
@@ -297,7 +305,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                       color: AppColors.textTertiary,
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: AppSpacing.s4),
                   Text(
                     '暂无常用队伍，可在此新增，也可导入警情时保存。',
                     textAlign: TextAlign.center,

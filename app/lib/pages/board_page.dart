@@ -66,13 +66,18 @@ class _BoardPageState extends State<BoardPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.s4,
+              AppSpacing.s3,
+              AppSpacing.s4,
+              AppSpacing.s2,
+            ),
             child: compactHeader
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text('管控看板', style: AppTextStyles.h1),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.s2),
                       Align(
                         alignment: Alignment.centerRight,
                         widthFactor: 1,
@@ -105,20 +110,21 @@ class _BoardPageState extends State<BoardPage> {
           if (widget.controller.connectionLost &&
               widget.controller.syncError != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.s4,
+                0,
+                AppSpacing.s4,
+                AppSpacing.s2,
+              ),
               child: Text(
                 widget.controller.syncError!,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: AppColors.alarm,
-                  height: 1.3,
-                ),
+                style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -128,7 +134,7 @@ class _BoardPageState extends State<BoardPage> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.s3),
           Expanded(
             child: active.isEmpty
                 ? _EmptyBoard(
@@ -143,7 +149,12 @@ class _BoardPageState extends State<BoardPage> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       // 中央语音按钮向内容区悬浮，保留足够尾部空间，
                       // 确保最后一张人员卡片可完整滚动到按钮上方。
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.s4,
+                        0,
+                        AppSpacing.s4,
+                        100,
+                      ),
                       itemCount: active.length,
                       itemBuilder: (context, i) => _EntryCard(
                         entry: active[i],
@@ -192,7 +203,7 @@ class _BoardPageState extends State<BoardPage> {
       isScrollControlled: true,
       backgroundColor: AppColors.background,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
       ),
       builder: (_) =>
           ReportPressureSheet(controller: widget.controller, entry: e),
@@ -225,14 +236,12 @@ class _OverviewBanner extends StatelessWidget {
       alarmMin: config.alarmMin,
     );
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
-        boxShadow: AppShadow.card,
+    return AppCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s3,
       ),
+      radius: AppRadius.lg,
       child: Row(
         children: [
           Expanded(
@@ -282,11 +291,11 @@ class _OverviewBanner extends StatelessWidget {
     return Column(
       children: [
         Icon(icon, size: 18, color: AppColors.textTertiary),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.s1),
         FittedBox(
           child: Text(
             value,
-            style: TextStyle(
+            style: AppTextStyles.h2.copyWith(
               fontSize: 28,
               fontWeight: FontWeight.w800,
               fontFeatures: const [FontFeature.tabularFigures()],
@@ -294,13 +303,11 @@ class _OverviewBanner extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: AppSpacing.s1),
         Text(
           label,
-          style: TextStyle(
+          style: AppTextStyles.caption.copyWith(
             color: AppColors.textSecondary,
-            fontSize: 11,
-            letterSpacing: 0.5,
           ),
         ),
       ],
@@ -333,34 +340,36 @@ class _DangerAlertBar extends StatelessWidget {
       _ => AppColors.caution,
     };
     final earliest = entries.reduce((a, b) => a.exitAt <= b.exitAt ? a : b);
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        boxShadow: AppShadow.card,
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.warning_amber_rounded,
-            color: AppColors.textPrimary,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '${entries.length} 人需要关注 · 最早到期 ${_fmtRemaining(earliest.remainingMs)}',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                height: 1.3,
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.s2),
+      child: AppCard(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s4,
+          vertical: AppSpacing.s3,
+        ),
+        radius: AppRadius.md,
+        color: color.withValues(alpha: 0.12),
+        side: BorderSide(color: color.withValues(alpha: 0.45)),
+        child: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: color,
+              size: 20,
+            ),
+            const SizedBox(width: AppSpacing.s2),
+            Expanded(
+              child: Text(
+                '${entries.length} 人需要关注 · 最早到期 ${_fmtRemaining(earliest.remainingMs)}',
+                style: AppTextStyles.label.copyWith(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -377,7 +386,7 @@ class _EmptyBoard extends StatelessWidget {
     final voiceGuide = onGoVoice == null
         ? null
         : [
-            const SizedBox(height: 20),
+            const SizedBox(height: AppSpacing.s5),
             SizedBox(
               height: 48,
               child: FilledButton.icon(
@@ -409,20 +418,19 @@ class _EmptyBoard extends StatelessWidget {
                 children: [
                   Text(
                     '0',
-                    style: TextStyle(
+                    style: AppTextStyles.h1.copyWith(
                       fontSize: 36,
                       height: 1,
                       fontWeight: FontWeight.w800,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontFeatures: const [FontFeature.tabularFigures()],
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.s1),
                   Text(
                     '在场',
-                    style: TextStyle(
+                    style: AppTextStyles.caption.copyWith(
                       color: AppColors.textSecondary,
-                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -430,19 +438,18 @@ class _EmptyBoard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpacing.s5),
           Text(
             '暂无人员在场',
-            style: TextStyle(
+            style: AppTextStyles.bodyLg.copyWith(
               color: AppColors.textPrimary,
-              fontSize: 17,
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.s2),
           Text(
             requiresIncident ? '选择警情后可登记进场' : '按住底部语音按钮登记进场',
-            style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+            style: AppTextStyles.label.copyWith(color: AppColors.textTertiary),
           ),
           ...?voiceGuide,
         ],
@@ -451,7 +458,7 @@ class _EmptyBoard extends StatelessWidget {
   }
 }
 
-/// 人员状态卡片：整块状态色，第一层只保留 姓名/状态/剩余时间/持续时长/更新压力
+/// 人员状态卡片：状态靠色块（左侧色条 + 状态胶囊），数据靠排版（白底大字号对比）
 /// 两个时间左右式同排：剩余时间为视觉重心（大字号），持续时长在右侧（小一号）
 /// 单卡约 110dp 高，一屏可容纳 4 名同时进场的队员
 class _EntryCard extends StatelessWidget {
@@ -475,8 +482,6 @@ class _EntryCard extends StatelessWidget {
       alarmMin: config.alarmMin,
     );
     final s = EntryStatus.of(status);
-    final fg = s.fg;
-    final subFg = fg.withValues(alpha: 0.75);
     final textScale = MediaQuery.textScalerOf(context).scale(1.0);
     // 320dp 真机上姓名、状态和更新压力可以自然同排；只在更窄视口或
     // 大字号下确实需要保留可读性时堆叠，不能把正常状态拉成整行。
@@ -484,175 +489,168 @@ class _EntryCard extends StatelessWidget {
         MediaQuery.sizeOf(context).width < 300 || textScale > 1.25;
     final statusAndAction = Row(
       mainAxisSize: MainAxisSize.min,
-      spacing: 8,
+      spacing: AppSpacing.s2,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         StatusBadge(
           status: status,
-          onColorCard: true,
+          onColorCard: false,
           fontSize: 13,
           height: 48,
         ),
-        _UpdatePressureButton(fg: fg, onPressed: onReport),
+        _UpdatePressureButton(onPressed: onReport),
       ],
     );
-    final name = Text(
-      e.name,
-      maxLines: stackedHeader ? 2 : 1,
-      softWrap: stackedHeader,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        fontSize: 20,
-        height: 1.25,
-        fontWeight: FontWeight.w800,
-        color: fg,
-      ),
+    final nameWithBar = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(
+            color: s.color,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s2),
+        Expanded(
+          child: Text(
+            e.name,
+            maxLines: stackedHeader ? 2 : 1,
+            softWrap: stackedHeader,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.h2.copyWith(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ),
+      ],
     );
 
-    final card = Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: s.color,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        // 报警卡用更亮的描边 + 同色辉光把注意力拉满；提醒卡次之；
-        // 普通卡走调色板阴影，切主题时跟着一起变。
-        border: Border.all(
-          color: status == 'alarm'
-              ? Colors.white.withValues(alpha: 0.95)
-              : (status == 'warn'
-                    ? Colors.white.withValues(alpha: 0.7)
-                    : Colors.white.withValues(alpha: 0.4)),
-          width: status == 'alarm' ? 1.6 : 1.0,
-        ),
-        boxShadow: [
-          if (status == 'alarm')
-            BoxShadow(
-              color: AppColors.alarm.withValues(alpha: 0.5),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            )
-          else if (status == 'warn')
-            BoxShadow(
-              color: AppColors.caution.withValues(alpha: 0.3),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            )
-          else
-            ...AppShadow.card,
-        ],
+    final card = AppCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s3,
       ),
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      radius: AppRadius.lg,
+      color: AppColors.surface,
+      side: BorderSide(
+        color: status == 'normal'
+            ? AppColors.border
+            : s.color.withValues(alpha: s.danger ? 0.65 : 0.45),
+        width: s.danger ? 1.5 : 1.0,
+      ),
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (stackedHeader) ...[
+            nameWithBar,
+            const SizedBox(height: AppSpacing.s1),
+            Align(
+              alignment: Alignment.centerLeft,
+              widthFactor: 1,
+              heightFactor: 1,
+              child: statusAndAction,
+            ),
+          ] else
+            Row(
+              children: [
+                Expanded(child: nameWithBar),
+                const SizedBox(width: AppSpacing.s2),
+                statusAndAction,
+              ],
+            ),
+          const SizedBox(height: AppSpacing.s2),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              if (stackedHeader) ...[
-                name,
-                const SizedBox(height: 4),
-                Align(
+              // 剩余时间：主指标，大字号靠左
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
-                  widthFactor: 1,
-                  heightFactor: 1,
-                  child: statusAndAction,
-                ),
-              ] else
-                Row(
-                  children: [
-                    Expanded(child: name),
-                    const SizedBox(width: 8),
-                    statusAndAction,
-                  ],
-                ),
-              const SizedBox(height: 4),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // 剩余时间：主指标，大字号靠左
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          CountdownText(
-                            ms: e.remainingMs,
-                            color: fg,
-                            size: 44,
-                            timeoutText: '已超时',
-                          ),
-                          const SizedBox(width: 6),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              '剩余时间',
-                              style: TextStyle(
-                                color: subFg,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      CountdownText(
+                        ms: e.remainingMs,
+                        color: status == 'normal'
+                            ? AppColors.textPrimary
+                            : s.color,
+                        size: 44,
+                        timeoutText: '已超时',
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Container(
-                    width: 1,
-                    height: 30,
-                    color: subFg.withValues(alpha: 0.4),
-                  ),
-                  const SizedBox(width: 10),
-                  // 持续时长：进入现场内部时长，次指标靠右
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              '持续时长',
-                              style: TextStyle(
-                                color: subFg,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                      const SizedBox(width: AppSpacing.s2),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.s1),
+                        child: Text(
+                          '剩余时间',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w600,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            _elapsedTime(e),
-                            style: TextStyle(
-                              fontSize: 26,
-                              height: 1.0,
-                              fontWeight: FontWeight.w800,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                              color: fg,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s3),
+              Container(
+                width: 1,
+                height: 28,
+                color: AppColors.border,
+              ),
+              const SizedBox(width: AppSpacing.s3),
+              // 持续时长：进入现场内部时长，次指标靠右
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.s1),
+                        child: Text(
+                          '持续时长',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.s2),
+                      Text(
+                        _elapsedTime(e),
+                        style: AppTextStyles.h2.copyWith(
+                          fontSize: 26,
+                          height: 1.0,
+                          fontWeight: FontWeight.w800,
+                          fontFeatures: const [
+                            FontFeature.tabularFigures(),
+                          ],
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
-        ),
+        ],
       ),
     );
 
     final wrapped = s.danger ? PulseGlow(color: s.color, child: card) : card;
-    return Padding(padding: const EdgeInsets.only(bottom: 8), child: wrapped);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.s2),
+      child: wrapped,
+    );
   }
 
   /// 进入现场后的持续时长（MM:SS / H:MM:SS）
@@ -670,10 +668,9 @@ class _EntryCard extends StatelessWidget {
 
 /// 卡片顶行的快速更新压力按钮：至少 48px 触控区，紧凑胶囊，独立响应点击
 class _UpdatePressureButton extends StatelessWidget {
-  final Color fg;
   final VoidCallback onPressed;
 
-  const _UpdatePressureButton({required this.fg, required this.onPressed});
+  const _UpdatePressureButton({required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -688,21 +685,21 @@ class _UpdatePressureButton extends StatelessWidget {
           child: Center(
             child: Container(
               height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
               decoration: BoxDecoration(
-                color: fg.withValues(alpha: 0.16),
+                color: AppColors.surfaceSubtle,
                 borderRadius: BorderRadius.circular(AppRadius.pill),
+                border: Border.all(color: AppColors.border),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.speed, size: 16, color: fg),
-                  const SizedBox(width: 4),
+                  Icon(Icons.speed, size: 16, color: AppColors.textPrimary),
+                  const SizedBox(width: AppSpacing.s1),
                   Text(
                     '更新压力',
-                    style: TextStyle(
-                      color: fg,
-                      fontSize: 13,
+                    style: AppTextStyles.label.copyWith(
+                      color: AppColors.textPrimary,
                       fontWeight: FontWeight.w800,
                     ),
                   ),

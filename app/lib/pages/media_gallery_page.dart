@@ -211,25 +211,41 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
     final hasIncident =
         (widget.controller.currentIncident?.id ?? '').isNotEmpty;
     return ListView(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        const SizedBox(height: 60),
-        Icon(
-          Icons.photo_library_outlined,
-          size: 42,
-          color: AppColors.textSecondary,
+        const SizedBox(height: AppSpacing.s10),
+        Center(
+          child: Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.surface,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Icon(
+              Icons.photo_library_outlined,
+              size: 40,
+              color: AppColors.textTertiary,
+            ),
+          ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.s4),
         Text(
           hasIncident ? '还没有拍摄现场照片或录像' : '还没有当前警情',
           textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.textSecondary),
+          style: AppTextStyles.bodyMd.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppSpacing.s1),
         Text(
           hasIncident ? '在首页点「水印相机」，文件会保存在这台设备上' : '先加入或新建警情，拍摄的现场资料会归到当前警情下',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textTertiary,
+          ),
         ),
       ],
     );
@@ -238,18 +254,17 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   Widget _list() {
     final all = [..._items, ..._unlinked];
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: all.length + (_unlinked.isNotEmpty ? 1 : 0),
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.s2),
       itemBuilder: (context, index) {
         if (_unlinked.isNotEmpty) {
           if (index == 0) {
             return Padding(
-              padding: EdgeInsets.only(top: 4, bottom: 2),
+              padding: const EdgeInsets.only(top: AppSpacing.s1),
               child: Text(
                 '未关联警情（加入警情后可关联并写入记录）',
-                style: TextStyle(
-                  fontSize: 12,
+                style: AppTextStyles.caption.copyWith(
                   fontWeight: FontWeight.w700,
                   color: AppColors.textSecondary,
                 ),
@@ -258,95 +273,126 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
           }
         }
         final media = all[index - (_unlinked.isNotEmpty ? 1 : 0)];
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
+        return AppCard(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.s3,
+            AppSpacing.s2,
+            AppSpacing.s1,
+            AppSpacing.s2,
           ),
-          child: ListTile(
-            contentPadding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-            leading: _thumb(media),
-            title: Text(
-              media.isVideo ? '录像 ${(media.durationMs / 1000).round()}s' : '照片',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          onTap: () => _review(media),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Row(
               children: [
-                if (media.observationId.isNotEmpty)
-                  Padding(
-                    padding: EdgeInsets.only(bottom: 2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.check_circle_rounded,
-                          size: 14,
-                          color: AppColors.online,
-                        ),
-                        SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            '已写入警情',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
+                _thumb(media),
+                const SizedBox(width: AppSpacing.s3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Wrap(
+                        spacing: AppSpacing.s2,
+                        runSpacing: AppSpacing.s1,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            media.isVideo
+                                ? '录像 ${(media.durationMs / 1000).round()}s'
+                                : '照片',
+                            style: AppTextStyles.bodyMd.copyWith(
+                              fontSize: 14,
+                              height: 1.3,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
                             ),
                           ),
+                          if (media.observationId.isNotEmpty)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 14,
+                                  color: AppColors.online,
+                                ),
+                                const SizedBox(width: AppSpacing.s1),
+                                Text(
+                                  '已写入警情',
+                                  style: AppTextStyles.caption.copyWith(
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.s1),
+                      Text(
+                        media.hasTranscript
+                            ? media.transcript
+                            : (media.address.isNotEmpty
+                                  ? media.address
+                                  : '未识别到口述内容'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          height: 1.3,
+                          color: AppColors.textSecondary,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                Text(
-                  media.hasTranscript
-                      ? media.transcript
-                      : (media.address.isNotEmpty ? media.address : '未识别到口述内容'),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
+                ),
+                PopupMenuButton<String>(
+                  icon: Icon(
+                    Icons.more_vert_rounded,
                     color: AppColors.textSecondary,
                   ),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'review':
+                        _review(media);
+                      case 'open':
+                        _openMedia(media);
+                      case 'share':
+                        _share(media);
+                      case 'save':
+                        _saveToGallery(media);
+                      case 'rederive':
+                        _rederive(media);
+                      case 'attach':
+                        _attach(media);
+                      case 'delete':
+                        _delete(media);
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'review', child: Text('查看与核对')),
+                    if (media.isVideo && !media.hasTranscript)
+                      const PopupMenuItem(
+                        value: 'rederive',
+                        child: Text('重新识别口述'),
+                      ),
+                    const PopupMenuItem(value: 'open', child: Text('用其他应用打开')),
+                    const PopupMenuItem(
+                      value: 'save',
+                      child: Text('保存两份到手机相册'),
+                    ),
+                    const PopupMenuItem(value: 'share', child: Text('分享')),
+                    if (media.incidentId.isEmpty)
+                      const PopupMenuItem(
+                        value: 'attach',
+                        child: Text('关联到当前警情'),
+                      ),
+                    const PopupMenuItem(value: 'delete', child: Text('删除')),
+                  ],
                 ),
               ],
             ),
-            trailing: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert_rounded),
-              onSelected: (value) {
-                switch (value) {
-                  case 'review':
-                    _review(media);
-                  case 'open':
-                    _openMedia(media);
-                  case 'share':
-                    _share(media);
-                  case 'save':
-                    _saveToGallery(media);
-                  case 'rederive':
-                    _rederive(media);
-                  case 'attach':
-                    _attach(media);
-                  case 'delete':
-                    _delete(media);
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'review', child: Text('查看与核对')),
-                if (media.isVideo && !media.hasTranscript)
-                  const PopupMenuItem(value: 'rederive', child: Text('重新识别口述')),
-                const PopupMenuItem(value: 'open', child: Text('用其他应用打开')),
-                const PopupMenuItem(value: 'save', child: Text('保存两份到手机相册')),
-                const PopupMenuItem(value: 'share', child: Text('分享')),
-                if (media.incidentId.isEmpty)
-                  const PopupMenuItem(value: 'attach', child: Text('关联到当前警情')),
-                const PopupMenuItem(value: 'delete', child: Text('删除')),
-              ],
-            ),
-            onTap: () => _review(media),
           ),
         );
       },
@@ -359,11 +405,11 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
         : media.path;
     if (previewPath == null || !File(previewPath).existsSync()) {
       return Container(
-        width: 52,
-        height: 52,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
           color: AppColors.surfaceSubtle,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
         child: Icon(
           media.isVideo ? Icons.videocam_rounded : Icons.photo_rounded,
@@ -372,17 +418,20 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
       );
     }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppRadius.sm),
       child: Image.file(
         File(previewPath),
-        width: 52,
-        height: 52,
+        width: 48,
+        height: 48,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => Container(
-          width: 52,
-          height: 52,
+          width: 48,
+          height: 48,
           color: AppColors.surfaceSubtle,
-          child: const Icon(Icons.image_not_supported_outlined),
+          child: Icon(
+            Icons.image_not_supported_outlined,
+            color: AppColors.textTertiary,
+          ),
         ),
       ),
     );

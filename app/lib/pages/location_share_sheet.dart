@@ -227,7 +227,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         key: const Key('location-share-sheet'),
         color: AppColors.background,
         borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppRadius.xl),
+          top: Radius.circular(AppRadius.lg),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -235,17 +235,21 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
             _header(context),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.s4,
+                  AppSpacing.s1,
+                  AppSpacing.s4,
+                  AppSpacing.s6,
+                ),
                 children: [
                   Text(
                     '分享的是纯文本和 HTTPS 高德链接。微信收到后可点击链接查看位置或驾车路线，不保证直接唤起高德 App。',
-                    style: TextStyle(
-                      fontSize: 13,
+                    style: AppTextStyles.label.copyWith(
                       height: 1.5,
                       color: AppColors.textSecondary,
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: AppSpacing.s3),
                   ..._body(context),
                 ],
               ),
@@ -259,29 +263,38 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
 
   Widget _header(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s4,
+        AppSpacing.s2,
+        AppSpacing.s2,
+        AppSpacing.s2,
+      ),
       child: Column(
         children: [
           Container(
-            width: 42,
+            width: 40,
             height: 4,
             decoration: BoxDecoration(
               color: AppColors.border,
               borderRadius: BorderRadius.circular(AppRadius.pill),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.s2),
           Row(
             children: [
               Icon(
                 Icons.share_location_outlined,
                 color: AppColors.actionPrimary,
+                size: 22,
               ),
-              const SizedBox(width: 9),
-              const Expanded(
+              const SizedBox(width: AppSpacing.s2),
+              Expanded(
                 child: Text(
                   '定位分享',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  style: AppTextStyles.h2.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
               IconButton(
@@ -300,13 +313,18 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
     switch (_phase) {
       case _LocationSharePhase.loading:
         return [
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 36),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.s10),
             child: Column(
               children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('正在获取定位并查询地址…'),
+                const CircularProgressIndicator(),
+                const SizedBox(height: AppSpacing.s4),
+                Text(
+                  '正在获取定位并查询地址…',
+                  style: AppTextStyles.bodyMd.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ],
             ),
           ),
@@ -394,7 +412,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
     final text = draft.toShareText(now: now);
     return [
       AppCard(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(AppSpacing.s4),
         child: Column(
           children: [
             _infoRow(
@@ -424,14 +442,14 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         ),
       ),
       if (blocked) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.s3),
         _warningCard(
           icon: Icons.timer_off_outlined,
           color: AppColors.alarm,
           text: '定位已超过 5 分钟，不能直接分享。请重新定位后再发送。',
         ),
       ] else if (stale) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.s3),
         _warningCard(
           icon: Icons.schedule,
           color: AppColors.caution,
@@ -439,7 +457,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         ),
       ],
       if (draft.hasPoorAccuracy) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.s3),
         _warningCard(
           icon: Icons.gps_off_outlined,
           color: AppColors.caution,
@@ -447,7 +465,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         ),
       ],
       if (_addressFailed) ...[
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.s3),
         _warningCard(
           icon: Icons.info_outline,
           color: AppColors.caution,
@@ -456,49 +474,67 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
               : '地址查询未完成，但高德驾车导航仍可用。',
         ),
       ],
-      const SizedBox(height: 12),
+      const SizedBox(height: AppSpacing.s3),
       AppCard(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(AppSpacing.s4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               '分享文案预览',
-              style: TextStyle(
-                fontSize: 13,
+              style: AppTextStyles.label.copyWith(
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.s2),
             SelectableText(
               text,
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.55,
+              style: AppTextStyles.caption.copyWith(
+                height: 1.5,
                 color: AppColors.textSecondary,
               ),
             ),
           ],
         ),
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: AppSpacing.s3),
       Wrap(
-        spacing: 8,
-        runSpacing: 8,
+        spacing: AppSpacing.s2,
+        runSpacing: AppSpacing.s2,
         children: [
           OutlinedButton.icon(
             key: const Key('location-share-relocate'),
             onPressed: _loadLocation,
-            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
-            icon: const Icon(Icons.my_location),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 48),
+              side: BorderSide(color: AppColors.border),
+              foregroundColor: AppColors.textSecondary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              textStyle: AppTextStyles.label.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            icon: const Icon(Icons.my_location, size: 18),
             label: const Text('重新定位'),
           ),
           OutlinedButton.icon(
             key: const Key('location-share-open-settings'),
             onPressed: _gateway.openLocationSettings,
-            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
-            icon: const Icon(Icons.location_searching),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 48),
+              side: BorderSide(color: AppColors.border),
+              foregroundColor: AppColors.textSecondary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              textStyle: AppTextStyles.label.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            icon: const Icon(Icons.location_searching, size: 18),
             label: const Text('打开定位设置'),
           ),
         ],
@@ -508,25 +544,30 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
 
   Widget _infoRow(String label, String value, {bool last = false}) {
     return Padding(
-      padding: EdgeInsets.only(bottom: last ? 0 : 10),
+      padding: EdgeInsets.only(bottom: last ? 0 : AppSpacing.s3),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
           SizedBox(
-            width: 72,
+            width: 68,
             child: Text(
               label,
-              style: TextStyle(fontSize: 12.5, color: AppColors.textTertiary),
+              textAlign: TextAlign.right,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textTertiary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
+          const SizedBox(width: AppSpacing.s3),
           Expanded(
             child: Text(
               value,
-              style: TextStyle(
-                fontSize: 13.5,
-                height: 1.4,
+              style: AppTextStyles.bodyMd.copyWith(
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -542,28 +583,30 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
     required List<Widget> actions,
   }) {
     return AppCard(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(AppSpacing.s5),
       child: Column(
         children: [
-          Icon(icon, size: 38, color: AppColors.caution),
-          const SizedBox(height: 12),
+          Icon(icon, size: 40, color: AppColors.caution),
+          const SizedBox(height: AppSpacing.s3),
           Text(
             title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            style: AppTextStyles.bodyLg.copyWith(
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.s2),
           Text(
             body,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.55,
+            style: AppTextStyles.bodyMd.copyWith(
+              height: 1.5,
               color: AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.s4),
           for (var i = 0; i < actions.length; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
+            if (i > 0) const SizedBox(height: AppSpacing.s2),
             actions[i],
           ],
         ],
@@ -578,16 +621,18 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
     required Future<void> Function() onPressed,
     bool filled = false,
   }) {
-    final style = ButtonStyle(
-      minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
-    );
     if (filled) {
       return SizedBox(
         width: double.infinity,
         child: FilledButton.icon(
           key: key,
           onPressed: onPressed,
-          style: style,
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+          ),
           icon: Icon(icon),
           label: Text(label),
         ),
@@ -598,7 +643,14 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
       child: OutlinedButton.icon(
         key: key,
         onPressed: onPressed,
-        style: style,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 48),
+          side: BorderSide(color: AppColors.border),
+          foregroundColor: AppColors.textPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+        ),
         icon: Icon(icon),
         label: Text(label),
       ),
@@ -611,7 +663,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
     required String text,
   }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppSpacing.s3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.09),
         borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -621,13 +673,11 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 19, color: color),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.s2),
           Expanded(
             child: Text(
               text,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.45,
+              style: AppTextStyles.label.copyWith(
                 color: color,
                 fontWeight: FontWeight.w600,
               ),
@@ -643,7 +693,12 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.s4,
+          AppSpacing.s3,
+          AppSpacing.s4,
+          AppSpacing.s3,
+        ),
         decoration: BoxDecoration(
           color: AppColors.surface,
           border: Border(top: BorderSide(color: AppColors.border)),
@@ -655,28 +710,56 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
                 MediaQuery.textScalerOf(context).scale(1) > 1.2;
             final width = compact
                 ? constraints.maxWidth
-                : (constraints.maxWidth - 10) / 2;
+                : (constraints.maxWidth - AppSpacing.s2) / 2;
             final copy = OutlinedButton.icon(
               key: const Key('location-share-copy'),
               onPressed: enabled ? _copy : null,
-              style: OutlinedButton.styleFrom(minimumSize: Size(width, 52)),
-              icon: const Icon(Icons.copy_all_outlined),
+              style: OutlinedButton.styleFrom(
+                minimumSize: Size(width, 52),
+                side: BorderSide(color: AppColors.border),
+                foregroundColor: AppColors.textPrimary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                textStyle: AppTextStyles.bodyMd.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              icon: const Icon(Icons.copy_all_outlined, size: 19),
               label: const Text('复制完整文案'),
             );
             final share = FilledButton.icon(
               key: const Key('location-share-submit'),
               onPressed: enabled ? _share : null,
-              style: FilledButton.styleFrom(minimumSize: Size(width, 52)),
-              icon: const Icon(Icons.ios_share_outlined),
+              style: FilledButton.styleFrom(
+                minimumSize: Size(width, 52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                textStyle: AppTextStyles.bodyMd.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              icon: const Icon(Icons.ios_share_outlined, size: 19),
               label: const Text('分享位置'),
             );
             if (compact) {
               return Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [copy, const SizedBox(height: 8), share],
+                children: [
+                  copy,
+                  const SizedBox(height: AppSpacing.s2),
+                  share,
+                ],
               );
             }
-            return Row(children: [copy, const SizedBox(width: 10), share]);
+            return Row(
+              children: [
+                copy,
+                const SizedBox(width: AppSpacing.s2),
+                share,
+              ],
+            );
           },
         ),
       ),

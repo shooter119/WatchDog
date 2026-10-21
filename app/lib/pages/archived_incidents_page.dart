@@ -105,6 +105,7 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('已归档警情'),
         actions: [
@@ -124,7 +125,12 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
                 slivers: [
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.s4,
+                        AppSpacing.s3,
+                        AppSpacing.s4,
+                        0,
+                      ),
                       child: _ArchiveSummary(count: _incidents.length),
                     ),
                   ),
@@ -134,16 +140,24 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
                       child: Center(
                         child: Text(
                           '暂无归档警情',
-                          style: TextStyle(color: AppColors.textSecondary),
+                          style: AppTextStyles.bodyMd.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                       ),
                     )
                   else
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.s4,
+                        AppSpacing.s3,
+                        AppSpacing.s4,
+                        100,
+                      ),
                       sliver: SliverList.separated(
                         itemCount: _incidents.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: AppSpacing.s3),
                         itemBuilder: (context, index) {
                           final incident = _incidents[index];
                           return _ArchivedIncidentCard(
@@ -175,13 +189,16 @@ class _ArchiveSummary extends StatelessWidget {
   const _ArchiveSummary({required this.count});
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+  Widget build(BuildContext context) => AppCard(
+    padding: const EdgeInsets.symmetric(
+      horizontal: AppSpacing.s4,
+      vertical: AppSpacing.s3,
+    ),
     child: Row(
       children: [
         Container(
-          width: 42,
-          height: 42,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             color: AppColors.voice.withValues(alpha: .14),
             borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -192,11 +209,14 @@ class _ArchiveSummary extends StatelessWidget {
             size: 22,
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: AppSpacing.s3),
         Expanded(
           child: Text(
             '处置档案库',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+            style: AppTextStyles.h2.copyWith(
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
           ),
         ),
         Column(
@@ -204,17 +224,18 @@ class _ArchiveSummary extends StatelessWidget {
           children: [
             Text(
               '$count',
-              style: TextStyle(
+              style: AppTextStyles.h1.copyWith(
                 color: AppColors.textPrimary,
-                fontSize: 28,
-                height: 1,
                 fontWeight: FontWeight.w800,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.s1),
             Text(
               '份档案',
-              style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textTertiary,
+              ),
             ),
           ],
         ),
@@ -239,26 +260,31 @@ class _ArchivedIncidentCard extends StatelessWidget {
     padding: EdgeInsets.zero,
     onTap: onTap,
     child: Padding(
-      padding: const EdgeInsets.fromLTRB(14, 13, 8, 11),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s4,
+        AppSpacing.s3,
+        AppSpacing.s2,
+        AppSpacing.s3,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: AppColors.surfaceSubtle,
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
                 child: Icon(
                   Icons.local_fire_department_outlined,
-                  size: 19,
+                  size: 20,
                   color: AppColors.textPrimary,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: AppSpacing.s3),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -267,21 +293,20 @@ class _ArchivedIncidentCard extends StatelessWidget {
                       incident.displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 16,
+                      style: AppTextStyles.bodyLg.copyWith(
                         fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppSpacing.s1),
                     Text(
                       incident.title == null
                           ? '默认名称 · ${incident.number}'
                           : incident.number,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: AppTextStyles.caption.copyWith(
                         color: AppColors.textTertiary,
-                        fontSize: 11,
                       ),
                     ),
                   ],
@@ -296,10 +321,10 @@ class _ArchivedIncidentCard extends StatelessWidget {
               Icon(Icons.chevron_right, color: AppColors.textTertiary),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.s3),
           Wrap(
-            spacing: 6,
-            runSpacing: 5,
+            spacing: AppSpacing.s2,
+            runSpacing: AppSpacing.s1,
             children: [
               _MetaTag(
                 icon: Icons.event_outlined,
@@ -317,7 +342,7 @@ class _ArchivedIncidentCard extends StatelessWidget {
             ],
           ),
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 9),
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.s3),
             child: Divider(height: 1),
           ),
           Row(
@@ -358,7 +383,10 @@ class _MetaTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    padding: const EdgeInsets.symmetric(
+      horizontal: AppSpacing.s2,
+      vertical: AppSpacing.s1,
+    ),
     decoration: BoxDecoration(
       color: (accent ?? AppColors.textSecondary).withValues(alpha: .08),
       borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -367,12 +395,11 @@ class _MetaTag extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 14, color: accent ?? AppColors.textSecondary),
-        const SizedBox(width: 4),
+        const SizedBox(width: AppSpacing.s1),
         Text(
           text,
-          style: TextStyle(
+          style: AppTextStyles.caption.copyWith(
             color: accent ?? AppColors.textSecondary,
-            fontSize: 11,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -395,17 +422,18 @@ class _StatItem extends StatelessWidget {
       children: [
         Text(
           value,
-          style: TextStyle(
+          style: AppTextStyles.h2.copyWith(
             color: color ?? AppColors.textPrimary,
-            fontSize: 18,
-            height: 1,
             fontWeight: FontWeight.w800,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.s1),
         Text(
           label,
-          style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textTertiary,
+          ),
         ),
       ],
     ),
@@ -464,6 +492,7 @@ class _IncidentDetailPageState extends State<IncidentDetailPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.background,
     appBar: AppBar(
       title: const Text('火场复盘'),
       actions: [
@@ -480,45 +509,63 @@ class _IncidentDetailPageState extends State<IncidentDetailPage> {
             onRefresh: _load,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.s4,
+                AppSpacing.s3,
+                AppSpacing.s4,
+                100,
+              ),
               children: [
                 _IncidentIdentity(incident: widget.incident),
-                TextButton.icon(
-                  onPressed: widget.controller.api == null
-                      ? null
-                      : () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => IncidentDetailsPage(
-                              controller: widget.controller,
-                              api: widget.controller.api!,
-                              incident: widget.incident,
+                const SizedBox(height: AppSpacing.s1),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: widget.controller.api == null
+                        ? null
+                        : () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => IncidentDetailsPage(
+                                controller: widget.controller,
+                                api: widget.controller.api!,
+                                incident: widget.incident,
+                              ),
                             ),
                           ),
-                        ),
-                  icon: const Icon(Icons.description_outlined, size: 18),
-                  label: const Text('警情资料与导入记录'),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s3,
+                      ),
+                      textStyle: AppTextStyles.label.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    icon: const Icon(Icons.description_outlined, size: 18),
+                    label: const Text('警情资料与导入记录'),
+                  ),
                 ),
                 if (widget.incident.unresolvedActiveCount > 0) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.s2),
                   _UnresolvedBanner(
                     count: widget.incident.unresolvedActiveCount,
                   ),
                 ],
-                const SizedBox(height: 20),
+                const SizedBox(height: 22),
                 _DetailSectionTitle(
                   icon: Icons.local_fire_department_outlined,
                   title: '参战力量快照',
                   trailing: '${_forces.length} 个站点',
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.s2),
                 _ForceSnapshot(forces: _forces),
-                const SizedBox(height: 20),
+                const SizedBox(height: 22),
                 _DetailSectionTitle(
                   icon: Icons.timeline_rounded,
                   title: '火场处置时间线',
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.s2),
                 _TimelineCard(events: _events),
               ],
             ),
@@ -532,16 +579,16 @@ class _IncidentIdentity extends StatelessWidget {
   const _IncidentIdentity({required this.incident});
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+  Widget build(BuildContext context) => AppCard(
+    padding: const EdgeInsets.all(AppSpacing.s4),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Container(
-              width: 34,
-              height: 34,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: AppColors.voice.withValues(alpha: .14),
                 borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -549,16 +596,15 @@ class _IncidentIdentity extends StatelessWidget {
               child: Icon(
                 Icons.fact_check_outlined,
                 color: AppColors.voice,
-                size: 19,
+                size: 20,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpacing.s3),
             Expanded(
               child: Text(
                 '归档档案',
-                style: TextStyle(
+                style: AppTextStyles.caption.copyWith(
                   color: AppColors.textSecondary,
-                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -566,23 +612,27 @@ class _IncidentIdentity extends StatelessWidget {
             _ArchiveMethodChip(incident: incident),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.s3),
         Text(
           incident.displayName,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontSize: 22,
-            height: 1.2,
+          style: AppTextStyles.h2.copyWith(
             fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
           ),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: AppSpacing.s1),
         Text(
           incident.number,
-          style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textTertiary,
+          ),
         ),
-        const SizedBox(height: 14),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: AppSpacing.s3),
+          child: Divider(height: 1),
+        ),
         Row(
           children: [
             _ArchiveMetric(
@@ -607,7 +657,10 @@ class _ArchiveMethodChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    padding: const EdgeInsets.symmetric(
+      horizontal: AppSpacing.s2,
+      vertical: AppSpacing.s1,
+    ),
     decoration: BoxDecoration(
       color: (incident.autoArchived ? AppColors.caution : AppColors.online)
           .withValues(alpha: .12),
@@ -620,15 +673,14 @@ class _ArchiveMethodChip extends StatelessWidget {
           incident.autoArchived
               ? Icons.schedule_outlined
               : Icons.task_alt_outlined,
-          size: 13,
+          size: 14,
           color: incident.autoArchived ? AppColors.caution : AppColors.online,
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: AppSpacing.s1),
         Text(
           _archiveMethod(incident),
-          style: TextStyle(
+          style: AppTextStyles.caption.copyWith(
             color: incident.autoArchived ? AppColors.caution : AppColors.online,
-            fontSize: 11,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -650,17 +702,19 @@ class _ArchiveMetric extends StatelessWidget {
       children: [
         Text(
           label,
-          style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textTertiary,
+          ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpacing.s1),
         Text(
           value,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
+          style: AppTextStyles.label.copyWith(
             color: AppColors.textPrimary,
-            fontSize: 12,
             fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
       ],
@@ -675,7 +729,10 @@ class _UnresolvedBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    padding: const EdgeInsets.symmetric(
+      horizontal: AppSpacing.s3,
+      vertical: AppSpacing.s3,
+    ),
     decoration: BoxDecoration(
       color: AppColors.caution.withValues(alpha: .12),
       borderRadius: BorderRadius.circular(AppRadius.md),
@@ -683,14 +740,13 @@ class _UnresolvedBanner extends StatelessWidget {
     ),
     child: Row(
       children: [
-        Icon(Icons.warning_amber_rounded, color: AppColors.caution),
-        const SizedBox(width: 8),
+        Icon(Icons.warning_amber_rounded, color: AppColors.caution, size: 20),
+        const SizedBox(width: AppSpacing.s2),
         Expanded(
           child: Text(
             '归档时有 $count 名人员未确认离场',
-            style: TextStyle(
+            style: AppTextStyles.label.copyWith(
               color: AppColors.textPrimary,
-              fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -715,16 +771,22 @@ class _DetailSectionTitle extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     children: [
       Icon(icon, size: 18, color: AppColors.voice),
-      const SizedBox(width: 6),
+      const SizedBox(width: AppSpacing.s2),
       Text(
         title,
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        style: AppTextStyles.bodyLg.copyWith(
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
       ),
       if (trailing != null) ...[
         const Spacer(),
         Text(
           trailing!,
-          style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textTertiary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ],
     ],
@@ -741,62 +803,69 @@ class _ForceSnapshot extends StatelessWidget {
     padding: EdgeInsets.zero,
     child: forces.isEmpty
         ? Padding(
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.s4),
             child: Text(
               '未登记参战力量',
-              style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+              style: AppTextStyles.label.copyWith(
+                color: AppColors.textTertiary,
+              ),
             ),
           )
         : Column(
             children: [
               for (var i = 0; i < forces.length; i++) ...[
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 30,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceSubtle,
-                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s4,
+                    vertical: AppSpacing.s3,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 32),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                          ),
+                          child: Icon(
+                            Icons.local_fire_department_outlined,
+                            size: 18,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
-                        child: Icon(
-                          Icons.local_fire_department_outlined,
-                          size: 17,
-                          color: AppColors.textPrimary,
+                        const SizedBox(width: AppSpacing.s3),
+                        Expanded(
+                          child: Text(
+                            forces[i].stationName,
+                            style: AppTextStyles.bodyMd.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          forces[i].stationName,
-                          style: const TextStyle(
-                            fontSize: 14,
+                        Text(
+                          forces[i].vehicleLabel,
+                          style: AppTextStyles.label.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.s3),
+                        Text(
+                          forces[i].personnelLabel,
+                          style: AppTextStyles.label.copyWith(
+                            color: AppColors.textSecondary,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
-                      Text(
-                        forces[i].vehicleLabel,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        forces[i].personnelLabel,
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-                if (i < forces.length - 1) const Divider(height: 1, indent: 54),
+                if (i < forces.length - 1) const Divider(height: 1, indent: 60),
               ],
             ],
           ),
@@ -810,13 +879,20 @@ class _TimelineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppCard(
-    padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+    padding: const EdgeInsets.fromLTRB(
+      AppSpacing.s4,
+      AppSpacing.s4,
+      AppSpacing.s4,
+      AppSpacing.s2,
+    ),
     child: events.isEmpty
         ? Padding(
-            padding: EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.only(bottom: AppSpacing.s2),
             child: Text(
               '暂无事件记录',
-              style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+              style: AppTextStyles.label.copyWith(
+                color: AppColors.textTertiary,
+              ),
             ),
           )
         : Column(
@@ -862,85 +938,83 @@ class _TimelineEvent extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          width: 30,
+          width: 32,
           child: Column(
             children: [
               Container(
-                width: 25,
-                height: 25,
+                width: 28,
+                height: 28,
                 decoration: BoxDecoration(
                   color: _color.withValues(alpha: .12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(_icon, size: 14, color: _color),
+                child: Icon(_icon, size: 15, color: _color),
               ),
               if (!isLast)
                 Expanded(
                   child: Container(
-                    width: 1,
-                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    width: 2,
+                    margin: const EdgeInsets.symmetric(vertical: AppSpacing.s1),
                     color: AppColors.border,
                   ),
                 ),
             ],
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: AppSpacing.s3),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.only(bottom: AppSpacing.s4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   _archiveTime(event.occurredAt, withSeconds: true),
-                  style: TextStyle(
+                  style: AppTextStyles.caption.copyWith(
                     color: AppColors.textTertiary,
-                    fontSize: 11,
-                    fontFeatures: [FontFeature.tabularFigures()],
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: AppSpacing.s1),
                 Text(
                   event.text,
-                  style: TextStyle(
+                  style: AppTextStyles.bodyMd.copyWith(
                     color: AppColors.textPrimary,
-                    fontSize: 14,
-                    height: 1.35,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 6,
-                  children: [
-                    if (event.actorName?.isNotEmpty == true)
-                      Text(
-                        event.actorName!,
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 11,
+                if (event.actorName?.isNotEmpty == true ||
+                    event.source == 'offline' ||
+                    event.revisionOf != null) ...[
+                  const SizedBox(height: AppSpacing.s1),
+                  Wrap(
+                    spacing: AppSpacing.s2,
+                    children: [
+                      if (event.actorName?.isNotEmpty == true)
+                        Text(
+                          event.actorName!,
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
                         ),
-                      ),
-                    if (event.source == 'offline')
-                      Text(
-                        '离线补传',
-                        style: TextStyle(
-                          color: AppColors.caution,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                      if (event.source == 'offline')
+                        Text(
+                          '离线补传',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.caution,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                    if (event.revisionOf != null)
-                      Text(
-                        '修订记录',
-                        style: TextStyle(
-                          color: AppColors.textTertiary,
-                          fontSize: 11,
+                      if (event.revisionOf != null)
+                        Text(
+                          '修订记录',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textTertiary,
+                          ),
                         ),
-                      ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

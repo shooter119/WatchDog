@@ -775,24 +775,24 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
     if (result != null && mounted) setState(() => _forces[index] = result);
   }
 
-  Widget _section(String title, List<Widget> children) => Container(
-    margin: const EdgeInsets.only(bottom: 12),
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: AppColors.border),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-        ),
-        const SizedBox(height: 8),
-        ...children,
-      ],
+  Widget _section(String title, List<Widget> children) => Padding(
+    padding: const EdgeInsets.only(bottom: AppSpacing.s3),
+    child: AppCard(
+      padding: const EdgeInsets.all(AppSpacing.s4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: AppTextStyles.bodyLg.copyWith(
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s3),
+          ...children,
+        ],
+      ),
     ),
   );
   List<dynamic> get _pages => _task?['pages'] as List? ?? [];
@@ -800,20 +800,38 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       if (_resume != null)
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.history),
-          title: const Text('继续未完成的导入'),
-          subtitle: Text(
-            '状态：${const {'queued': '等待分析', 'processing': '正在分析', 'ready': '待核对', 'partial': '部分完成', 'failed': '分析失败，可重试'}[_resume!['status']] ?? '待处理'}',
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.s3),
+          child: AppCard(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s2,
+            ),
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.history, color: AppColors.voice),
+              title: Text(
+                '继续未完成的导入',
+                style: AppTextStyles.bodyMd.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              subtitle: Text(
+                '状态：${const {'queued': '等待分析', 'processing': '正在分析', 'ready': '待核对', 'partial': '部分完成', 'failed': '分析失败，可重试'}[_resume!['status']] ?? '待处理'}',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              trailing: Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              onTap: _busy
+                  ? null
+                  : () {
+                      setState(() => _task = _resume);
+                      _poll();
+                    },
+            ),
           ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: _busy
-              ? null
-              : () {
-                  setState(() => _task = _resume);
-                  _poll();
-                },
         ),
       if (_images.isEmpty)
         TextField(
@@ -830,10 +848,14 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       if (_images.isNotEmpty) ...[
         Text(
           '已选${_images.length}/9张 · 长按拖动排序',
-          style: TextStyle(color: AppColors.textSecondary),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w700,
+          ),
         ),
+        const SizedBox(height: AppSpacing.s2),
         SizedBox(
-          height: 310,
+          height: 312,
           child: ReorderableListView.builder(
             buildDefaultDragHandles: false,
             itemCount: _images.length,
@@ -849,46 +871,73 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                 ReorderableDelayedDragStartListener(
                   key: ObjectKey(_images[index]),
                   index: index,
-                  child: ListTile(
-                    leading: GestureDetector(
-                      onTap: () => _preview(index),
-                      child: Image.memory(
-                        _images[index],
-                        width: 52,
-                        height: 58,
-                        fit: BoxFit.cover,
-                        cacheWidth: 120,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.s2),
+                    child: AppCard(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s3,
+                        vertical: AppSpacing.s2,
                       ),
-                    ),
-                    title: Text('第${index + 1}张'),
-                    subtitle: Text(
-                      '${(_images[index].length / 1024).round()} KB',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: '旋转',
-                          onPressed: _busy ? null : () => _rotate(index),
-                          icon: const Icon(Icons.rotate_right),
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: GestureDetector(
+                          onTap: () => _preview(index),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                            child: Image.memory(
+                              _images[index],
+                              width: 52,
+                              height: 56,
+                              fit: BoxFit.cover,
+                              cacheWidth: 120,
+                            ),
+                          ),
                         ),
-                        IconButton(
-                          tooltip: '移除',
-                          onPressed: _busy
-                              ? null
-                              : () => setState(() => _images.removeAt(index)),
-                          icon: const Icon(Icons.close),
+                        title: Text(
+                          '第${index + 1}张',
+                          style: AppTextStyles.bodyMd.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
-                        Icon(Icons.drag_handle, color: AppColors.textTertiary),
-                      ],
+                        subtitle: Text(
+                          '${(_images[index].length / 1024).round()} KB',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: '旋转',
+                              onPressed: _busy ? null : () => _rotate(index),
+                              icon: const Icon(Icons.rotate_right),
+                            ),
+                            IconButton(
+                              tooltip: '移除',
+                              onPressed: _busy
+                                  ? null
+                                  : () =>
+                                        setState(() => _images.removeAt(index)),
+                              icon: const Icon(Icons.close),
+                            ),
+                            Icon(
+                              Icons.drag_handle,
+                              color: AppColors.textTertiary,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
           ),
         ),
       ],
+      const SizedBox(height: AppSpacing.s2),
       Wrap(
-        spacing: 8,
+        spacing: AppSpacing.s2,
         children: [
           TextButton.icon(
             onPressed: _busy ? null : () => _pick(ImageSource.camera),
@@ -902,7 +951,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
           ),
         ],
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: AppSpacing.s3),
       FilledButton(
         onPressed: _busy ? null : _start,
         child: Text(_busy ? '正在处理…' : '开始分析'),
@@ -912,37 +961,64 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
   Widget _progress() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text(
-        '分析目标：${widget.incident.displayName}',
-        style: const TextStyle(fontWeight: FontWeight.w600),
-      ),
-      const SizedBox(height: 12),
-      if (['queued', 'processing'].contains(_task?['status']))
-        const LinearProgressIndicator(),
-      for (final p in _pages)
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(
-            p['status'] == 'succeeded'
-                ? Icons.check_circle_outline
-                : p['status'] == 'failed'
-                ? Icons.error_outline
-                : Icons.hourglass_empty,
-            color: p['status'] == 'failed'
-                ? AppColors.alarm
-                : AppColors.textSecondary,
-          ),
-          title: Text('第${p['index']}页'),
-          subtitle: Text(
-            {
-                  'queued': '等待分析',
-                  'processing': '正在分析',
-                  'succeeded': '识别完成',
-                  'failed': '识别失败，可重试',
-                }[p['status']] ??
-                p['status'].toString(),
-          ),
+      AppCard(
+        padding: const EdgeInsets.all(AppSpacing.s4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '分析目标：${widget.incident.displayName}',
+              style: AppTextStyles.bodyMd.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s3),
+            if (['queued', 'processing'].contains(_task?['status'])) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: AppSpacing.s2),
+            ],
+            for (final p in _pages)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  p['status'] == 'succeeded'
+                      ? Icons.check_circle_outline
+                      : p['status'] == 'failed'
+                      ? Icons.error_outline
+                      : Icons.hourglass_empty,
+                  color: p['status'] == 'succeeded'
+                      ? AppColors.safe
+                      : p['status'] == 'failed'
+                      ? AppColors.alarm
+                      : AppColors.textSecondary,
+                ),
+                title: Text(
+                  '第${p['index']}页',
+                  style: AppTextStyles.bodyMd.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                subtitle: Text(
+                  {
+                        'queued': '等待分析',
+                        'processing': '正在分析',
+                        'succeeded': '识别完成',
+                        'failed': '识别失败，可重试',
+                      }[p['status']] ??
+                      p['status'].toString(),
+                  style: AppTextStyles.caption.copyWith(
+                    color: p['status'] == 'failed'
+                        ? AppColors.alarm
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+          ],
         ),
+      ),
+      const SizedBox(height: AppSpacing.s2),
       if (_pages.any((p) => p['status'] == 'failed'))
         TextButton(
           onPressed: _busy ? null : _retry,
@@ -953,9 +1029,11 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
         onPressed: _busy ? null : _cancelTask,
         child: const Text('取消本次导入'),
       ),
+      const SizedBox(height: AppSpacing.s1),
       Text(
         '可返回现场继续工作，稍后从导入入口恢复任务。',
-        style: TextStyle(color: AppColors.textTertiary),
+        textAlign: TextAlign.center,
+        style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
       ),
     ],
   );
@@ -964,8 +1042,13 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('上次提交结果尚未确认。为避免重复或提交不同内容，先重试原提交，或取消本次导入。'),
-          const SizedBox(height: 12),
+          Text(
+            '上次提交结果尚未确认。为避免重复或提交不同内容，先重试原提交，或取消本次导入。',
+            style: AppTextStyles.bodyMd.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s3),
           FilledButton(
             onPressed: _busy ? null : _apply,
             child: const Text('重试原提交（防重复）'),
@@ -986,9 +1069,9 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       children: [
         Text(
           '更新目标：${_currentIncident.displayName}',
-          style: TextStyle(color: AppColors.textSecondary),
+          style: AppTextStyles.label.copyWith(color: AppColors.textSecondary),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.s3),
         if (multiple)
           _section('识别到多起警情，请选择一页继续', [
             DropdownButtonFormField<int>(
@@ -1023,8 +1106,19 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
           ),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('应用此名称'),
-            subtitle: Text('当前：${_currentIncident.displayName}'),
+            title: Text(
+              '应用此名称',
+              style: AppTextStyles.bodyMd.copyWith(
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            subtitle: Text(
+              '当前：${_currentIncident.displayName}',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
             value: _replaceTitle,
             onChanged: (v) => setState(() => _replaceTitle = v == true),
           ),
@@ -1032,22 +1126,31 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
         _section('警情资料', [
           Text(
             '${_fields['original_category']!.text} · ${_fields['specific_type']!.text}',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            style: AppTextStyles.bodyMd.copyWith(
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.s1),
           Text(
             _fields['location']!.text.isEmpty
                 ? '地点待补充'
                 : _fields['location']!.text,
-            style: TextStyle(color: AppColors.textSecondary),
+            style: AppTextStyles.label.copyWith(color: AppColors.textSecondary),
           ),
           ExpansionTile(
             tilePadding: EdgeInsets.zero,
-            title: const Text('核对或修改详细资料', style: TextStyle(fontSize: 13)),
+            title: Text(
+              '核对或修改详细资料',
+              style: AppTextStyles.label.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             children: [
               for (final item in _fields.entries)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.only(bottom: AppSpacing.s2),
                   child: TextField(
                     controller: item.value,
                     minLines: 1,
@@ -1070,7 +1173,9 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
               if (_draftDetails['specific_type_inferred'] == true)
                 Text(
                   '具体类型由描述推断，请核对。',
-                  style: TextStyle(color: AppColors.textSecondary),
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
             ],
           ),
@@ -1082,13 +1187,23 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
               value: _forces[i]['selected'] == true,
               onChanged: (v) =>
                   setState(() => _forces[i]['selected'] = v == true),
-              title: Text(_forces[i]['station_name'].toString()),
+              title: Text(
+                _forces[i]['station_name'].toString(),
+                style: AppTextStyles.bodyMd.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
               subtitle: Text(
                 '${_forces[i]['vehicle_count'] == null ? '车辆待补充' : '${_forces[i]['vehicle_count']}车'} · ${_forces[i]['personnel_count'] == null ? '人数待补充' : '${_forces[i]['personnel_count']}人'}\n${_forces[i]['target_force_id'] != null
                     ? '匹配已登记队伍，将更新所选数量'
                     : _forces[i]['matched_name'] != null
                     ? '匹配：${_forces[i]['matched_name']}'
                     : '未匹配，可直接登记新队伍'}',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
               ),
               secondary: IconButton(
                 tooltip: '编辑与匹配',
@@ -1096,14 +1211,23 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                 icon: const Icon(Icons.edit_outlined, size: 19),
               ),
             ),
+          const SizedBox(height: AppSpacing.s1),
           Text(
             '通报出动／调派不代表到场，不计入个人进场记录。',
-            style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textTertiary,
+            ),
           ),
         ]),
         ExpansionTile(
           tilePadding: EdgeInsets.zero,
-          title: const Text('岗位人员、风险与通信装备'),
+          title: Text(
+            '岗位人员、风险与通信装备',
+            style: AppTextStyles.bodyMd.copyWith(
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
           children: [
             TextField(
               controller: _contacts,
@@ -1113,7 +1237,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
             ),
             for (final entry in _extra.entries)
               Padding(
-                padding: const EdgeInsets.only(top: 10),
+                padding: const EdgeInsets.only(top: AppSpacing.s2),
                 child: TextField(
                   controller: entry.value,
                   minLines: 1,
@@ -1134,10 +1258,17 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
         ),
         ExpansionTile(
           tilePadding: EdgeInsets.zero,
-          title: const Text('原始通报与提取文字'),
+          title: Text(
+            '原始通报与提取文字',
+            style: AppTextStyles.bodyMd.copyWith(
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
           children: [
             if (_task?['source'] == 'images')
               Wrap(
+                spacing: AppSpacing.s2,
                 children: [
                   for (final p in _pages)
                     TextButton.icon(
@@ -1150,9 +1281,13 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
               ),
             for (final p in _pages)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
                 child: SelectableText(
                   '第${p['index']}页\n${p['result']?['raw_text'] ?? p['text'] ?? '未识别'}',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
                 ),
               ),
             TextButton(
@@ -1175,12 +1310,23 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
         if (conflicts.isNotEmpty)
           _section('识别存在差异，请核对', [
             for (final c in conflicts)
-              Text(
-                '第${c['page']}页 · ${incidentFieldLabels[c['field']] ?? c['field']}：${c['value']}',
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.s1),
+                child: Text(
+                  '第${c['page']}页 · ${incidentFieldLabels[c['field']] ?? c['field']}：${c['value']}',
+                  style: AppTextStyles.label.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                ),
               ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('已核对差异并修正上方资料'),
+              title: Text(
+                '已核对差异并修正上方资料',
+                style: AppTextStyles.bodyMd.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+              ),
               value: _reviewed,
               onChanged: (v) => setState(() => _reviewed = v == true),
             ),
@@ -1188,7 +1334,12 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
         if (_task?['status'] == 'partial')
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('部分图片未识别，确认使用当前不完整资料'),
+            title: Text(
+              '部分图片未识别，确认使用当前不完整资料',
+              style: AppTextStyles.bodyMd.copyWith(
+                color: AppColors.textPrimary,
+              ),
+            ),
             value: _acceptIncomplete,
             onChanged: (v) => setState(() => _acceptIncomplete = v == true),
           ),
@@ -1201,7 +1352,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
           onPressed: _busy ? null : _loadDraft,
           child: const Text('刷新差异（重新载入识别草稿）'),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.s2),
         FilledButton(
           onPressed:
               _busy ||
@@ -1233,18 +1384,29 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       if (didPop && !_applied) _timer?.cancel();
     },
     child: Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(title: Text(_ready ? '确认导入信息' : '导入警情信息')),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.s4,
+            AppSpacing.s3,
+            AppSpacing.s4,
+            AppSpacing.s6,
+          ),
           children: [
             if (_error != null)
               Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: AppSpacing.s3),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_error!, style: TextStyle(color: AppColors.alarm)),
+                    Text(
+                      _error!,
+                      style: AppTextStyles.label.copyWith(
+                        color: AppColors.alarm,
+                      ),
+                    ),
                     if (_error!.contains('权限'))
                       TextButton(
                         onPressed: StorageService.openAppSettings,

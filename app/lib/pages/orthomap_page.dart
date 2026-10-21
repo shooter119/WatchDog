@@ -38,12 +38,18 @@ class _OrthomapPageState extends State<OrthomapPage> {
         if (snapshot.hasError) {
           return Center(
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(AppSpacing.s6),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('地图暂时无法加载，请检查网络或重新认证'),
-                  const SizedBox(height: 16),
+                  Text(
+                    '地图暂时无法加载，请检查网络或重新认证',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodyMd.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.s4),
                   FilledButton(
                     onPressed: () => setState(_load),
                     child: const Text('重试'),
@@ -71,11 +77,11 @@ class _OrthomapPageState extends State<OrthomapPage> {
           itemBuilder: (context, index) {
             final map = maps[index];
             return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.only(bottom: AppSpacing.s2),
               child: AppCard(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+                  horizontal: AppSpacing.s3,
+                  vertical: AppSpacing.s2,
                 ),
                 onTap: () => Navigator.push(
                   context,
@@ -85,12 +91,12 @@ class _OrthomapPageState extends State<OrthomapPage> {
                   ),
                 ),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 52),
+                  constraints: const BoxConstraints(minHeight: 44),
                   child: Row(
                     children: [
                       Container(
-                        width: 36,
-                        height: 36,
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
                           color: AppColors.surfaceSubtle,
                           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -101,7 +107,7 @@ class _OrthomapPageState extends State<OrthomapPage> {
                           color: AppColors.textSecondary,
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: AppSpacing.s3),
                       Expanded(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -111,23 +117,25 @@ class _OrthomapPageState extends State<OrthomapPage> {
                             Text(
                               map['name'] as String,
                               style: AppTextStyles.bodyMd.copyWith(
+                                height: 1.3,
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.textPrimary,
                               ),
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(height: AppSpacing.s1),
                             Text(
                               map['demo'] == true
                                   ? '演示影像 · 非真实现场，不可用于定位'
                                   : '正射影像 · 图片坐标，支持缩放和拖动',
                               style: AppTextStyles.caption.copyWith(
+                                height: 1.3,
                                 color: AppColors.textTertiary,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: AppSpacing.s2),
                       Icon(
                         Icons.chevron_right,
                         size: 18,
@@ -188,7 +196,14 @@ class _MapViewerState extends State<_MapViewer> {
           return Scaffold(
             backgroundColor: AppColors.background,
             appBar: AppBar(title: const Text('现场地图')),
-            body: const Center(child: Text('认证已失效，请返回后重新认证')),
+            body: Center(
+              child: Text(
+                '认证已失效，请返回后重新认证',
+                style: AppTextStyles.bodyMd.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
           );
         }
         return Scaffold(
@@ -208,12 +223,23 @@ class _MapViewerState extends State<_MapViewer> {
             children: [
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                color: Theme.of(context).colorScheme.secondaryContainer,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s4,
+                  vertical: AppSpacing.s2,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSubtle,
+                  border: Border(
+                    bottom: BorderSide(color: AppColors.border),
+                  ),
+                ),
                 child: Text(
                   widget.map['demo'] == true
                       ? '演示影像（非实景） · 仅验证查看功能，不可用于定位'
                       : '图片像素坐标 · 无经纬度定位 · 双指缩放，拖动查看',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
               if (_tileFailed)

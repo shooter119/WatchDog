@@ -208,13 +208,13 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
                   const _VideoIntro(),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: AppSpacing.s3),
                   if (_loading) const LinearProgressIndicator(),
                   if (_error != null) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: AppSpacing.s3),
                     _LoadFailure(error: _error!, onRetry: _load),
                   ],
                   if (!_loading && _error == null && _resources.isEmpty)
@@ -235,7 +235,7 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
                       onFullscreen: () => _showFullscreen(resource),
                       onFloating: () => _showFloating(resource),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: AppSpacing.s2),
                   ],
                 ],
               ),
@@ -268,37 +268,36 @@ class VideoResourceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       onTap: expandedPlayer == null ? onTap : null,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s2,
+      ),
       child: Column(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: AppColors.heroBackground,
-                  borderRadius: BorderRadius.circular(AppRadius.md),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.heroBackground,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Icon(
+                    Icons.videocam_rounded,
+                    color: AppColors.heroOnDark,
+                    size: 22,
+                  ),
                 ),
-                child: Icon(
-                  Icons.videocam_rounded,
-                  color: AppColors.heroOnDark,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.fromLTRB(9, 6, 10, 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceSubtle,
-                        borderRadius: BorderRadius.circular(AppRadius.sm),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Row(
+                const SizedBox(width: AppSpacing.s3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
                         children: [
                           Tooltip(
                             message: available == null
@@ -316,8 +315,8 @@ class VideoResourceCard extends StatelessWidget {
                                 key: ValueKey(
                                   'video-resource-status-${resource.id}',
                                 ),
-                                width: 9,
-                                height: 9,
+                                width: 8,
+                                height: 8,
                                 decoration: BoxDecoration(
                                   color: available == null
                                       ? AppColors.textTertiary
@@ -329,54 +328,54 @@ class VideoResourceCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: AppSpacing.s2),
                           Expanded(
                             child: Text(
                               resource.name,
-                              maxLines: 2,
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
+                              style: AppTextStyles.bodyMd.copyWith(
+                                height: 1.3,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
                               ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      resource.description.trim().isEmpty
-                          ? '已授权视频画面'
-                          : resource.description.trim(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: AppColors.textSecondary,
-                        height: 1.4,
+                      const SizedBox(height: AppSpacing.s1),
+                      Text(
+                        resource.description.trim().isEmpty
+                            ? '已授权视频画面'
+                            : resource.description.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(
+                          height: 1.3,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+                if (expandedPlayer == null) ...[
+                  const SizedBox(width: AppSpacing.s2),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceSubtle,
+                      shape: BoxShape.circle,
                     ),
-                  ],
-                ),
-              ),
-              if (expandedPlayer == null) ...[
-                const SizedBox(width: 8),
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceSubtle,
-                    shape: BoxShape.circle,
+                    child: Icon(
+                      Icons.play_arrow_rounded,
+                      color: AppColors.actionPrimary,
+                      size: 22,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.play_arrow_rounded,
-                    color: AppColors.actionPrimary,
-                    size: 28,
-                  ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
           AnimatedSize(
             duration: const Duration(milliseconds: 220),
@@ -385,9 +384,9 @@ class VideoResourceCard extends StatelessWidget {
             child: expandedPlayer == null
                 ? const SizedBox.shrink()
                 : Padding(
-                    padding: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.only(top: AppSpacing.s3),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                       child: AspectRatio(
                         key: ValueKey('video-resource-expanded-${resource.id}'),
                         aspectRatio: 16 / 9,
@@ -396,8 +395,8 @@ class VideoResourceCard extends StatelessWidget {
                           children: [
                             expandedPlayer!,
                             Positioned(
-                              top: 8,
-                              right: 8,
+                              top: AppSpacing.s2,
+                              right: AppSpacing.s2,
                               child: Row(
                                 children: [
                                   PlayerOverlayButton(
@@ -408,7 +407,7 @@ class VideoResourceCard extends StatelessWidget {
                                     icon: Icons.fullscreen_rounded,
                                     onPressed: onFullscreen ?? () {},
                                   ),
-                                  const SizedBox(width: 2),
+                                  const SizedBox(width: AppSpacing.s1),
                                   PlayerOverlayButton(
                                     key: ValueKey(
                                       'video-resource-floating-${resource.id}',
@@ -417,7 +416,7 @@ class VideoResourceCard extends StatelessWidget {
                                     icon: Icons.picture_in_picture_alt_rounded,
                                     onPressed: onFloating ?? () {},
                                   ),
-                                  const SizedBox(width: 2),
+                                  const SizedBox(width: AppSpacing.s1),
                                   PlayerOverlayButton(
                                     key: ValueKey(
                                       'video-resource-close-${resource.id}',
@@ -447,21 +446,32 @@ class _VideoIntro extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s2,
+      ),
       decoration: BoxDecoration(
         color: AppColors.surfaceSubtle,
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(Icons.live_tv_rounded, color: AppColors.actionPrimary),
-          const SizedBox(width: 10),
-          const Expanded(
+          Icon(
+            Icons.live_tv_rounded,
+            size: 18,
+            color: AppColors.actionPrimary,
+          ),
+          const SizedBox(width: AppSpacing.s2),
+          Expanded(
             child: Text(
               '仅展示本单位管理员启用的授权视频资源。点击资源后在卡片内展开并播放实时画面。',
-              style: TextStyle(fontSize: 13, height: 1.5),
+              style: AppTextStyles.bodyMd.copyWith(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
             ),
           ),
         ],
@@ -476,7 +486,10 @@ class _EmptyResources extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 20),
+      padding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.s10,
+        horizontal: AppSpacing.s5,
+      ),
       child: Column(
         children: [
           Icon(
@@ -484,16 +497,20 @@ class _EmptyResources extends StatelessWidget {
             size: 48,
             color: AppColors.textTertiary,
           ),
-          const SizedBox(height: 14),
-          const Text(
+          const SizedBox(height: AppSpacing.s3),
+          Text(
             '暂无可用视频资源',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            style: AppTextStyles.bodyMd.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.s1),
           Text(
             '管理员可在设置页添加并启用视频资源',
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: AppTextStyles.bodyMd.copyWith(
               color: AppColors.textSecondary,
               fontSize: 13,
               height: 1.5,
@@ -514,26 +531,28 @@ class _LoadFailure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.s4),
       child: Column(
         children: [
-          Icon(Icons.cloud_off_outlined, color: AppColors.alarm, size: 34),
-          const SizedBox(height: 10),
-          const Text(
+          Icon(Icons.cloud_off_outlined, color: AppColors.alarm, size: 32),
+          const SizedBox(height: AppSpacing.s2),
+          Text(
             '视频资源加载失败',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            style: AppTextStyles.bodyMd.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpacing.s1),
           Text(
             error,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
-              fontSize: 12,
-              height: 1.45,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.s3),
           OutlinedButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh_rounded),
@@ -554,31 +573,33 @@ class _AuthRequired extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.all(AppSpacing.s6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               Icons.lock_outline_rounded,
-              size: 52,
+              size: 48,
               color: AppColors.textTertiary,
             ),
-            const SizedBox(height: 16),
-            const Text(
+            const SizedBox(height: AppSpacing.s4),
+            Text(
               '需要完成单位认证',
-              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+              style: AppTextStyles.h2.copyWith(
+                color: AppColors.textPrimary,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.s2),
             Text(
               '视频资源仅向本单位已认证成员开放，请先退出游客模式并完成认证。',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: AppTextStyles.bodyMd.copyWith(
                 color: AppColors.textSecondary,
                 fontSize: 14,
-                height: 1.55,
+                height: 1.5,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: AppSpacing.s4),
             FilledButton.icon(
               onPressed: onAuthenticate,
               icon: const Icon(Icons.verified_user_outlined),

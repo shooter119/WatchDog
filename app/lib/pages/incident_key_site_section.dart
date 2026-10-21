@@ -209,14 +209,14 @@ class _IncidentLinkState extends State<_IncidentLink> {
         : (_state == null ? widget.incident.keySiteLink : null);
     final compactAction = TextButton.styleFrom(
       minimumSize: const Size(48, 48),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
     );
     final compactOutlined = OutlinedButton.styleFrom(
       minimumSize: const Size(48, 48),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
     );
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.only(top: AppSpacing.s1, bottom: AppSpacing.s3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -231,35 +231,32 @@ class _IncidentLinkState extends State<_IncidentLink> {
               ),
             ),
             if (_state?['newVersionAvailable'] == true) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.s1),
               Text(
                 '已有新版资料，请人工核对后更新',
                 style: AppTextStyles.caption.copyWith(
-                  fontSize: 12.5,
                   color: AppColors.caution,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ],
             if (_state?['active'] == false) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.s1),
               Text(
                 '重点单位已停用，保留历史引用',
                 style: AppTextStyles.caption.copyWith(
-                  fontSize: 12.5,
                   color: AppColors.textSecondary,
                 ),
               ),
             ],
-            const SizedBox(height: 6),
+            const SizedBox(height: AppSpacing.s2),
           ],
           if (_error != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.only(bottom: AppSpacing.s2),
               child: Text(
                 keySiteError(_error!),
                 style: AppTextStyles.caption.copyWith(
-                  fontSize: 12.5,
                   color: AppColors.alarm,
                 ),
               ),
@@ -276,7 +273,7 @@ class _IncidentLinkState extends State<_IncidentLink> {
                     label: const Text('单位资料'),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: AppSpacing.s1),
                 TextButton(
                   key: const Key('key-site-change'),
                   onPressed: _busy || _state == null ? null : _change,
@@ -293,8 +290,8 @@ class _IncidentLinkState extends State<_IncidentLink> {
             )
           else
             Wrap(
-              spacing: 8,
-              runSpacing: 4,
+              spacing: AppSpacing.s2,
+              runSpacing: AppSpacing.s1,
               children: [
                 if (link != null)
                   OutlinedButton.icon(

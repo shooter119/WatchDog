@@ -32,13 +32,18 @@ class _NotesPageState extends State<NotesPage> {
           Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.s4,
+                  AppSpacing.s3,
+                  AppSpacing.s4,
+                  AppSpacing.s2,
+                ),
                 child: largeText || width < 300
                     ? Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           const Text('火场日志', style: AppTextStyles.h1),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: AppSpacing.s2),
                           Align(
                             alignment: Alignment.centerRight,
                             child: _buildConnectionStatus(),
@@ -62,7 +67,12 @@ class _NotesPageState extends State<NotesPage> {
                       ? _buildEmpty()
                       : ListView.builder(
                           physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.s4,
+                            AppSpacing.s3,
+                            AppSpacing.s4,
+                            100,
+                          ),
                           itemCount: filtered.length,
                           itemBuilder: (context, i) => _TimelineNoteCard(
                             note: filtered[i],
@@ -74,7 +84,11 @@ class _NotesPageState extends State<NotesPage> {
               ),
             ],
           ),
-          Positioned(right: 16, bottom: 16, child: _buildManualLogFab()),
+          Positioned(
+            right: AppSpacing.s4,
+            bottom: AppSpacing.s4,
+            child: _buildManualLogFab(),
+          ),
         ],
       ),
     );
@@ -112,14 +126,14 @@ class _NotesPageState extends State<NotesPage> {
   /// 分类筛选 chips（全部 + 6 类）
   Widget _buildFilterChips() {
     return SizedBox(
-      height: 40,
+      height: AppSpacing.s10,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
         children: [
           for (final c in ['全部', ...NoteCategory.all])
             Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(right: AppSpacing.s2),
               child: FilterChip(
                 label: Text(c),
                 selected: _filter == c,
@@ -128,8 +142,7 @@ class _NotesPageState extends State<NotesPage> {
                 selectedColor: NoteColor.of(
                   c == '全部' ? null : c,
                 ).withValues(alpha: 0.22),
-                labelStyle: TextStyle(
-                  fontSize: 13,
+                labelStyle: AppTextStyles.label.copyWith(
                   fontWeight: _filter == c ? FontWeight.w800 : FontWeight.w600,
                   color: _filter == c
                       ? NoteColor.of(c == '全部' ? null : c)
@@ -158,27 +171,25 @@ class _NotesPageState extends State<NotesPage> {
           size: 64,
           color: AppColors.textTertiary.withValues(alpha: 0.5),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.s4),
         Center(
           child: Text(
             '还没有日志记录',
-            style: TextStyle(
+            style: AppTextStyles.bodyLg.copyWith(
               color: AppColors.textSecondary,
-              fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.s2),
         Center(
           child: Text(
             widget.controller.requiresIncident
                 ? '请先选择或新建警情，再记录火场日志'
                 : '按住底部语音按钮说话，非报数内容将自动记入日志\n也可点击右下角加号手动记录',
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: AppTextStyles.label.copyWith(
               color: AppColors.textTertiary,
-              fontSize: 13,
               height: 1.5,
             ),
           ),
@@ -214,37 +225,36 @@ class _NotesPageState extends State<NotesPage> {
                 maxHeight:
                     (MediaQuery.sizeOf(ctx).height -
                             MediaQuery.of(ctx).viewInsets.bottom -
-                            20)
+                            AppSpacing.s5)
                         .clamp(160.0, double.infinity)
                         .toDouble(),
               ),
               child: SingleChildScrollView(
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                padding: const EdgeInsets.all(AppSpacing.s5),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
                       note == null ? '手动记录' : '编辑日志',
-                      style: TextStyle(
+                      style: AppTextStyles.h2.copyWith(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
                       ),
                     ),
                     if (note != null) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: AppSpacing.s2),
                       Text(
                         _fmtFullTime(note.createdAt),
-                        style: TextStyle(
-                          fontSize: 12,
+                        style: AppTextStyles.caption.copyWith(
                           color: AppColors.textTertiary,
                         ),
                       ),
                     ],
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.s4),
                     TextField(
                       controller: controller,
                       maxLines: 4,
@@ -254,10 +264,10 @@ class _NotesPageState extends State<NotesPage> {
                         alignLabelWithHint: true,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.s3),
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                      spacing: AppSpacing.s2,
+                      runSpacing: AppSpacing.s2,
                       children: [
                         for (final c in NoteCategory.all)
                           ChoiceChip(
@@ -267,8 +277,7 @@ class _NotesPageState extends State<NotesPage> {
                             selectedColor: NoteColor.of(
                               c,
                             ).withValues(alpha: 0.22),
-                            labelStyle: TextStyle(
-                              fontSize: 13,
+                            labelStyle: AppTextStyles.label.copyWith(
                               fontWeight: category == c
                                   ? FontWeight.w800
                                   : FontWeight.w600,
@@ -280,7 +289,7 @@ class _NotesPageState extends State<NotesPage> {
                           ),
                       ],
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: AppSpacing.s5),
                     SizedBox(
                       height: 52,
                       child: FilledButton.icon(
@@ -297,7 +306,7 @@ class _NotesPageState extends State<NotesPage> {
                       ),
                     ),
                     if (note != null) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpacing.s2),
                       TextButton.icon(
                         onPressed: () => Navigator.pop(ctx, {'delete': true}),
                         icon: const Icon(Icons.delete_outline, size: 18),
@@ -437,17 +446,17 @@ class _TimelineNoteCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            width: 28,
+            width: AppSpacing.s5,
             child: Column(
               children: [
                 Container(
-                  width: 12,
-                  height: 12,
-                  margin: const EdgeInsets.only(top: 18),
+                  width: AppSpacing.s3,
+                  height: AppSpacing.s3,
+                  margin: const EdgeInsets.only(top: AppSpacing.s4),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: color,
-                    border: Border.all(color: AppColors.heroOnDark, width: 2),
+                    border: Border.all(color: AppColors.surface, width: 2),
                   ),
                 ),
                 if (!isLast)
@@ -460,22 +469,26 @@ class _TimelineNoteCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: AppSpacing.s2),
           Expanded(
             child: Padding(
-              padding: EdgeInsets.only(bottom: isLast ? 0 : 14),
+              padding: EdgeInsets.only(bottom: isLast ? 0 : AppSpacing.s3),
               child: AppCard(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s4,
+                  vertical: AppSpacing.s3,
+                ),
                 onTap: onTap,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
+                            horizontal: AppSpacing.s2,
+                            vertical: AppSpacing.s1,
                           ),
                           decoration: BoxDecoration(
                             color: color.withValues(alpha: 0.14),
@@ -483,46 +496,42 @@ class _TimelineNoteCard extends StatelessWidget {
                           ),
                           child: Text(
                             note.category,
-                            style: TextStyle(
+                            style: AppTextStyles.caption.copyWith(
                               color: color,
-                              fontSize: 11,
+                              height: 1.1,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
+                        const SizedBox(width: AppSpacing.s2),
+                        Text(
+                          _time,
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
                         const Spacer(),
+                        const SizedBox(width: AppSpacing.s2),
                         Flexible(
                           child: Text(
                             note.author.isEmpty ? '匿名' : note.author,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.right,
-                            style: TextStyle(
+                            style: AppTextStyles.caption.copyWith(
                               color: AppColors.textTertiary,
-                              fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _time,
-                          style: TextStyle(
-                            color: AppColors.textTertiary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.s2),
                     Text(
                       note.text,
-                      style: TextStyle(
+                      style: AppTextStyles.bodyMd.copyWith(
                         color: AppColors.textPrimary,
-                        fontSize: 15,
-                        height: 1.5,
-                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
