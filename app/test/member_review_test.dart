@@ -18,6 +18,7 @@ const applicant = UnitMember(
   stationName: '一站',
   applyReason: '调入',
   createdAt: 1700000000000,
+  inRoster: true,
 );
 
 class ReviewApi extends ApiClient {
@@ -183,6 +184,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('测试申请人'), findsOneWidget);
+    expect(find.text('已在语音名单'), findsOneWidget);
     expect(find.text('申请单位：测试单位'), findsOneWidget);
     expect(find.text('申请说明：调入'), findsOneWidget);
     await tester.tap(find.text('同意入队'));

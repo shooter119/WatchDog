@@ -251,6 +251,18 @@ class _RosterPageState extends State<RosterPage>
     );
   }
 
+  Widget _buildRosterNotice() => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Text(
+      '本名单只用于提升语音识别准确率，不授予登录权限；成员能否登录由『设置 → 入队审批』批准决定。',
+      style: AppTextStyles.caption.copyWith(
+        color: AppColors.textTertiary,
+        fontSize: 12.5,
+        height: 1.4,
+      ),
+    ),
+  );
+
   Widget _buildList({required bool isFirefighter}) {
     final items = isFirefighter
         ? widget.controller.firefighters
@@ -258,53 +270,65 @@ class _RosterPageState extends State<RosterPage>
     final hasPending = isFirefighter && widget.controller.canReviewMembers;
 
     if (items.isEmpty && !hasPending) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.border),
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        children: [
+          _buildRosterNotice(),
+          const SizedBox(height: 56),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.surface,
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Icon(
+                  isFirefighter ? Icons.group_outlined : Icons.interpreter_mode,
+                  size: 40,
+                  color: AppColors.textTertiary,
+                ),
               ),
-              child: Icon(
-                isFirefighter ? Icons.group_outlined : Icons.interpreter_mode,
-                size: 40,
-                color: AppColors.textTertiary,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              isFirefighter ? '暂无消防员，先添加几人吧' : '暂无专业术语',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 4),
-            if (!isFirefighter)
+              const SizedBox(height: 18),
               Text(
-                '例如：空气呼吸器、水枪阵地、破拆工具',
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 12.5),
+                isFirefighter ? '暂无消防员，先添加几人吧' : '暂无专业术语',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-          ],
-        ),
+              const SizedBox(height: 4),
+              if (!isFirefighter)
+                Text(
+                  '例如：空气呼吸器、水枪阵地、破拆工具',
+                  style: TextStyle(
+                    color: AppColors.textTertiary,
+                    fontSize: 12.5,
+                  ),
+                ),
+            ],
+          ),
+        ],
       );
     }
 
-    final totalCount = items.length + (hasPending ? 1 : 0);
+    final headerCount = 1 + (hasPending ? 1 : 0);
+    final totalCount = items.length + headerCount;
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       itemCount: totalCount,
       itemBuilder: (context, i) {
-        if (hasPending && i == 0) {
+        if (i == 0) {
+          return _buildRosterNotice();
+        }
+        if (hasPending && i == 1) {
           return _buildPendingSection();
         }
-        final itemIndex = hasPending ? i - 1 : i;
+        final itemIndex = i - headerCount;
         final item = items[itemIndex];
         final String id = (item as dynamic).id;
         final String label = isFirefighter

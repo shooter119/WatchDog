@@ -3960,6 +3960,158 @@ void main() {
         await tester.pump();
         expect(find.text('设置'), findsOneWidget);
       });
+
+      testWidgets('MEMBER_ROSTER_ONLY 弹窗出现并可提交入队申请', (tester) async {
+        await Settings.clearPendingApplication();
+        addTearDown(Settings.clearPendingApplication);
+        String? appliedUnit;
+        String? appliedName;
+        String? appliedCode;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: Scaffold(
+              body: IncidentSelectionOverlay(
+                authenticationRequired: true,
+                activeIncidents: const [],
+                loading: false,
+                onSelect: (_) async {},
+                onCreate: () async {},
+                onAuthenticate: (_, __, ___) async {
+                  throw ApiException(
+                    '该姓名还没有登录权限',
+                    statusCode: 403,
+                    code: 'MEMBER_ROSTER_ONLY',
+                  );
+                },
+                onApply: (unitName, realName, unitCode, {stationName, phone, applyReason}) async {
+                  appliedUnit = unitName;
+                  appliedName = realName;
+                  appliedCode = unitCode;
+                  await Settings.setPendingApplication(
+                    unitName: unitName,
+                    unitCode: unitCode,
+                    realName: realName,
+                  );
+                  return {'status': 'pending'};
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('auth-unit-name')),
+          '龙游县消防救援大队',
+        );
+        await tester.enterText(find.byKey(const Key('auth-real-name')), '祝徐迁');
+        await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
+        await tester.tap(find.byKey(const Key('auth-submit')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('该姓名还没有登录权限'), findsOneWidget);
+        expect(
+          find.text(
+            '「祝徐迁」已在语音识别名单中，但还没有登录权限。请提交入队申请，管理员在「设置 → 入队审批」批准后即可登录。',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('提交入队申请'), findsOneWidget);
+        expect(find.text('返回修改'), findsOneWidget);
+
+        await tester.tap(find.text('提交入队申请'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(appliedUnit, '龙游县消防救援大队');
+        expect(appliedName, '祝徐迁');
+        expect(appliedCode, '0570');
+        expect(
+          find.textContaining('设置 → 入队审批'),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('MEMBER_NOT_ALLOWED 带 suggestions 时点击候选填充姓名输入框且不自动提交，也可仍要提交申请', (
+        tester,
+      ) async {
+        await Settings.clearPendingApplication();
+        addTearDown(Settings.clearPendingApplication);
+        var authCalls = 0;
+        var applyCalls = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: Scaffold(
+              body: IncidentSelectionOverlay(
+                authenticationRequired: true,
+                activeIncidents: const [],
+                loading: false,
+                onSelect: (_) async {},
+                onCreate: () async {},
+                onAuthenticate: (_, __, ___) async {
+                  authCalls++;
+                  throw ApiException(
+                    '没有找到这个姓名',
+                    statusCode: 403,
+                    code: 'MEMBER_NOT_ALLOWED',
+                    suggestions: const ['祝徐迁', '祝徐千'],
+                  );
+                },
+                onApply: (unitName, realName, unitCode, {stationName, phone, applyReason}) async {
+                  applyCalls++;
+                  return {'status': 'pending'};
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byKey(const Key('auth-unit-name')),
+          '龙游县消防救援大队',
+        );
+        await tester.enterText(find.byKey(const Key('auth-real-name')), '祝徐谦');
+        await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
+        await tester.tap(find.byKey(const Key('auth-submit')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(authCalls, 1);
+        expect(find.text('没有找到这个姓名'), findsOneWidget);
+        expect(find.text('你要找的是不是：'), findsOneWidget);
+        expect(find.text('祝徐迁'), findsOneWidget);
+        expect(find.text('祝徐千'), findsOneWidget);
+        expect(find.text('仍要提交入队申请'), findsOneWidget);
+        expect(find.text('返回修改'), findsOneWidget);
+
+        await tester.tap(find.text('祝徐迁'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        final nameField = tester.widget<TextField>(
+          find.byKey(const Key('auth-real-name')),
+        );
+        expect(nameField.controller?.text, '祝徐迁');
+        expect(authCalls, 1);
+        expect(applyCalls, 0);
+
+        // 再次点击认证，选择仍要提交入队申请
+        await tester.tap(find.byKey(const Key('auth-submit')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tap(find.text('仍要提交入队申请'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.text('未加入单位名单'), findsOneWidget);
+        await tester.tap(find.text('提交入队申请'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(applyCalls, 1);
+      });
     });
   });
 }

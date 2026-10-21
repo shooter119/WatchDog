@@ -195,14 +195,140 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             await _showAuthenticationError('您的入队申请已被站长驳回，请联系管理员或重新填写申请。');
           }
           return;
+        } else if (error.code == 'MEMBER_ROSTER_ONLY') {
+          await _promptRosterOnlyApplication(unitName, name, code);
+          return;
         } else if (error.code == 'MEMBER_NOT_ALLOWED') {
-          await _promptSubmitApplication(unitName, name, code);
+          if (error.suggestions.isNotEmpty) {
+            await _promptNameSuggestions(
+              unitName,
+              name,
+              code,
+              error.suggestions,
+            );
+          } else {
+            await _promptSubmitApplication(unitName, name, code);
+          }
           return;
         }
       }
       await _showAuthenticationError('$error');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _promptRosterOnlyApplication(
+    String unitName,
+    String realName,
+    String unitCode,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('该姓名还没有登录权限'),
+        content: Text(
+          '「$realName」已在语音识别名单中，但还没有登录权限。请提交入队申请，管理员在「设置 → 入队审批」批准后即可登录。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('返回修改'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.voice),
+            child: const Text('提交入队申请'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _submitApplication(unitName, realName, unitCode);
+    }
+  }
+
+  Future<void> _promptNameSuggestions(
+    String unitName,
+    String realName,
+    String unitCode,
+    List<String> suggestions,
+  ) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('没有找到这个姓名'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('你要找的是不是：'),
+            const SizedBox(height: AppSpacing.s2),
+            for (final candidate in suggestions)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.s2),
+                child: Material(
+                  color: AppColors.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.pop(ctx, 'select:$candidate'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s3,
+                        vertical: AppSpacing.s3,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.person_outline,
+                            size: 18,
+                            color: AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: AppSpacing.s2),
+                          Expanded(
+                            child: Text(
+                              candidate,
+                              style: AppTextStyles.bodyMd.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: AppColors.textTertiary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('返回修改'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'apply'),
+            child: const Text('仍要提交入队申请'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action.startsWith('select:')) {
+      final selected = action.substring('select:'.length);
+      _realName.text = selected;
+      _realName.selection = TextSelection.collapsed(offset: selected.length);
+      return;
+    }
+    if (action == 'apply') {
+      await _promptSubmitApplication(unitName, realName, unitCode);
     }
   }
 
@@ -585,7 +711,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  '💡 站长在手机 App【设置-队伍成员】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
+                  '💡 站长在手机 App【设置 → 入队审批】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
                   style: TextStyle(
                     color: AppColors.textTertiary,
                     fontSize: 12,

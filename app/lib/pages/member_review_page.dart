@@ -141,12 +141,38 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              member.realName,
-              style: AppTextStyles.bodyLg.copyWith(
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
+            Wrap(
+              spacing: AppSpacing.s2,
+              runSpacing: AppSpacing.s1,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  member.realName,
+                  style: AppTextStyles.bodyLg.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (member.inRoster)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s2,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.noteInfo.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                    child: Text(
+                      '已在语音名单',
+                      style: AppTextStyles.caption.copyWith(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.noteInfo,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
             Text('申请单位：${c.memberReviewUnitName}'),

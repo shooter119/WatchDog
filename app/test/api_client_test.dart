@@ -449,4 +449,47 @@ void main() {
       'Bearer session-token-123',
     ]);
   });
+
+  test('verifyUnit parses suggestions up to 3 and UnitMember parses in_roster', () async {
+    final fixture = await _jsonFixture(
+      statusCode: 403,
+      responseBody: const {
+        'error': '没有找到这个姓名',
+        'code': 'MEMBER_NOT_ALLOWED',
+        'suggestions': ['祝徐迁', ' ', '祝徐千', '祝徐乾', '多余候选'],
+      },
+    );
+    addTearDown(fixture.close);
+
+    await expectLater(
+      fixture.api.verifyUnit(
+        unitName: '测试单位',
+        unitCode: '1234',
+        realName: '祝徐谦',
+      ),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.code, 'code', 'MEMBER_NOT_ALLOWED')
+            .having(
+              (error) => error.suggestions,
+              'suggestions',
+              const ['祝徐迁', '祝徐千', '祝徐乾'],
+            ),
+      ),
+    );
+
+    final m1 = UnitMember.fromJson(const {
+      'id': 'm1',
+      'unit_id': 'u1',
+      'real_name': '祝徐迁',
+      'in_roster': true,
+    });
+    final m2 = UnitMember.fromJson(const {
+      'id': 'm2',
+      'unit_id': 'u1',
+      'real_name': '李娜',
+    });
+    expect(m1.inRoster, isTrue);
+    expect(m2.inRoster, isFalse);
+  });
 }

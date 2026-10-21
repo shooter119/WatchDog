@@ -119,6 +119,10 @@ void main() {
     await _pumpPage(tester, RosterPage(controller: controller));
     await controller.loadRoster();
     await tester.pump();
+    expect(
+      find.text('本名单只用于提升语音识别准确率，不授予登录权限；成员能否登录由『设置 → 入队审批』批准决定。'),
+      findsOneWidget,
+    );
     expect(find.text('张伟'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '李娜');

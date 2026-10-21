@@ -441,6 +441,15 @@ class ApiClient {
     required dynamic body,
     required String fallback,
   }) {
+    final suggestions = body is Map && body['suggestions'] is List
+        ? List<String>.unmodifiable(
+            (body['suggestions'] as List)
+                .whereType<String>()
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .take(3),
+          )
+        : const <String>[];
     final error = ApiException(
       _responseError(res.statusCode, body, fallback),
       statusCode: res.statusCode,
@@ -449,6 +458,7 @@ class ApiClient {
       current: body is Map && body['current'] is Map
           ? Map<String, dynamic>.from(body['current'] as Map)
           : null,
+      suggestions: suggestions,
     );
     if (isAuthenticationFailure(error)) onAuthenticationFailure?.call(error);
     return error;
@@ -2058,12 +2068,14 @@ class ApiException implements Exception {
   final String? code;
   final String? requestId;
   final Map<String, dynamic>? current;
+  final List<String> suggestions;
   ApiException(
     this.message, {
     this.statusCode,
     this.code,
     this.requestId,
     this.current,
+    this.suggestions = const [],
   });
   @override
   String toString() => message;
@@ -2145,6 +2157,7 @@ class UnitMember {
   final String phone;
   final String applyReason;
   final int createdAt;
+  final bool inRoster;
 
   const UnitMember({
     required this.id,
@@ -2157,6 +2170,7 @@ class UnitMember {
     this.phone = '',
     this.applyReason = '',
     this.createdAt = 0,
+    this.inRoster = false,
   });
 
   factory UnitMember.fromJson(Map<String, dynamic> json) {
@@ -2173,6 +2187,7 @@ class UnitMember {
       createdAt: (json['created_at'] is num)
           ? (json['created_at'] as num).toInt()
           : 0,
+      inRoster: json['in_roster'] == true,
     );
   }
 }
