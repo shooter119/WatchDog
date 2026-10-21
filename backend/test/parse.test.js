@@ -356,7 +356,10 @@ test('危化品图片即使带警情背景也只按纯 UN 编号自动查询', a
   assert.deepEqual(requests[2].reasoning, { effort: 'none' });
   assert.equal(requests[2].tools, undefined);
   assert.deepEqual(requests[2].input, [{ role: 'user', content: '查询危险货物 UN 编号：1234' }]);
-  assert.match(result.suggestions.at(-1), /查询结果及来源/);
+  assert.match(result.suggestions.at(-1), /编号查询/);
+  assert.doesNotMatch(result.suggestions.at(-1), /https?:|检索来源：/);
+  assert.equal(requests[2].max_output_tokens, 700);
+  assert.match(requests[2].instructions, /每个编号的说明不超过60字/);
 });
 
 test('模糊标牌不查询；联网失败或未实际搜索报告未核实', async () => {
@@ -391,5 +394,19 @@ test('强制查询不接受空搜索、无效链接或未完成的模型回答',
     };
     await assert.rejects(chatWithWebSearch({ apiKey: 'k', baseUrl: 'https://api.example.org/v1', requireSearch: true, messages: [{ role: 'user', content: 'UN 1234' }] }));
     assert.equal(calls, mode === 'incomplete' ? 2 : 1);
+  }
+});
+
+
+test('简洁查询保留核实内容并去除模型返回的链接，不影响默认来源展示', async () => {
+  for (const includeSources of [false, true]) {
+    globalThis.fetch = async (url) => ({ ok: true, json: async () => String(url).endsWith('/search')
+      ? { results: [{ title: '核查资料', url: 'https://example.org/guide', summary: 'UN 编号资料' }] }
+      : { status: 'completed', output_text: 'UN 1203：汽油；易燃液体。\n提醒：核对 SDS。\n[资料](https://example.org/guide) https://example.org/raw' } });
+    const result = await chatWithWebSearch({ apiKey: 'k', requireSearch: true, includeSources, messages: [{ role: 'user', content: 'UN 1203' }] });
+    assert.match(result, /UN 1203：汽油；易燃液体/);
+    assert.match(result, /核对 SDS/);
+    if (includeSources) assert.match(result, /检索来源：/);
+    else assert.doesNotMatch(result, /https?:|检索来源：|\]\(/);
   }
 });
