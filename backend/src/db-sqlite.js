@@ -633,8 +633,18 @@ function lockPendingMember(id, unitId) {
 
 function listPendingUnitMembers(unitId) {
   return db.prepare(
-    'SELECT id, unit_id, real_name, role, status, review_status, station_name, phone, apply_reason, reviewed_by, reviewed_at, created_at, updated_at FROM unit_members WHERE unit_id = ? AND review_status = \'pending\' ORDER BY created_at ASC'
-  ).all(String(unitId || ''));
+    `SELECT m.id, m.unit_id, m.real_name, m.role, m.status, m.review_status, m.station_name, m.phone, m.apply_reason, m.reviewed_by, m.reviewed_at, m.created_at, m.updated_at,
+       EXISTS (
+         SELECT 1 FROM firefighters f
+         WHERE f.unit_id = m.unit_id AND f.name = m.real_name
+       ) AS in_roster
+     FROM unit_members m
+     WHERE m.unit_id = ? AND m.review_status = 'pending'
+     ORDER BY m.created_at ASC`
+  ).all(String(unitId || '')).map((row) => ({
+    ...row,
+    in_roster: Boolean(row.in_roster),
+  }));
 }
 
 function applyUnitMember({ unitId, realName, stationName = '', phone = '', applyReason = '' }) {

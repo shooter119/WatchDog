@@ -14,6 +14,7 @@ const logger = require('./logger');
 const { createDatabaseReadiness } = require('./database-readiness');
 const { parseAllowedHosts, isHostAllowed } = require('./network-policy');
 const { MinuteRateLimiter } = require('./rate-limiter');
+const { nameSuggestions } = require('./name-match');
 const weather = require('./weather');
 
 // PostgreSQL 初始化是网络依赖，不能阻塞端口监听等待完成；探活在初始化期间
@@ -1316,7 +1317,26 @@ app.post('/api/auth/verify', async (req, res, next) => {
         }
       }
       recordAuthFailure(failureKey);
-      return res.status(403).json({ error: '该姓名未被单位授权，请联系管理员', code: 'MEMBER_NOT_ALLOWED' });
+      const firefighters = typeof db.listFirefighters === 'function'
+        ? await db.listFirefighters(unit.id)
+        : [];
+      const rosterNames = firefighters.map((f) => String(f.name || '').trim()).filter(Boolean);
+      if (rosterNames.includes(name)) {
+        return res.status(403).json({
+          error: '该姓名在语音识别名单中，但还没有登录权限，请提交入队申请等待管理员批准',
+          code: 'MEMBER_ROSTER_ONLY',
+        });
+      }
+      const unitMembers = typeof db.listUnitMembers === 'function'
+        ? await db.listUnitMembers(unit.id)
+        : [];
+      const memberNames = unitMembers.map((m) => String(m.real_name || '').trim()).filter(Boolean);
+      const suggestions = nameSuggestions(name, [...rosterNames, ...memberNames]);
+      return res.status(403).json({
+        error: '该姓名未被单位授权，请联系管理员',
+        code: 'MEMBER_NOT_ALLOWED',
+        suggestions,
+      });
     }
     authFailureBuckets.delete(failureKey);
     const device = deviceKey(req);

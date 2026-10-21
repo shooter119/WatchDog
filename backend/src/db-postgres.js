@@ -212,10 +212,24 @@ async function lockPendingMember(id, unitId) {
 }
 
 async function listPendingUnitMembers(unitId) {
-  return db.select('unit_members', {
-    filters: { unit_id: String(unitId || ''), review_status: 'pending' },
-    order: 'created_at.asc',
-  });
+  const result = await db.query(
+    `SELECT m.*,
+       EXISTS (
+         SELECT 1 FROM firefighters f
+         WHERE f.unit_id = m.unit_id AND f.name = m.real_name
+       ) AS in_roster
+     FROM unit_members m
+     WHERE m.unit_id = $1 AND m.review_status = 'pending'
+     ORDER BY m.created_at ASC`,
+    [String(unitId || '')],
+  );
+  return result.rows.map((row) => ({
+    ...row,
+    created_at: row.created_at == null ? row.created_at : Number(row.created_at),
+    updated_at: row.updated_at == null ? row.updated_at : Number(row.updated_at),
+    reviewed_at: row.reviewed_at == null ? row.reviewed_at : Number(row.reviewed_at),
+    in_roster: Boolean(row.in_roster),
+  }));
 }
 
 async function applyUnitMember({ unitId, realName, stationName = '', phone = '', applyReason = '' }) {

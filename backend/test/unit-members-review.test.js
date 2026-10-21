@@ -210,3 +210,79 @@ test('入队申请被驳回后登录提示 MEMBER_APPLICATION_REJECTED 并允许
   assert.equal(reApply.status, 202);
   assert.equal((await reApply.json()).member.review_status, 'pending');
 });
+
+test('语音名单精确命中返回 MEMBER_ROSTER_ONLY，差一字返回 suggestions，待审列表标记 in_roster', async () => {
+  // 站长登录获取管理 token
+  const managerLogin = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ unit_name: '搜救中队', unit_code: '6688', real_name: '站长' }),
+  });
+  assert.equal(managerLogin.status, 200);
+  const { session_token: mgrToken } = await managerLogin.json();
+
+  // 1. 先把一个名字写进语音名单（用 POST /api/firefighters，需管理角色 token）
+  const addFfRes = await fetch(`${base}/api/firefighters`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${mgrToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: '韩梅梅' }),
+  });
+  assert.equal(addFfRes.status, 201);
+
+  // 再用该姓名（精确）调 /api/auth/verify -> 403 MEMBER_ROSTER_ONLY
+  const rosterOnlyRes = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ unit_name: '搜救中队', unit_code: '6688', real_name: '韩梅梅' }),
+  });
+  assert.equal(rosterOnlyRes.status, 403);
+  const rosterOnlyJson = await rosterOnlyRes.json();
+  assert.equal(rosterOnlyJson.code, 'MEMBER_ROSTER_ONLY');
+  assert.equal(
+    rosterOnlyJson.error,
+    '该姓名在语音识别名单中，但还没有登录权限，请提交入队申请等待管理员批准',
+  );
+
+  // 2. 用“差一个字”的姓名调 verify -> 403 MEMBER_NOT_ALLOWED 且 suggestions 含正确写法
+  const nearMissRes = await fetch(`${base}/api/auth/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ unit_name: '搜救中队', unit_code: '6688', real_name: '韩梅美' }),
+  });
+  assert.equal(nearMissRes.status, 403);
+  const nearMissJson = await nearMissRes.json();
+  assert.equal(nearMissJson.code, 'MEMBER_NOT_ALLOWED');
+  assert.ok(Array.isArray(nearMissJson.suggestions));
+  assert.ok(nearMissJson.suggestions.includes('韩梅梅'));
+
+  // 3. 提交申请后 /api/unit-members/pending 中该条 in_roster === true
+  const applyInRoster = await fetch(`${base}/api/auth/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ unit_name: '搜救中队', unit_code: '6688', real_name: '韩梅梅' }),
+  });
+  assert.equal(applyInRoster.status, 202);
+
+  // 换成一个不在语音名单的姓名申请 -> in_roster === false
+  const applyNotInRoster = await fetch(`${base}/api/auth/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ unit_name: '搜救中队', unit_code: '6688', real_name: '孙悟空' }),
+  });
+  assert.equal(applyNotInRoster.status, 202);
+
+  const pendingRes = await fetch(`${base}/api/unit-members/pending`, {
+    headers: { 'Authorization': `Bearer ${mgrToken}` },
+  });
+  assert.equal(pendingRes.status, 200);
+  const pendingList = await pendingRes.json();
+  const han = pendingList.find((m) => m.real_name === '韩梅梅');
+  const sun = pendingList.find((m) => m.real_name === '孙悟空');
+  assert.ok(han);
+  assert.equal(han.in_roster, true);
+  assert.ok(sun);
+  assert.equal(sun.in_roster, false);
+});
