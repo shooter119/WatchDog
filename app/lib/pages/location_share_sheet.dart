@@ -457,38 +457,29 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         ),
       ],
       const SizedBox(height: 12),
-      Card(
-        margin: EdgeInsets.zero,
-        elevation: 0,
-        color: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          side: BorderSide(color: AppColors.border),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '分享文案预览',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
+      AppCard(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '分享文案预览',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
               ),
-              const SizedBox(height: 8),
-              SelectableText(
-                text,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  height: 1.55,
-                  color: AppColors.textSecondary,
-                ),
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              text,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.55,
+                color: AppColors.textSecondary,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       const SizedBox(height: 12),

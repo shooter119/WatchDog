@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
 
 class LoginDevicesPage extends StatefulWidget {
   final AppController controller;
@@ -78,11 +79,12 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.controller,
     builder: (context, _) => Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('登录设备')),
       body: !_authorized
           ? const Center(child: Text('登录已失效，请返回重新认证'))
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
                 const Text('新设备登录不会使其他设备下线。最近活动时间不代表设备此刻在线。'),
                 const SizedBox(height: 12),
@@ -95,15 +97,19 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                   ),
                 if (_busy) const LinearProgressIndicator(),
                 for (final device in _devices)
-                  Card(
-                    child: Padding(
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: AppCard(
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             '${device['name']} · ${device['platform']}',
-                            style: Theme.of(context).textTheme.titleMedium,
+                            style: AppTextStyles.bodyMd.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
                           Text(
                             '最近活动：${DateTime.fromMillisecondsSinceEpoch((device['last_seen_at'] as num).toInt()).toLocal()}',

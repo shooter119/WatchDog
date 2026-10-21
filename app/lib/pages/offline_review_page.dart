@@ -5,6 +5,7 @@ import 'dart:math';
 import '../api/api_client.dart';
 import '../services/offline_queue.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
 
 class OfflineReviewPage extends StatefulWidget {
   final AppController controller;
@@ -287,13 +288,15 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.controller,
     builder: (context, _) => Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('离线记录待核对')),
       body: !_authorized
           ? const Center(child: Text('登录已失效，请返回重新认证'))
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
                 const Text('这些记录尚未应用到服务器。核对后重新提交，或保留原记录而不应用。退出登录不会删除记录。'),
+                const SizedBox(height: 12),
                 if (_busy) const LinearProgressIndicator(),
                 if (_error != null)
                   Text(
@@ -308,8 +311,9 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
                     child: Text('没有待核对记录'),
                   ),
                 for (final row in _rows)
-                  Card(
-                    child: Padding(
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: AppCard(
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

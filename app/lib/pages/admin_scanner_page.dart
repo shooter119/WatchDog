@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../models/admin_login.dart';
 import '../services/screen_on.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
 
 String adminLoginError(Object error) {
   if (error is ApiException) {
@@ -32,6 +33,7 @@ class AdminScannerPage extends StatelessWidget {
     builder: (context, _) {
       if (!controller.canReadKeySites || controller.adminCapability == null) {
         return Scaffold(
+          backgroundColor: AppColors.background,
           appBar: AppBar(title: const Text('扫一扫')),
           body: const Center(child: Text('无有效后台授权，请返回后重新认证或联系平台管理员')),
         );
@@ -178,6 +180,7 @@ class _ScannerState extends State<_Scanner> with WidgetsBindingObserver {
         if (!didPop && !_busy) unawaited(_submit(cancel: true));
       },
       child: Scaffold(
+        backgroundColor: AppColors.background,
         appBar: AppBar(title: const Text('扫一扫')),
         body: _finished
             ? const Center(
@@ -233,13 +236,15 @@ class _ScannerState extends State<_Scanner> with WidgetsBindingObserver {
                 ],
               )
             : ListView(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
                   const Icon(Icons.desktop_windows_outlined, size: 48),
                   const SizedBox(height: 24),
                   Text(
                     '确认登录网页管理端',
-                    style: Theme.of(context).textTheme.headlineSmall,
+                    style: AppTextStyles.h1.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text(

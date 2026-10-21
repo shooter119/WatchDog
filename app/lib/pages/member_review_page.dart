@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
 
 class MemberReviewPage extends StatefulWidget {
   final AppController controller;
@@ -133,15 +134,19 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
 
   Widget _pending(UnitMember member) {
     final c = widget.controller;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               member.realName,
-              style: Theme.of(context).textTheme.titleLarge,
+              style: AppTextStyles.bodyLg.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 8),
             Text('申请单位：${c.memberReviewUnitName}'),
@@ -196,13 +201,14 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         children: children,
       ),
     );
     return DefaultTabController(
       length: 2,
       child: Scaffold(
+        backgroundColor: AppColors.background,
         appBar: AppBar(
           title: const Text('入队审批'),
           bottom: const TabBar(
@@ -257,13 +263,35 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
                           c.memberReviewError == null)
                         const Text('暂无已处理记录'),
                       for (final row in c.memberReviewHistory)
-                        Card(
-                          child: ListTile(
-                            title: Text(
-                              '${row['real_name']} · ${row['review_status'] == 'approved' ? '已同意' : '已驳回'}',
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: AppCard(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
                             ),
-                            subtitle: Text(
-                              '处理人：${row['reviewer_name'] == '' ? '历史记录未保存' : row['reviewer_name']}\n${_time(row['reviewed_at'])}',
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: 48),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${row['real_name']} · ${row['review_status'] == 'approved' ? '已同意' : '已驳回'}',
+                                    style: AppTextStyles.bodyMd.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '处理人：${row['reviewer_name'] == '' ? '历史记录未保存' : row['reviewer_name']}\n${_time(row['reviewed_at'])}',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.textTertiary,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

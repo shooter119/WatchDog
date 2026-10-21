@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../state/app_controller.dart';
+import '../theme/app_widgets.dart';
 
 class OrthomapPage extends StatefulWidget {
   final AppController controller;
@@ -29,6 +30,7 @@ class _OrthomapPageState extends State<OrthomapPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.background,
     appBar: AppBar(title: const Text('现场地图')),
     body: FutureBuilder<List<Map<String, dynamic>>>(
       future: _maps,
@@ -59,24 +61,75 @@ class _OrthomapPageState extends State<OrthomapPage> {
           return const Center(child: Text('本单位暂无地图，请联系管理员导入影像'));
         }
         return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           itemCount: maps.length,
           itemBuilder: (context, index) {
             final map = maps[index];
-            return ListTile(
-              minTileHeight: 72,
-              leading: const Icon(Icons.map_outlined),
-              title: Text(map['name'] as String),
-              subtitle: Text(
-                map['demo'] == true
-                    ? '演示影像 · 非真实现场，不可用于定位'
-                    : '正射影像 · 图片坐标，支持缩放和拖动',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      _MapViewer(controller: widget.controller, map: map),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: AppCard(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        _MapViewer(controller: widget.controller, map: map),
+                  ),
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 52),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceSubtle,
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                        ),
+                        child: Icon(
+                          Icons.map_outlined,
+                          size: 18,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              map['name'] as String,
+                              style: AppTextStyles.bodyMd.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              map['demo'] == true
+                                  ? '演示影像 · 非真实现场，不可用于定位'
+                                  : '正射影像 · 图片坐标，支持缩放和拖动',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: AppColors.textTertiary,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -128,11 +181,13 @@ class _MapViewerState extends State<_MapViewer> {
         final api = widget.controller.api;
         if (api == null) {
           return Scaffold(
+            backgroundColor: AppColors.background,
             appBar: AppBar(title: const Text('现场地图')),
             body: const Center(child: Text('认证已失效，请返回后重新认证')),
           );
         }
         return Scaffold(
+          backgroundColor: AppColors.background,
           appBar: AppBar(
             title: Text(widget.map['name'] as String),
             actions: [
@@ -246,9 +301,11 @@ class _MapViewerState extends State<_MapViewer> {
                         }
                       });
                     }
-                    return const ColoredBox(
-                      color: Color(0xffe2e2e2),
-                      child: Center(child: Icon(Icons.broken_image_outlined)),
+                    return ColoredBox(
+                      color: AppColors.surfaceSubtle,
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined),
+                      ),
                     );
                   },
                 ),
