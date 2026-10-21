@@ -300,7 +300,14 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                const Text('这些记录尚未应用到服务器。核对后重新提交，或保留原记录而不应用。退出登录不会删除记录。'),
+                Text(
+                  '这些记录尚未应用到服务器。核对后重新提交，或保留原记录而不应用。退出登录不会删除记录。',
+                  style: AppTextStyles.caption.copyWith(
+                    fontSize: 12.5,
+                    color: AppColors.textTertiary,
+                    height: 1.4,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 if (_busy) const LinearProgressIndicator(),
                 if (_error != null)

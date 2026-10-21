@@ -146,80 +146,83 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
       child: AppCard(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         onTap: _manage ? () => _edit(station) : null,
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    station['name'].toString(),
-                    style: AppTextStyles.bodyMd.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 36),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      station['name'].toString(),
+                      style: AppTextStyles.bodyMd.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
-                  ),
-                  if (isInactive || aliases.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        if (isInactive)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.caution.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(
-                                AppRadius.pill,
+                    if (isInactive || aliases.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          if (isInactive)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.caution.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.pill,
+                                ),
+                              ),
+                              child: Text(
+                                '已停用',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.caution,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                            child: Text(
-                              '已停用',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.caution,
-                                fontWeight: FontWeight.w700,
+                          for (final alias in aliases)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.pill,
+                                ),
+                              ),
+                              child: Text(
+                                alias,
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                             ),
-                          ),
-                        for (final alias in aliases)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceSubtle,
-                              borderRadius: BorderRadius.circular(
-                                AppRadius.pill,
-                              ),
-                            ),
-                            child: Text(
-                              alias,
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            if (_manage) ...[
-              const SizedBox(width: 8),
-              Icon(
-                Icons.edit_outlined,
-                size: 18,
-                color: AppColors.textSecondary,
-              ),
+              if (_manage) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -251,7 +254,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
               border: Border.all(color: AppColors.border),
             ),
             child: Text(
-              '本单位成员均可新增。已有队伍的名称、别名和停用由管理员维护；修改不影响历史警情。',
+              '仅管理员可编辑；修改不影响历史警情',
               style: AppTextStyles.caption.copyWith(
                 fontSize: 12.5,
                 color: AppColors.textTertiary,

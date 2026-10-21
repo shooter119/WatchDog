@@ -301,15 +301,6 @@ class _RosterPageState extends State<RosterPage>
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 4),
-              if (!isFirefighter)
-                Text(
-                  '例如：空气呼吸器、水枪阵地、破拆工具',
-                  style: TextStyle(
-                    color: AppColors.textTertiary,
-                    fontSize: 12.5,
-                  ),
-                ),
             ],
           ),
         ],

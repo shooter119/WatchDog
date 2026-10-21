@@ -194,19 +194,9 @@ class _ArchiveSummary extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '处置档案库',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-              ),
-              SizedBox(height: 3),
-              Text(
-                '按归档时间查看完整火场复盘',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-              ),
-            ],
+          child: Text(
+            '处置档案库',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
         ),
         Column(
@@ -527,7 +517,6 @@ class _IncidentDetailPageState extends State<IncidentDetailPage> {
                 _DetailSectionTitle(
                   icon: Icons.timeline_rounded,
                   title: '火场处置时间线',
-                  trailing: '晚 → 早',
                 ),
                 const SizedBox(height: 8),
                 _TimelineCard(events: _events),
@@ -714,12 +703,12 @@ class _UnresolvedBanner extends StatelessWidget {
 class _DetailSectionTitle extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String trailing;
+  final String? trailing;
 
   const _DetailSectionTitle({
     required this.icon,
     required this.title,
-    required this.trailing,
+    this.trailing,
   });
 
   @override
@@ -731,11 +720,13 @@ class _DetailSectionTitle extends StatelessWidget {
         title,
         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
       ),
-      const Spacer(),
-      Text(
-        trailing,
-        style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
-      ),
+      if (trailing != null) ...[
+        const Spacer(),
+        Text(
+          trailing!,
+          style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+        ),
+      ],
     ],
   );
 }

@@ -729,7 +729,6 @@ class _SettingsPageState extends State<SettingsPage> {
           _SettingsLinkCard(
             icon: Icons.branding_watermark_outlined,
             title: '水印设置',
-            subtitle: '配置拍摄水印，拍摄请用首页水印相机',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const WatermarkSettingsPage()),
@@ -746,7 +745,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ? '审批信息加载失败，点击重试'
                   : widget.controller.pendingMemberCount > 0
                   ? '${widget.controller.pendingMemberCount} 条待处理 · 本单位管理员共同审批'
-                  : '可审批本单位申请 · 暂无待处理',
+                  : null,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -763,7 +762,7 @@ class _SettingsPageState extends State<SettingsPage> {
               title: '人员与热词',
               subtitle: widget.controller.pendingMemberCount > 0
                   ? '${widget.controller.pendingMemberCount} 名队员待审批'
-                  : '人员名单与语音热词',
+                  : null,
               badge: widget.controller.pendingMemberCount > 0,
               onTap: () => Navigator.push(
                 context,
@@ -775,7 +774,6 @@ class _SettingsPageState extends State<SettingsPage> {
             _SettingsShortcut(
               icon: Icons.archive_outlined,
               title: '归档警情',
-              subtitle: '查看复盘时间线',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -800,7 +798,6 @@ class _SettingsPageState extends State<SettingsPage> {
             _SettingsShortcut(
               icon: Icons.receipt_long_outlined,
               title: '操作日志',
-              subtitle: '本机日志 · 可同步',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -813,7 +810,6 @@ class _SettingsPageState extends State<SettingsPage> {
           _SettingsLinkCard(
             icon: Icons.local_fire_department_outlined,
             title: '单位常用队伍',
-            subtitle: '登记名称、别名及启用状态',
             enabled: widget.controller.api != null,
             onTap: () => Navigator.push(
               context,
@@ -828,7 +824,6 @@ class _SettingsPageState extends State<SettingsPage> {
               key: const Key('video-resource-settings'),
               icon: Icons.videocam_outlined,
               title: '视频资源管理',
-              subtitle: '添加、编辑或停用本单位视频资源',
               enabled: widget.controller.api != null,
               onTap: () => Navigator.push<void>(
                 context,
@@ -882,7 +877,6 @@ class _SettingsPageState extends State<SettingsPage> {
           _SettingsLinkCard(
             icon: Icons.info_outline,
             title: '关于项目',
-            subtitle: '项目介绍、使用说明与开源信息',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AboutPage()),
@@ -1042,8 +1036,8 @@ class _SettingsPageState extends State<SettingsPage> {
         crossAxisCount: 2,
         crossAxisSpacing: 9,
         mainAxisSpacing: 9,
-        // 与身份栏、水印设置等保持同一行高；大字号时允许按比例增高。
-        mainAxisExtent: (66 * scale.clamp(1.0, 1.25)).toDouble(),
+        // 与普通入口卡片保持同一收紧行高（60dp），四块等高；大字号时按比例增高。
+        mainAxisExtent: (60 * scale.clamp(1.0, 1.25)).toDouble(),
       ),
       children: cards,
     );
@@ -1122,7 +1116,6 @@ class _SettingsPageState extends State<SettingsPage> {
             '联网语音识别',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
-          subtitle: const Text('云端识别失败后自动切换本地', style: TextStyle(fontSize: 11)),
           activeThumbColor: AppColors.voice,
           value: _asrCloud,
           onChanged: (v) async {
@@ -1147,10 +1140,6 @@ class _SettingsPageState extends State<SettingsPage> {
           title: const Text(
             '联网语义解析',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
-          subtitle: const Text(
-            '云端解析失败后自动切换本地规则',
-            style: TextStyle(fontSize: 11),
           ),
           activeThumbColor: AppColors.voice,
           value: _parseCloud,
@@ -1180,10 +1169,6 @@ class _SettingsPageState extends State<SettingsPage> {
             '语音播报',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
-          subtitle: const Text(
-            '确认、提醒、报警时播报中文语音',
-            style: TextStyle(fontSize: 11),
-          ),
           activeThumbColor: AppColors.actionPrimary,
           value: _tts,
           onChanged: (v) {
@@ -1201,10 +1186,6 @@ class _SettingsPageState extends State<SettingsPage> {
           title: const Text(
             '报警音',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
-          subtitle: const Text(
-            '前台警报音 + 后台本地通知',
-            style: TextStyle(fontSize: 11),
           ),
           activeThumbColor: AppColors.actionPrimary,
           value: _sound,
@@ -1224,10 +1205,6 @@ class _SettingsPageState extends State<SettingsPage> {
             '屏幕常亮',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
-          subtitle: const Text(
-            '看板页保持屏幕常亮，适合火场值守',
-            style: TextStyle(fontSize: 11),
-          ),
           activeThumbColor: AppColors.actionPrimary,
           value: _keepScreenOn,
           onChanged: (v) {
@@ -1245,10 +1222,6 @@ class _SettingsPageState extends State<SettingsPage> {
           title: const Text(
             '后台值守模式',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
-          subtitle: const Text(
-            '切后台或锁屏后，轮询与报警不停',
-            style: TextStyle(fontSize: 11),
           ),
           activeThumbColor: AppColors.safe,
           value: _keepAlive,
@@ -1309,7 +1282,10 @@ class _SettingsPageState extends State<SettingsPage> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
+          subtitle: Text(
+            subtitle,
+            style: AppTextStyles.caption.copyWith(color: AppColors.caution),
+          ),
         ),
       ],
     );
@@ -2056,14 +2032,14 @@ class _SettingsIconBox extends StatelessWidget {
 class _SettingsShortcut extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final VoidCallback onTap;
   final bool badge;
 
   const _SettingsShortcut({
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.onTap,
     this.badge = false,
   });
@@ -2073,11 +2049,12 @@ class _SettingsShortcut extends StatelessWidget {
     final compact =
         MediaQuery.sizeOf(context).width < 400 ||
         MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
+    final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
     return AppCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(11),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 44),
+        constraints: const BoxConstraints(minHeight: 40),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -2100,16 +2077,18 @@ class _SettingsShortcut extends StatelessWidget {
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    maxLines: compact ? 2 : 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textTertiary,
+                  if (hasSubtitle) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle!,
+                      maxLines: compact ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textTertiary,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -2125,7 +2104,7 @@ class _SettingsShortcut extends StatelessWidget {
 class _SettingsLinkCard extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final VoidCallback onTap;
   final bool enabled;
 
@@ -2133,20 +2112,21 @@ class _SettingsLinkCard extends StatelessWidget {
     super.key,
     required this.icon,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.onTap,
     this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
     return Opacity(
       opacity: enabled ? 1 : 0.45,
       child: AppCard(
         onTap: enabled ? onTap : null,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
+          constraints: const BoxConstraints(minHeight: 40),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2164,16 +2144,18 @@ class _SettingsLinkCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textTertiary,
+                    if (hasSubtitle) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textTertiary,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

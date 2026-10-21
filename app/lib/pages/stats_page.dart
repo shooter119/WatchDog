@@ -120,7 +120,7 @@ class _StatsPageState extends State<StatsPage> {
                     _buildSummary(filtered.length, totalMs, activeCount),
                     const SizedBox(height: 16),
                     SectionTitle(
-                      text: _sortByDuration ? '时长排行（点按切换排序）' : '次数排行（点按切换排序）',
+                      text: _sortByDuration ? '时长排行' : '次数排行',
                       trailing: Semantics(
                         button: true,
                         excludeSemantics: true,

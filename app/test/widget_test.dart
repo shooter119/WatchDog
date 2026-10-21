@@ -1124,15 +1124,20 @@ void main() {
       expect(tester.widget<Text>(find.text('未认证').first).style?.fontSize, 20);
       expect(find.text('未认证'), findsNWidgets(2));
       const labels = ['水印设置', '人员与热词'];
+      double? commonHeight;
       for (final label in labels) {
         final card = find
             .ancestor(of: find.text(label), matching: find.byType(AppCard))
             .first;
+        final height = tester.getSize(card).height;
+        // 无说明小字时按内容收紧，但必须是同一行高且仍满足点击区要求。
         expect(
-          tester.getSize(card).height,
-          closeTo(66, 0.5),
-          reason: '$label 的设置项高度应与身份栏一致',
+          height,
+          inInclusiveRange(48, 70),
+          reason: '$label 的设置项应保持紧凑统一行高',
         );
+        commonHeight ??= height;
+        expect(height, closeTo(commonHeight, 0.5), reason: '$label 与其它设置项应同高');
         final text = tester.widget<Text>(find.text(label).first);
         expect(text.style?.fontSize, 14, reason: '$label 的字号应与设置项一致');
         expect(text.style?.fontWeight, FontWeight.w800);
@@ -1161,9 +1166,14 @@ void main() {
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
       await _scrollToVisible(tester, list, find.text('人员与热词'));
-      final subtitle = find.text('人员名单与语音热词');
-      expect(subtitle, findsOneWidget);
-      expect(tester.getSize(subtitle).height, greaterThan(25));
+      final title = find.text('人员与热词');
+      expect(title, findsOneWidget);
+      // 冗余说明小字已移除：无待审批时该入口只剩标题，且在 320dp + 2 倍字号下不溢出。
+      expect(find.text('人员名单与语音热词'), findsNothing);
+      final card = find
+          .ancestor(of: title, matching: find.byType(AppCard))
+          .first;
+      expect(tester.getSize(card).height, greaterThan(48));
       expect(tester.takeException(), isNull);
     });
 

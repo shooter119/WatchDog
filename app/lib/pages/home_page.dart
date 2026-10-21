@@ -733,7 +733,7 @@ class HomePageState extends State<HomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
                       width: 48,
@@ -750,14 +750,7 @@ class HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(width: 14),
                     const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('全员离场确认', style: AppTextStyles.h2),
-                          SizedBox(height: 4),
-                          Text('请核对在场人员后再提交', style: AppTextStyles.bodyMd),
-                        ],
-                      ),
+                      child: Text('全员离场确认', style: AppTextStyles.h2),
                     ),
                   ],
                 ),
@@ -1717,7 +1710,6 @@ class HomePageState extends State<HomePage> {
                     decoration: const InputDecoration(
                       labelText: '灾情等级',
                       hintText: '如：一级火灾扑救',
-                      helperText: '也可输入其他等级',
                     ),
                   ),
                 ],
@@ -2519,51 +2511,38 @@ class HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  '现场监控',
-                                  style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                          Flexible(
+                            child: Text(
+                              '现场监控',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
                               ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 1.5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.voice.withValues(
-                                    alpha: 0.15,
-                                  ),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '在场${activeEntries.length}人',
-                                  style: TextStyle(
-                                    color: AppColors.voice,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '空呼倒计时监护中 · 报数/出场/记录',
-                            style: TextStyle(
-                              color: AppColors.textTertiary,
-                              fontSize: 11,
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.voice.withValues(
+                                alpha: 0.15,
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '在场${activeEntries.length}人',
+                              style: TextStyle(
+                                color: AppColors.voice,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ],
@@ -3165,7 +3144,7 @@ class _NoIncidentTaskBar extends StatelessWidget {
         MediaQuery.sizeOf(context).width < 360 ||
         MediaQuery.textScalerOf(context).scale(1.0) > 1.2;
     final summary = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
           width: 42,
@@ -3181,25 +3160,11 @@ class _NoIncidentTaskBar extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '警情名称',
-                style: TextStyle(
-                  color: AppColors.textTertiary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 3),
-              const Text(
-                '暂无正在处置的警情',
-                softWrap: true,
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-              ),
-            ],
+        const Expanded(
+          child: Text(
+            '暂无正在处置的警情',
+            softWrap: true,
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
         ),
       ],

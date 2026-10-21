@@ -246,20 +246,15 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
           children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceSubtle,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: const Text(
-                '仅管理员可维护。普通成员只能看到已启用资源；地址变更后请立即测试播放。'
-                '停用会立即从成员清单隐藏，不会删除历史配置。',
-                style: TextStyle(fontSize: 13, height: 1.55),
+            Text(
+              '仅管理员可维护；改地址后请立即测试，停用只隐藏不删除。',
+              style: AppTextStyles.caption.copyWith(
+                fontSize: 12.5,
+                color: AppColors.textTertiary,
+                height: 1.4,
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             if (_loading) const LinearProgressIndicator(),
             if (_error != null) ...[
               const SizedBox(height: 12),

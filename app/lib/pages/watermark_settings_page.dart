@@ -151,11 +151,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
             : ListView(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
                 children: [
-                  Text(
-                    '修改后请点右上角保存，下次拍摄生效。离开时会提醒未保存的修改。',
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 12),
                   _previewCard(),
                   const SizedBox(height: 18),
                   const SectionTitle(text: '水印内容'),
@@ -181,7 +176,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   const SectionTitle(text: '显示字段'),
                   _switchTile(
                     title: '拍摄时间',
-                    subtitle: '精确到分钟并带星期',
                     value: _settings.showTime,
                     onChanged: (v) => setState(() {
                       _dirty = true;
@@ -190,7 +184,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   ),
                   _switchTile(
                     title: '天气',
-                    subtitle: '天气现象、气温、风向风力与湿度',
                     value: _settings.showWeather,
                     onChanged: (v) => setState(() {
                       _dirty = true;
@@ -199,7 +192,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   ),
                   _switchTile(
                     title: '地点',
-                    subtitle: '由定位反查的中文地址',
                     value: _settings.showLocation,
                     onChanged: (v) => setState(() {
                       _dirty = true;
@@ -208,7 +200,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   ),
                   _switchTile(
                     title: '经纬度',
-                    subtitle: '按度分显示，如 东经 118°22′',
                     value: _settings.showCoordinates,
                     onChanged: (v) => setState(() {
                       _dirty = true;
@@ -227,16 +218,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   const SizedBox(height: 18),
                   const SectionTitle(text: '拍摄界面方向'),
                   _orientationPicker(),
-                  const SizedBox(height: 18),
-                  Text(
-                    '水印在按下快门或开始录像那一刻固定，成片中的时间、地址不会随时间跳动。'
-                    '核对页只提供「保存并分享」和「仅保存」：两者都会把带水印版与无水印版成对保存到手机相册；保存成功后 App 内工作文件会在后台清理，手机相册是最终保存位置。',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                      height: 1.6,
-                    ),
-                  ),
                 ],
               ),
       ),
@@ -408,50 +389,36 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
   }
 
   Widget _orientationPicker() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '两种模式成片都是横版 16:9，区别是取景和操作方式。修改后下次进入水印相机生效。',
-          style: TextStyle(
-            fontSize: 12,
-            height: 1.5,
-            color: AppColors.textSecondary,
+    return RadioGroup<CameraCaptureOrientation>(
+      groupValue: _settings.captureOrientation,
+      onChanged: (value) {
+        if (_saving ||
+            value == null ||
+            value == _settings.captureOrientation) {
+          return;
+        }
+        setState(() {
+          _dirty = true;
+          _settings = _settings.copyWith(captureOrientation: value);
+        });
+      },
+      child: Column(
+        children: [
+          _orientationTile(
+            key: const Key('capture-orientation-landscape'),
+            value: CameraCaptureOrientation.landscape,
+            title: '横屏拍摄（16:9）',
+            subtitle: '自动横屏，保留完整横版视野',
           ),
-        ),
-        const SizedBox(height: 8),
-        RadioGroup<CameraCaptureOrientation>(
-          groupValue: _settings.captureOrientation,
-          onChanged: (value) {
-            if (_saving ||
-                value == null ||
-                value == _settings.captureOrientation) {
-              return;
-            }
-            setState(() {
-              _dirty = true;
-              _settings = _settings.copyWith(captureOrientation: value);
-            });
-          },
-          child: Column(
-            children: [
-              _orientationTile(
-                key: const Key('capture-orientation-landscape'),
-                value: CameraCaptureOrientation.landscape,
-                title: '横屏拍摄（16:9）',
-                subtitle: '自动横屏，保留完整横版视野，控制区在画面右侧',
-              ),
-              const SizedBox(height: 8),
-              _orientationTile(
-                key: const Key('capture-orientation-portrait'),
-                value: CameraCaptureOrientation.portrait,
-                title: '竖屏拍摄（16:9中心裁切）',
-                subtitle: '锁定竖直，控制区在画面下方；成片仍为横版，但会裁掉上下视野',
-              ),
-            ],
+          const SizedBox(height: 8),
+          _orientationTile(
+            key: const Key('capture-orientation-portrait'),
+            value: CameraCaptureOrientation.portrait,
+            title: '竖屏拍摄（16:9中心裁切）',
+            subtitle: '锁定竖直，成片会裁掉上下视野',
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -459,7 +426,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
     required Key key,
     required CameraCaptureOrientation value,
     required String title,
-    required String subtitle,
+    String? subtitle,
   }) {
     final selected = _settings.captureOrientation == value;
     return RadioListTile<CameraCaptureOrientation>(
@@ -467,7 +434,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       value: value,
       enabled: !_saving,
       selected: selected,
-      isThreeLine: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
@@ -486,14 +452,16 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
           color: AppColors.textPrimary,
         ),
       ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          height: 1.4,
-          color: AppColors.textSecondary,
-        ),
-      ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: AppColors.textSecondary,
+              ),
+            ),
     );
   }
 
@@ -535,27 +503,32 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
 
   Widget _switchTile({
     required String title,
-    required String subtitle,
+    String? subtitle,
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(
-        title,
-        style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 56),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          title,
+          style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+        ),
+        subtitle: subtitle == null
+            ? null
+            : Text(
+                subtitle,
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+        value: value,
+        activeThumbColor: AppColors.textPrimary,
+        activeTrackColor: AppColors.voice,
+        inactiveThumbColor: AppColors.textSecondary,
+        inactiveTrackColor: AppColors.surface,
+        trackOutlineColor: WidgetStatePropertyAll(AppColors.textSecondary),
+        onChanged: _saving ? null : onChanged,
       ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-      ),
-      value: value,
-      activeThumbColor: AppColors.textPrimary,
-      activeTrackColor: AppColors.voice,
-      inactiveThumbColor: AppColors.textSecondary,
-      inactiveTrackColor: AppColors.surface,
-      trackOutlineColor: WidgetStatePropertyAll(AppColors.textSecondary),
-      onChanged: _saving ? null : onChanged,
     );
   }
 }

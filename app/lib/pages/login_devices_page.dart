@@ -91,7 +91,14 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                const Text('新设备登录不会使其他设备下线。最近活动时间不代表设备此刻在线。'),
+                Text(
+                  '新设备登录不会使其他设备下线。最近活动时间不代表设备此刻在线。',
+                  style: AppTextStyles.caption.copyWith(
+                    fontSize: 12.5,
+                    color: AppColors.textTertiary,
+                    height: 1.4,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 if (_error != null)
                   Text(

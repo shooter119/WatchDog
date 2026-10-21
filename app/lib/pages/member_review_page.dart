@@ -272,8 +272,6 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
                 child: TabBarView(
                   children: [
                     list([
-                      const Text('本单位管理员共同待办，任一管理员处理后将同步更新。'),
-                      const SizedBox(height: 12),
                       if (c.pendingMembers.isEmpty &&
                           !c.memberReviewLoading &&
                           c.memberReviewError == null)

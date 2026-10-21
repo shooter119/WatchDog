@@ -95,10 +95,10 @@ class _OpLogPageState extends State<OpLogPage> {
                           ),
                           SizedBox(height: 6),
                           Text(
-                            '长按语音按钮进行一次语音录入后，这里会显示完整步骤',
-                            style: TextStyle(
+                            '长按底部语音按钮录一次，这里会显示完整步骤',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.caption.copyWith(
                               color: AppColors.textTertiary,
-                              fontSize: 12.5,
                             ),
                           ),
                         ],

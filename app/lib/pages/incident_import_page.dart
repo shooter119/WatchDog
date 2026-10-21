@@ -175,24 +175,21 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('拍照'),
-              subtitle: const Text('直接拍摄警情通知或纸质材料'),
+            _sourceTile(
+              icon: Icons.camera_alt_outlined,
+              title: '拍照',
               onTap: () =>
                   Navigator.pop(context, IncidentImportEntryMode.camera),
             ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('从手机相册选择'),
-              subtitle: const Text('选择一张或多张已有照片'),
+            _sourceTile(
+              icon: Icons.photo_library_outlined,
+              title: '从手机相册选择',
               onTap: () =>
                   Navigator.pop(context, IncidentImportEntryMode.gallery),
             ),
-            ListTile(
-              leading: const Icon(Icons.description_outlined),
-              title: const Text('文字导入'),
-              subtitle: const Text('粘贴接处警通报或警情信息'),
+            _sourceTile(
+              icon: Icons.description_outlined,
+              title: '文字导入',
               onTap: () => Navigator.pop(context, IncidentImportEntryMode.text),
             ),
           ],
@@ -209,6 +206,21 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
         _textFocus.requestFocus();
     }
   }
+
+  Widget _sourceTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+  }) => ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 56),
+    child: ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle),
+      onTap: onTap,
+    ),
+  );
 
   Future<void> _pick(ImageSource source) async {
     if (_busy) return;
@@ -803,11 +815,6 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                   _poll();
                 },
         ),
-      Text(
-        '导入资料将由当前配置的云端AI处理。请核对识别结果后再应用。',
-        style: TextStyle(color: AppColors.textSecondary, height: 1.5),
-      ),
-      const SizedBox(height: 12),
       if (_images.isEmpty)
         TextField(
           controller: _text,
