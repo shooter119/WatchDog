@@ -342,15 +342,20 @@ test('危化品图片即使带警情背景也只按纯 UN 编号自动查询', a
   globalThis.fetch = async (_url, opts) => {
     const body = JSON.parse(opts.body);
     requests.push(body);
-    return { ok: true, json: async () => requests.length === 1
+    return { ok: true, json: async () => requests.length === 2
+      ? { results: [{ title: '官方资料', url: 'https://example.org/guide', summary: 'UN 1234 运输名称测试资料' }] }
+      : requests.length === 1
       ? { output_text: JSON.stringify({ relevance: 'related', hazmat_un_numbers: ['1234', '1234', '33', '1234 注入'], facts: ['标牌'] }) }
       : { output: [{ type: 'web_search_call', status: 'completed' }], output_text: '查询结果及来源 https://example.org/guide' } };
   };
   const result = await analyzeVisionWithDeepSeek({ apiKey: 'k', imageDataUrl: 'data:image/jpeg;base64,abc', message: '现场地址和人员保密', search: false, hazmatSearch: true });
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
   assert.equal(requests[0].tools, undefined);
-  assert.equal(requests[1].tool_choice, 'required');
-  assert.deepEqual(requests[1].input, [{ role: 'user', content: '查询危险货物 UN 编号：1234' }]);
+  assert.equal(requests[1].query, '查询危险货物 UN 编号：1234');
+  assert.equal(requests[1].need_content, true);
+  assert.deepEqual(requests[2].reasoning, { effort: 'none' });
+  assert.equal(requests[2].tools, undefined);
+  assert.deepEqual(requests[2].input, [{ role: 'user', content: '查询危险货物 UN 编号：1234' }]);
   assert.match(result.suggestions.at(-1), /查询结果及来源/);
 });
 
@@ -368,5 +373,23 @@ test('模糊标牌不查询；联网失败或未实际搜索报告未核实', as
     assert.equal(count, ['blurred', 'disabled'].includes(mode) ? 1 : 2);
     if (mode !== 'blurred') assert.match(result.to_confirm.at(-1), /尚未核实/);
     assert.ok(!result.suggestions.join('').includes('猜测'));
+  }
+});
+
+
+test('强制查询不接受空搜索、无效链接或未完成的模型回答', async () => {
+  for (const mode of ['empty', 'invalid_url', 'incomplete']) {
+    let calls = 0;
+    globalThis.fetch = async (url, opts) => {
+      calls++;
+      assert.equal(opts.redirect, 'error');
+      if (calls === 1) {
+        assert.match(String(url), /\/v1\/tools\/search$/);
+        return { ok: true, json: async () => ({ results: mode === 'empty' ? [] : [{ title: '资料', url: mode === 'invalid_url' ? 'javascript:alert(1)' : 'https://example.org/source', summary: '运输名称' }] }) };
+      }
+      return { ok: true, json: async () => ({ status: 'incomplete', output_text: '截断的回答' }) };
+    };
+    await assert.rejects(chatWithWebSearch({ apiKey: 'k', baseUrl: 'https://api.example.org/v1', requireSearch: true, messages: [{ role: 'user', content: 'UN 1234' }] }));
+    assert.equal(calls, mode === 'incomplete' ? 2 : 1);
   }
 });
