@@ -1,11 +1,17 @@
 package com.firewatch.watchdog
 
+import android.app.PictureInPictureParams
 import android.content.ClipData
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
+import android.util.Rational
 import android.view.WindowManager
+import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import com.firewatch.watchdog.camera.WatchdogCameraPlugin
 import io.flutter.embedding.android.FlutterActivity
@@ -19,7 +25,11 @@ class MainActivity : FlutterActivity() {
     private val channelName = "watchdog/screen"
     private val alarmChannelName = "watchdog/alarm"
     private val storageChannelName = "watchdog/storage"
+    private val pipChannelName = "watchdog/pip"
     private var cameraPlugin: WatchdogCameraPlugin? = null
+    private var pipChannel: MethodChannel? = null
+    private var autoEnterPip = false
+    private var pipAspect = Rational(16, 9)
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -226,6 +236,105 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        val pip = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, pipChannelName)
+        pip.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isSupported" -> {
+                    result.success(isPipSupported())
+                }
+                "setAutoEnter" -> {
+                    if (!isPipSupported()) {
+                        autoEnterPip = false
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    val aspectW = call.argument<Number>("aspectW")?.toInt() ?: 16
+                    val aspectH = call.argument<Number>("aspectH")?.toInt() ?: 9
+                    autoEnterPip = enabled
+                    pipAspect = clampPipAspect(aspectW, aspectH)
+                    val applied = try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            setPictureInPictureParams(buildPipParams())
+                            true
+                        } else {
+                            false
+                        }
+                    } catch (_: Throwable) {
+                        false
+                    }
+                    result.success(applied)
+                }
+                "enter" -> {
+                    if (!isPipSupported()) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    val aspectW = call.argument<Number>("aspectW")?.toInt() ?: pipAspect.numerator
+                    val aspectH = call.argument<Number>("aspectH")?.toInt() ?: pipAspect.denominator
+                    pipAspect = clampPipAspect(aspectW, aspectH)
+                    val entered = try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            enterPictureInPictureMode(buildPipParams())
+                        } else {
+                            false
+                        }
+                    } catch (_: Throwable) {
+                        false
+                    }
+                    result.success(entered)
+                }
+                "exit" -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !isPipSupported()) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    runOnUiThread {
+                        try {
+                            startActivity(
+                                Intent(this, MainActivity::class.java)
+                                    .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                            )
+                            result.success(true)
+                        } catch (_: Throwable) {
+                            result.success(false)
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+        pipChannel = pip
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (autoEnterPip &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
+            isPipSupported()
+        ) {
+            try {
+                enterPictureInPictureMode(buildPipParams())
+            } catch (_: Throwable) {
+                // 忽略异常，避免切后台时崩溃
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        val channel = pipChannel ?: return
+        runOnUiThread {
+            try {
+                channel.invokeMethod("pipChanged", mapOf("active" to isInPictureInPictureMode))
+            } catch (_: Throwable) {
+                // 引擎未就绪或通道异常时直接忽略
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -238,9 +347,41 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        pipChannel?.setMethodCallHandler(null)
+        pipChannel = null
         cameraPlugin?.disposePlugin()
         cameraPlugin = null
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    private fun isPipSupported(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun clampPipAspect(aspectW: Int, aspectH: Int): Rational {
+        if (aspectW <= 0 || aspectH <= 0) return Rational(16, 9)
+        val ratio = aspectW.toDouble() / aspectH.toDouble()
+        if (!ratio.isFinite()) return Rational(16, 9)
+        return when {
+            ratio < 0.42 -> Rational(42, 100)
+            ratio > 2.39 -> Rational(239, 100)
+            else -> Rational(aspectW, aspectH)
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun buildPipParams(): PictureInPictureParams {
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(pipAspect)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(autoEnterPip)
+        }
+        return builder.build()
     }
 
     private fun downloadedUpdateFile(filename: String?): File? {

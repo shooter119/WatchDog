@@ -16,12 +16,14 @@ import 'services/app_data_epoch.dart';
 import 'services/local_asr_service.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/op_log_service.dart';
+import 'services/system_pip.dart';
 import 'services/theme_controller.dart';
 import 'services/video_playback_session.dart';
 import 'state/app_controller.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_widgets.dart';
 import 'theme/nav_icons.dart';
+import 'widgets/pip_shell.dart';
 
 void main() {
   final diagnostics = DiagnosticLogService.instance;
@@ -30,6 +32,7 @@ void main() {
   runZonedGuarded<void>(
     () {
       WidgetsFlutterBinding.ensureInitialized();
+      unawaited(SystemPip.initialize());
       unawaited(diagnostics.init());
 
       // Flutter framework 异常通常就是开发者看到的红屏；保留 Flutter 默认输出，
@@ -106,6 +109,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _videoPlayback.addListener(_syncSystemPip);
     controller =
         widget.controller ?? AppController(localAsr: LocalAsrService());
     DiagnosticLogService.instance.setPage('home');
@@ -126,6 +130,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _videoPlayback.removeListener(_syncSystemPip);
     _chatInput.dispose();
     _chatInputFocus.dispose();
     _videoPlayback.dispose();
@@ -133,10 +138,18 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  void _syncSystemPip() {
+    // 只要还有视频会话就允许切后台时自动进 PiP；stop() 后 hasResource 为假，自动关闭。
+    unawaited(SystemPip.setAutoEnter(enabled: _videoPlayback.hasResource));
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(controller.handleAppResumed());
+      if (_videoPlayback.hasResource) {
+        _videoPlayback.reattachSurface();
+      }
     } else {
       controller.handleAppPaused();
     }
@@ -306,6 +319,11 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
       theme: buildAppTheme(),
       // 默认 200ms 的 Theme 渐变会与瞬切的 AppColors 并存，出现两套配色。
       themeAnimationDuration: Duration.zero,
+      builder: (context, child) => ValueListenableBuilder<bool>(
+        valueListenable: SystemPip.isActive,
+        builder: (context, inPip, _) =>
+            inPip ? PipShell(session: _videoPlayback) : (child ?? const SizedBox.shrink()),
+      ),
       // 换主题时按 palette 换 key 强制重建整棵页面树：在 build 里读 AppColors
       // 的 const 组件会被 Flutter 的 identical 短路跳过，留下旧色。
       // 代价是切主题会重置页面滚动位置与未提交输入，可接受。

@@ -505,4 +505,24 @@ void main() {
     adminController.dispose();
     adminApi.dispose();
   });
+
+  test('reattachSurface 不改变会话状态，无会话时安全返回', () {
+    final session = VideoPlaybackSession.forTesting(
+      resource: _resource,
+      status: VideoPlaybackStatus.playing,
+    );
+    final beforeStatus = session.status;
+    final beforePresentation = session.presentation;
+    expect(() => session.reattachSurface(), returnsNormally);
+    expect(session.status, beforeStatus);
+    expect(session.presentation, beforePresentation);
+    session.dispose();
+
+    final idle = VideoPlaybackSession.forTesting();
+    var notified = 0;
+    idle.addListener(() => notified++);
+    expect(() => idle.reattachSurface(), returnsNormally);
+    expect(notified, 0, reason: '无播放器时不应触发重建通知');
+    idle.dispose();
+  });
 }

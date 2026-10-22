@@ -101,6 +101,32 @@ class VideoPlaybackSession extends ChangeNotifier {
     _notify();
   }
 
+  /// Android 切后台会销毁渲染表面；回到前台需要重新挂一个渲染目标，否则画面停在最后一帧。
+  /// 只重建渲染目标（VideoController），不重新打开流、不动 Player 与重连状态。
+  void reattachSurface() {
+    final player = _player;
+    if (player == null || _resource == null) return;
+
+    final old = _videoController;
+    _videoController = VideoController(player);
+    _notify();
+
+    // VideoController 本身没有 dispose（其生命周期挂在 Player 上），可释放的是平台侧
+    // 控制器：只释放它自己的 notifier 与订阅。放在界面重建之后执行，避免旧纹理先被回收导致黑屏。
+    if (old != null) {
+      unawaited(
+        Future<void>.delayed(const Duration(milliseconds: 300), () async {
+          try {
+            final platform = await old.platform.future;
+            platform.dispose();
+          } catch (_) {
+            // 平台控制器尚未就绪或已随 Player 释放，忽略。
+          }
+        }),
+      );
+    }
+  }
+
   void retryNow() {
     if (!hasResource) return;
     _reconnectTimer?.cancel();
