@@ -2386,6 +2386,42 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('辅助入口在窄屏大字下等高且使用独立图标', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: const TextScaler.linear(1.3),
+            ),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: ChatPage(controller: _FakeController(), audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final height = tester.getSize(find.byKey(const Key('chat-vision-callout'))).height;
+      for (final question in [
+        '气瓶压力下降太快怎么办？',
+        '浓烟太大看不清路，有什么办法？',
+        '破拆卷帘门有哪些注意事项？',
+      ]) {
+        expect(tester.getSize(find.byKey(Key('chat-sample-question-$question'))).height, height);
+      }
+      expect(find.byIcon(Icons.gas_meter_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.blinds_closed_outlined), findsOneWidget);
+      expect(find.text('识别装备、环境和潜在安全风险'), findsNothing);
+      expect(find.text('图片仅临时处理，不保存原图'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('无历史时点示例问题直接发送', (tester) async {
       final api = _FakeApi();
       final c = _FakeController()..api = api;

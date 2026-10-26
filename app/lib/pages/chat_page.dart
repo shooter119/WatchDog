@@ -1091,12 +1091,12 @@ class ChatPageState extends State<ChatPage> {
               ),
               const SizedBox(height: AppSpacing.s5),
               _VisionCallout(onTap: _pickVisionImage),
-              const SizedBox(height: AppSpacing.s4),
-              const _SampleQuestion('气瓶压力下降太快怎么办？'),
               const SizedBox(height: AppSpacing.s2),
-              const _SampleQuestion('浓烟太大看不清路，有什么办法？'),
+              const _SampleQuestion('气瓶压力下降太快怎么办？', icon: Icons.gas_meter_outlined),
               const SizedBox(height: AppSpacing.s2),
-              const _SampleQuestion('破拆卷帘门有哪些注意事项？'),
+              const _SampleQuestion('浓烟太大看不清路，有什么办法？', icon: Icons.visibility_off_outlined),
+              const SizedBox(height: AppSpacing.s2),
+              const _SampleQuestion('破拆卷帘门有哪些注意事项？', icon: Icons.blinds_closed_outlined),
             ],
           ),
         ),
@@ -1376,6 +1376,81 @@ class _ThinkingBubble extends StatelessWidget {
   }
 }
 
+class _AssistantOptionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _AssistantOptionCard({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.onTap,
+  });
+
+  static const _titles = [
+    '拍照分析现场',
+    '气瓶压力下降太快怎么办？',
+    '浓烟太大看不清路，有什么办法？',
+    '破拆卷帘门有哪些注意事项？',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AppTextStyles.bodyMd.copyWith(
+      fontWeight: FontWeight.w800,
+      color: AppColors.textPrimary,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 四项按最长标题统一高度，大字与窄屏下也不截断问题。
+        final textWidth = max(1.0, constraints.maxWidth - 116);
+        var textHeight = 0.0;
+        for (final title in _titles) {
+          final painter = TextPainter(
+            text: TextSpan(text: title, style: style),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout(maxWidth: textWidth);
+          textHeight = max(textHeight, painter.height);
+          painter.dispose();
+        }
+        return SizedBox(
+          height: max(44.0, textHeight) + AppSpacing.s3 * 2,
+          child: AppCard(
+            onTap: onTap,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s3,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.voice.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Icon(icon, color: AppColors.voice),
+                ),
+                const SizedBox(width: AppSpacing.s3),
+                Expanded(child: Text(title, style: style)),
+                const SizedBox(width: AppSpacing.s2),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: AppColors.textTertiary,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _VisionCallout extends StatelessWidget {
   final VoidCallback onTap;
 
@@ -1383,103 +1458,30 @@ class _VisionCallout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    return _AssistantOptionCard(
       key: const Key('chat-vision-callout'),
+      title: '拍照分析现场',
+      icon: Icons.camera_alt_outlined,
       onTap: onTap,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s4,
-        vertical: AppSpacing.s3,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.voice.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-            ),
-            child: Icon(Icons.camera_alt_outlined, color: AppColors.voice),
-          ),
-          const SizedBox(width: AppSpacing.s3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '拍照分析现场',
-                  style: AppTextStyles.bodyMd.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s1),
-                Text(
-                  '识别装备、环境和潜在安全风险',
-                  style: AppTextStyles.label.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s1),
-                Text(
-                  '图片仅临时处理，不保存原图',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary),
-        ],
-      ),
     );
   }
 }
 
 class _SampleQuestion extends StatelessWidget {
   final String text;
-  const _SampleQuestion(this.text);
+  final IconData icon;
+  const _SampleQuestion(this.text, {required this.icon});
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return _AssistantOptionCard(
       key: ValueKey('chat-sample-question-$text'),
-      height: 56,
-      child: AppCard(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
-        onTap: () {
-          final page = context.findAncestorStateOfType<ChatPageState>();
-          page?.submitQuestion(text);
-        },
-        child: Row(
-          children: [
-            Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 18,
-              color: AppColors.voice,
-            ),
-            const SizedBox(width: AppSpacing.s3),
-            Expanded(
-              child: Text(
-                text,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.bodyMd.copyWith(
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s2),
-            Icon(
-              Icons.arrow_forward_rounded,
-              size: 18,
-              color: AppColors.textTertiary,
-            ),
-          ],
-        ),
-      ),
+      title: text,
+      icon: icon,
+      onTap: () {
+        final page = context.findAncestorStateOfType<ChatPageState>();
+        page?.submitQuestion(text);
+      },
     );
   }
 }
