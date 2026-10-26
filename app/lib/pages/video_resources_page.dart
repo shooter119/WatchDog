@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/video_resources.dart';
@@ -49,7 +50,31 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
     _ownsPlayback = widget.playback == null;
     _playback = widget.playback ?? VideoPlaybackSession();
     _playback.addListener(_onPlaybackChanged);
+    _loadPipHintShown();
     _load();
+  }
+
+  /// 画中画会持续解码，属于"看不见但一直耗电"的用法，只提示一次。
+  static const _pipHintKey = 'pip_hint_shown_v1';
+  bool _pipHintShown = true;
+
+  Future<void> _loadPipHintShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shown = prefs.getBool(_pipHintKey) ?? false;
+      if (mounted) setState(() => _pipHintShown = shown);
+    } catch (_) {
+      // 读取失败时保持"已提示"，避免每次进页面都弹。
+    }
+  }
+
+  Future<void> _markPipHintShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_pipHintKey, true);
+    } catch (_) {
+      // 写入失败只影响下次是否重复提示，不影响播放。
+    }
   }
 
   @override
@@ -172,6 +197,16 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
   void _showFloating(VideoResource resource) {
     if (_expandedResourceId != resource.id) return;
     _playback.enterFloating();
+    if (!_pipHintShown) {
+      _pipHintShown = true;
+      unawaited(_markPipHintShown());
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          duration: Duration(seconds: 4),
+          content: Text('切到后台会以系统画中画继续播放；视频解码会持续耗电，不用时请关闭浮窗。'),
+        ),
+      );
+    }
     widget.onVideoFloating?.call();
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();

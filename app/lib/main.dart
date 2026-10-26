@@ -112,6 +112,8 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     _videoPlayback.addListener(_syncSystemPip);
     controller =
         widget.controller ?? AppController(localAsr: LocalAsrService());
+    controller.setPipActive(SystemPip.isActive.value);
+    SystemPip.isActive.addListener(_handlePipActiveChanged);
     DiagnosticLogService.instance.setPage('home');
     // 等 FlutterActivity 完成插件注册后再初始化后台值守；过早在 main()
     // 调用会触发 flutter_foreground_task 的 MissingPluginException。
@@ -131,11 +133,16 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _videoPlayback.removeListener(_syncSystemPip);
+    SystemPip.isActive.removeListener(_handlePipActiveChanged);
     _chatInput.dispose();
     _chatInputFocus.dispose();
     _videoPlayback.dispose();
     controller.dispose();
     super.dispose();
+  }
+
+  void _handlePipActiveChanged() {
+    controller.setPipActive(SystemPip.isActive.value);
   }
 
   void _syncSystemPip() {

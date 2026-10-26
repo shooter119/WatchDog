@@ -525,4 +525,45 @@ void main() {
     expect(notified, 0, reason: '无播放器时不应触发重建通知');
     idle.dispose();
   });
+
+  testWidgets('切到浮窗时提示画中画会持续耗电，且只提示一次', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    const hint = '切到后台会以系统画中画继续播放；视频解码会持续耗电，不用时请关闭浮窗。';
+    final api = _VideoApi();
+    final controller = _VideoController(api);
+
+    Future<void> openPageAndFloat() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VideoResourcesPage(
+            controller: controller,
+            availabilityChecker: (_) async => true,
+            expandedPlayerBuilder: (_) => const ColoredBox(color: Colors.black),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('合成监控'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('video-resource-floating-camera-1')),
+      );
+      await tester.pump();
+    }
+
+    // 第一次：提示出现并落盘
+    await openPageAndFloat();
+    expect(find.text(hint), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+
+    // 第二次（新页面实例，从持久化标记读取）：不再提示
+    await openPageAndFloat();
+    expect(find.text(hint), findsNothing);
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
 }

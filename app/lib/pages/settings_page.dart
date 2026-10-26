@@ -1193,7 +1193,7 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '开启时请允许通知与电池白名单，否则保活可能被系统中断',
+                '开启时请允许通知与电池白名单；值守约每小时 1%–2% 电量，建议仅在处置期间开启。',
                 style: AppTextStyles.caption.copyWith(
                   color: AppColors.textTertiary,
                 ),

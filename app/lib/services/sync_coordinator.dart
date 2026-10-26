@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../api/api_client.dart';
 import 'realtime_sync_client.dart';
 import 'sync_reducer.dart';
@@ -8,6 +10,13 @@ enum SyncConnectionState { stopped, bootstrapping, connecting, connected, reconn
 
 /// 管理 bootstrap、游标、WebSocket、补拉和 30 秒轻量校准。
 class SyncCoordinator {
+  static const connectedCheckpointInterval = Duration(seconds: 120);
+  static const disconnectedCheckpointInterval = Duration(seconds: 30);
+
+  /// 连接期降频规则：WS 在收事件时不需要每 30 秒盲拉；断线才用 30 秒兜底补齐。
+  static Duration checkpointIntervalFor({required bool connected}) =>
+      connected ? connectedCheckpointInterval : disconnectedCheckpointInterval;
+
   final ApiClient api;
   final void Function(Map<String, dynamic> snapshot) onSnapshot;
   final void Function(SyncEvent event) onEvent;
@@ -17,6 +26,7 @@ class SyncCoordinator {
 
   RealtimeClient? _client;
   Timer? _checkpointTimer;
+  Duration? _checkpointTimerPeriod;
   Timer? _reconnectTimer;
   int _reconnectAttempt = 0;
   bool _stopped = true;
@@ -44,6 +54,11 @@ class SyncCoordinator {
 
   bool get running => !_stopped;
   String? get incidentId => _incidentId;
+  Duration get checkpointInterval =>
+      checkpointIntervalFor(connected: _client?.connected == true);
+
+  @visibleForTesting
+  Duration? get debugCheckpointTimerPeriod => _checkpointTimerPeriod;
 
   Future<void> start({String? incidentId}) async {
     _stopped = false;
@@ -51,7 +66,22 @@ class SyncCoordinator {
     _reconnectTimer?.cancel();
     _reconnectAttempt = 0;
     await _bootstrapAndConnect();
-    _checkpointTimer ??= Timer.periodic(const Duration(seconds: 30), (_) => _checkpoint());
+    _ensureCheckpointTimerPeriod();
+  }
+
+  void _ensureCheckpointTimerPeriod() {
+    if (_stopped) return;
+    final interval = checkpointInterval;
+    if (_checkpointTimer != null && _checkpointTimerPeriod == interval) return;
+    _checkpointTimer?.cancel();
+    _checkpointTimerPeriod = interval;
+    _checkpointTimer = Timer.periodic(interval, (_) {
+      if (_checkpointTimerPeriod != checkpointInterval) {
+        _ensureCheckpointTimerPeriod();
+        return;
+      }
+      unawaited(_checkpoint());
+    });
   }
 
   Future<void> switchIncident(String? incidentId) async {
@@ -98,10 +128,12 @@ class SyncCoordinator {
     try {
       await client.connect(unitCursor: unitCursor, incidentCursor: incidentCursor, incidentId: _incidentId);
       _reconnectAttempt = 0;
+      _ensureCheckpointTimerPeriod();
       onState(SyncConnectionState.connected, null);
     } catch (error) {
       await client.disconnect();
       if (identical(_client, client)) _client = null;
+      _ensureCheckpointTimerPeriod();
       onState(SyncConnectionState.error, error);
       _scheduleReconnect();
     }
@@ -188,7 +220,9 @@ class SyncCoordinator {
   }
 
   void _scheduleReconnect() {
-    if (_stopped || _reconnectTimer?.isActive == true) return;
+    if (_stopped) return;
+    _ensureCheckpointTimerPeriod();
+    if (_reconnectTimer?.isActive == true) return;
     const delays = <int>[1, 2, 5, 10, 20, 30];
     final seconds = delays[_reconnectAttempt.clamp(0, delays.length - 1)];
     _reconnectAttempt++;
@@ -203,6 +237,7 @@ class SyncCoordinator {
     _stopped = true;
     _checkpointTimer?.cancel();
     _checkpointTimer = null;
+    _checkpointTimerPeriod = null;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     await _client?.disconnect();

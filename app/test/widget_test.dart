@@ -1243,6 +1243,26 @@ void main() {
       expect(await Settings.keepScreenOn, isFalse);
     });
 
+    testWidgets('后台值守说明写明耗电预期，便于用户判断是否开启', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _FakeController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('提醒方式'));
+      await tester.tap(find.text('提醒方式'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('开启时请允许通知与电池白名单；值守约每小时 1%–2% 电量，建议仅在处置期间开启。'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('操作日志入口可进入日志页', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final c = _FakeController();

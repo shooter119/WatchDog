@@ -187,6 +187,35 @@ class AppController extends ChangeNotifier {
   bool _memberReviewAgain = false;
   int _memberReviewGeneration = 0;
   bool _appInForeground = true;
+  bool _pipActive = false;
+
+  static const foregroundTickInterval = Duration(seconds: 1);
+  static const backgroundTickInterval = Duration(seconds: 5);
+
+  @visibleForTesting
+  Duration get tickInterval => (_appInForeground || _pipActive)
+      ? foregroundTickInterval
+      : backgroundTickInterval;
+
+  void setPipActive(bool active) {
+    if (_pipActive == active) return;
+    _pipActive = active;
+    if (_tickTimer != null) {
+      _restartTickTimer();
+    }
+  }
+
+  void _restartTickTimer() {
+    _tickTimer?.cancel();
+    if (_disposed) return;
+    final interval = (_appInForeground || _pipActive)
+        ? foregroundTickInterval
+        : backgroundTickInterval;
+    _tickTimer = Timer.periodic(interval, (_) {
+      _checkThresholds();
+      clockTick.value++;
+    });
+  }
 
   void _clearMemberReview() {
     memberReviewUnitName = '';
@@ -203,6 +232,9 @@ class AppController extends ChangeNotifier {
 
   void handleAppPaused() {
     _appInForeground = false;
+    if (_tickTimer != null) {
+      _restartTickTimer();
+    }
   }
 
   int pendingMemberCount = 0;
@@ -401,6 +433,9 @@ class AppController extends ChangeNotifier {
   /// App 从后台回到前台时立即核对会话，避免后台挂起期间错过定时续期。
   Future<void> handleAppResumed() async {
     _appInForeground = true;
+    if (_tickTimer != null) {
+      _restartTickTimer();
+    }
     unawaited(refreshPendingMembersCount());
     try {
       await _refreshSession();
@@ -1102,11 +1137,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     _syncStarted = true;
-    _tickTimer?.cancel();
-    _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _checkThresholds();
-      clockTick.value++;
-    });
+    _restartTickTimer();
     _realtimeStartFuture = _startRealtimeSync();
     unawaited(_realtimeStartFuture!);
   }
@@ -1772,7 +1803,10 @@ class AppController extends ChangeNotifier {
     final allIds = entries.map((e) => e.id).toSet();
 
     for (final e in active) {
-      if (_scheduled[e.id] != e.exitAt) {
+      if (shouldRescheduleNotification(
+        scheduledExitAt: _scheduled[e.id],
+        exitAt: e.exitAt,
+      )) {
         try {
           await alarm.cancelForEntry(e.id);
           await alarm.scheduleForEntry(
@@ -1796,7 +1830,15 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  /// 每秒检查：剩余10分钟提醒、5分钟报警、超时报警（前台 TTS+声音）
+  /// 通知只在 `exitAt` 变化（改名/压力复核）时重排；同一到期时间重复同步不得反复
+  /// cancel+schedule，否则每次快照都会白跑 3 个精确闹钟的 IPC。
+  @visibleForTesting
+  static bool shouldRescheduleNotification({
+    required int? scheduledExitAt,
+    required int exitAt,
+  }) => scheduledExitAt != exitAt;
+
+  /// 前台/PiP 每秒、后台每5秒检查：剩余10分钟提醒、5分钟报警、超时报警。
   void _checkThresholds() {
     final now = DateTime.now().millisecondsSinceEpoch;
     var inDanger = false;
