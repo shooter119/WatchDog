@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -2393,7 +2394,11 @@ class AppController extends ChangeNotifier {
       '出场' => cleanNames.map((name) => '$name撤离救援现场').join('、'),
       _ => cleanNames.map((name) => '$name$action').join('、'),
     };
-    return addNote(text, category: category, opId: opId);
+    // 超长派生操作号按完整内容生成固定长度摘要，重试仍使用同一幂等键。
+    final actionOpId = opId != null && opId.length > 64
+        ? sha256.convert(utf8.encode(opId)).toString()
+        : opId;
+    return addNote(text, category: category, opId: actionOpId);
   }
 
   static String _formatPressureMpa(double pressure) {

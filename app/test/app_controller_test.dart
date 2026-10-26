@@ -24,6 +24,7 @@ class _OfflineApi extends ApiClient {
 class _RecordingApi extends ApiClient {
   _RecordingApi() : super(baseUrl: 'http://rec', incidentId: 'test');
   String? lastAuthor;
+  String? lastOpId;
 
   @override
   Future<Note> createNote({
@@ -33,6 +34,7 @@ class _RecordingApi extends ApiClient {
     String? author,
   }) async {
     lastAuthor = author;
+    lastOpId = opId;
     return Note(
       id: 'n1',
       text: text,
@@ -48,6 +50,29 @@ void main() {
   // AppController 构造会实例化 AlarmService/TtsService（插件通道），
   // 需要 testWidgets 的测试 binding 环境（与 widget_test 一致）
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('进出场日志压缩超长操作号，保持重试稳定且不同操作不混用', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = _RecordingApi();
+    final c = AppController()..api = api;
+    addTearDown(c.dispose);
+    const longId = 'manual-exit-note-12345678-1234-1234-1234-123456789abc-1793024291000';
+    Future<void> write(String id) => c.addActionLog(
+      names: ['袁超'],
+      action: '出场',
+      category: NoteCategory.withdraw,
+      opId: id,
+    );
+    await write(longId);
+    final first = api.lastOpId;
+    expect(first!.length, lessThanOrEqualTo(64));
+    await write(longId);
+    expect(api.lastOpId, first);
+    await write('$longId-next');
+    expect(api.lastOpId, isNot(first));
+    await write('exit-note-short');
+    expect(api.lastOpId, 'exit-note-short');
+  });
 
   testWidgets('倒计时 tick 独立刷新，不广播整棵页面树', (tester) async {
     final c = AppController();
