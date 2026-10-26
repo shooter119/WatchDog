@@ -26,7 +26,6 @@ class SyncCoordinator {
 
   RealtimeClient? _client;
   Timer? _checkpointTimer;
-  Duration? _checkpointTimerPeriod;
   Timer? _reconnectTimer;
   int _reconnectAttempt = 0;
   bool _stopped = true;
@@ -57,8 +56,9 @@ class SyncCoordinator {
   Duration get checkpointInterval =>
       checkpointIntervalFor(connected: _client?.connected == true);
 
+  /// 当前生效的检查点间隔（30 秒 / 120 秒），供测试断言。
   @visibleForTesting
-  Duration? get debugCheckpointTimerPeriod => _checkpointTimerPeriod;
+  Duration get debugCheckpointTimerPeriod => checkpointInterval;
 
   Future<void> start({String? incidentId}) async {
     _stopped = false;
@@ -66,23 +66,29 @@ class SyncCoordinator {
     _reconnectTimer?.cancel();
     _reconnectAttempt = 0;
     await _bootstrapAndConnect();
-    _ensureCheckpointTimerPeriod();
+    // 固定 30 秒节拍：连接期只放行每第 4 拍（等效 120 秒）。
+    // 不做"按连接状态重建定时器"，否则连接抖动会不停重建、永远攒不满一拍。
+    _checkpointTimer ??= Timer.periodic(
+      disconnectedCheckpointInterval,
+      (_) => _onCheckpointTick(),
+    );
   }
 
-  void _ensureCheckpointTimerPeriod() {
+  int _checkpointTicks = 0;
+
+  void _onCheckpointTick() {
     if (_stopped) return;
-    final interval = checkpointInterval;
-    if (_checkpointTimer != null && _checkpointTimerPeriod == interval) return;
-    _checkpointTimer?.cancel();
-    _checkpointTimerPeriod = interval;
-    _checkpointTimer = Timer.periodic(interval, (_) {
-      if (_checkpointTimerPeriod != checkpointInterval) {
-        _ensureCheckpointTimerPeriod();
-        return;
-      }
-      unawaited(_checkpoint());
-    });
+    _checkpointTicks++;
+    if (checkpointInterval == connectedCheckpointInterval &&
+        _checkpointTicks % _connectedTickDivisor != 0) {
+      return;
+    }
+    unawaited(_checkpoint());
   }
+
+  /// 连接期把 30 秒节拍压成 120 秒：4 拍放行 1 拍。
+  static final int _connectedTickDivisor =
+      connectedCheckpointInterval.inSeconds ~/ disconnectedCheckpointInterval.inSeconds;
 
   Future<void> switchIncident(String? incidentId) async {
     if (_stopped) return;
@@ -128,12 +134,10 @@ class SyncCoordinator {
     try {
       await client.connect(unitCursor: unitCursor, incidentCursor: incidentCursor, incidentId: _incidentId);
       _reconnectAttempt = 0;
-      _ensureCheckpointTimerPeriod();
       onState(SyncConnectionState.connected, null);
     } catch (error) {
       await client.disconnect();
       if (identical(_client, client)) _client = null;
-      _ensureCheckpointTimerPeriod();
       onState(SyncConnectionState.error, error);
       _scheduleReconnect();
     }
@@ -221,7 +225,6 @@ class SyncCoordinator {
 
   void _scheduleReconnect() {
     if (_stopped) return;
-    _ensureCheckpointTimerPeriod();
     if (_reconnectTimer?.isActive == true) return;
     const delays = <int>[1, 2, 5, 10, 20, 30];
     final seconds = delays[_reconnectAttempt.clamp(0, delays.length - 1)];
@@ -237,7 +240,6 @@ class SyncCoordinator {
     _stopped = true;
     _checkpointTimer?.cancel();
     _checkpointTimer = null;
-    _checkpointTimerPeriod = null;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     await _client?.disconnect();
