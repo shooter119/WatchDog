@@ -69,12 +69,25 @@ class AlarmService {
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
   // 报警音走 ALARM 音频流（不随媒体音量/静音，配合音量强制提升）；stayAwake 持锁屏唤醒
-  final AudioPlayer _player = AudioPlayer();
+  final AudioPlayer _player;
+
+  AlarmService({AudioPlayer? player}) : _player = player ?? AudioPlayer();
+
+  // 持续警笛与系统 TTS 混音，避免撤离语音抢走焦点后警笛永久暂停。
+  static final _alarmContext = AudioContext(
+    android: const AudioContextAndroid(
+      usageType: AndroidUsageType.alarm,
+      audioFocus: AndroidAudioFocus.none,
+      stayAwake: true,
+    ),
+  );
   bool soundEnabled = true;
   bool _inited = false;
   final Set<String> _firedLocal = {};
   String _lastSpokenKey = '';
   bool _looping = false;
+  bool _starting = false;
+  int _playbackGeneration = 0;
 
   /// 精确闹钟是否可用（Android 12+ 可能被系统/用户关闭）
   bool exactAlarmAvailable = true;
@@ -101,15 +114,7 @@ class AlarmService {
         const InitializationSettings(android: androidInit, iOS: iosInit),
       );
       // 报警音走 ALARM 音频流（不受媒体音量/静音影响，配合音量强制提升），锁屏时持唤醒锁
-      await _player.setAudioContext(
-        AudioContext(
-          android: const AudioContextAndroid(
-            usageType: AndroidUsageType.alarm,
-            audioFocus: AndroidAudioFocus.gain,
-            stayAwake: true,
-          ),
-        ),
-      );
+      await _player.setAudioContext(_alarmContext);
       // Android 13+：运行时申请通知权限
       await _notifications
           .resolvePlatformSpecificImplementation<
@@ -132,7 +137,7 @@ class AlarmService {
               >()
               ?.requestFullScreenIntentPermission() ??
           true;
-      await _player.setPlayerMode(PlayerMode.lowLatency);
+      await _player.setPlayerMode(PlayerMode.mediaPlayer);
       await _player.setSource(AssetSource('sounds/alarm.wav'));
       _inited = true;
     } catch (_) {
@@ -239,24 +244,39 @@ class AlarmService {
 
   /// 前台循环警报音：存在 alarm/timeout 状态人员时持续响（幂等）
   Future<void> startAlarmLoop() async {
-    if (!soundEnabled) return;
-    if (_looping) return;
-    _looping = true;
+    if (!soundEnabled) {
+      await stopAlarm();
+      return;
+    }
+    if (_looping && _player.state == PlayerState.playing) return;
+    if (_starting) return;
+    _starting = true;
+    final generation = _playbackGeneration;
     try {
       // 火场高分贝环境：把 ALARM 流音量拉到最大（报警音走 ALARM 流）
       await AlarmNative.maximizeAlarmVolume();
-      await _player.setPlayerMode(PlayerMode.lowLatency);
+      await _player.setAudioContext(_alarmContext);
+      await _player.setPlayerMode(PlayerMode.mediaPlayer);
       await _player.setSource(AssetSource('sounds/alarm.wav'));
       await _player.setReleaseMode(ReleaseMode.loop);
+      if (generation != _playbackGeneration || !soundEnabled) return;
       await _player.resume();
+      if (generation != _playbackGeneration || !soundEnabled) {
+        await _player.stop();
+        return;
+      }
+      _looping = true;
     } catch (_) {
       _looping = false;
       rethrow;
+    } finally {
+      _starting = false;
     }
   }
 
   Future<void> stopAlarm() async {
-    if (!_looping) return;
+    _playbackGeneration++;
+    if (!_looping && !_starting) return;
     _looping = false;
     await _player.stop();
   }
