@@ -202,10 +202,6 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
         _homeKey.currentState?.finishRecording();
       }
     } else {
-      if (_tab != 3 && controller.requiresIncident) {
-        controller.requestIncidentSelection();
-        return;
-      }
       _goVoice();
     }
   }

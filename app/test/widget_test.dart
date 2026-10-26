@@ -2766,6 +2766,19 @@ void main() {
         findsOneWidget,
       );
 
+      // 单击麦克风只负责回到主页；长按登记才要求选择警情。
+      await tester.tap(find.text('设置'));
+      await tester.pump();
+      await tester.tap(find.byType(VoiceButton));
+      await tester.pump();
+      expect(find.byKey(const Key('incident-selection-overlay')), findsNothing);
+      expect(find.byKey(const Key('choose-incident-from-home')), findsOneWidget);
+      await tester.longPress(find.byType(VoiceButton));
+      await tester.pump();
+      expect(find.byKey(const Key('incident-selection-overlay')), findsOneWidget);
+      await tester.tap(find.text('直接进入 App'));
+      await tester.pump();
+
       await tester.tap(find.byKey(const Key('choose-incident-from-home')));
       await tester.pump();
       expect(
