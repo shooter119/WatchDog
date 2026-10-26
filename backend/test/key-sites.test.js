@@ -144,6 +144,23 @@ test('150家合成单位按名称简称地址检索、辖区类型过滤并稳�
   assert.equal((await sites.list('reader', { q: '简称150', district: '东区', site_type: '医院' })).sites[0].id, 'bulk-150');
 });
 
+test('分项表单无需出处可保存并发布，保存草稿不提前改变App读取内容', async () => {
+  const site = await create('合成直接填表验收');
+  const content = shape.emptyContent();
+  content.cards.push({ kind: 'siteOverview', title: '单位基本情况', fields: { dutyPhone: '000-TEST', totalStaff: '约30人' } });
+  content.maps.push({ title: '地图通行说明', fields: { access: '东侧入口' } });
+  await save(site, content);
+  await reject(() => sites.published('reader', site.id), 'KEY_SITE_VERSION_NOT_FOUND');
+  await publish(site);
+  const first = await sites.published('reader', site.id);
+  assert.equal(first.content.cards[0].fields.totalStaff, '约30人');
+  assert.deepEqual(first.content.maps[0].sources, []);
+  content.cards[0].fields.totalStaff = '40人'; await save(site, content);
+  assert.equal((await sites.published('reader', site.id)).content.cards[0].fields.totalStaff, '约30人');
+  await publish(site);
+  assert.equal((await sites.published('reader', site.id)).content.cards[0].fields.totalStaff, '40人');
+});
+
 test('图片与地图持久化任务可处理，瓦片边界和来源页码被校验', async () => {
   const site = await create('地图样例');
   const image = await sharp({ create: { width: 600, height: 400, channels: 3, background: '#d7e0db' } }).png().toBuffer();

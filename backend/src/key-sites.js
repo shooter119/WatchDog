@@ -138,7 +138,7 @@ function createKeySites(store, auth, now = Date.now) {
       if (attachments.length !== ids.length || attachments.some(item => item.status !== 'ready')) fail('来源附件未就绪或不属于本单位', 'KEY_SITE_SOURCE_INVALID', 409);
       const byId = new Map(attachments.map(item => [item.id, item]));
       for (const module of shape.MODULES) for (const entry of data[module]) {
-        if (module === 'maps' && entry.sources.length !== 1) fail('每张地图须指定一份已切片的来源附件及页码', 'KEY_SITE_SOURCE_INVALID', 400);
+        if (module === 'maps' && entry.sources.length > 1) fail('每张地图最多关联一份地图文件及页码', 'KEY_SITE_SOURCE_INVALID', 400);
         for (const source of entry.sources) {
           const attachment = byId.get(source.attachmentId);
           if ((source.page && source.page > Number(attachment.metadata.pages || 1))

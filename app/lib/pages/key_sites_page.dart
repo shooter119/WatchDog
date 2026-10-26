@@ -935,7 +935,7 @@ class _ModuleContentState extends State<_ModuleContent> {
               message: '暂无资料',
             ),
           if (widget.module == 'plans' && entries.isNotEmpty) ...[
-            const SectionTitle(text: '结构化目录'),
+            const SectionTitle(text: '预案目录'),
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.s3),
               child: AppCard(

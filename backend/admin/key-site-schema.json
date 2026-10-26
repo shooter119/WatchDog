@@ -17,11 +17,11 @@
     "phone": "联系方式",
     "responsibilities": "岗位职责",
     "location": "存放位置",
-    "quantity": "实际储量（原文及单位）",
+    "quantity": "实际储量（含单位）",
     "storage": "存放条件",
-    "notes": "待核对事项或补充说明",
-    "registeredName": "原文单位名称",
-    "registeredAddress": "原文单位地址",
+    "notes": "补充说明",
+    "registeredName": "单位名称",
+    "registeredAddress": "单位地址",
     "dutyPhone": "单位值班电话",
     "totalStaff": "人员总数",
     "dayStaff": "白班人数",
@@ -39,15 +39,15 @@
     "dangerousProcess": "危险工艺",
     "fixedFireFacilities": "固定消防设施",
     "fireResistance": "耐火等级",
-    "floorsAndHeight": "层数及高度（保留原文单位）",
+    "floorsAndHeight": "层数及高度（含单位）",
     "warehouseName": "仓库名称",
     "composition": "主要成分",
     "storageForm": "储存形式",
-    "packageCapacity": "单位包装储量（原文及单位）",
+    "packageCapacity": "单位包装储量（含单位）",
     "tankNumber": "储罐编号",
     "tankForm": "储罐形式",
     "tankMaterial": "储罐材质",
-    "diameterAndHeight": "直径及高度（原文及单位）",
+    "diameterAndHeight": "直径及高度（含单位）",
     "designPressure": "设计压力（MPa）",
     "nitrogenBlanket": "氮封情况",
     "refrigeration": "冷冻设备情况",
@@ -73,7 +73,7 @@
     "escapeRoutes": "应急避险通道数量及位置",
     "extinguishingAgents": "灭火药剂及器材储备",
     "processFlow": "工艺流程",
-    "specialWarnings": "重点提示（原文）",
+    "specialWarnings": "重点提示",
     "confidentiality": "涉密或未提供内容说明"
   },
   "legacyFields": {
@@ -124,7 +124,7 @@
         "useAndZones",
         "notes"
       ],
-      "help": "原文名称与地址须与单位档案核对；人数及面积保留约数与计量单位。"
+      "help": "填写内容名称与地址须与单位档案核对；人数及面积保留约数与计量单位。"
     },
     "surroundings": {
       "module": "cards",
@@ -178,7 +178,7 @@
         "extinguishingAgents",
         "notes"
       ],
-      "help": "系统按原文记录有、无或待核对；数量、流量、扬程和一用一备关系不得合并丢失。"
+      "help": "系统按填写内容记录有、无或未知；数量、流量、扬程和一用一备关系不得合并丢失。"
     },
     "processFlow": {
       "module": "cards",
@@ -200,7 +200,7 @@
         "confidentiality",
         "notes"
       ],
-      "help": "保留单位原文警示及防护要求，不生成现场处置结论。"
+      "help": "保留单位填写内容警示及防护要求，不生成现场处置结论。"
     },
     "warehouseStock": {
       "module": "hazards",
@@ -259,10 +259,10 @@
     }
   },
   "rules": [
-    "名称、地址与档案核对；草稿不自动改写档案。",
+    "按分项表单填写单位信息，未知项留空。",
     "每套装置、每种仓库存货、每个储罐和每个联系人分别记录。",
-    "未知留空；原文“/”、约数、涉密说明及计量单位保留，待人工核对。",
-    "设计容积、单位包装储量、实际储量分别记录，不做换算或推断。",
-    "所有记录沿用出处、人工核对、草稿和版本发布流程。"
+    "数量及尺寸请注明计量单位，涉密内容填写允许公开的说明。",
+    "设计容积、单位包装储量、实际储量分别填写。",
+    "保存仅更新草稿；点击发布后 App 才能查看。"
   ]
 }
