@@ -204,7 +204,7 @@ class _ScannerState extends State<_Scanner> with WidgetsBindingObserver {
                   const Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
-                      '扫描 fireman119.xyz 管理后台登录二维码\n二维码有效期 2 分钟',
+                      '在电脑打开管理后台\nhttps://fireman119.xyz/admin/\n扫描登录二维码，有效期 2 分钟',
                       textAlign: TextAlign.center,
                     ),
                   ),
