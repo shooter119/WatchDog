@@ -2747,6 +2747,12 @@ void main() {
         find.byKey(const Key('incident-selection-overlay')),
         findsOneWidget,
       );
+      await tester.tap(find.text('直接进入 App'));
+      await tester.pump();
+      expect(find.byKey(const Key('incident-selection-overlay')), findsNothing);
+      expect(find.text('暂无正在处置的警情'), findsOneWidget);
+      expect(find.byKey(const Key('choose-incident-from-home')), findsOneWidget);
+      expect(find.text('火场日志'), findsNothing);
     });
 
     testWidgets('从启动层新建警情直接使用时间戳名称', (tester) async {
@@ -2763,19 +2769,20 @@ void main() {
       expect(find.byKey(const Key('incident-selection-overlay')), findsNothing);
     });
 
-    testWidgets('已认证未选警情可进入设置并返回原选择层，不自动加入警情', (tester) async {
+    testWidgets('已认证启动层仅保留直接进入入口，进入后可打开设置', (tester) async {
       final c = _FakeController(currentIncident: null)
         ..fakeCanReadKeySites = true
         ..api = _FakeApi();
       await tester.pumpWidget(WatchDogApp(controller: c));
       await tester.pump();
-      await tester.tap(find.text('个人与设置'));
+      expect(find.text('个人与设置'), findsNothing);
+      await tester.tap(find.text('直接进入 App'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('incident-selection-overlay')), findsNothing);
+      expect(c.currentIncident, isNull);
+      await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       expect(find.byType(SettingsPage), findsOneWidget);
-      expect(c.currentIncident, isNull);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      expect(find.text('选择警情或直接进入'), findsOneWidget);
       expect(c.currentIncident, isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

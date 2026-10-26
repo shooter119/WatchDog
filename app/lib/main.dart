@@ -526,18 +526,10 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                   appScaffold,
                   if (startupGateLocked)
                     IncidentSelectionOverlay(
-                      onOpenSettings: controller.canReadKeySites
-                          ? () => Navigator.push<void>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => Scaffold(
-                                  appBar: AppBar(title: const Text('个人与设置')),
-                                  body: SettingsPage(controller: controller),
-                                ),
-                              ),
-                            )
-                          : null,
-                      onEnterWithoutIncident: controller.enterWithoutIncident,
+                      onEnterWithoutIncident: () {
+                        controller.enterWithoutIncident();
+                        _selectTab(2);
+                      },
                       authenticationRequired: controller.needsAuthentication,
                       activeIncidents: controller.activeIncidents,
                       loading:
