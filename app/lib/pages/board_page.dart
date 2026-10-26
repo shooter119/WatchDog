@@ -467,9 +467,37 @@ class _EmptyBoard extends StatelessWidget {
   }
 }
 
+class _TimeMetric extends StatelessWidget {
+  final String label;
+  final Widget value;
+
+  const _TimeMetric({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s1),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: value,
+        ),
+      ],
+    );
+  }
+}
+
 /// 人员状态卡片：状态靠色块（左侧色条 + 状态胶囊），数据靠排版（白底大字号对比）
-/// 两个时间左右式同排：剩余时间为视觉重心（大字号），持续时长在右侧（小一号）
-/// 单卡约 110dp 高，一屏可容纳 4 名同时进场的队员
+/// 两项时间等宽排列，统一标签在上、数值在下，剩余时间通过状态色强调。
 class _EntryCard extends StatelessWidget {
   final Entry entry;
   final CalcConfig config;
@@ -574,78 +602,34 @@ class _EntryCard extends StatelessWidget {
             ),
           const SizedBox(height: AppSpacing.s2),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 剩余时间：主指标，大字号靠左
               Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      CountdownText(
-                        ms: e.remainingMs,
-                        color: status == 'normal'
-                            ? AppColors.textPrimary
-                            : s.color,
-                        size: 44,
-                        timeoutText: '已超时',
-                      ),
-                      const SizedBox(width: AppSpacing.s2),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.s1),
-                        child: Text(
-                          '剩余时间',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
+                child: _TimeMetric(
+                  label: '剩余时间',
+                  value: CountdownText(
+                    ms: e.remainingMs,
+                    color: status == 'normal' ? AppColors.textPrimary : s.color,
+                    size: 36,
+                    timeoutText: '已超时',
                   ),
                 ),
               ),
               const SizedBox(width: AppSpacing.s3),
-              Container(
-                width: 1,
-                height: 28,
-                color: AppColors.border,
-              ),
+              Container(width: 1, height: 64, color: AppColors.border),
               const SizedBox(width: AppSpacing.s3),
-              // 持续时长：进入现场内部时长，次指标靠右
               Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.s1),
-                        child: Text(
-                          '持续时长',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.s2),
-                      Text(
-                        _elapsedTime(e),
-                        style: AppTextStyles.h2.copyWith(
-                          fontSize: 26,
-                          height: 1.0,
-                          fontWeight: FontWeight.w800,
-                          fontFeatures: const [
-                            FontFeature.tabularFigures(),
-                          ],
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
+                child: _TimeMetric(
+                  label: '持续时长',
+                  value: Text(
+                    _elapsedTime(e),
+                    style: AppTextStyles.h2.copyWith(
+                      fontSize: 36,
+                      height: 1.0,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
               ),
@@ -655,10 +639,9 @@ class _EntryCard extends StatelessWidget {
       ),
     );
 
-    final wrapped = s.danger ? PulseGlow(color: s.color, child: card) : card;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-      child: wrapped,
+      child: card,
     );
   }
 

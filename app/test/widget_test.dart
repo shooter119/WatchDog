@@ -672,6 +672,18 @@ void main() {
       expect(find.text('更新压力'), findsOneWidget);
     });
 
+    testWidgets('超时卡片使用单层边框且时间标签在同一行', (tester) async {
+      await _pumpBoard(tester, [_entry(name: '袁超', remainingMin: -1)]);
+      expect(find.byType(PulseGlow), findsNothing);
+      final remaining = tester.getRect(find.text('剩余时间'));
+      final elapsed = tester.getRect(find.text('持续时长'));
+      expect(remaining.top, closeTo(elapsed.top, 0.1));
+      final countdown = find.byType(CountdownText).last;
+      expect(tester.getTopLeft(countdown).dy, greaterThan(remaining.bottom));
+      expect(find.text('更新压力'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('320dp 真机宽度下连接状态保持在标题右侧', (tester) async {
       tester.view.physicalSize = const Size(320 * 3, 800 * 3);
       tester.view.devicePixelRatio = 3.0;
