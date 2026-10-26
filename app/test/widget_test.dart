@@ -1054,7 +1054,7 @@ void main() {
     });
 
     testWidgets('渲染各分区，无保存按钮', (tester) async {
-      final c = _FakeController();
+      final c = _FakeController(entries: [_entry(name: '张伟', remainingMin: 20)]);
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(),
@@ -1071,6 +1071,7 @@ void main() {
       expect(find.text('归档警情'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('数据统计'));
       expect(find.text('数据统计'), findsOneWidget);
+      expect(find.textContaining('本场 '), findsNothing);
       await _scrollToVisible(tester, list, find.text('操作日志'));
       expect(find.text('操作日志'), findsOneWidget);
       await _scrollToVisible(tester, list, find.text('单位常用队伍'));

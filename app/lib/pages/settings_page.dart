@@ -690,14 +690,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final entries = widget.controller.entries;
-    final activeEntries = entries.where((entry) => entry.isActive).length;
-    final uniqueNames = entries
-        .map((entry) => entry.name.trim())
-        .where((name) => name.isNotEmpty)
-        .toSet()
-        .length;
-
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
@@ -781,9 +773,6 @@ class _SettingsPageState extends State<SettingsPage> {
             _SettingsShortcut(
               icon: Icons.bar_chart_outlined,
               title: '数据统计',
-              subtitle: entries.isEmpty
-                  ? null
-                  : '本场 $activeEntries 次 · $uniqueNames 人',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
