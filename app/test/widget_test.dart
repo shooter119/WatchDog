@@ -1007,7 +1007,7 @@ void main() {
   });
 
   group('SettingsPage', () {
-    testWidgets('启动检查发现新版本时更新卡片显示提示与红点', (tester) async {
+    testWidgets('发现新版本时更新卡片保持单行标题', (tester) async {
       final c = _FakeController();
       c.pendingUpdate = const UpdateInfo(tagName: 'v9.9.9+99', apkUrl: 'x');
       c.updateCheckDone = true;
@@ -1020,10 +1020,11 @@ void main() {
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
       await _scrollToVisible(tester, list, find.text('版本更新'));
-      expect(find.textContaining('发现新版本 v9.9.9+99'), findsOneWidget);
+      expect(find.textContaining('发现新版本 v9.9.9+99'), findsNothing);
+      expect(find.text('版本更新'), findsOneWidget);
     });
 
-    testWidgets('检查失败时更新卡片提示可重试', (tester) async {
+    testWidgets('检查失败时更新卡片仍保持单行入口', (tester) async {
       final c = _FakeController();
       c.updateCheckDone = true;
       c.updateCheckError = '更新服务不可达（HTTP 0）';
@@ -1036,7 +1037,8 @@ void main() {
       await tester.pumpAndSettle();
       final list = find.byType(ListView).first;
       await _scrollToVisible(tester, list, find.text('版本更新'));
-      expect(find.text('检查更新失败，点击重试'), findsOneWidget);
+      expect(find.text('检查更新失败，点击重试'), findsNothing);
+      expect(find.text('版本更新'), findsOneWidget);
     });
 
     testWidgets('渲染各分区，无保存按钮', (tester) async {

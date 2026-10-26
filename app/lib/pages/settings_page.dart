@@ -690,7 +690,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final connected = !widget.controller.connectionLost;
     final entries = widget.controller.entries;
     final activeEntries = entries.where((entry) => entry.isActive).length;
     final uniqueNames = entries
@@ -836,21 +835,18 @@ class _SettingsPageState extends State<SettingsPage> {
           _SettingsAccordion(
             icon: Icons.calculate_outlined,
             title: '计算参数',
-            summary: _calculationSummary,
             child: _buildCalculationBody(),
           ),
           const SizedBox(height: AppSpacing.s2),
           _SettingsAccordion(
             icon: Icons.mic_none_outlined,
             title: '语音识别',
-            summary: _asrCloud ? '云端优先 · 失败自动切换本地' : '强制本地识别 · 使用离线模型',
             child: _buildVoiceBody(),
           ),
           const SizedBox(height: AppSpacing.s2),
           _SettingsAccordion(
             icon: Icons.notifications_none_outlined,
             title: '提醒方式',
-            summary: _alertSummary,
             child: _buildAlertBody(),
           ),
           const SizedBox(height: 22),
@@ -861,11 +857,6 @@ class _SettingsPageState extends State<SettingsPage> {
           _SettingsAccordion(
             icon: Icons.dns_outlined,
             title: '服务连接',
-            summary: widget.controller.isGuest
-                ? '单机演练 · 仅本机保存'
-                : connected
-                ? '现场协同服务器 · 连接正常'
-                : '现场协同服务器 · 等待连接',
             child: _buildServerBody(),
           ),
           const SizedBox(height: AppSpacing.s2),
@@ -901,21 +892,6 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
-  }
-
-  String get _calculationSummary {
-    if (_volume.text.isEmpty || _full.text.isEmpty) return '正在读取参数…';
-    return '${_volume.text} L · ${_full.text} MPa\n提醒 ${_warn.text} 分钟 · 报警 ${_alarm.text} 分钟';
-  }
-
-  String get _alertSummary {
-    final active = [
-      _tts,
-      _sound,
-      _keepScreenOn,
-      _keepAlive,
-    ].where((v) => v).length;
-    return '$active 项提醒策略开启';
   }
 
   Future<void> _leaveUnit() async {
@@ -1311,29 +1287,14 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _buildUpdateCard() {
     final pending = widget.controller.pendingUpdate;
-    final String subtitle;
-    final Color subtitleColor;
-    if (pending != null) {
-      subtitle = '发现新版本 ${pending.tagName}，点击更新';
-      subtitleColor = AppColors.textSecondary;
-    } else if (widget.controller.updateCheckError != null) {
-      subtitle = '检查更新失败，点击重试';
-      subtitleColor = AppColors.alarm;
-    } else if (widget.controller.updateCheckDone) {
-      subtitle = '已是最新版本';
-      subtitleColor = AppColors.textSecondary;
-    } else {
-      subtitle = '从协同更新服务器获取最新版本';
-      subtitleColor = AppColors.textSecondary;
-    }
     return AppCard(
       onTap: _checkingUpdate ? null : _checkUpdate,
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s4,
-        vertical: AppSpacing.s3,
+        vertical: AppSpacing.s2,
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 40),
+        constraints: const BoxConstraints(minHeight: 44),
         child: Row(
           children: [
             _SettingsIconBox(
@@ -1344,26 +1305,13 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(width: AppSpacing.s3),
             Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '版本更新',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.caption.copyWith(color: subtitleColor),
-                  ),
-                ],
+              child: Text(
+                '版本更新',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
             const SizedBox(width: AppSpacing.s1),
@@ -2224,13 +2172,11 @@ class _SyncNotice extends StatelessWidget {
 class _SettingsAccordion extends StatefulWidget {
   final IconData icon;
   final String title;
-  final String summary;
   final Widget child;
 
   const _SettingsAccordion({
     required this.icon,
     required this.title,
-    required this.summary,
     required this.child,
   });
 
@@ -2262,7 +2208,7 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.s4,
-                  vertical: AppSpacing.s3,
+                  vertical: AppSpacing.s2,
                 ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 44),
@@ -2298,16 +2244,6 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                                   color: AppColors.textTertiary,
                                 ),
                               ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              widget.summary,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.textSecondary,
-                                fontWeight: FontWeight.w500,
-                              ),
                             ),
                           ],
                         ),
