@@ -24,3 +24,5 @@
 2026-10-20 已完成资料后台部署与匿名公网验收，当前有效备份为 `/opt/watchdog/backups/key-sites-20261020T013238Z/`。授权手机扫码、真实资料试点与Android实机尚未完成，详见 [验收记录](ADMIN-ACCEPTANCE.md)。
 
 2026-10-21 后端再次部署（提交 `b748553`，含登录失败分级、近似姓名建议、待审 `in_roster` 标记），备份 `/opt/watchdog/backups/key-sites-20261021T140708Z/`；本机缺 LibreOffice 转换器导致 `key-sites` 14 条用例必然失败，发版门禁改为"失败项必须全部落在已知环境失败集合内"，并已同步修正 `scripts/release.sh` 的公网校验重试。同日发布 App `1.11.0+93`：OTA 清单、APK（72,508,497 字节，SHA-256 `233286135dbf430257946f0a86260adeb6a29721ae1c0badb3889b4d7070fb68`）、官网版本与下载链接均已核对；用旧版 `1.10.0+2092` 实机确认能识别到 `v1.11.0+93`。
+
+2026-10-28 核对并补齐三处只落在文档上的说法：（1）上面那条"门禁按已知环境失败集合放行"当时并未在脚本里实现，现在 `scripts/release.sh` 的 `backend_gate_verdict` 已落地——只有 `command -v soffice` 为空、失败用例与 14 条固定清单逐条一致、且失败全部落在 `test/key-sites.test.js` 与 `test/key-site-ai.test.js` 时才放行，任一不满足即判真实失败；（2）本机补装 `soffice`（LibreOffice 26.8.1）与 `poppler`（`pdfinfo`/`pdftoppm`），后端测试从 279/293 变为 **293/293 全绿**，装齐转换器后门禁自动恢复严格（fail 0）；（3）新增 `scripts/backup-pull.sh` 做异地备份，把 `pg_dump -Fc`、后端 `/app/data` 私有卷和 `ota/latest.json` 打成一个包拉到仓库之外的 `~/WatchDog-backups`，双向 sha256 比对并就地校验成员，已验证首份副本可被 `pg_restore --list` 正常读取（239 个 TOC 条目）。
