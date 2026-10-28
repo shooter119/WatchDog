@@ -80,12 +80,21 @@ void main() {
       }
     });
 
-    test('缺少 SHA256 时保留版本信息但安装阶段不能跳过校验', () {
+    test('缺少 SHA256 的清单整体拒收，不报“有新版本”', () {
       final body = jsonEncode({
         'tag_name': 'v0.14.0+43',
         'apk_url': 'https://fireman119.xyz/ota/versions/watchdog.apk',
       });
-      expect(UpdateService.parseReleaseJson(body)?.sha256, isNull);
+      expect(UpdateService.parseReleaseJson(body), isNull);
+    });
+
+    test('SHA256 只写在更新说明里也能识别', () {
+      final body = jsonEncode({
+        'tag_name': 'v0.14.0+43',
+        'apk_url': 'https://fireman119.xyz/ota/versions/watchdog.apk',
+        'changelog': '修复若干问题\nSHA256: ${sha.toUpperCase()}',
+      });
+      expect(UpdateService.parseReleaseJson(body)?.sha256, sha);
     });
   });
 

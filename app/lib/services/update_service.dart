@@ -252,6 +252,9 @@ class UpdateService {
           rawSha != null && RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(rawSha)
           ? rawSha.toLowerCase()
           : shaMatch?.group(1)?.toLowerCase();
+      // 没有 SHA256 就无法证明下载到的是发布方那份 APK：整份清单视为无效，
+      // 不能先报“有新版本”到安装阶段才失败。
+      if (sha == null) return null;
       final rawVersionCode = decoded['version_code'];
       if (rawVersionCode != null &&
           (rawVersionCode is! num ||
