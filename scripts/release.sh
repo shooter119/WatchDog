@@ -49,10 +49,10 @@ die()  { printf '\033[1;31m错误：%s\033[0m\n' "$*" >&2; exit 1; }
 # 转换组件缺失（KEY_SITE_CONVERTER_UNAVAILABLE）使「转换 → 分页 → AI 草稿」
 # 整条链路拿不到输入。这里把这 14 条列为「已知环境失败」，只在同时满足
 # 以下三条时放行，否则一律判定为真实失败：
-#   1) `command -v soffice` 为空（确实没有转换器）；
+#   1) 转换工具链确实不齐（soffice / pdfinfo / pdftoppm 任一不在 PATH）；
 #   2) 失败用例逐条命中下面这张清单（改名、新增、少一条都会失败）；
 #   3) 失败用例全部落在 key-sites.test.js / key-site-ai.test.js。
-# 装上 LibreOffice 后第 1 条不再成立，门禁自动恢复严格（fail 0）。
+# 装齐 LibreOffice + poppler 后第 1 条不再成立，门禁自动恢复严格（fail 0）。
 KNOWN_KEY_SITE_FILES="test/key-site-ai.test.js
 test/key-sites.test.js"
 KNOWN_KEY_SITE_FAILURES_NO_SOFFICE=$(cat <<'EOF'
@@ -77,6 +77,13 @@ failed_test_names() {
   sed -n 's/^✖ \(.*\) ([0-9.]*ms)$/\1/p' "$1" | LC_ALL=C sort -u
 }
 
+# 转换工具链是否齐全：缺任意一个，key-sites 的转换用例都会整组失败。
+converter_toolchain_ready() {
+  command -v soffice >/dev/null 2>&1 && \
+    command -v pdfinfo >/dev/null 2>&1 && \
+    command -v pdftoppm >/dev/null 2>&1
+}
+
 # 失败用例涉及的测试文件，必须只有 key-sites.test.js
 failed_test_files() {
   sed -n 's/^test at \(test\/[^:]*\):.*/\1/p' "$1" | LC_ALL=C sort -u
@@ -94,8 +101,8 @@ backend_gate_verdict() {
     info "后端测试全绿"
     return 0
   fi
-  if command -v soffice >/dev/null 2>&1; then
-    die "后端测试未通过（本机已装 LibreOffice，转换用例不应再失败）"
+  if converter_toolchain_ready; then
+    die "后端测试未通过（本机转换工具链齐全，转换用例不应再失败）"
   fi
   local actual_files
   actual_files="$(failed_test_files "$logfile")"
@@ -106,11 +113,11 @@ backend_gate_verdict() {
   actual="$(failed_test_names "$logfile")"
   if [[ "$actual" != "$KNOWN_KEY_SITE_FAILURES_NO_SOFFICE" ]]; then
     diff <(printf '%s\n' "$KNOWN_KEY_SITE_FAILURES_NO_SOFFICE") <(printf '%s\n' "$actual") >&2 || true
-    die "后端测试失败与「缺 LibreOffice 已知集合」不一致，见上方 diff"
+    die "后端测试失败与「缺转换工具链的已知集合」不一致，见上方 diff"
   fi
   local count
   count="$(printf '%s\n' "$actual" | wc -l | tr -d ' ')"
-  warn "本机无 soffice：${count} 条 key-sites 转换用例按已知环境失败放行（安装 LibreOffice 后自动严格）"
+  warn "本机转换工具链不齐：${count} 条 key-sites 用例按已知环境失败放行（装齐 soffice/poppler 后自动严格）"
 }
 
 usage() {
