@@ -2442,7 +2442,7 @@ void main() {
       final height = tester.getSize(find.byKey(const Key('chat-vision-callout'))).height;
       for (final question in [
         '气瓶压力下降太快怎么办？',
-        '浓烟太大看不清路，有什么办法？',
+        '浓烟中看不清路怎么办？',
         '破拆卷帘门有哪些注意事项？',
       ]) {
         expect(tester.getSize(find.byKey(Key('chat-sample-question-$question'))).height, height);

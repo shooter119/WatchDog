@@ -1094,7 +1094,7 @@ class ChatPageState extends State<ChatPage> {
               const SizedBox(height: AppSpacing.s2),
               const _SampleQuestion('气瓶压力下降太快怎么办？', icon: Icons.gas_meter_outlined),
               const SizedBox(height: AppSpacing.s2),
-              const _SampleQuestion('浓烟太大看不清路，有什么办法？', icon: Icons.visibility_off_outlined),
+              const _SampleQuestion('浓烟中看不清路怎么办？', icon: Icons.visibility_off_outlined),
               const SizedBox(height: AppSpacing.s2),
               const _SampleQuestion('破拆卷帘门有哪些注意事项？', icon: Icons.blinds_closed_outlined),
             ],
@@ -1391,7 +1391,7 @@ class _AssistantOptionCard extends StatelessWidget {
   static const _titles = [
     '拍照分析现场',
     '气瓶压力下降太快怎么办？',
-    '浓烟太大看不清路，有什么办法？',
+    '浓烟中看不清路怎么办？',
     '破拆卷帘门有哪些注意事项？',
   ];
 
