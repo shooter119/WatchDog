@@ -2982,7 +2982,11 @@ class HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            const SizedBox(width: AppSpacing.s2),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.s2),
+        Row(
+          children: [
             Expanded(
               child: _fieldTool(
                 '定位分享',
@@ -3047,15 +3051,13 @@ class HomePageState extends State<HomePage> {
             children: [
               Icon(icon, size: 24, color: AppColors.voice),
               const SizedBox(height: AppSpacing.s2),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  style: AppTextStyles.label.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.label.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
