@@ -3753,6 +3753,38 @@ void main() {
       expect(find.text('现场工具'), findsOneWidget);
     });
 
+    testWidgets('360dp 未选警情标题保持一行，按钮在标题下方', (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final c = _FakeController(currentIncident: null)..currentIncident = null;
+      await pumpTask(tester, c);
+      final title = tester.getRect(find.text('暂无正在处置的警情'));
+      final button = tester.getRect(
+        find.byKey(const Key('choose-incident-from-home')),
+      );
+      expect(button.top, greaterThanOrEqualTo(title.bottom - 1));
+      expect(title.height, lessThan(40));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('宽屏未选警情标题与按钮同一行', (tester) async {
+      tester.view.physicalSize = const Size(800, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final c = _FakeController(currentIncident: null)..currentIncident = null;
+      await pumpTask(tester, c);
+      final title = tester.getRect(find.text('暂无正在处置的警情'));
+      final button = tester.getRect(
+        find.byKey(const Key('choose-incident-from-home')),
+      );
+      expect(button.left, greaterThan(title.right));
+      expect(title.height, lessThan(40));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('未选警情时现场工具仍可访问', (tester) async {
       final c = _FakeController(currentIncident: null)..currentIncident = null;
       await pumpTask(tester, c);
