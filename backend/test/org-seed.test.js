@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { resolveOrgSeed, EXAMPLE_SEED_PATH } = require('../src/org-seed');
@@ -28,6 +29,25 @@ function walk(dir, found = []) {
     else if (/\.(js|dart|sql|json|md|html|example|yml)$/.test(entry.name)) found.push(full);
   }
   return found;
+}
+
+// “公开源码”只包含会进入公开仓库的文件：已跟踪文件加上未忽略的新文件。
+// 本机私有且被 gitignore 的过程资料不应让这条检查误报。
+function sourceFiles(root) {
+  try {
+    const output = execFileSync(
+      'git',
+      ['-C', root, 'ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      { encoding: 'buffer', maxBuffer: 16 * 1024 * 1024 },
+    ).toString('utf8');
+    return output
+      .split('\0')
+      .filter((rel) => rel && /\.(js|dart|sql|json|md|html|example|yml)$/.test(rel))
+      .map((rel) => path.join(root, rel))
+      .filter((file) => fs.existsSync(file));
+  } catch {
+    return walk(root);
+  }
 }
 
 test('示例种子是假名，且测试环境默认加载它', () => {
@@ -63,8 +83,10 @@ test('未配置的生产环境不创建示例组织', () => {
 
 test('公开源码不再包含真实单位名单和验证码', () => {
   const root = path.join(__dirname, '..', '..');
+  const files = sourceFiles(root);
+  assert.ok(files.length > 100, `公开源码文件过少，扫描可能失效: ${files.length}`);
   const hits = [];
-  for (const file of walk(root)) {
+  for (const file of files) {
     const text = fs.readFileSync(file, 'utf8');
     for (const word of FORBIDDEN) {
       if (text.includes(word)) hits.push(`${path.relative(root, file)}: ${word}`);
