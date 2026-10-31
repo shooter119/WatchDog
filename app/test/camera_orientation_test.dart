@@ -285,6 +285,7 @@ void main() {
       final preview = find.byKey(const Key('camera-portrait-preview'));
       final size = tester.getSize(preview);
       expect(size.width / size.height, closeTo(16 / 9, 0.001));
+      expect(tester.getTopLeft(preview).dy, greaterThan(100));
       final incidentChip = tester.getRect(
         find.byKey(const Key('camera-incident-chip')),
       );
@@ -294,9 +295,13 @@ void main() {
         reason: '竖屏警情标签应靠右，避开左下角水印',
       );
       expect(
+        tester.getRect(find.byTooltip('关闭')).right,
+        closeTo(size.width - 12, 1),
+        reason: '关闭按钮应靠近右侧，方便右手操作',
+      );
+      expect(
         tester.getRect(find.byTooltip('现场资料')).right,
-        closeTo(size.width - 16, 1),
-        reason: '没有权限提示时，现场资料入口应保持右上角位置',
+        lessThan(tester.getRect(find.byTooltip('关闭')).left),
       );
       final controls = tester.getRect(find.byKey(const Key('camera-controls')));
       final layout = tester.getRect(

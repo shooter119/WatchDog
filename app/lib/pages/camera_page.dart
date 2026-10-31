@@ -825,12 +825,13 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             : Column(
                 key: const Key('camera-portrait-layout'),
                 children: [
+                  const Expanded(flex: 2, child: SizedBox()),
                   AspectRatio(
                     key: const Key('camera-portrait-preview'),
                     aspectRatio: 16 / 9,
                     child: _preview(creationParams),
                   ),
-                  Expanded(child: _bottomBar()),
+                  Expanded(flex: 3, child: _bottomBar()),
                 ],
               ),
       ),
@@ -944,12 +945,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               padding: const EdgeInsets.fromLTRB(8, 8, 12, 0),
               child: Row(
                 children: [
-                  _roundIcon(
-                    icon: Icons.close_rounded,
-                    tooltip: '关闭',
-                    onTap: () => _handleClose(context),
-                  ),
-                  const Spacer(),
                   IconButton(
                     tooltip: '现场资料',
                     onPressed:
@@ -969,6 +964,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     const SizedBox(width: 4),
                     Flexible(child: _permissionBadges()),
                   ],
+                  const Spacer(),
+                  _roundIcon(
+                    icon: Icons.close_rounded,
+                    tooltip: '关闭',
+                    onTap: () => _handleClose(context),
+                  ),
                 ],
               ),
             ),
