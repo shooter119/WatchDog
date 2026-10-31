@@ -983,23 +983,6 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   child: _incidentChip(unlinked),
                 ),
               ),
-            if (unlinked)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xE6B26B00),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  '未关联警情：拍摄的文件只在本机，加入警情后才能写入记录',
-                  style: TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ),
             if (_recording)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
