@@ -3,50 +3,7 @@ const db = require('./postgres-store');
 const { checkEntryVersion, entryError } = require('./entry-concurrency');
 const { durationMinutes, exitAtMs: calculateExitAt, measuredConsumptionLpm } = require('./calc');
 const { forceError, forceFields } = require('./force-fields');
-
-
-const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救', '初战'];
-const DEFAULT_FIREFIGHTERS = [
-  '李翔', '盛承华', '楼松超', '徐向相', '柯峰', '祝彪',
-  '陆河圣', '洪辰', '沈松鹏', '金志明', '陈俊鹏', '叶华杰', '杨熙豪', '施豪杰', '袁超', '马李臣',
-  '邢中本', '何家琦', '余贤耀', '徐莘焕', '杨小杰', '祝徐迁', '方文斌', '徐昊扬', '郑丽文', '郑怡',
-  '郑涛', '占鑫涛', '叶健智', '胡海龙', '伊余健', '曹建罡', '马鑫', '徐康', '张烜烨', '李微',
-  '储嘉俊', '毛伟', '陈俊安', '赵建平', '吴拥军', '路康清', '毕灵珂', '刘羽杰', '陈鑫', '廖淑明', '毛泽旭',
-  '林成成', '程晓波', '郭逸', '蓝程雄', '成帅', '姚肖江', '毕文龙', '周志峰', '吕文建', '刘林辉',
-  '齐征臣', '严仕华', '袁友顺', '劳凯董', '方罗进', '马俊', '刘振坤', '贺智成', '丁以强', '易子云',
-  '李瑞', '宋宇', '宁成鑫', '甲巴有拉', '吉布小夫', '方梦龙',
-  '游方远', '巫垚东', '万自良', '戴晓明', '李志鹏', '徐小龙', '吴鹏晖', '叶程刚', '陈嘉豪', '姚顺',
-  '贺官', '孙国彬', '吴志云', '陈子俊', '何金伟', '周子俊', '何哲锴', '徐刚', '姜俊翰', '文闻',
-  '张文浩', '宋博韬',
-];
-// 单位种子仅允许测试环境或显式配置；生产环境绝不默认创建公开验证码。
-const SEED_UNIT = {
-  id: process.env.WATCHDOG_SEED_UNIT_ID || (process.env.NODE_ENV === 'test' ? 'longyou-county-fire-rescue' : ''),
-  name: process.env.WATCHDOG_SEED_UNIT_NAME || (process.env.NODE_ENV === 'test' ? '龙游县消防救援大队' : ''),
-  verificationCode: process.env.WATCHDOG_SEED_UNIT_CODE || (process.env.NODE_ENV === 'test' ? '0570' : ''),
-};
-
-function parseSeedMembers(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return [];
-  let items;
-  try {
-    const parsed = JSON.parse(raw);
-    items = Array.isArray(parsed) ? parsed : [];
-  } catch (_) {
-    items = raw.split(',').map((item) => {
-      const [realName, role = 'member'] = item.split(/[:：]/, 2);
-      return { real_name: realName, role };
-    });
-  }
-  return items.map((item) => {
-    if (typeof item === 'string') return { real_name: item, role: 'member' };
-    return { real_name: item?.real_name ?? item?.name, role: item?.role ?? 'member' };
-  }).map((item) => ({
-    realName: String(item.real_name || '').trim().slice(0, 32),
-    role: ['member', 'manager', 'admin'].includes(String(item.role)) ? String(item.role) : 'member',
-  })).filter((item) => item.realName);
-}
+const { resolveOrgSeed, normalizeStationName } = require('./org-seed');
 
 function incidentNumberFor(timestamp) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
@@ -82,50 +39,48 @@ async function insertOne(table, row, options = {}) {
 }
 
 async function initialize() {
-  if (process.env.WATCHDOG_SKIP_SEED === '1') return;
-  const [stations] = await Promise.all([
-    db.select('stations', { select: 'id', limit: 1 }),
-  ]);
+  const seed = resolveOrgSeed();
+  if (!seed) return;
   const now = Date.now();
-  if (SEED_UNIT.id && SEED_UNIT.name && SEED_UNIT.verificationCode) {
-    await db.insert('units', [{
-      id: SEED_UNIT.id,
-      name: SEED_UNIT.name,
-      verification_code: SEED_UNIT.verificationCode,
-      created_at: 1780000000000,
-      updated_at: 1780000000000,
-    }], { onConflict: 'id', ignoreDuplicates: true });
-  }
-  if (SEED_UNIT.id && process.env.WATCHDOG_SEED_UNIT_MEMBERS) {
-    await Promise.all(parseSeedMembers(process.env.WATCHDOG_SEED_UNIT_MEMBERS).map((member) => db.insert('unit_members', [{
-      id: randomUUID(), unit_id: SEED_UNIT.id, real_name: member.realName, role: member.role,
+  await db.insert('units', [{
+    id: seed.id,
+    name: seed.name,
+    verification_code: seed.verificationCode,
+    created_at: 1780000000000,
+    updated_at: 1780000000000,
+  }], { onConflict: 'id', ignoreDuplicates: true });
+  if (seed.members.length > 0) {
+    await Promise.all(seed.members.map((member) => db.insert('unit_members', [{
+      id: randomUUID(), unit_id: seed.id, real_name: member.realName, role: member.role,
       status: 'active', created_at: now, updated_at: now,
     }], { onConflict: 'unit_id,real_name', ignoreDuplicates: true })));
   }
-  if (SEED_UNIT.id) {
-    const [unitHotwords, unitFirefighters] = await Promise.all([
-      db.select('hotwords', { select: 'id', filters: { unit_id: SEED_UNIT.id }, limit: 1 }),
-      db.select('firefighters', { select: 'id', filters: { unit_id: SEED_UNIT.id }, limit: 1 }),
-    ]);
-    if (unitHotwords.length === 0) {
-      await db.insert('hotwords', DEFAULT_HOTWORDS.map((word, index) => ({
-        id: randomUUID(), unit_id: SEED_UNIT.id, word, source: 'builtin', created_at: now + index, updated_at: now + index,
-      })), { onConflict: 'unit_id,word', ignoreDuplicates: true });
-    }
-    // 新增内置术语需要补入已有安装，避免只能在新库初始化时生效。
-    await db.insert('hotwords', [{
-      id: randomUUID(), unit_id: SEED_UNIT.id, word: '初战', source: 'builtin', created_at: now, updated_at: now,
-    }], { onConflict: 'unit_id,word', ignoreDuplicates: true });
-    if (unitFirefighters.length === 0) {
-      await db.insert('firefighters', DEFAULT_FIREFIGHTERS.map((name, index) => ({
-        id: randomUUID(), unit_id: SEED_UNIT.id, name, source: 'builtin', created_at: now + index, updated_at: now + index,
-      })), { onConflict: 'unit_id,name', ignoreDuplicates: true });
-    }
+  for (const name of seed.stations) {
+    await db.query(
+      'UPDATE stations SET unit_id = $1 WHERE unit_id IS NULL AND normalized_name = $2',
+      [seed.id, normalizeStationName(name)],
+    );
   }
-  if (stations.length === 0) {
-    await db.insert('stations', ['龙翔路站', '永安路站', '兴园站'].map((name) => ({
-      id: randomUUID(), name, normalized_name: name.replace(/\s+/g, ''), created_at: now, created_by: 'system',
-    })), { onConflict: 'normalized_name', ignoreDuplicates: true });
+  const [unitHotwords, unitFirefighters, unitStations] = await Promise.all([
+    db.select('hotwords', { select: 'id', filters: { unit_id: seed.id }, limit: 1 }),
+    db.select('firefighters', { select: 'id', filters: { unit_id: seed.id }, limit: 1 }),
+    db.select('stations', { select: 'id', filters: { unit_id: seed.id }, limit: 1 }),
+  ]);
+  // 只在该组织还没有词库时补齐，避免把用户已删除的内置词重新写回。
+  if (unitHotwords.length === 0 && seed.hotwords.length > 0) {
+    await db.insert('hotwords', seed.hotwords.map((word, index) => ({
+      id: randomUUID(), unit_id: seed.id, word, source: 'builtin', created_at: now + index, updated_at: now + index,
+    })), { onConflict: 'unit_id,word', ignoreDuplicates: true });
+  }
+  if (unitFirefighters.length === 0 && seed.firefighters.length > 0) {
+    await db.insert('firefighters', seed.firefighters.map((person, index) => ({
+      id: randomUUID(), unit_id: seed.id, name: person.name, source: 'builtin', created_at: now + index, updated_at: now + index,
+    })), { onConflict: 'unit_id,name', ignoreDuplicates: true });
+  }
+  if (unitStations.length === 0 && seed.stations.length > 0) {
+    await db.insert('stations', seed.stations.map((name) => ({
+      id: randomUUID(), unit_id: seed.id, name, normalized_name: normalizeStationName(name), created_at: now, created_by: 'system',
+    })), { onConflict: 'unit_id,normalized_name', ignoreDuplicates: true });
   }
 }
 
@@ -682,9 +637,10 @@ function rosterUnitId(unitId) {
 }
 
 async function listFirefighters(unitId = null) {
-  const filters = unitId == null ? {} : { unit_id: rosterUnitId(unitId) };
+  if (unitId == null || String(unitId).trim() === '') return [];
   return db.select('firefighters', {
-    select: 'id,name,source,created_by_member_id,created_by_name', filters, order: 'created_at.asc',
+    select: 'id,name,source,created_by_member_id,created_by_name',
+    filters: { unit_id: String(unitId) }, order: 'created_at.asc',
   });
 }
 
@@ -722,9 +678,10 @@ async function removeFirefighter(id, unitId = null, { memberId = null, isManager
 }
 
 async function listHotwords(unitId = null) {
-  const filters = unitId == null ? {} : { unit_id: rosterUnitId(unitId) };
+  if (unitId == null || String(unitId).trim() === '') return [];
   return db.select('hotwords', {
-    select: 'id,word,source,created_by_member_id,created_by_name', filters, order: 'created_at.asc',
+    select: 'id,word,source,created_by_member_id,created_by_name',
+    filters: { unit_id: String(unitId) }, order: 'created_at.asc',
   });
 }
 
@@ -1381,17 +1338,33 @@ async function listIncidentEvents(incidentId, { limit = 2000 } = {}) {
   return rows.map(eventWithPayload);
 }
 
-async function listStations() {
-  return db.select('stations', { select: 'id,name,created_at,created_by', order: 'name.asc' });
+async function listStations(unitId = null) {
+  if (unitId == null || String(unitId).trim() === '') return [];
+  return db.select('stations', {
+    select: 'id,name,unit_id,created_at,created_by',
+    filters: { unit_id: String(unitId) }, order: 'name.asc',
+  });
 }
 
-async function addStation({ name, createdBy = null } = {}) {
+async function addStation({ name, createdBy = null, unitId = null } = {}) {
+  const unit = String(unitId || '').trim();
+  if (!unit) throw Object.assign(new Error('消防站必须属于单位'), { status: 400, code: 'UNIT_REQUIRED' });
   const clean = String(name || '').trim().slice(0, 80);
-  const normalized = clean.replace(/消防救援站$/, '站').replace(/\s+/g, '');
+  const normalized = normalizeStationName(clean);
   if (!normalized) throw new Error('消防站名称不能为空');
-  const existing = await db.select('stations', { filters: { normalized_name: normalized }, single: true });
-  if (existing) return existing;
-  return insertOne('stations', { id: randomUUID(), name: clean, normalized_name: normalized, created_at: Date.now(), created_by: createdBy });
+  return db.transaction(async () => {
+    const existing = await db.select('stations', { filters: { unit_id: unit, normalized_name: normalized }, single: true });
+    if (existing) return existing;
+    const row = await insertOne('stations', {
+      id: randomUUID(), unit_id: unit, name: clean, normalized_name: normalized, created_at: Date.now(), created_by: createdBy,
+    });
+    await db.query('UPDATE units SET roster_version = roster_version + 1, updated_at = $1 WHERE id = $2', [Date.now(), unit]);
+    const event = await appendRosterSyncEvent({
+      unitId: unit, eventType: 'roster.station_added', aggregateId: row.id,
+      payload: { id: row.id, name: row.name, unit_id: unit },
+    });
+    return event ? { ...row, event_id: event.event_id, stream_sequence: event.sequence } : row;
+  });
 }
 
 async function listIncidentForces(incidentId) {

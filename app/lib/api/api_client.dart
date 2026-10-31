@@ -1945,20 +1945,41 @@ class ApiClient {
   }
 
   Future<List<Station>> fetchStations() async {
-    final res = await _client
-        .get(_uri('/api/stations'), headers: _headers)
-        .timeout(const Duration(seconds: 10));
-    final body = _decodeJson(res, fallback: '获取消防站名录失败');
-    if (res.statusCode != 200) {
-      throw _apiException(res, body: body, fallback: '获取消防站名录失败');
+    try {
+      final res = await _client
+          .get(_uri('/api/stations'), headers: _headers)
+          .timeout(const Duration(seconds: 10));
+      final body = _decodeJson(res, fallback: '获取消防站名录失败');
+      if (res.statusCode != 200) {
+        throw _apiException(res, body: body, fallback: '获取消防站名录失败');
+      }
+      if (body is! List) {
+        throw _responseShapeException(res, '消防站名录响应格式异常');
+      }
+      final list = body
+          .whereType<Map>()
+          .map((e) => Station.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      if (cacheScope.isNotEmpty) {
+        await ScopedJsonCache.write(
+          cacheScope,
+          'org-stations',
+          list.map((item) => {'id': item.id, 'name': item.name}).toList(),
+        );
+      }
+      return list;
+    } catch (error) {
+      if (error is ApiException && (error.statusCode ?? 500) < 500) rethrow;
+      if (cacheScope.isEmpty) rethrow;
+      final cached = await ScopedJsonCache.read(cacheScope, 'org-stations');
+      if (cached is List) {
+        return cached
+            .whereType<Map>()
+            .map((item) => Station.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+      }
+      rethrow;
     }
-    if (body is! List) {
-      throw _responseShapeException(res, '消防站名录响应格式异常');
-    }
-    final list = body;
-    return list
-        .map((e) => Station.fromJson(e as Map<String, dynamic>))
-        .toList();
   }
 
   Future<Station> createStation(String name) async {

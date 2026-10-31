@@ -4,9 +4,9 @@ import 'package:watchdog/models/models.dart';
 void main() {
   group('NoteCategory.fromText 按实战环节自动分类', () {
     test('部署：接警出动与到场展开', () {
-      expect(NoteCategory.fromText('龙翔路站出动一车7人前往处置'), NoteCategory.deploy);
+      expect(NoteCategory.fromText('示例路站出动一车7人前往处置'), NoteCategory.deploy);
       expect(NoteCategory.fromText('支队全勤指挥部到达现场'), NoteCategory.deploy);
-      expect(NoteCategory.fromText('龙翔路站到达现场'), NoteCategory.deploy);
+      expect(NoteCategory.fromText('示例路站到达现场'), NoteCategory.deploy);
       expect(NoteCategory.fromText('攻坚组进入火场内部'), NoteCategory.deploy);
       expect(NoteCategory.fromText('力量调度完成，主战车到场'), NoteCategory.deploy);
     });

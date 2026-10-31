@@ -82,19 +82,19 @@ function stationDistance(a,b) {
 async function matchForces(unitId, incidentId, forces) {
   const current = await db.listIncidentForces(incidentId);
   const common = await listStations(unitId);
-  const global = await db.listStations();
+  const preset = await db.listStations(unitId);
   return forces.map((force) => {
     const key = normalizeStationName(force.station_name);
     let target = current.find((item) => normalizeStationName(item.station_name) === key);
     const unit = common.find((item) => normalizeStationName(item.name) === key || item.aliases.includes(key));
-    const system = global.find((item) => normalizeStationName(item.name) === key);
+    const system = preset.find((item) => normalizeStationName(item.name) === key);
     target ||= current.find((item) => (unit && item.unit_station_id === unit.id) || (system && item.station_id === system.id));
     return { ...force, match: target ? 'current' : unit ? 'unit' : system ? 'system' : 'unmatched',
       target_force_id: target?.id || null, expected_version: target?.version || null,
       unit_station_id: unit?.id || target?.unit_station_id || null, station_id: system?.id || target?.station_id || null,
       matched_name: target?.station_name || unit?.name || system?.name || null,
       matched_quantity: target ? require('./force-fields').forceQuantityLabel(target) : null,
-      candidates: target || unit || system ? [] : [...current,...common,...global]
+      candidates: target || unit || system ? [] : [...current,...common,...preset]
         .filter((item,index,all)=>all.findIndex((s)=>(s.station_name||s.name)===(item.station_name||item.name))===index)
         .map((item)=>({name:item.station_name||item.name,distance:stationDistance(key,normalizeStationName(item.station_name||item.name))}))
         .filter((item)=>item.distance<=Math.max(1,Math.floor(key.length/4)))

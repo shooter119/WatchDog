@@ -143,6 +143,51 @@ test('bootstrap 返回单位词库、活动警情和十进制游标', { concurre
   assert.match(body.cursors.incident, /^\d+$/);
   assert.ok(Array.isArray(body.roster.firefighters));
   assert.ok(Array.isArray(body.roster.hotwords));
+  assert.ok(Array.isArray(body.stations));
+});
+
+test('新增消防站通过实时通道只推送给本组织', { concurrency: false }, async () => {
+  const connected = await openSyncSocket('station-device');
+  await waitForMessage(connected.messages, (message) => message.type === 'ready');
+  const stationName = `实时站${randomUUID().slice(0, 8)}`;
+  const response = await fetch(`${baseB}/api/stations`, {
+    method: 'POST',
+    headers: {
+      ...headers('station-writer'),
+      'X-Actor-Name-B64': Buffer.from('测试员').toString('base64'),
+    },
+    body: JSON.stringify({ name: stationName }),
+  });
+  const raw = await response.text();
+  assert.equal(response.status, 201, raw);
+  const created = JSON.parse(raw);
+  const event = await waitForMessage(
+    connected.messages,
+    (message) => message.event_type === 'roster.station_added' && message.aggregate_id === created.id,
+  );
+  assert.equal(event.payload.name, stationName);
+  const otherUnit = `other-${randomUUID()}`;
+  const otherCode = `code-${randomUUID()}`;
+  await store.query(
+    'INSERT INTO units (id, name, verification_code, created_at, updated_at) VALUES ($1,$2,$3,$4,$4)',
+    [otherUnit, otherUnit, otherCode, Date.now()],
+  );
+  const foreign = await fetch(`${baseA}/api/sync/events?unit_cursor=0`, {
+    headers: { ...headers('foreign-device'), 'X-Unit-Id': otherUnit, 'X-Unit-Code': otherCode },
+  });
+  assert.equal(foreign.status, 200);
+  const foreignBody = await foreign.json();
+  assert.ok(!foreignBody.events.some((item) => item.event_type === 'roster.station_added'));
+  const ownStations = await (await fetch(`${baseA}/api/stations`, { headers: headers() })).json();
+  const otherStations = await (await fetch(`${baseA}/api/stations`, {
+    headers: { ...headers(), 'X-Unit-Id': otherUnit, 'X-Unit-Code': otherCode },
+  })).json();
+  assert.ok(ownStations.some((item) => item.id === created.id));
+  assert.ok(!otherStations.some((item) => item.id === created.id));
+  await store.query('DELETE FROM stations WHERE id = $1', [created.id]);
+  await store.query('DELETE FROM sync_events WHERE unit_id = $1', [otherUnit]);
+  await store.query('DELETE FROM units WHERE id = $1', [otherUnit]);
+  connected.socket.close();
 });
 
 test('实例 B 写入后，实例 A 的 WebSocket 在同一单位收到警情事件', { concurrency: false }, async () => {

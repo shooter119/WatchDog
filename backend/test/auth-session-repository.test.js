@@ -13,9 +13,9 @@ process.env.WATCHDOG_SEED_UNIT_MEMBERS = '[{"real_name":"成员甲","role":"mana
 const db = require('../src/db');
 
 test('认证仓储：成员准入、会话哈希、过期与撤销', () => {
-  const member = db.findUnitMember('longyou-county-fire-rescue', '成员甲');
+  const member = db.findUnitMember('example-county-fire-rescue', '成员甲');
   assert.equal(member.role, 'manager');
-  assert.equal(db.findUnitMember('longyou-county-fire-rescue', '不存在'), undefined);
+  assert.equal(db.findUnitMember('example-county-fire-rescue', '不存在'), undefined);
 
   const expiredHash = crypto.createHash('sha256').update('expired').digest('hex');
   db.createAuthSession({

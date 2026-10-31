@@ -12,7 +12,7 @@ class LocalParser {
   static const _separators = '，,、。；;和及与';
 
   /// 常见同音字组（消防员姓名高频字 + 常见同音错字）：同组 = 读音相同，
-  /// 用于名单姓名同音纠正（本地识别同音错字，如 路和胜 → 陆河圣）
+  /// 用于名单姓名同音纠正（本地识别同音错字，如 辰剑华 → 陈建华）
   static const _homophoneGroup = <String, int>{
     '丁': 1, '万': 2, '东': 3, '严': 4, '中': 5, '丰': 6,
     '丽': 7, '云': 8, '亮': 9, '仕': 10, '以': 11, '伊': 11,
@@ -102,7 +102,7 @@ class LocalParser {
     final usedPressure = List<bool>.filled(pressures.length, false);
 
     // 名单姓名：按位置顺序与后续最近压力配对。
-    // 间距上限 24：兼容「李翔进入火场，空气呼吸器压力20兆帕」这类
+    // 间距上限 24：兼容「张伟进入火场，空气呼吸器压力20兆帕」这类
     // 姓名与压力间隔较长的报数（此前 12 过紧导致配对失败、进场被误判为日志）
     final rosterSorted = List.of(rosterMatches)..sort((a, b) => a.start.compareTo(b.start));
     for (final m in rosterSorted) {
@@ -277,7 +277,7 @@ class LocalParser {
         }
         idx = text.indexOf(name, idx + 1);
       }
-      // 同音匹配：本地 ASR 可能把名单姓名听成同音字（如 陆河圣 → 路和胜），
+      // 同音匹配：本地 ASR 可能把名单姓名听成同音字（如 陈建华 → 辰剑华），
       // 在文本中查找与名单姓名读音相同的连续片段，纠正为名单姓名
       if (idx == -1 || matches.every((m) => m.name != name)) {
         final code = _soundCode(name);

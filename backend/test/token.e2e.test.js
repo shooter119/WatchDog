@@ -50,7 +50,7 @@ test('单位级认证：不填写 API_TOKEN 也可完成认证', async () => {
     const badBootstrap = await fetch(`http://127.0.0.1:${port}/api/auth/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'bootstrap-bad' },
-      body: JSON.stringify({ unit_name: '龙游县消防救援大队', unit_code: '0570', real_name: '测试员' }),
+      body: JSON.stringify({ unit_name: '示例县消防救援大队', unit_code: '1001', real_name: '测试员' }),
     });
     assert.equal(badBootstrap.status, 200);
 
@@ -61,8 +61,8 @@ test('单位级认证：不填写 API_TOKEN 也可完成认证', async () => {
     // 只有单位 ID + 验证码 → 200
     const okUnitAuth = await fetch(`http://127.0.0.1:${port}/api/config`, {
       headers: {
-        'X-Unit-Id': 'longyou-county-fire-rescue',
-        'X-Unit-Code': '0570',
+        'X-Unit-Id': 'example-county-fire-rescue',
+        'X-Unit-Code': '1001',
       },
     });
     assert.equal(okUnitAuth.status, 200);
@@ -76,7 +76,7 @@ test('单位级认证：不填写 API_TOKEN 也可完成认证', async () => {
           'Content-Type': 'application/json',
           'X-Device-Id': `rotated-device-${i}`,
         },
-        body: JSON.stringify({ unit_name: '龙游县消防救援大队', unit_code: 'wrong', real_name: '测试员' }),
+        body: JSON.stringify({ unit_name: '示例县消防救援大队', unit_code: 'wrong', real_name: '测试员' }),
       });
       attempts.push(response.status);
     }

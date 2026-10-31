@@ -99,13 +99,15 @@ function createAdminAuth(store, now = Date.now, { onGrantChanged } = {}) {
       await audit(member.id, all ? 'logout_all' : 'logout');
     });
   }
-  async function listMembers(actorId) {
+  async function listMembers(actorId, unitId = '') {
     if ((await requireIdentity(actorId)).admin_role !== 'platform_admin') fail('ADMIN_FORBIDDEN');
+    const filter = String(unitId || '').trim();
     return query(`SELECT m.id,m.real_name,m.unit_id,u.name AS unit_name,m.role AS unit_role,
       g.role AS admin_role FROM unit_members m JOIN units u ON u.id=m.unit_id
       LEFT JOIN admin_grants g ON g.member_id=m.id
-      WHERE (m.status='active' AND m.review_status='approved') OR g.member_id IS NOT NULL
-      ORDER BY u.name,m.real_name LIMIT 1000`);
+      WHERE ((m.status='active' AND m.review_status='approved') OR g.member_id IS NOT NULL)
+      AND ($1 = '' OR m.unit_id = $1)
+      ORDER BY u.name,m.real_name LIMIT 1000`, [filter]);
   }
   async function listAudit(actorId, offset = 0) {
     if ((await requireIdentity(actorId)).admin_role !== 'platform_admin') fail('ADMIN_FORBIDDEN');

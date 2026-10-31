@@ -13,19 +13,19 @@ import 'package:watchdog/theme/app_theme.dart';
 DateTime get _now => DateTime(2026, 10, 21, 10, 30);
 
 const _amapLocation = AmapLocation(
-  lat: 29.03036,
-  lon: 119.18042,
+  lat: 30.25678,
+  lon: 120.12345,
   coordinate: 'gcj02',
 );
 
 LocationShareDraft _draft({double accuracy = 8, int ageMinutes = 0}) {
   return LocationShareDraft(
-    incidentName: '龙翔路仓库火灾',
-    unitName: '龙游县消防救援大队',
-    address: '浙江省衢州市龙游县东华街道鸡鸣路146号',
+    incidentName: '示例仓库火灾',
+    unitName: '示例县消防救援大队',
+    address: '示例省示例市示例县示范路1号',
     locatedAt: _now.subtract(Duration(minutes: ageMinutes)),
-    lat: 29.03,
-    lon: 119.18,
+    lat: 30.25,
+    lon: 120.12,
     accuracyMeters: accuracy,
     amapLocation: _amapLocation,
   );
@@ -42,7 +42,7 @@ class _GatewayHarness {
   final copied = <String>[];
   final shared = <String>[];
   WeatherInfo weather = const WeatherInfo(
-    address: '浙江省衢州市龙游县东华街道鸡鸣路146号',
+    address: '示例省示例市示例县示范路1号',
     line: '阴 · 25℃',
     amapLocation: _amapLocation,
   );
@@ -58,8 +58,8 @@ class _GatewayHarness {
       currentLocationRequests++;
       if (!locationAvailable) return null;
       return LocationFix(
-        lat: 29.03,
-        lon: 119.18,
+        lat: 30.25,
+        lon: 120.12,
         accuracyMeters: 8,
         provider: 'gps',
         ageMs: ageMs,
@@ -91,7 +91,7 @@ void main() {
     final draft = _draft();
     expect(draft.markerUri.host, 'uri.amap.com');
     expect(draft.markerUri.path, '/marker');
-    expect(draft.markerUri.queryParameters['position'], '119.180000,29.030000');
+    expect(draft.markerUri.queryParameters['position'], '120.120000,30.250000');
     expect(draft.markerUri.queryParameters['coordinate'], 'wgs84');
     expect(draft.markerUri.queryParameters['src'], 'watchdog');
     expect(draft.markerUri.queryParameters['callnative'], '0');
@@ -99,7 +99,7 @@ void main() {
     final navigation = draft.navigationUri!;
     expect(navigation.path, '/navigation');
     expect(navigation.queryParameters['from'], '');
-    expect(navigation.queryParameters['to'], '119.180420,29.030360,龙翔路仓库火灾');
+    expect(navigation.queryParameters['to'], '120.123450,30.256780,示例仓库火灾');
     expect(navigation.queryParameters.containsKey('coordinate'), isFalse);
     expect(navigation.queryParameters['src'], 'watchdog');
     expect(navigation.queryParameters['callnative'], '0');
@@ -121,12 +121,12 @@ void main() {
   test('分享文案按固定顺序输出、链接独立成行且不包含发送人', () {
     final text = _draft().toShareText(now: _now);
     final fields = [
-      '警情：龙翔路仓库火灾',
-      '单位：龙游县消防救援大队',
-      '位置：浙江省衢州市龙游县东华街道鸡鸣路146号',
+      '警情：示例仓库火灾',
+      '单位：示例县消防救援大队',
+      '位置：示例省示例市示例县示范路1号',
       '时间：2026-10-21 10:30',
       '精度：约 8.0 米',
-      'WGS84：29.030000, 119.180000',
+      'WGS84：30.250000, 120.120000',
       '查看位置：',
       'https://uri.amap.com/marker?',
       '驾车导航：',
@@ -148,29 +148,29 @@ void main() {
       'address': '测试地址',
       'line': '晴 · 28℃',
       'amapLocation': {
-        'lat': 29.03036,
-        'lon': 119.18042,
+        'lat': 30.25678,
+        'lon': 120.12345,
         'coordinate': 'gcj02',
       },
       'coordinateDegraded': false,
       'degraded': false,
     });
     expect(info.address, '测试地址');
-    expect(info.amapLocation?.lat, 29.03036);
-    expect(info.amapLocation?.lon, 119.18042);
+    expect(info.amapLocation?.lat, 30.25678);
+    expect(info.amapLocation?.lon, 120.12345);
     expect(info.amapLocation?.coordinate, 'gcj02');
     expect(info.coordinateDegraded, isFalse);
     expect(WeatherInfo.fromJson({'amapLocation': 'bad'}).amapLocation, isNull);
   });
 
   testWidgets('复制与分享使用同一完整文案，并只提示系统分享已打开', (tester) async {
-    await Settings.setUnitName('龙游县消防救援大队');
+    await Settings.setUnitName('示例县消防救援大队');
     final harness = _GatewayHarness();
     final controller = AppController()
       ..currentIncident = const Incident(
         id: 'i1',
         number: '2026-10-21-001',
-        title: '龙翔路仓库火灾',
+        title: '示例仓库火灾',
         status: 'active',
         createdAt: 1,
         lastActivityAt: 1,
@@ -189,8 +189,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('定位分享'), findsOneWidget);
-    expect(find.text('龙翔路仓库火灾'), findsWidgets);
-    expect(find.text('浙江省衢州市龙游县东华街道鸡鸣路146号'), findsOneWidget);
+    expect(find.text('示例仓库火灾'), findsWidgets);
+    expect(find.text('示例省示例市示例县示范路1号'), findsOneWidget);
     await tester.tap(find.byKey(const Key('location-share-copy')));
     await tester.pump();
     expect(harness.copied, hasLength(1));

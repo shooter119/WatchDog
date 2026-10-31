@@ -673,7 +673,7 @@ void main() {
     });
 
     testWidgets('超时卡片使用单层边框且时间标签在同一行', (tester) async {
-      await _pumpBoard(tester, [_entry(name: '袁超', remainingMin: -1)]);
+      await _pumpBoard(tester, [_entry(name: '赵磊', remainingMin: -1)]);
       expect(find.byType(PulseGlow), findsNothing);
       final remaining = tester.getRect(find.text('剩余时间'));
       final elapsed = tester.getRect(find.text('持续时长'));
@@ -1944,7 +1944,7 @@ void main() {
     });
 
     testWidgets('识别为日志意图（如搜救出物品）不弹全员离场，回调路由记入日志', (tester) async {
-      final api = _FakeApi(noteOnCall: 1, transcribeText: '龙翔路站从燃烧建筑中搜救出一只宠物狗');
+      final api = _FakeApi(noteOnCall: 1, transcribeText: '示例路站从燃烧建筑中搜救出一只宠物狗');
       final c = _FakeController()..api = api;
       String? routed;
       await tester.pumpWidget(
@@ -1970,8 +1970,8 @@ void main() {
       // 不弹全员离场确认
       expect(find.text('全员离场确认'), findsNothing);
       // 意图路由回调收到文本（分类：搜救）
-      expect(routed, '龙翔路站从燃烧建筑中搜救出一只宠物狗');
-      expect(c.notes.single.text, '龙翔路站从燃烧建筑中搜救出一只宠物狗');
+      expect(routed, '示例路站从燃烧建筑中搜救出一只宠物狗');
+      expect(c.notes.single.text, '示例路站从燃烧建筑中搜救出一只宠物狗');
       expect(c.notes.single.category, NoteCategory.rescue);
       expect(find.text('现场工具'), findsOneWidget);
     });
@@ -2984,16 +2984,16 @@ void main() {
       );
       await tester.enterText(
         find.byKey(const Key('auth-unit-name')),
-        '龙游县消防救援大队',
+        '示例县消防救援大队',
       );
       await tester.enterText(find.byKey(const Key('auth-real-name')), '李娜');
-      await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
+      await tester.enterText(find.byKey(const Key('auth-unit-code')), '1001');
       await tester.tap(find.byKey(const Key('auth-submit')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
-      expect(submittedUnitName, '龙游县消防救援大队');
+      expect(submittedUnitName, '示例县消防救援大队');
       expect(submittedName, '李娜');
-      expect(submittedCode, '0570');
+      expect(submittedCode, '1001');
       expect(find.text('认证并继续'), findsOneWidget);
     });
 
@@ -3074,10 +3074,10 @@ void main() {
       );
       await tester.enterText(
         find.byKey(const Key('auth-unit-name')),
-        '龙游县消防救援大队。',
+        '示例县消防救援大队。',
       );
       await tester.enterText(find.byKey(const Key('auth-real-name')), '李娜');
-      await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
+      await tester.enterText(find.byKey(const Key('auth-unit-code')), '1001');
       await tester.tap(find.byKey(const Key('auth-submit')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
@@ -3794,7 +3794,7 @@ void main() {
           IncidentForce(
             id: 'f1',
             incidentId: 'i1',
-            stationName: '龙翔路站',
+            stationName: '示例路站',
             vehicleCount: 5,
             personnelCount: 25,
             deploymentStatus: 'dispatched',
@@ -3809,7 +3809,7 @@ void main() {
         await tester.tap(find.byKey(const Key('toggle-incident-card')));
         await tester.pumpAndSettle();
       }
-      expect(find.text('龙翔路站 5车25人'), findsOneWidget);
+      expect(find.text('示例路站 5车25人'), findsOneWidget);
       expect(find.textContaining('通报已调派'), findsNothing);
       expect(find.textContaining('到场未确认'), findsNothing);
       expect(find.byType(InputChip), findsNothing);
@@ -4110,10 +4110,10 @@ void main() {
 
         await tester.enterText(
           find.byKey(const Key('auth-unit-name')),
-          '龙游县消防救援大队',
+          '示例县消防救援大队',
         );
         await tester.enterText(find.byKey(const Key('auth-real-name')), '祝徐迁');
-        await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
+        await tester.enterText(find.byKey(const Key('auth-unit-code')), '1001');
         await tester.tap(find.byKey(const Key('auth-submit')));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
@@ -4132,9 +4132,9 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
-        expect(appliedUnit, '龙游县消防救援大队');
+        expect(appliedUnit, '示例县消防救援大队');
         expect(appliedName, '祝徐迁');
-        expect(appliedCode, '0570');
+        expect(appliedCode, '1001');
         expect(
           find.textContaining('设置 → 入队审批'),
           findsOneWidget,
@@ -4179,10 +4179,10 @@ void main() {
 
         await tester.enterText(
           find.byKey(const Key('auth-unit-name')),
-          '龙游县消防救援大队',
+          '示例县消防救援大队',
         );
         await tester.enterText(find.byKey(const Key('auth-real-name')), '祝徐谦');
-        await tester.enterText(find.byKey(const Key('auth-unit-code')), '0570');
+        await tester.enterText(find.byKey(const Key('auth-unit-code')), '1001');
         await tester.tap(find.byKey(const Key('auth-submit')));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));

@@ -186,3 +186,14 @@ test('全部平台成员失效时私有命令可指定已有成员恢复，失�
   await rejects(() => auth.session(previous.token), 'ADMIN_SESSION_INVALID');
   await auth.setGrant('platform', 'ordinary', null);
 });
+
+test('平台管理员按组织筛选成员', async () => {
+  await store.query("INSERT INTO units(id,name,verification_code,created_at,updated_at) VALUES('u2','另一组织','code2',1,1)");
+  await store.query("INSERT INTO unit_members(id,unit_id,real_name,role,created_at,updated_at) VALUES('other-org','u2','另一组织成员','member',1,1)");
+  const all = await auth.listMembers('platform');
+  const filtered = await auth.listMembers('platform', 'u2');
+  assert.ok(all.some((item) => item.unit_id === 'u'));
+  assert.ok(all.some((item) => item.unit_id === 'u2'));
+  assert.deepEqual([...new Set(filtered.map((item) => item.unit_id))], ['u2']);
+  assert.ok(filtered.every((item) => item.real_name === '另一组织成员'));
+});

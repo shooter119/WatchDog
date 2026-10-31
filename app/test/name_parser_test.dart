@@ -6,34 +6,34 @@ void main() {
   group('extractNamesFromPaste', () {
     test('每行一个姓名', () {
       expect(
-        extractNamesFromPaste('李翔\n盛承华\n徐琴琴'),
-        ['李翔', '盛承华', '徐琴琴'],
+        extractNamesFromPaste('张伟\n李娜\n赵磊'),
+        ['张伟', '李娜', '赵磊'],
       );
     });
 
     test('两字姓名中间带空格', () {
-      expect(extractNamesFromPaste('李  翔\n柯  峰'), ['李翔', '柯峰']);
+      expect(extractNamesFromPaste('张  伟\n李  娜'), ['张伟', '李娜']);
     });
 
     test('整表复制取每行第一个单元格', () {
-      const paste = '林成成\t站长\t初级专职消防员\n'
-          '程晓波\t站长助理\t初级专职消防员\n'
-          '郭逸\t站长助理\t初级专职消防员';
-      expect(extractNamesFromPaste(paste), ['林成成', '程晓波', '郭逸']);
+      const paste = '张伟\t站长\t初级专职消防员\n'
+          '李娜\t站长助理\t初级专职消防员\n'
+          '赵磊\t站长助理\t初级专职消防员';
+      expect(extractNamesFromPaste(paste), ['张伟', '李娜', '赵磊']);
     });
 
     test('姓名与职务混排只取姓名', () {
-      expect(extractNamesFromPaste('盛承华 大队长\n徐琴琴 会计助理员'), ['盛承华', '徐琴琴']);
+      expect(extractNamesFromPaste('张伟 大队长\n李娜 会计助理员'), ['张伟', '李娜']);
     });
 
     test('四字少数民族姓名', () {
-      expect(extractNamesFromPaste('甲巴 有拉\n吉布 小夫'), ['甲巴有拉', '吉布小夫']);
+      expect(extractNamesFromPaste('赵钱 孙李\n周吴 郑王'), ['赵钱孙李', '周吴郑王']);
     });
 
     test('过滤职务词与无效行', () {
       expect(
-        extractNamesFromPaste('站长\n战斗员\n实习\n2025.04\n李  翔\n'),
-        ['李翔'],
+        extractNamesFromPaste('站长\n战斗员\n实习\n2025.04\n张  伟\n'),
+        ['张伟'],
       );
     });
 

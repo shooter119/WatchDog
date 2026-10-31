@@ -23,13 +23,13 @@ const ok = (content) => ({
 });
 
 test('reviseTextWithDeepSeek 把同音姓名修正为名单姓名', async () => {
-  globalThis.fetch = () => Promise.resolve(ok({ corrected: '李翔，20兆帕' }));
+  globalThis.fetch = () => Promise.resolve(ok({ corrected: '张伟，20兆帕' }));
   const corrected = await reviseTextWithDeepSeek({
     apiKey: 'k',
     text: '理想，20兆帕',
-    firefighters: ['李翔'],
+    firefighters: ['张伟'],
   });
-  assert.equal(corrected, '李翔，20兆帕');
+  assert.equal(corrected, '张伟，20兆帕');
 });
 
 test('reviseTextWithDeepSeek 原文准确时原样返回', async () => {
@@ -75,15 +75,15 @@ test('reviseTextWithDeepSeek 请求体包含名单与热词', async () => {
 });
 
 test('parseTextWithDeepSeek 修正后文本仍可正常解析', async () => {
-  globalThis.fetch = () => Promise.resolve(ok({ intent: 'entry', action: 'enter', people: [{ name: '李翔', pressure_mpa: 20 }], note: '' }));
+  globalThis.fetch = () => Promise.resolve(ok({ intent: 'entry', action: 'enter', people: [{ name: '张伟', pressure_mpa: 20 }], note: '' }));
   const parsed = await parseTextWithDeepSeek({
     apiKey: 'k',
-    text: '李翔，20兆帕',
-    firefighters: ['李翔'],
+    text: '张伟，20兆帕',
+    firefighters: ['张伟'],
   });
   assert.equal(parsed.intent, 'entry');
   assert.equal(parsed.action, 'enter');
-  assert.deepEqual(parsed.people, [{ name: '李翔', pressure_mpa: 20 }]);
+  assert.deepEqual(parsed.people, [{ name: '张伟', pressure_mpa: 20 }]);
 });
 
 test('parseTextWithDeepSeek 重试找回多人后 guardrail 使用最终解析结果', async () => {
@@ -123,17 +123,17 @@ test('parseTextWithDeepSeek 重试找回多人后 guardrail 使用最终解析�
 // guardrail：LLM 误判"搜救出宠物狗"为 exit 时强制降级
 test('guardrailAction 搜救出宠物狗误判 exit 时降级 unknown', () => {
   assert.equal(
-    guardrailAction('龙翔路站从燃烧建筑中搜救出一只宠物狗', { action: 'exit', people: [] }),
+    guardrailAction('示例路站从燃烧建筑中搜救出一只宠物狗', { action: 'exit', people: [] }),
     'unknown',
   );
 });
 
 test('guardrailAction 取出煤气罐等物品动作误判 exit 时降级 unknown', () => {
-  assert.equal(guardrailAction('龙翔路站从火场中取出一个煤气罐', { action: 'exit', people: [] }), 'unknown');
+  assert.equal(guardrailAction('示例路站从火场中取出一个煤气罐', { action: 'exit', people: [] }), 'unknown');
 });
 
 test('guardrailAction exit 无人名且无出场证据（LLM 幻觉）降级 unknown', () => {
-  assert.equal(guardrailAction('龙翔路站攻坚组进入火场内部', { action: 'exit', people: [] }), 'unknown');
+  assert.equal(guardrailAction('示例路站攻坚组进入火场内部', { action: 'exit', people: [] }), 'unknown');
 });
 
 test('guardrailAction 明确的出场指令保留 exit', () => {
@@ -173,7 +173,7 @@ test('guardrailIntent 文本含火场痕迹时禁止丢弃', () => {
   assert.equal(guardrailIntent('这个火烧得挺大的', { intent: 'ignore', people: [] }, []), 'note');
   assert.equal(guardrailIntent('气瓶压力还有二十个压', { intent: 'ignore', people: [] }, []), 'note');
   // 火场指挥/到场语境（含与名单同音的姓名时更需兜底）
-  assert.equal(guardrailIntent('带队指挥员陆和胜', { intent: 'ignore', people: [] }, ['陆河圣']), 'note');
+  assert.equal(guardrailIntent('带队指挥员辰剑华', { intent: 'ignore', people: [] }, ['陈建华']), 'note');
   assert.equal(guardrailIntent('总队全勤指挥部到达现场', { intent: 'ignore', people: [] }, []), 'note');
   // 行进/路况痕迹
   assert.equal(guardrailIntent('途中堵车，预计晚十分钟到场', { intent: 'ignore', people: [] }, []), 'note');

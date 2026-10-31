@@ -9,6 +9,8 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-db-'));
 process.env.WATCHDOG_DATA_DIR = tmpDir;
 
 const db = require('../src/db');
+const { resolveOrgSeed } = require('../src/org-seed');
+const seedOrg = resolveOrgSeed();
 
 test('createEntry 保存完整字段并可读回', () => {
   const now = Date.now();
@@ -75,30 +77,33 @@ test('进场与事件写入失败时整体回滚', () => {
 });
 
 test('消防员：单位词库中的内置名单/新增/查重/删除', () => {
-  const names = db.listFirefighters().map((f) => f.name);
-  assert.ok(names.includes('李翔'));
-  assert.ok(names.includes('游方远'));
+  const names = db.listFirefighters(seedOrg.id).map((f) => f.name);
+  assert.ok(names.includes('张伟'));
+  assert.ok(names.includes('陈建华'));
   assert.ok(!names.includes('徐琴琴'));
+  assert.deepEqual(db.listFirefighters(null), []);
+  assert.deepEqual(db.listStations(null), []);
+  assert.ok(db.listStations(seedOrg.id).some((station) => station.name === '示例路站'));
   const before = names.length;
   db.addFirefighter('f1', '测试员甲');
   assert.throws(() => db.addFirefighter('f2', '测试员甲'), /UNIQUE/);
-  assert.equal(db.listFirefighters().length, before + 1);
+  assert.equal(db.listFirefighters(seedOrg.id).length, before + 1);
   db.removeFirefighter('f1');
-  assert.equal(db.listFirefighters().length, before);
+  assert.equal(db.listFirefighters(seedOrg.id).length, before);
 });
 
 test('热词：单位词库中的内置词/新增/查重/删除', () => {
-  const words = db.listHotwords().map((h) => h.word);
-  assert.ok(words.includes('龙游大队'));
+  const words = db.listHotwords(seedOrg.id).map((h) => h.word);
+  assert.ok(words.includes('示例大队'));
   assert.ok(words.includes('内攻'));
   assert.ok(!words.includes('到场'));
   const before = words.length;
   db.addHotword('h1', '进入火场');
   assert.throws(() => db.addHotword('h2', '进入火场'), /UNIQUE/);
-  // 无参数调用保留本地仓储兼容行为；HTTP 接口始终传入单位。
-  assert.equal(db.listHotwords().length, before + 1);
+  assert.equal(db.listHotwords(seedOrg.id).length, before + 1);
+  assert.deepEqual(db.listHotwords(null), []);
   db.removeHotword('h1');
-  assert.equal(db.listHotwords().length, before);
+  assert.equal(db.listHotwords(seedOrg.id).length, before);
 });
 
 test('单位词库隔离：相同词条可存在于不同单位，不能跨单位删除', () => {
@@ -246,8 +251,8 @@ test('旧版进退场随手记迁移时确定性去重', () => {
 
 test('参战力量同站点只保留一条汇总记录', () => {
   const incident = db.createIncident({ id: 'incident-forces' });
-  const first = db.upsertIncidentForce({ incidentId: incident.id, stationName: '龙翔路站', vehicleCount: 5, personnelCount: 25 });
-  const second = db.upsertIncidentForce({ incidentId: incident.id, stationName: '龙翔路站', vehicleCount: 6, personnelCount: 30, expectedVersion: first.version });
+  const first = db.upsertIncidentForce({ incidentId: incident.id, stationName: '示例路站', vehicleCount: 5, personnelCount: 25 });
+  const second = db.upsertIncidentForce({ incidentId: incident.id, stationName: '示例路站', vehicleCount: 6, personnelCount: 30, expectedVersion: first.version });
   assert.equal(second.id, first.id);
   assert.equal(second.version, 2);
   assert.equal(db.listIncidentForces(incident.id).length, 1);

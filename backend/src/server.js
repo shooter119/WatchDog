@@ -15,6 +15,7 @@ const { createDatabaseReadiness } = require('./database-readiness');
 const { parseAllowedHosts, isHostAllowed } = require('./network-policy');
 const { MinuteRateLimiter } = require('./rate-limiter');
 const { nameSuggestions } = require('./name-match');
+const { GENERIC_ASR_TERMS } = require('./org-seed');
 const weather = require('./weather');
 
 // PostgreSQL 初始化是网络依赖，不能阻塞端口监听等待完成；探活在初始化期间
@@ -1126,10 +1127,18 @@ function rosterUnitIdForRequest(req) {
 }
 
 async function hotwordList(unitId = null) {
-  const firefighters = (await db.listFirefighters(unitId)).map((f) => f.name);
-  const terms = (await db.listHotwords(unitId)).map((h) => h.word);
-  const defaults = ['兆帕', '个压', '气瓶', '空气呼吸器', '余量', '进入火场', '出来了', '已出火场', '收到'];
-  return [...new Set([...firefighters, ...terms, ...defaults])].filter(Boolean);
+  if (!unitId) return [...GENERIC_ASR_TERMS];
+  const [firefighters, terms, stations] = await Promise.all([
+    db.listFirefighters(unitId),
+    db.listHotwords(unitId),
+    typeof db.listStations === 'function' ? db.listStations(unitId) : [],
+  ]);
+  return [...new Set([
+    ...firefighters.map((item) => item.name),
+    ...terms.map((item) => item.word),
+    ...stations.map((item) => item.name),
+    ...GENERIC_ASR_TERMS,
+  ])].filter(Boolean);
 }
 
 app.get('/api/health', async (req, res) => {
@@ -1363,10 +1372,19 @@ app.post('/api/auth/verify', async (req, res, next) => {
         expiresAt: sessionExpiresAt,
       });
     }
+    const [firefighters, hotwords, stations] = await Promise.all([
+      db.listFirefighters(unit.id),
+      db.listHotwords(unit.id),
+      db.listStations(unit.id),
+    ]);
     res.json({
       authenticated: true,
       unit: { id: unit.id, name: unit.name },
+      // 组织与单位是同一条记录：对外保留 unit，同时给出 organization，旧客户端忽略未知字段。
+      organization: { id: unit.id, name: unit.name },
       user: { id: member?.id || null, real_name: name, role: member?.role || 'member' },
+      roster: { firefighters, hotwords },
+      stations,
       session_token: sessionToken,
       expires_at: sessionExpiresAt,
       idle_ttl_ms: SESSION_TTL_MS,
@@ -1505,11 +1523,12 @@ app.get('/api/sync/bootstrap', async (req, res, next) => {
     if (!unitId) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
     const requestedIncidentId = String(req.query.incident_id || '').trim();
     const unit = await db.getUnit(unitId);
-    const [firefighters, hotwords, activeRows, cursors] = await Promise.all([
+    const [firefighters, hotwords, activeRows, cursors, stations] = await Promise.all([
       db.listFirefighters(unitId),
       db.listHotwords(unitId),
       db.listIncidents('active', { unitId, limit: 500, offset: 0 }),
       db.getSyncCheckpoint(unitId, requestedIncidentId || null),
+      db.listStations(unitId),
     ]);
     let snapshot = null;
     if (requestedIncidentId) {
@@ -1530,6 +1549,7 @@ app.get('/api/sync/bootstrap', async (req, res, next) => {
       unit: { id: unit.id, name: unit.name, roster_version: String(unit.roster_version || 1) },
       cursors,
       roster: { firefighters, hotwords },
+      stations,
       active_incidents: activeRows.map(publicSyncIncident),
       incident_snapshot: snapshot,
     });
@@ -2312,15 +2332,22 @@ app.delete('/api/incidents/:incidentId/forces/:forceId', async (req, res, next) 
   }
 });
 
-app.get('/api/stations', async (req, res) => res.json(await db.listStations()));
+app.get('/api/stations', async (req, res) => {
+  const unitId = rosterUnitIdForRequest(req);
+  res.json(unitId ? await db.listStations(unitId) : []);
+});
 app.post('/api/stations', async (req, res, next) => {
   if (!requireManagementRole(req, res)) return;
   try {
+    const unitId = rosterUnitIdForRequest(req);
+    if (!unitId) return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名', code: 'REAL_NAME_REQUIRED' });
-    res.status(201).json(await db.addStation({ name: req.body?.name, createdBy: deviceKey(req) }));
+    res.status(201).json(await db.addStation({ name: req.body?.name, createdBy: deviceKey(req), unitId }));
   } catch (e) {
-    if (e?.code === '23505' || /unique/i.test(String(e.message || ''))) return res.status(409).json({ error: '该消防站已存在' });
+    if (e?.code === '23505' || e?.code === 'UNIT_REQUIRED' || /unique/i.test(String(e.message || ''))) {
+      return res.status(e.code === 'UNIT_REQUIRED' ? 400 : 409).json({ error: e.code === 'UNIT_REQUIRED' ? e.message : '该消防站已存在' });
+    }
     next(e);
   }
 });

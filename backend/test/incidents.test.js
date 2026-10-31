@@ -9,6 +9,8 @@ process.env.WATCHDOG_DATA_DIR = tmpDir;
 
 const app = require('../src/server');
 const db = require('../src/db');
+const { resolveOrgSeed } = require('../src/org-seed');
+const seedOrg = resolveOrgSeed();
 
 let server;
 let base;
@@ -88,7 +90,7 @@ test('警情编号始终按东八区生成，不依赖服务器系统时区', ()
 test('支持中文实名的 Base64 请求头，不因 HTTP 头编码失败', async () => {
   const utf8Headers = headers({ 'X-Op-Id': 'create-utf8-actor' });
   delete utf8Headers['X-Actor-Name'];
-  utf8Headers['X-Actor-Name-B64'] = Buffer.from('李翔', 'utf8').toString('base64');
+  utf8Headers['X-Actor-Name-B64'] = Buffer.from('张伟', 'utf8').toString('base64');
   const response = await fetch(`${base}/api/incidents`, {
     method: 'POST',
     headers: utf8Headers,
@@ -99,7 +101,7 @@ test('支持中文实名的 Base64 请求头，不因 HTTP 头编码失败', asy
   const timeline = await json(await fetch(`${base}/api/incidents/${created.id}/timeline`, {
     headers: headers({ 'X-Incident-Id': created.id }),
   }));
-  assert.equal(timeline.events[0].actor_name, '李翔');
+  assert.equal(timeline.events[0].actor_name, '张伟');
 });
 
 test('新建警情拒绝复用其他类型事件的 client_op_id', async () => {
@@ -145,21 +147,23 @@ test('改名使用版本控制，未实名管理操作被拒绝', async () => {
 
 test('参战力量按消防站汇总，保留快照并记录前后值，版本冲突返回 409', async () => {
   const incident = await createIncident();
-  const stationList = await json(await fetch(`${base}/api/stations`, { headers: headers() }));
-  assert.ok(stationList.some((station) => station.name === '龙翔路站'));
+  const stationList = await json(await fetch(`${base}/api/stations`, {
+    headers: headers({ 'X-Unit-Id': seedOrg.id, 'X-Unit-Code': seedOrg.verificationCode }),
+  }));
+  assert.ok(stationList.some((station) => station.name === '示例路站'));
 
   const added = await json(await fetch(`${base}/api/incidents/${incident.id}/forces`, {
     method: 'POST',
     headers: headers({ 'X-Op-Id': 'force-add' }),
-    body: JSON.stringify({ station_name: '龙翔路站', vehicle_count: 5, personnel_count: 25 }),
+    body: JSON.stringify({ station_name: '示例路站', vehicle_count: 5, personnel_count: 25 }),
   }));
-  assert.equal(added.station_name, '龙翔路站');
+  assert.equal(added.station_name, '示例路站');
   assert.equal(added.version, 1);
 
   const updated = await json(await fetch(`${base}/api/incidents/${incident.id}/forces`, {
     method: 'POST',
     headers: headers({ 'X-Op-Id': 'force-update' }),
-    body: JSON.stringify({ station_name: '龙翔路站', vehicle_count: 6, personnel_count: 30, expected_version: 1 }),
+    body: JSON.stringify({ station_name: '示例路站', vehicle_count: 6, personnel_count: 30, expected_version: 1 }),
   }));
   assert.equal(updated.id, added.id);
   assert.equal(updated.version, 2);

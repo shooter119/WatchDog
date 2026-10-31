@@ -63,9 +63,28 @@ $('logout-all').onclick = () => logout(true);
 $('show-sites').onclick = () => { workspaceView = 'sites'; $('platform').hidden = true; if ($('site-manager')) $('site-manager').hidden = false; };
 $('show-permissions').onclick = () => { workspaceView = 'access'; $('platform').hidden = false; if ($('site-manager')) $('site-manager').hidden = true; };
 function textNode(tag, value) { const node = document.createElement(tag); node.textContent = value; return node; }
+async function ensureUnitFilter() {
+  const select = $('member-unit');
+  if (!select || select.dataset.ready === '1') return;
+  const result = await api('/units', undefined, 'GET');
+  const current = select.value;
+  select.replaceChildren();
+  const all = textNode('option', '全部组织');
+  all.value = '';
+  select.append(all);
+  for (const unit of result.units || []) {
+    const option = textNode('option', unit.name || unit.id);
+    option.value = unit.id;
+    select.append(option);
+  }
+  select.value = [...select.options].some((option) => option.value === current) ? current : '';
+  select.dataset.ready = '1';
+}
 $('load-members').onclick = async () => {
   try {
-    const result = await api('/members', undefined, 'GET');
+    await ensureUnitFilter();
+    const unitId = $('member-unit')?.value || '';
+    const result = await api(`/members${unitId ? `?unit_id=${encodeURIComponent(unitId)}` : ''}`, undefined, 'GET');
     $('members').replaceChildren();
     for (const member of result.members) {
       const row = document.createElement('div'); row.className = 'member-row';

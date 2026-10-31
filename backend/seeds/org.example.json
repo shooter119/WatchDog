@@ -1,0 +1,15 @@
+{
+  "organization": {
+    "id": "example-county-fire-rescue",
+    "name": "示例县消防救援大队",
+    "verificationCode": "1001"
+  },
+  "firefighters": [
+    { "name": "张伟", "group": "大队部" },
+    { "name": "李娜", "group": "示例路站" },
+    { "name": "赵磊", "group": "示范路站" },
+    { "name": "陈建华", "group": "实训站" }
+  ],
+  "stations": ["示例路站", "示范路站", "实训站"],
+  "hotwords": ["示例大队", "示例", "示例路站", "示范路站", "实训站"]
+}
