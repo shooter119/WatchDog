@@ -1541,11 +1541,8 @@ void main() {
         findsWidgets,
       ); // 默认消耗率 80L/min：6.8×20×10÷80=17
       expect(find.text('容量'), findsWidgets);
-      expect(find.textContaining('识别原文：'), findsOneWidget);
-      expect(find.text('继续语音添加'), findsNothing);
-      expect(find.text('继续添加人员，请长按底部麦克风'), findsOneWidget);
 
-      // 点一次确认 → 两人全部提交（确认按钮固定在底部，无需滚动）
+      // 点一次确认 → 两人全部提交（确认按钮在固定操作区，无需滚动）
       final confirmBtn = find.text('全部确认进入火场（2 人）');
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
@@ -1585,7 +1582,7 @@ void main() {
       expect(instruction, findsOneWidget);
       expect(tester.getSize(instruction).height, greaterThan(24));
       final fields = find.byType(TextField);
-      expect(fields, findsNWidgets(6));
+      expect(fields, findsNWidgets(4));
       final nameRect = tester.getRect(fields.at(0));
       final pressureRect = tester.getRect(fields.at(1));
       expect(nameRect.width, greaterThan(200));
@@ -1616,6 +1613,8 @@ void main() {
       await tester.pump();
 
       final confirm = find.text('全部确认进入火场（2 人）');
+      await tester.ensureVisible(confirm);
+      await tester.pump();
       await tester.tap(confirm);
       await tester.pumpAndSettle();
 
@@ -1640,6 +1639,8 @@ void main() {
       await tester.pump();
 
       final confirmBtn = find.text('全部确认进入火场（2 人）');
+      await tester.ensureVisible(confirmBtn);
+      await tester.pump();
       await tester.tap(confirmBtn);
       await tester.pump();
       // 两人的缺压力错误同时列出
@@ -1654,6 +1655,8 @@ void main() {
       await tester.enterText(fields.at(3), '22');
       await tester.pump();
       expect(find.textContaining('缺少气瓶压力'), findsNothing);
+      await tester.ensureVisible(confirmBtn);
+      await tester.pump();
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜']);
@@ -1685,9 +1688,6 @@ void main() {
       // 剩 1 人时回到单人确认卡片
       expect(find.text('确认进入火场，开始倒计时'), findsOneWidget);
       expect(find.text('全部确认进入火场（2 人）'), findsNothing);
-      expect(find.textContaining('识别原文：'), findsOneWidget);
-      expect(find.text('继续语音添加'), findsNothing);
-      expect(find.text('继续添加人员，请长按底部麦克风'), findsOneWidget);
 
       await tester.tap(find.text('确认进入火场，开始倒计时'));
       await tester.pumpAndSettle();
@@ -1736,9 +1736,10 @@ void main() {
       final fields = find.byType(TextField);
       expect(tester.widget<TextField>(fields.at(1)).controller!.text, '15.0');
 
-      // 一次确认全部进场：三人堆叠时按钮仍固定在视口内
+      // 一次确认全部进场
       final confirmBtn = find.text('全部确认进入火场（3 人）');
-      expect(tester.getRect(confirmBtn).bottom, lessThanOrEqualTo(600));
+      await tester.ensureVisible(confirmBtn);
+      await tester.pump();
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜', '王强']);
@@ -1818,15 +1819,17 @@ void main() {
         '张伟',
       ); // 名单内姓名保留
       expect(
-        tester.widget<TextField>(fields.at(3)).controller!.text,
+        tester.widget<TextField>(fields.at(2)).controller!.text,
         '',
       ); // 李娜不在名单 → 姓名栏空白
       expect(find.textContaining('「李娜」不在名单内'), findsOneWidget);
 
       // 手动补全姓名后可正常确认
-      await tester.enterText(fields.at(3), '李娜');
+      await tester.enterText(fields.at(2), '李娜');
       await tester.pump();
       final confirmBtn = find.text('全部确认进入火场（2 人）');
+      await tester.ensureVisible(confirmBtn);
+      await tester.pump();
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜']);
@@ -1885,7 +1888,57 @@ void main() {
       expect(find.text('现场监控'), findsOneWidget);
     });
 
-    testWidgets('语音提到钢瓶容积时录入页容积字段随之更新', (tester) async {
+    testWidgets('切换 9L 气瓶后可用时间实时重算', (tester) async {
+      final api = _FakeApi(
+        rounds: [
+          [ParsePerson(name: '张伟', pressureMpa: 20)],
+        ],
+      );
+      final c = _FakeController()..api = api;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      final state = tester.state<HomePageState>(find.byType(HomePage));
+      await state.beginRecording();
+      await state.finishRecording();
+      await tester.pump();
+      expect(find.text('可用时间 17 分钟'), findsOneWidget);
+      expect(find.text('可用时间 19 分钟'), findsOneWidget);
+
+      final chip9L = find.byWidgetPredicate(
+        (widget) =>
+            widget is ChoiceChip &&
+            widget.label is Text &&
+            (widget.label as Text).data == '9L',
+      );
+      expect(chip9L, findsNWidgets(2));
+      await tester.ensureVisible(chip9L.first);
+      await tester.pump();
+      await tester.tap(chip9L.first);
+      await tester.pump();
+      await tester.ensureVisible(chip9L.last);
+      await tester.pump();
+      await tester.tap(chip9L.last);
+      await tester.pump();
+
+      final selected9L = find.byWidgetPredicate(
+        (widget) =>
+            widget is ChoiceChip &&
+            widget.selected &&
+            widget.label is Text &&
+            (widget.label as Text).data == '9L',
+      );
+      expect(selected9L, findsNWidgets(2));
+      expect(find.text('可用时间 23 分钟'), findsOneWidget);
+      expect(find.text('可用时间 25 分钟'), findsOneWidget);
+    });
+
+    testWidgets('语音提到钢瓶容积时固定容积选择器随之更新', (tester) async {
       final api = _FakeApi(transcribeText: '张伟20兆帕，李娜22兆帕，钢瓶9升');
       final c = _FakeController()..api = api;
       await tester.pumpWidget(
@@ -1900,10 +1953,16 @@ void main() {
       await state.beginRecording();
       await state.finishRecording();
       await tester.pump();
-      final fields = find.byType(TextField);
-      // 每人 3 个输入框：姓名/压力/容积
-      expect(tester.widget<TextField>(fields.at(2)).controller!.text, '9.0');
-      expect(tester.widget<TextField>(fields.at(5)).controller!.text, '9.0');
+      // 每人只剩姓名/压力两个输入框，容积改为固定二选一
+      expect(find.byType(TextField), findsNWidgets(4));
+      final selected9L = find.byWidgetPredicate(
+        (widget) =>
+            widget is ChoiceChip &&
+            widget.selected &&
+            widget.label is Text &&
+            (widget.label as Text).data == '9L',
+      );
+      expect(selected9L, findsNWidgets(2));
     });
 
     testWidgets('非报数语音（unknown）识别为日志意图，回调路由记入日志并回到空闲态', (tester) async {

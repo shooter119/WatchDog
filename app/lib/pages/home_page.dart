@@ -556,8 +556,9 @@ class HomePageState extends State<HomePage> {
         if (p.pressureMpa != null) {
           ed.pressureCtrl.text = p.pressureMpa.toString();
         }
-        final defaultVol =
-            _statedVolumeL ?? widget.controller.calcConfig.cylinderVolL;
+        final defaultVol = _normalizeCylinderVolume(
+          _statedVolumeL ?? widget.controller.calcConfig.cylinderVolL,
+        );
         ed.volumeCtrl.text = defaultVol.toStringAsFixed(1);
         _peopleEditors.add(ed);
       }
@@ -938,8 +939,8 @@ class HomePageState extends State<HomePage> {
     ).firstMatch(text);
     if (m == null) return null;
     final v = double.tryParse(m.group(1)!) ?? _cnNum(m.group(1)!);
-    if (v == null || v <= 0 || v > 20) return null;
-    return v;
+    if (v == null || !_isAllowedCylinderVolume(v)) return null;
+    return _normalizeCylinderVolume(v);
   }
 
   double? _cnNum(String s) {
@@ -1010,7 +1011,9 @@ class HomePageState extends State<HomePage> {
     if (p == null) return '「${ed.name}」缺少气瓶压力';
     if (p <= 0 || p > 40) return '「${ed.name}」压力数值异常';
     final v = ed.volume;
-    if (v == null || v <= 0 || v > 20) return '「${ed.name}」气瓶容量数值异常（1~20L）';
+    if (v == null || !_isAllowedCylinderVolume(v)) {
+      return '「${ed.name}」气瓶容积只能选择 6.8L 或 9L';
+    }
     return null;
   }
 
@@ -2250,250 +2253,562 @@ class HomePageState extends State<HomePage> {
       );
     }
 
-    if (_parsed!.action != 'exit' && _peopleEditors.length > 1) {
-      return _buildMultiConfirmation(context, cfg);
+    if (_parsed!.action == 'exit') {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: AppSpacing.s6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppCard(
+              padding: const EdgeInsets.all(AppSpacing.s4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.graphic_eq, size: 16, color: AppColors.voice),
+                      const SizedBox(width: AppSpacing.s2),
+                      Text(
+                        '转写结果',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.s2),
+                  Text(
+                    _transcript!,
+                    style: AppTextStyles.bodyLg.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s3),
+            AppCard(
+              padding: const EdgeInsets.all(AppSpacing.s4),
+              color: AppColors.safe.withValues(alpha: 0.10),
+              side: BorderSide(color: AppColors.safe, width: 1),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.logout, color: AppColors.safe),
+                      const SizedBox(width: AppSpacing.s3),
+                      Expanded(
+                        child: Text(
+                          _parsed!.people.isEmpty
+                              ? '识别为全员离场指令，正在等待确认'
+                              : '识别为出火场指令：${_parsed!.people.map((p) => p.name).join('、')}',
+                          style: AppTextStyles.bodyLg.copyWith(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.s3),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.replay),
+                      label: const Text('重新语音输入'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
+    if (_peopleEditors.isEmpty) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.only(bottom: AppSpacing.s6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppCard(
+              padding: const EdgeInsets.all(AppSpacing.s4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.graphic_eq, size: 16, color: AppColors.voice),
+                      const SizedBox(width: AppSpacing.s2),
+                      Text(
+                        '转写结果',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.s2),
+                  Text(
+                    _transcript!,
+                    style: AppTextStyles.bodyLg.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s3),
+            AppCard(
+              child: Column(
+                children: [
+                  Text(
+                    '未识别到人员信息，请重新语音输入',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodyMd.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.s4),
+                  OutlinedButton.icon(
+                    onPressed: _retry,
+                    icon: const Icon(Icons.replay),
+                    label: const Text('重新语音输入'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 进场确认：单人自然高度；多人列表滚动且主确认按钮固定在底部
+    if (_peopleEditors.length > 1) {
+      return _buildMultiConfirmationCard(context, cfg);
+    }
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: AppSpacing.s6),
+        padding: const EdgeInsets.only(bottom: AppSpacing.s4),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            minHeight: max(0.0, constraints.maxHeight - AppSpacing.s6),
+            minHeight: max(0.0, constraints.maxHeight - AppSpacing.s4),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_parsed!.action == 'exit')
-                AppCard(
-                  padding: const EdgeInsets.all(AppSpacing.s4),
-                  color: AppColors.safe.withValues(alpha: 0.10),
-                  side: BorderSide(color: AppColors.safe, width: 1),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.logout, color: AppColors.safe),
-                          const SizedBox(width: AppSpacing.s3),
-                          Expanded(
-                            child: Text(
-                              _parsed!.people.isEmpty
-                                  ? '识别为全员离场指令，正在等待确认'
-                                  : '识别为出火场指令：${_parsed!.people.map((p) => p.name).join('、')}',
-                              style: AppTextStyles.bodyLg.copyWith(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      _transcriptNote(),
-                      const SizedBox(height: AppSpacing.s3),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: OutlinedButton.icon(
-                          onPressed: _retry,
-                          icon: const Icon(Icons.replay),
-                          label: const Text('重新语音输入'),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else if (_peopleEditors.isEmpty)
-                AppCard(
-                  child: Column(
-                    children: [
-                      Text(
-                        '未识别到人员信息，请重新语音输入',
-                        textAlign: TextAlign.center,
-                        style: AppTextStyles.bodyMd.copyWith(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      _transcriptNote(),
-                      const SizedBox(height: AppSpacing.s4),
-                      OutlinedButton.icon(
-                        onPressed: _retry,
-                        icon: const Icon(Icons.replay),
-                        label: const Text('重新语音输入'),
-                      ),
-                    ],
-                  ),
-                )
-              else if (_peopleEditors.length > 1)
-                _buildMultiCard(context, cfg)
-              else
-                AppCard(
-                  padding: const EdgeInsets.all(AppSpacing.s4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        '核对进场信息',
-                        style: AppTextStyles.label.copyWith(
-                          fontSize: 14,
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.s3),
-                      _personEditorRow(0, _peopleEditors[0]),
-                      const SizedBox(height: AppSpacing.s2),
-                      _personHints(_peopleEditors[0], cfg),
-                      _transcriptNote(),
-                      if (_inlineError != null) ...[
-                        const SizedBox(height: AppSpacing.s2),
-                        _inlineErrorBox(_inlineError!),
-                      ],
-                      const SizedBox(height: AppSpacing.s4),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: FilledButton.icon(
-                          onPressed: _confirmAll,
-                          icon: const Icon(Icons.check_circle_outline),
-                          label: const Text(
-                            '确认进入火场，开始倒计时',
-                            style: TextStyle(fontSize: 16),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.s3),
-                      _continueHint(),
-                      const SizedBox(height: AppSpacing.s1),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: TextButton.icon(
-                          onPressed: _retry,
-                          icon: const Icon(Icons.replay),
-                          label: const Text('重新语音输入'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+          child: Center(
+            child: SizedBox(
+              width: double.infinity,
+              child: _buildSingleConfirmationCard(context, cfg),
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// 多人一次性确认卡片：全部人员平铺列出（可下滑核对），一个按钮全部提交
-  Widget _buildMultiCard(BuildContext context, CalcConfig cfg) {
-    return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.s4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+  /// 紧凑版语音转写原文微模块
+  Widget _buildTranscriptStrip(String transcript) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s2,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSubtle,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(
+          color: AppColors.border.withValues(alpha: 0.7),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.fact_check_outlined, size: 16, color: AppColors.voice),
-              const SizedBox(width: AppSpacing.s2),
-              Expanded(
-                child: Text(
-                  '确认名单（${_peopleEditors.length} 人）：请下滑核对后一次性确认',
-                  softWrap: true,
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textTertiary,
-                  ),
-                ),
-              ),
-            ],
+          Icon(Icons.graphic_eq, size: 15, color: AppColors.voice),
+          const SizedBox(width: AppSpacing.s2),
+          Text(
+            '转写',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textTertiary,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          const SizedBox(height: AppSpacing.s3),
-          for (final (i, ed) in _peopleEditors.indexed) ...[
-            _personEditorRow(i, ed),
-            const SizedBox(height: AppSpacing.s1),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _processing ? null : () => _removeEditorAt(i),
-                icon: const Icon(Icons.person_remove_outlined, size: 16),
-                label: const Text('移除该人员'),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.s2,
-                  ),
-                  minimumSize: const Size(0, 48),
-                ),
+          const SizedBox(width: AppSpacing.s2),
+          Expanded(
+            child: Text(
+              transcript,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: AppSpacing.s1),
-            _personHints(ed, cfg),
-            if (i < _peopleEditors.length - 1)
-              const Divider(height: AppSpacing.s6),
-          ],
-          _transcriptNote(),
+          ),
         ],
       ),
     );
   }
 
-  /// 多人进场：人员列表独立滚动，确认操作固定在底部，人数再多也不会把主按钮推到屏幕外。
-  Widget _buildMultiConfirmation(BuildContext context, CalcConfig cfg) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            key: const Key('multi-confirm-scroll'),
-            padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-            child: _buildMultiCard(context, cfg),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.only(
-            top: AppSpacing.s2,
-            bottom: AppSpacing.s2,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.background,
-            border: Border(top: BorderSide(color: AppColors.border)),
-          ),
-          child: Column(
+  Widget _secondaryAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16),
+      label: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+      ),
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.textSecondary,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+        minimumSize: const Size(0, 44),
+      ),
+    );
+  }
+
+  /// 确认卡片底部的轻量次级操作行（重录 / 追加）
+  Widget _buildSecondaryActions() {
+    final retry = _secondaryAction(
+      icon: Icons.replay,
+      label: '重新语音输入',
+      onPressed: _retry,
+    );
+    final continueAction = _secondaryAction(
+      icon: Icons.mic_none,
+      label: '继续语音添加',
+      onPressed: _processing ? null : beginRecording,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxWidth < 260 ||
+            MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
+        if (compact) {
+          return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [retry, continueAction],
+          );
+        }
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [retry, continueAction],
+        );
+      },
+    );
+  }
+
+  /// 单人进场确认卡片
+  Widget _buildSingleConfirmationCard(BuildContext context, CalcConfig cfg) {
+    final ed = _peopleEditors[0];
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.s4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppSpacing.s2,
+            runSpacing: AppSpacing.s1,
             children: [
-              if (_inlineError != null) ...[
-                _inlineErrorBox(_inlineError!),
-                const SizedBox(height: AppSpacing.s2),
-              ],
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: FilledButton.icon(
-                  onPressed: _processing ? null : _confirmAll,
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: Text(
-                    '全部确认进入火场（${_peopleEditors.length} 人）',
-                    style: const TextStyle(fontSize: 16),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 3,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: AppColors.actionPrimary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: AppSpacing.s2),
+                  Text(
+                    '核对进场信息',
+                    style: AppTextStyles.bodyLg.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: AppSpacing.s2),
-              _continueHint(),
-              SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: TextButton.icon(
-                  onPressed: _retry,
-                  icon: const Icon(Icons.replay),
-                  label: const Text('清空名单并重新输入'),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.caution.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Text(
+                  '待确认',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.caution,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
           ),
+          if (_transcript != null && _transcript!.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.s2),
+            _buildTranscriptStrip(_transcript!),
+          ],
+          const SizedBox(height: AppSpacing.s3),
+          _personEditorRow(0, ed, showBadge: false),
+          const SizedBox(height: AppSpacing.s2),
+          _personHints(ed, cfg),
+          if (_inlineError != null) ...[
+            const SizedBox(height: AppSpacing.s2),
+            _inlineErrorBox(_inlineError!),
+          ],
+          const SizedBox(height: AppSpacing.s4),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: FilledButton.icon(
+              onPressed: _processing ? null : _confirmAll,
+              icon: const Icon(Icons.check_circle_outline, size: 20),
+              label: const Text(
+                '确认进入火场，开始倒计时',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s2),
+          _buildSecondaryActions(),
+        ],
+      ),
+    );
+  }
+
+  /// 多人进场确认卡片：列表平铺可滚动，主确认按钮固底可见
+  Widget _buildMultiConfirmationCard(BuildContext context, CalcConfig cfg) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final hasBoundedHeight =
+            constraints.hasBoundedHeight && constraints.maxHeight.isFinite;
+
+        final header = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppSpacing.s2,
+              runSpacing: AppSpacing.s1,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 3,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: AppColors.actionPrimary,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.s2),
+                    Text(
+                      '核对进场名单',
+                      style: AppTextStyles.bodyLg.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: Border.all(
+                      color: AppColors.border.withValues(alpha: 0.8),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Text(
+                    '${_peopleEditors.length} 人',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.s1),
+            Text(
+              '确认名单（${_peopleEditors.length} 人）：请下滑核对后一次性确认',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textTertiary,
+              ),
+            ),
+            if (_transcript != null && _transcript!.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.s2),
+              _buildTranscriptStrip(_transcript!),
+            ],
+          ],
+        );
+
+        final footer = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_inlineError != null) ...[
+              _inlineErrorBox(_inlineError!),
+              const SizedBox(height: AppSpacing.s2),
+            ],
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: _processing ? null : _confirmAll,
+                icon: const Icon(Icons.check_circle_outline, size: 20),
+                label: Text(
+                  '全部确认进入火场（${_peopleEditors.length} 人）',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s2),
+            _buildSecondaryActions(),
+          ],
+        );
+
+        final items = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (i, ed) in _peopleEditors.indexed)
+              _buildPersonCardlet(i, ed, cfg),
+          ],
+        );
+
+        return AppCard(
+          padding: const EdgeInsets.all(AppSpacing.s4),
+          child: hasBoundedHeight
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    header,
+                    const SizedBox(height: AppSpacing.s3),
+                    Expanded(
+                      child: Scrollbar(
+                        child: SingleChildScrollView(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: items,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.s3),
+                    footer,
+                  ],
+                )
+              : SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      header,
+                      const SizedBox(height: AppSpacing.s3),
+                      items,
+                      const SizedBox(height: AppSpacing.s3),
+                      footer,
+                    ],
+                  ),
+                ),
+        );
+      },
+    );
+  }
+
+  /// 多人名单中的单个人员卡片
+  Widget _buildPersonCardlet(int index, _PersonEdit ed, CalcConfig cfg) {
+    final isLast = index == _peopleEditors.length - 1;
+    return Container(
+      margin: EdgeInsets.only(bottom: isLast ? 0 : AppSpacing.s3),
+      padding: const EdgeInsets.all(AppSpacing.s3),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSubtle.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(
+          color: AppColors.border.withValues(alpha: 0.8),
+          width: 1,
         ),
-      ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppSpacing.s2,
+            runSpacing: AppSpacing.s1,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _IndexBadge(index: index),
+                  const SizedBox(width: AppSpacing.s2),
+                  Text(
+                    '队员 ${index + 1}',
+                    style: AppTextStyles.label.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              TextButton.icon(
+                onPressed: _processing ? null : () => _removeEditorAt(index),
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 14,
+                  color: AppColors.textTertiary,
+                ),
+                label: Text(
+                  '移除该人员',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textTertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s2,
+                    vertical: 2,
+                  ),
+                  minimumSize: const Size(0, 44),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s2),
+          _personEditorRow(index, ed, showBadge: false),
+          const SizedBox(height: AppSpacing.s2),
+          _personHints(ed, cfg),
+        ],
+      ),
     );
   }
 
@@ -2742,80 +3057,17 @@ class HomePageState extends State<HomePage> {
     );
   }
 
-  /// 识别原文只作为核对线索，主信息仍是上方结构化字段。
-  Widget _transcriptNote() {
-    final text = _transcript?.trim() ?? '';
-    if (text.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.s2),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s3,
-          vertical: AppSpacing.s2,
-        ),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceSubtle,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Icon(
-                Icons.graphic_eq,
-                size: 15,
-                color: AppColors.textTertiary,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s2),
-            Expanded(
-              child: Text(
-                '识别原文：$text',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textTertiary,
-                  height: 1.35,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 追加人员由底部麦克风统一承担，避免确认卡片里再出现一个同义按钮。
-  Widget _continueHint() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.mic_none, size: 16, color: AppColors.textTertiary),
-        const SizedBox(width: AppSpacing.s1),
-        Flexible(
-          child: Text(
-            '继续添加人员，请长按底部麦克风',
-            textAlign: TextAlign.center,
-            style: AppTextStyles.caption.copyWith(
-              color: AppColors.textTertiary,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   /// 单个人员的姓名/压力编辑行（列表与逐人确认共用）
-  Widget _personEditorRow(int index, _PersonEdit ed) {
+  Widget _personEditorRow(
+    int index,
+    _PersonEdit ed, {
+    bool showBadge = true,
+  }) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact =
-            constraints.maxWidth < 280 ||
+            constraints.maxWidth < 260 ||
             MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
-        final showIndex = _peopleEditors.length > 1;
         final nameField = TextField(
           controller: ed.nameCtrl,
           decoration: const InputDecoration(
@@ -2836,39 +3088,36 @@ class HomePageState extends State<HomePage> {
           style: const TextStyle(fontSize: 16),
         );
 
-        if (compact) {
+        final Widget fieldsContent = compact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  nameField,
+                  const SizedBox(height: AppSpacing.s2),
+                  pressureField,
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(child: nameField),
+                  const SizedBox(width: AppSpacing.s2),
+                  SizedBox(width: 104, child: pressureField),
+                ],
+              );
+
+        if (showBadge) {
           return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment:
+                compact ? CrossAxisAlignment.start : CrossAxisAlignment.center,
             children: [
-              if (showIndex) ...[
-                _IndexBadge(index: index),
-                const SizedBox(width: AppSpacing.s2),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    nameField,
-                    const SizedBox(height: AppSpacing.s2),
-                    pressureField,
-                  ],
-                ),
-              ),
+              _IndexBadge(index: index),
+              const SizedBox(width: AppSpacing.s2),
+              Expanded(child: fieldsContent),
             ],
           );
         }
 
-        return Row(
-          children: [
-            if (showIndex) ...[
-              _IndexBadge(index: index),
-              const SizedBox(width: AppSpacing.s2),
-            ],
-            Expanded(child: nameField),
-            const SizedBox(width: AppSpacing.s2),
-            SizedBox(width: 104, child: pressureField),
-          ],
-        );
+        return fieldsContent;
       },
     );
   }
@@ -2886,14 +3135,23 @@ class HomePageState extends State<HomePage> {
         borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppColors.alarm.withValues(alpha: 0.4)),
       ),
-      child: Text(
-        message,
-        textAlign: TextAlign.center,
-        style: AppTextStyles.label.copyWith(
-          color: AppColors.alarm,
-          fontWeight: FontWeight.w700,
-          height: 1.5,
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 16, color: AppColors.alarm),
+          const SizedBox(width: AppSpacing.s2),
+          Expanded(
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: AppTextStyles.label.copyWith(
+                color: AppColors.alarm,
+                fontWeight: FontWeight.w700,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2908,12 +3166,12 @@ class HomePageState extends State<HomePage> {
               .where((e) => e.isActive && e.name == name)
               .toList()
         : <Entry>[];
-    final boxStyle = BoxDecoration(
-      color: AppColors.caution.withValues(alpha: 0.10),
+    final warnBoxStyle = BoxDecoration(
+      color: AppColors.caution.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(AppRadius.sm),
-      border: Border.all(color: AppColors.caution.withValues(alpha: 0.4)),
+      border: Border.all(color: AppColors.caution.withValues(alpha: 0.35)),
     );
-    final style = AppTextStyles.label.copyWith(
+    final warnTextStyle = AppTextStyles.label.copyWith(
       color: AppColors.textSecondary,
       height: 1.4,
     );
@@ -2927,106 +3185,150 @@ class HomePageState extends State<HomePage> {
               horizontal: AppSpacing.s3,
               vertical: AppSpacing.s2,
             ),
-            decoration: boxStyle,
-            child: Text(
-              '「${ed.sourceName}」不在名单内，已清空姓名栏，请手动补全正确姓名',
-              style: style,
+            decoration: warnBoxStyle,
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 15, color: AppColors.caution),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    '「${ed.sourceName}」不在名单内，已清空姓名栏，请手动补全正确姓名',
+                    style: warnTextStyle,
+                  ),
+                ),
+              ],
             ),
           ),
-        if (dup.isNotEmpty)
+        if (dup.isNotEmpty) ...[
+          if (name.isEmpty && ed.sourceName != null)
+            const SizedBox(height: AppSpacing.s2),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.s3,
               vertical: AppSpacing.s2,
             ),
-            decoration: boxStyle,
-            child: Text(
-              '「${dup.first.name}」已在火场内，确认时将弹窗选择：重新倒计时 / 另建记录',
-              style: style,
+            decoration: warnBoxStyle,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  size: 15,
+                  color: AppColors.caution,
+                ),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    '「${dup.first.name}」已在火场内，确认时将弹窗选择：重新倒计时 / 另建记录',
+                    style: warnTextStyle,
+                  ),
+                ),
+              ],
             ),
           ),
-        if (p != null && p > 0 && p <= 40)
-          _capacityInfo(ed, cfg, p, v)
-        else
+        ],
+        if (p != null && p > 0 && p <= 40) ...[
+          if ((name.isEmpty && ed.sourceName != null) || dup.isNotEmpty)
+            const SizedBox(height: AppSpacing.s2),
+          _buildCapacitySelector(ed, cfg, p, v),
+        ] else ...[
+          if ((name.isEmpty && ed.sourceName != null) || dup.isNotEmpty)
+            const SizedBox(height: AppSpacing.s2),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.s3,
               vertical: AppSpacing.s2,
             ),
-            decoration: boxStyle,
-            child: Text(
-              '未识别到气瓶压力，请手动填写（如 20）',
-              textAlign: TextAlign.center,
-              style: style,
+            decoration: warnBoxStyle,
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 15, color: AppColors.caution),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    '未识别到气瓶压力，请手动填写（如 20）',
+                    style: warnTextStyle,
+                  ),
+                ),
+              ],
             ),
           ),
+        ],
       ],
     );
   }
 
-  /// 容量可编辑、可用时间只读；窄屏大字号时自动改为上下两行。
-  Widget _capacityInfo(_PersonEdit ed, CalcConfig cfg, double p, double v) {
-    final input = SizedBox(
-      width: 64,
-      height: 36,
-      child: TextField(
-        controller: ed.volumeCtrl,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        textAlign: TextAlign.center,
-        style: AppTextStyles.label.copyWith(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-          color: AppColors.textPrimary,
-        ),
-        decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: AppColors.surface,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s1,
-            vertical: AppSpacing.s2,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            borderSide: BorderSide(color: AppColors.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            borderSide: BorderSide(color: AppColors.border),
-          ),
-        ),
+  bool _isAllowedCylinderVolume(double v) =>
+      (v - 6.8).abs() < 0.01 || (v - 9.0).abs() < 0.01;
+
+  double _normalizeCylinderVolume(double v) =>
+      (v - 9.0).abs() < 0.01 ? 9.0 : 6.8;
+
+  void _setCylinderVolume(_PersonEdit ed, double v) {
+    ed.volumeCtrl.text = v == 9.0 ? '9.0' : '6.8';
+  }
+
+  Widget _volumeChip(_PersonEdit ed, double v) {
+    final current = ed.volume;
+    final selected = current != null && (current - v).abs() < 0.01;
+    return ChoiceChip(
+      label: Text(v == 9.0 ? '9L' : '6.8L'),
+      selected: selected,
+      showCheckmark: false,
+      onSelected: _processing ? null : (_) => _setCylinderVolume(ed, v),
+      visualDensity: VisualDensity.compact,
+      labelStyle: AppTextStyles.caption.copyWith(
+        color: selected ? AppColors.onPrimary : AppColors.textPrimary,
+        fontWeight: FontWeight.w700,
+      ),
+      selectedColor: AppColors.voice,
+      backgroundColor: AppColors.surface,
+      side: BorderSide(color: AppColors.border),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s2,
+        vertical: 2,
       ),
     );
-    final controls = Row(
+  }
+
+  /// 气瓶只有 6.8L / 9L 两种固定型号，用选择器替代自由输入。
+  Widget _buildCapacitySelector(
+    _PersonEdit ed,
+    CalcConfig cfg,
+    double p,
+    double v,
+  ) {
+    final label = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.gas_meter_outlined, size: 16, color: AppColors.textTertiary),
+        Icon(
+          Icons.gas_meter_outlined,
+          size: 16,
+          color: AppColors.textSecondary,
+        ),
         const SizedBox(width: AppSpacing.s2),
         Text(
           '容量',
           style: AppTextStyles.caption.copyWith(
-            color: AppColors.textTertiary,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.s1),
-        input,
-        const SizedBox(width: AppSpacing.s1),
-        Text(
-          'L',
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textTertiary,
+            color: AppColors.textSecondary,
             fontWeight: FontWeight.w600,
           ),
         ),
       ],
     );
+    final chips = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _volumeChip(ed, 6.8),
+        const SizedBox(width: AppSpacing.s1),
+        _volumeChip(ed, 9.0),
+      ],
+    );
     final time = Text(
       '可用时间 ${cfg.durationMinFor(p, cylinderVolL: v).round()} 分钟',
-      style: AppTextStyles.caption.copyWith(
-        color: AppColors.voice,
+      style: AppTextStyles.label.copyWith(
+        color: AppColors.textPrimary,
         fontWeight: FontWeight.w700,
       ),
     );
@@ -3037,20 +3339,28 @@ class HomePageState extends State<HomePage> {
         vertical: AppSpacing.s2,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surfaceSubtle,
+        color: AppColors.surfaceSubtle.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: AppColors.border.withValues(alpha: 0.8),
+          width: 1,
+        ),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact =
-              constraints.maxWidth < 260 ||
+              constraints.maxWidth < 300 ||
               MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
           if (compact) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                controls,
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.s2,
+                  runSpacing: AppSpacing.s1,
+                  children: [label, chips],
+                ),
                 const SizedBox(height: AppSpacing.s1),
                 time,
               ],
@@ -3058,10 +3368,15 @@ class HomePageState extends State<HomePage> {
           }
           return Row(
             children: [
-              controls,
+              label,
+              const SizedBox(width: AppSpacing.s2),
+              chips,
               const SizedBox(width: AppSpacing.s2),
               Expanded(
-                child: Align(alignment: Alignment.centerRight, child: time),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: time,
+                ),
               ),
             ],
           );

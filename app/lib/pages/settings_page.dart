@@ -42,18 +42,17 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _server = TextEditingController();
-  final TextEditingController _volume = TextEditingController();
   final TextEditingController _full = TextEditingController();
   final TextEditingController _consumption = TextEditingController();
   final TextEditingController _warn = TextEditingController();
   final TextEditingController _alarm = TextEditingController();
   final TextEditingController _realName = TextEditingController();
   final FocusNode _serverFocus = FocusNode();
-  final FocusNode _volumeFocus = FocusNode();
   final FocusNode _fullFocus = FocusNode();
   final FocusNode _consumptionFocus = FocusNode();
   final FocusNode _warnFocus = FocusNode();
   final FocusNode _alarmFocus = FocusNode();
+  double _cylinderVol = 6.8;
   bool _tts = true;
   bool _sound = true;
   bool _keepScreenOn = true;
@@ -83,7 +82,6 @@ class _SettingsPageState extends State<SettingsPage> {
     // 任一输入框失焦且全部输入框均无焦点（点空白处/收起键盘）→ 自动保存
     for (final n in [
       _serverFocus,
-      _volumeFocus,
       _fullFocus,
       _consumptionFocus,
       _warnFocus,
@@ -139,7 +137,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _allInputsUnfocused() {
     return [
       _serverFocus,
-      _volumeFocus,
       _fullFocus,
       _consumptionFocus,
       _warnFocus,
@@ -149,7 +146,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _load() async {
     _server.text = await Settings.serverUrl;
-    _volume.text = (await Settings.cylinderVolL).toString();
+    _cylinderVol = await Settings.cylinderVolL;
     _full.text = (await Settings.fullPressureMpa).toString();
     _consumption.text = (await Settings.consumptionLpm).toString();
     _warn.text = (await Settings.warnMin).toString();
@@ -572,13 +569,13 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       // 先整体解析和校验，再开始任何 SharedPreferences 写入，避免反向
       // 阈值或 0/负数参数导致“保存失败但部分设置已生效”。
-      final volume = double.tryParse(_volume.text.trim());
+      final volume = _cylinderVol;
       final fullPressure = double.tryParse(_full.text.trim());
       final consumption = double.tryParse(_consumption.text.trim());
       final warn = int.tryParse(_warn.text.trim());
       final alarm = int.tryParse(_alarm.text.trim());
-      if (volume == null || fullPressure == null || consumption == null) {
-        throw ArgumentError('气瓶容量、满压和消耗率必须填写有效数字');
+      if (fullPressure == null || consumption == null) {
+        throw ArgumentError('满压和消耗率必须填写有效数字');
       }
       if (warn == null || alarm == null) {
         throw ArgumentError('提醒和报警阈值必须填写整数');
@@ -646,14 +643,12 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
     _server.dispose();
-    _volume.dispose();
     _full.dispose();
     _consumption.dispose();
     _warn.dispose();
     _alarm.dispose();
     _realName.dispose();
     _serverFocus.dispose();
-    _volumeFocus.dispose();
     _fullFocus.dispose();
     _consumptionFocus.dispose();
     _warnFocus.dispose();
@@ -1013,15 +1008,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const _GroupLabel('气瓶参数'),
         Row(
           children: [
-            Expanded(
-              child: _field(
-                _volume,
-                '气瓶容量',
-                '6.8 L',
-                keyboard: const TextInputType.numberWithOptions(decimal: true),
-                focusNode: _volumeFocus,
-              ),
-            ),
+            Expanded(child: _volumeField()),
             const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _field(
@@ -1307,6 +1294,31 @@ class _SettingsPageState extends State<SettingsPage> {
             Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _volumeField() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<double>(
+        initialValue: _cylinderVol,
+        decoration: const InputDecoration(
+          labelText: '气瓶容积',
+          hintText: '6.8 L',
+        ),
+        items: [
+          for (final volume in Settings.allowedCylinderVolumes)
+            DropdownMenuItem(
+              value: volume,
+              child: Text('${volume == 9.0 ? '9' : '6.8'} L'),
+            ),
+        ],
+        onChanged: (volume) {
+          if (volume == null) return;
+          setState(() => _cylinderVol = volume);
+          _autoSave();
+        },
       ),
     );
   }

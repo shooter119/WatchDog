@@ -29,6 +29,23 @@ void main() {
     );
   });
 
+  test('气瓶容积只允许 6.8L/9L，并规范化旧值', () async {
+    expect(await Settings.cylinderVolL, 6.8);
+    expect(
+      () => Settings.validateCalculationParameters(cylinderVolL: 7),
+      throwsArgumentError,
+    );
+    expect(
+      () => Settings.validateCalculationParameters(cylinderVolL: 9),
+      returnsNormally,
+    );
+    final sp = await SharedPreferences.getInstance();
+    await sp.setDouble('cylinder_vol_l', 7);
+    expect(await Settings.cylinderVolL, 6.8);
+    await Settings.setCylinderVolL(9);
+    expect(await Settings.cylinderVolL, 9);
+  });
+
   test('阈值校验保证报警不高于提醒且不超过一天', () async {
     await expectLater(Settings.setThresholds(5, 5), completes);
     await expectLater(Settings.setThresholds(4, 5), throwsArgumentError);

@@ -14,10 +14,18 @@ class Settings {
     );
   }
 
-  static const maxCylinderVolL = 20.0;
+  /// 现场气瓶只有 6.8L / 9L 两种固定型号。
+  static const allowedCylinderVolumes = [6.8, 9.0];
+  static const maxCylinderVolL = 9.0;
   static const maxFullPressureMpa = 40.0;
   static const maxConsumptionLpm = 300.0;
   static const maxThresholdMin = 1440;
+
+  static bool isAllowedCylinderVol(double v) =>
+      (v - 6.8).abs() < 0.01 || (v - 9.0).abs() < 0.01;
+
+  static double normalizeCylinderVol(double v) =>
+      (v - 9.0).abs() < 0.01 ? 9.0 : 6.8;
 
   /// 可通过 --dart-define=WATCHDOG_API_BASE_URL 覆盖后端地址。
   /// 本地 Android 模拟器默认访问宿主机 PostgreSQL 后端；正式部署到其他平台
@@ -214,8 +222,8 @@ class Settings {
     num? numOf(String k) => map[k] is num ? map[k] as num : null;
     bool? boolOf(String k) => map[k] is bool ? map[k] as bool : null;
     final vol = numOf('cylinder_vol_l');
-    if (vol != null && vol > 0 && vol <= maxCylinderVolL) {
-      await sp.setDouble(_kVolume, vol.toDouble());
+    if (vol != null) {
+      await sp.setDouble(_kVolume, normalizeCylinderVol(vol.toDouble()));
     }
     final full = numOf('full_pressure_mpa');
     if (full != null && full > 0 && full <= maxFullPressureMpa) {
@@ -489,13 +497,15 @@ class Settings {
     await sp.remove(_kPendingAppSubmittedAt);
   }
 
-  static Future<double> get cylinderVolL async =>
-      (await SharedPreferences.getInstance()).getDouble(_kVolume) ?? 6.8;
+  static Future<double> get cylinderVolL async {
+    final stored = (await SharedPreferences.getInstance()).getDouble(_kVolume);
+    return stored == null ? 6.8 : normalizeCylinderVol(stored);
+  }
 
   static Future<void> setCylinderVolL(double v) async {
     validateCalculationParameters(cylinderVolL: v);
     final sp = await SharedPreferences.getInstance();
-    await sp.setDouble(_kVolume, v);
+    await sp.setDouble(_kVolume, normalizeCylinderVol(v));
   }
 
   static Future<double> get fullPressureMpa async =>
@@ -542,10 +552,8 @@ class Settings {
     double? consumptionLpm,
   }) {
     if (cylinderVolL != null &&
-        (!cylinderVolL.isFinite ||
-            cylinderVolL <= 0 ||
-            cylinderVolL > maxCylinderVolL)) {
-      throw ArgumentError('气瓶容量必须在 0 到 $maxCylinderVolL L 之间');
+        (!cylinderVolL.isFinite || !isAllowedCylinderVol(cylinderVolL))) {
+      throw ArgumentError('气瓶容积只能选择 6.8L 或 9L');
     }
     if (fullPressureMpa != null &&
         (!fullPressureMpa.isFinite ||
