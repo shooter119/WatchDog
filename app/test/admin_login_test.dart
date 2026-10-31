@@ -344,20 +344,22 @@ void main() {
     expect(find.text('视频资源'), findsOneWidget);
     expect(find.text('按住下方按钮说话'), findsNothing);
     expect(find.byType(FloatingActionButton), findsNothing);
-    expect(
-      tester.getSize(find.byKey(const ValueKey('tool-重点单位'))).width,
-      greaterThanOrEqualTo(48),
-    );
-    expect(
-      tester.getSize(find.byKey(const ValueKey('tool-定位分享'))).width,
-      greaterThanOrEqualTo(48),
-    );
-    final topY = tester.getTopLeft(find.byKey(const ValueKey('tool-重点单位'))).dy;
-    for (final title in ['重点单位', '水印相机', '定位分享', '视频资源']) {
-      final finder = find.byKey(ValueKey('tool-$title'));
-      expect(tester.getTopLeft(finder).dy, topY);
-      expect(tester.getSize(finder).height, greaterThanOrEqualTo(48));
+    Rect toolRect(String title) =>
+        tester.getRect(find.byKey(ValueKey('tool-$title')));
+    final sites = toolRect('重点单位');
+    final camera = toolRect('水印相机');
+    final location = toolRect('定位分享');
+    final video = toolRect('视频资源');
+    for (final rect in [sites, camera, location, video]) {
+      expect(rect.width, greaterThanOrEqualTo(48));
+      expect(rect.height, greaterThanOrEqualTo(48));
     }
+    expect(sites.top, camera.top);
+    expect(location.top, video.top);
+    expect(location.top, greaterThan(sites.bottom));
+    expect(sites.left, location.left);
+    expect(camera.left, video.left);
+    expect(camera.left, greaterThan(sites.right));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
