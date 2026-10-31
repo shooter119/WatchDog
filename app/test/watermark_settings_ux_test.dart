@@ -49,32 +49,22 @@ void main() {
     expect(find.text('衢州市消防救援支队'), findsOneWidget);
   });
 
-  testWidgets('离开确认支持继续编辑、保存并离开与持久化', (tester) async {
+  testWidgets('返回时自动保存输入并离开', (tester) async {
     await openPage(tester);
     await tester.enterText(find.byType(TextField).first, '测试单位');
     await tester.tap(find.byType(BackButton));
-    await tester.pumpAndSettle();
-    expect(find.text('水印设置尚未保存'), findsOneWidget);
-    await tester.tap(find.text('继续编辑'));
-    await tester.pumpAndSettle();
-    expect(find.text('测试单位'), findsNWidgets(2));
-    await tester.tap(find.byType(BackButton));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('保存并离开'));
     await tester.pumpAndSettle();
     expect((await WatermarkSettings.load()).unitTitle, '测试单位');
     expect(find.text('打开设置'), findsOneWidget);
   });
 
-  testWidgets('放弃修改不写入本地', (tester) async {
+  testWidgets('连续编辑只保留最后内容', (tester) async {
     await openPage(tester);
-    await tester.enterText(find.byType(TextField).first, '未保存单位');
-    await tester.tap(find.byType(BackButton));
+    await tester.enterText(find.byType(TextField).first, '初始单位');
+    await tester.enterText(find.byType(TextField).first, '最终单位');
+    await tester.pump(const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('放弃修改'));
-    await tester.pumpAndSettle();
-    expect((await WatermarkSettings.load()).unitTitle, isEmpty);
-    expect(find.text('打开设置'), findsOneWidget);
+    expect((await WatermarkSettings.load()).unitTitle, '最终单位');
   });
 
   testWidgets('天气开关联动预览并保存', (tester) async {
@@ -92,7 +82,6 @@ void main() {
     );
     await tester.tap(tile);
     await tester.pump();
-    await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     expect((await WatermarkSettings.load()).showWeather, isFalse);
     await tester.drag(find.byType(ListView), const Offset(0, 1800));

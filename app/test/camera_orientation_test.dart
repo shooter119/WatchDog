@@ -56,7 +56,7 @@ void main() {
       SharedPreferences.setMockInitialValues({'unit_name': '测试单位'});
     });
 
-    testWidgets('默认横屏，切换竖屏后进入未保存状态并可持久化', (tester) async {
+    testWidgets('默认横屏，切换竖屏后自动保存', (tester) async {
       await tester.binding.setSurfaceSize(const Size(800, 1500));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(const MaterialApp(home: WatermarkSettingsPage()));
@@ -74,19 +74,8 @@ void main() {
       await tester.tap(find.byKey(const Key('capture-orientation-portrait')));
       await tester.pump();
       expect(group().groupValue, CameraCaptureOrientation.portrait);
-      expect(
-        (await WatermarkSettings.load()).captureOrientation,
-        CameraCaptureOrientation.landscape,
-      );
-
-      await tester.tap(find.byType(BackButton));
       await tester.pumpAndSettle();
-      expect(find.text('水印设置尚未保存'), findsOneWidget);
-      await tester.tap(find.text('继续编辑'));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('保存'));
-      await tester.pumpAndSettle();
+      expect(find.text('保存'), findsNothing);
       expect(
         (await WatermarkSettings.load()).captureOrientation,
         CameraCaptureOrientation.portrait,

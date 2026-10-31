@@ -403,9 +403,35 @@ void main() {
       expect(find.text('晴 21℃ 东南风2级 湿度87%'), findsNothing);
       // 其他字段保持可见。
       expect(find.text('衢州市 · 某某有限公司'), findsOneWidget);
+      await tester.pumpAndSettle();
+      final saved = await WatermarkSettings.load();
+      expect(saved.showTime, isFalse);
+      expect(saved.showWeather, isFalse);
     });
 
-    testWidgets('点保存写入 SharedPreferences 并弹出提示', (tester) async {
+    testWidgets('返回时立即保存尚未结束的输入', (tester) async {
+      _useTallViewport(tester);
+      await tester.pumpWidget(MaterialApp(
+        theme: buildAppTheme(),
+        home: Builder(builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => Navigator.push(context, MaterialPageRoute<void>(
+              builder: (_) => const WatermarkSettingsPage(),
+            )),
+            child: const Text('打开设置'),
+          ),
+        )),
+      ));
+      await tester.tap(find.text('打开设置'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, '立即返回的单位');
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text('打开设置'), findsOneWidget);
+      expect((await WatermarkSettings.load()).unitTitle, '立即返回的单位');
+    });
+
+    testWidgets('修改后自动写入 SharedPreferences', (tester) async {
       _useTallViewport(tester);
       await _pumpPage(tester, const WatermarkSettingsPage());
 
@@ -415,10 +441,9 @@ void main() {
       await tester.enterText(fields.at(2), '李四');
       await tester.pump();
 
-      await tester.tap(find.text('保存'));
+      expect(find.text('保存'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 600));
       await tester.pumpAndSettle();
-
-      expect(find.text('水印设置已保存，下次拍摄生效'), findsOneWidget);
 
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString('watermark_settings_v1');

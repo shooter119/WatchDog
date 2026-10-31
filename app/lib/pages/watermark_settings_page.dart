@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/watermark_settings.dart';
@@ -22,43 +24,37 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
   WatermarkSettings _settings = WatermarkSettings.defaults;
   bool _loading = true;
   bool _dirty = false;
-  bool _saving = false;
+  bool _leaving = false;
+  int _revision = 0;
+  Timer? _saveTimer;
+  Future<void> _pendingSave = Future.value();
   String _unitName = '';
 
-  void _changed() => setState(() => _dirty = true);
+  void _changed({bool immediate = false}) {
+    setState(() {
+      _dirty = true;
+      _revision++;
+    });
+    _saveTimer?.cancel();
+    if (immediate) {
+      unawaited(_save());
+    } else {
+      _saveTimer = Timer(const Duration(milliseconds: 500), () {
+        unawaited(_save());
+      });
+    }
+  }
 
   Future<void> _leave() async {
-    if (_saving) return;
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('水印设置尚未保存'),
-        content: const Text('保存后下次拍摄生效，是否保存本次修改？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('继续编辑'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'discard'),
-            child: const Text('放弃修改'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, 'save'),
-            child: const Text('保存并离开'),
-          ),
-        ],
-      ),
-    );
-    if (choice == null || !mounted) return;
-    if (choice == 'save') {
-      await _save();
-      if (_dirty || !mounted) return;
-    }
-    setState(() => _dirty = false);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).pop();
-    });
+    if (_leaving) return;
+    _leaving = true;
+    _saveTimer?.cancel();
+    if (_dirty) await _save();
+    await _pendingSave;
+    if (!mounted) return;
+    _leaving = false;
+    if (_dirty) return;
+    Navigator.of(context).pop();
   }
 
   @override
@@ -69,6 +65,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
 
   @override
   void dispose() {
+    _saveTimer?.cancel();
     _unitTitle.dispose();
     _department.dispose();
     _actor.dispose();
@@ -89,39 +86,36 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
     });
   }
 
-  Future<void> _save() async {
+  Future<void> _save() {
+    _saveTimer?.cancel();
     final next = _settings.copyWith(
       unitTitle: _unitTitle.text.trim(),
       department: _department.text.trim(),
       actorName: _actor.text.trim(),
     );
-    setState(() => _saving = true);
-    try {
-      await WatermarkSettings.save(next);
-    } catch (_) {
-      if (mounted) {
-        setState(() => _saving = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('保存失败，请重试')));
+    _dirty = false;
+    final revision = _revision;
+    final previous = _pendingSave;
+    _pendingSave = () async {
+      await previous;
+      try {
+        await WatermarkSettings.save(next);
+      } catch (_) {
+        if (revision == _revision) _dirty = true;
+        if (mounted && revision == _revision) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('水印设置保存失败，请返回重试')),
+          );
+        }
       }
-      return;
-    }
-    if (!mounted) return;
-    setState(() {
-      _settings = next;
-      _dirty = false;
-      _saving = false;
-    });
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('水印设置已保存，下次拍摄生效')));
+    }();
+    return _pendingSave;
   }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_dirty && !_saving,
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _leave();
       },
@@ -131,20 +125,9 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
           title: const Text('水印设置'),
           leading: BackButton(
             onPressed: () {
-              if (_saving) return;
-              if (_dirty) {
-                _leave();
-              } else {
-                Navigator.of(context).maybePop();
-              }
+              _leave();
             },
           ),
-          actions: [
-            TextButton(
-              onPressed: _loading || _saving ? null : _save,
-              child: const Text('保存'),
-            ),
-          ],
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -181,10 +164,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                         _switchTile(
                           title: '拍摄时间',
                           value: _settings.showTime,
-                          onChanged: (v) => setState(() {
-                            _dirty = true;
+                          onChanged: (v) {
                             _settings = _settings.copyWith(showTime: v);
-                          }),
+                            _changed(immediate: true);
+                          },
                         ),
                         const Divider(
                           height: 1,
@@ -194,10 +177,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                         _switchTile(
                           title: '天气',
                           value: _settings.showWeather,
-                          onChanged: (v) => setState(() {
-                            _dirty = true;
+                          onChanged: (v) {
                             _settings = _settings.copyWith(showWeather: v);
-                          }),
+                            _changed(immediate: true);
+                          },
                         ),
                         const Divider(
                           height: 1,
@@ -207,10 +190,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                         _switchTile(
                           title: '地点',
                           value: _settings.showLocation,
-                          onChanged: (v) => setState(() {
-                            _dirty = true;
+                          onChanged: (v) {
                             _settings = _settings.copyWith(showLocation: v);
-                          }),
+                            _changed(immediate: true);
+                          },
                         ),
                         const Divider(
                           height: 1,
@@ -220,10 +203,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                         _switchTile(
                           title: '经纬度',
                           value: _settings.showCoordinates,
-                          onChanged: (v) => setState(() {
-                            _dirty = true;
+                          onChanged: (v) {
                             _settings = _settings.copyWith(showCoordinates: v);
-                          }),
+                            _changed(immediate: true);
+                          },
                         ),
                         const Divider(
                           height: 1,
@@ -234,10 +217,10 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                           title: '左侧标识',
                           subtitle: '关闭后只保留文字，适合不对外发布的内部记录',
                           value: _settings.showLogo,
-                          onChanged: (v) => setState(() {
-                            _dirty = true;
+                          onChanged: (v) {
                             _settings = _settings.copyWith(showLogo: v);
-                          }),
+                            _changed(immediate: true);
+                          },
                         ),
                       ],
                     ),
@@ -421,15 +404,11 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
     return RadioGroup<CameraCaptureOrientation>(
       groupValue: _settings.captureOrientation,
       onChanged: (value) {
-        if (_saving ||
-            value == null ||
-            value == _settings.captureOrientation) {
+        if (value == null || value == _settings.captureOrientation) {
           return;
         }
-        setState(() {
-          _dirty = true;
-          _settings = _settings.copyWith(captureOrientation: value);
-        });
+        _settings = _settings.copyWith(captureOrientation: value);
+        _changed(immediate: true);
       },
       child: Column(
         children: [
@@ -470,7 +449,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
         child: RadioListTile<CameraCaptureOrientation>(
           key: key,
           value: value,
-          enabled: !_saving,
           selected: selected,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.s4,
@@ -513,7 +491,6 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       padding: const EdgeInsets.only(bottom: AppSpacing.s3),
       child: TextField(
         controller: controller,
-        enabled: !_saving,
         onChanged: (_) => _changed(),
         minLines: 1,
         maxLines: null,
@@ -581,7 +558,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
         inactiveThumbColor: AppColors.textSecondary,
         inactiveTrackColor: AppColors.surface,
         trackOutlineColor: WidgetStatePropertyAll(AppColors.textSecondary),
-        onChanged: _saving ? null : onChanged,
+        onChanged: onChanged,
       ),
     );
   }
