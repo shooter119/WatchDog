@@ -1545,10 +1545,8 @@ void main() {
       expect(find.text('继续语音添加'), findsNothing);
       expect(find.text('继续添加人员，请长按底部麦克风'), findsOneWidget);
 
-      // 点一次确认 → 两人全部提交（按钮在滚动卡片底部，先滚到可见）
+      // 点一次确认 → 两人全部提交（确认按钮固定在底部，无需滚动）
       final confirmBtn = find.text('全部确认进入火场（2 人）');
-      await tester.ensureVisible(confirmBtn);
-      await tester.pump();
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜']);
@@ -1618,8 +1616,6 @@ void main() {
       await tester.pump();
 
       final confirm = find.text('全部确认进入火场（2 人）');
-      await tester.ensureVisible(confirm);
-      await tester.pump();
       await tester.tap(confirm);
       await tester.pumpAndSettle();
 
@@ -1644,8 +1640,6 @@ void main() {
       await tester.pump();
 
       final confirmBtn = find.text('全部确认进入火场（2 人）');
-      await tester.ensureVisible(confirmBtn);
-      await tester.pump();
       await tester.tap(confirmBtn);
       await tester.pump();
       // 两人的缺压力错误同时列出
@@ -1660,8 +1654,6 @@ void main() {
       await tester.enterText(fields.at(3), '22');
       await tester.pump();
       expect(find.textContaining('缺少气瓶压力'), findsNothing);
-      await tester.ensureVisible(confirmBtn);
-      await tester.pump();
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜']);
@@ -1744,10 +1736,9 @@ void main() {
       final fields = find.byType(TextField);
       expect(tester.widget<TextField>(fields.at(1)).controller!.text, '15.0');
 
-      // 一次确认全部进场
+      // 一次确认全部进场：三人堆叠时按钮仍固定在视口内
       final confirmBtn = find.text('全部确认进入火场（3 人）');
-      await tester.ensureVisible(confirmBtn);
-      await tester.pump();
+      expect(tester.getRect(confirmBtn).bottom, lessThanOrEqualTo(600));
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜', '王强']);
@@ -1836,8 +1827,6 @@ void main() {
       await tester.enterText(fields.at(3), '李娜');
       await tester.pump();
       final confirmBtn = find.text('全部确认进入火场（2 人）');
-      await tester.ensureVisible(confirmBtn);
-      await tester.pump();
       await tester.tap(confirmBtn);
       await tester.pumpAndSettle();
       expect(api.created, ['张伟', '李娜']);

@@ -2250,6 +2250,10 @@ class HomePageState extends State<HomePage> {
       );
     }
 
+    if (_parsed!.action != 'exit' && _peopleEditors.length > 1) {
+      return _buildMultiConfirmation(context, cfg);
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         padding: const EdgeInsets.only(bottom: AppSpacing.s6),
@@ -2430,37 +2434,66 @@ class HomePageState extends State<HomePage> {
               const Divider(height: AppSpacing.s6),
           ],
           _transcriptNote(),
-          if (_inlineError != null) ...[
-            const SizedBox(height: AppSpacing.s2),
-            _inlineErrorBox(_inlineError!),
-          ],
-          const SizedBox(height: AppSpacing.s4),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: FilledButton.icon(
-              onPressed: _processing ? null : _confirmAll,
-              icon: const Icon(Icons.check_circle_outline),
-              label: Text(
-                '全部确认进入火场（${_peopleEditors.length} 人）',
-                style: const TextStyle(fontSize: 16),
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s3),
-          _continueHint(),
-          const SizedBox(height: AppSpacing.s1),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: TextButton.icon(
-              onPressed: _retry,
-              icon: const Icon(Icons.replay),
-              label: const Text('清空名单并重新输入'),
-            ),
-          ),
         ],
       ),
+    );
+  }
+
+  /// 多人进场：人员列表独立滚动，确认操作固定在底部，人数再多也不会把主按钮推到屏幕外。
+  Widget _buildMultiConfirmation(BuildContext context, CalcConfig cfg) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            key: const Key('multi-confirm-scroll'),
+            padding: const EdgeInsets.only(bottom: AppSpacing.s2),
+            child: _buildMultiCard(context, cfg),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.only(
+            top: AppSpacing.s2,
+            bottom: AppSpacing.s2,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            border: Border(top: BorderSide(color: AppColors.border)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_inlineError != null) ...[
+                _inlineErrorBox(_inlineError!),
+                const SizedBox(height: AppSpacing.s2),
+              ],
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: FilledButton.icon(
+                  onPressed: _processing ? null : _confirmAll,
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: Text(
+                    '全部确认进入火场（${_peopleEditors.length} 人）',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              _continueHint(),
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: TextButton.icon(
+                  onPressed: _retry,
+                  icon: const Icon(Icons.replay),
+                  label: const Text('清空名单并重新输入'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -2780,7 +2813,7 @@ class HomePageState extends State<HomePage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact =
-            constraints.maxWidth < 360 ||
+            constraints.maxWidth < 280 ||
             MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
         final showIndex = _peopleEditors.length > 1;
         final nameField = TextField(
@@ -3011,7 +3044,7 @@ class HomePageState extends State<HomePage> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact =
-              constraints.maxWidth < 300 ||
+              constraints.maxWidth < 260 ||
               MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
           if (compact) {
             return Column(
