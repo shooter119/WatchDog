@@ -824,7 +824,7 @@ class ChatPageState extends State<ChatPage> {
               vertical: AppSpacing.s2,
             ),
             child: Text(
-              '水元素建议仅供参考，现场以指挥员口令和现行规程为准。',
+              '建议仅供参考，以指挥口令和规程为准。',
               textAlign: TextAlign.center,
               style: AppTextStyles.caption.copyWith(
                 color: AppColors.textTertiary,
