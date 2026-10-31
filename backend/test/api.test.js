@@ -26,8 +26,8 @@ const H = {
   'X-Incident-Id': 'testscene',
   'X-Device-Id': 'api-device',
   'X-Actor-Name': 'tester',
-  'X-Unit-Id': 'longyou-county-fire-rescue',
-  'X-Unit-Code': '0570',
+  'X-Unit-Id': 'example-county-fire-rescue',
+  'X-Unit-Code': '1001',
 };
 const j = (r) => r.json();
 
@@ -63,7 +63,7 @@ test('POST /api/auth/verify 校验单位验证码并登记实名', async () => {
   let res = await fetch(`${base}/api/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'auth-device' },
-    body: JSON.stringify({ unit_name: '龙游县消防救援大队', unit_code: '0000', real_name: '李娜' }),
+    body: JSON.stringify({ unit_name: '示例县消防救援大队', unit_code: '0000', real_name: '李娜' }),
   });
   assert.equal(res.status, 403);
   assert.equal((await res.json()).code, 'UNIT_INVALID');
@@ -71,7 +71,7 @@ test('POST /api/auth/verify 校验单位验证码并登记实名', async () => {
   res = await fetch(`${base}/api/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'auth-device' },
-    body: JSON.stringify({ unit_name: '龙游县消防救援大队。', unit_code: '0570', real_name: '李娜' }),
+    body: JSON.stringify({ unit_name: '示例县消防救援大队。', unit_code: '1001', real_name: '李娜' }),
   });
   assert.equal(res.status, 403);
   assert.equal((await res.json()).code, 'UNIT_INVALID');
@@ -79,12 +79,16 @@ test('POST /api/auth/verify 校验单位验证码并登记实名', async () => {
   res = await fetch(`${base}/api/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'auth-device' },
-    body: JSON.stringify({ unit_name: ' 龙游县消防救援大队 ', unit_code: '0570', real_name: ' 李娜 ' }),
+    body: JSON.stringify({ unit_name: ' 示例县消防救援大队 ', unit_code: '1001', real_name: ' 李娜 ' }),
   });
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.authenticated, true);
-  assert.deepEqual(body.unit, { id: 'longyou-county-fire-rescue', name: '龙游县消防救援大队' });
+  assert.deepEqual(body.unit, { id: 'example-county-fire-rescue', name: '示例县消防救援大队' });
+  assert.deepEqual(body.organization, body.unit);
+  assert.ok(body.roster.firefighters.some((item) => item.name === '张伟'));
+  assert.ok(body.stations.some((item) => item.name === '示例路站'));
+  assert.ok(!body.roster.firefighters.some((item) => item.name === '隔离人员'));
   assert.equal(body.user.real_name, '李娜');
   assert.equal(db.getDeviceProfile('auth-device').real_name, '李娜');
 });
@@ -93,7 +97,7 @@ test('POST /api/auth/verify 拒绝超长单位验证码', async () => {
   const res = await fetch(`${base}/api/auth/verify`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Device-Id': 'auth-length-device' },
-    body: JSON.stringify({ unit_name: '龙游县消防救援大队', unit_code: 'x'.repeat(65), real_name: '李娜' }),
+    body: JSON.stringify({ unit_name: '示例县消防救援大队', unit_code: 'x'.repeat(65), real_name: '李娜' }),
   });
   assert.equal(res.status, 400);
   assert.equal((await res.json()).code, 'UNIT_CODE_INVALID');
@@ -337,7 +341,7 @@ test('消防员/热词 CRUD 与 409 查重', async () => {
 
   // 当前单位的装机自带名单可见
   let list = await (await fetch(`${base}/api/firefighters`, { headers: H })).json();
-  assert.ok(list.some((f) => f.name === '李翔'));
+  assert.ok(list.some((f) => f.name === '张伟'));
   await fetch(`${base}/api/firefighters/${f1.id}`, { method: 'DELETE', headers: H });
   list = await (await fetch(`${base}/api/firefighters`, { headers: H })).json();
   assert.ok(!list.some((f) => f.name === '王强'));
@@ -371,6 +375,27 @@ test('HTTP 词库按单位隔离：相同词条可分别新增，互不可见/�
   await fetch(`${base}/api/firefighters/${bName.id}`, { method: 'DELETE', headers: otherUnit });
   await fetch(`${base}/api/hotwords/${aWord.id}`, { method: 'DELETE', headers: H });
   await fetch(`${base}/api/hotwords/${bWord.id}`, { method: 'DELETE', headers: otherUnit });
+
+  const aStation = await (await fetch(`${base}/api/stations`, {
+    method: 'POST', headers: H, body: JSON.stringify({ name: '甲隔离站' }),
+  })).json();
+  const bStation = await (await fetch(`${base}/api/stations`, {
+    method: 'POST', headers: otherUnit, body: JSON.stringify({ name: '乙隔离站' }),
+  })).json();
+  const aStations = await (await fetch(`${base}/api/stations`, { headers: H })).json();
+  const bStations = await (await fetch(`${base}/api/stations`, { headers: otherUnit })).json();
+  assert.ok(aStations.some((item) => item.id === aStation.id));
+  assert.ok(aStations.some((item) => item.name === '示例路站'));
+  assert.ok(!aStations.some((item) => item.id === bStation.id));
+  assert.ok(bStations.some((item) => item.id === bStation.id));
+  assert.ok(!bStations.some((item) => item.name === '示例路站'));
+  assert.ok(!(await (await fetch(`${base}/api/firefighters`, { headers: otherUnit })).json()).some((item) => item.name === '张伟'));
+});
+
+test('无组织会话拿到空名单和空消防站', async () => {
+  assert.deepEqual(await (await fetch(`${base}/api/firefighters`)).json(), []);
+  assert.deepEqual(await (await fetch(`${base}/api/hotwords`)).json(), []);
+  assert.deepEqual(await (await fetch(`${base}/api/stations`)).json(), []);
 });
 
 test('GET /api/incidents 列出活跃警情并返回汇总字段', async () => {

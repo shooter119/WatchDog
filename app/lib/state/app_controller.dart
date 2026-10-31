@@ -24,6 +24,7 @@ import '../services/settings.dart';
 import '../services/scoped_json_cache.dart';
 import '../services/tts_service.dart';
 import '../services/update_service.dart';
+import '../services/org_directory.dart';
 import '../services/sync_coordinator.dart';
 import '../services/sync_reducer.dart';
 
@@ -61,8 +62,13 @@ class AppController extends ChangeNotifier {
        _offlineQueueDrainer = offlineQueueDrainer;
 
   List<Entry> entries = [];
-  List<Firefighter> firefighters = [];
-  List<Hotword> hotwords = [];
+  final OrgDirectory orgDirectory = OrgDirectory();
+  List<Firefighter> get firefighters => orgDirectory.firefighters;
+  set firefighters(List<Firefighter> value) => orgDirectory.firefighters = value;
+  List<Hotword> get hotwords => orgDirectory.hotwords;
+  set hotwords(List<Hotword> value) => orgDirectory.hotwords = value;
+  List<Station> get stations => orgDirectory.stations;
+  set stations(List<Station> value) => orgDirectory.stations = value;
   List<Note> notes = [];
   CalcConfig calcConfig = CalcConfig(
     cylinderVolL: 6.8,
@@ -636,6 +642,13 @@ class AppController extends ChangeNotifier {
     await Settings.setUnitId(unitId);
     await Settings.setUnitCode(code);
     await Settings.setUnitName(unitInfo['name']?.toString() ?? unit);
+    orgDirectory.applySnapshot(
+      roster: result['roster'] is Map
+          ? Map<String, dynamic>.from(result['roster'] as Map)
+          : null,
+      stations: result.containsKey('stations') ? result['stations'] : null,
+    );
+    await _cacheRoster(unitId);
     await Settings.markModified(DateTime.now().millisecondsSinceEpoch);
     _protectedDataRevoked = false;
     _protectedDataEpoch++;
@@ -866,6 +879,7 @@ class AppController extends ChangeNotifier {
     forces = [];
     firefighters = [];
     hotwords = [];
+    stations = [];
     await _clearRosterCache();
     await localAsr?.resetHotwords();
     _authenticated = false;
@@ -1209,8 +1223,10 @@ class AppController extends ChangeNotifier {
     final roster = snapshot['roster'] is Map
         ? Map<String, dynamic>.from(snapshot['roster'] as Map)
         : <String, dynamic>{};
-    firefighters = SyncReducer.rosterNames(roster);
-    hotwords = SyncReducer.rosterHotwords(roster);
+    orgDirectory.applySnapshot(
+      roster: roster,
+      stations: snapshot.containsKey('stations') ? snapshot['stations'] : null,
+    );
     final active = snapshot['active_incidents'] as List? ?? const [];
     activeIncidents = active
         .whereType<Map>()
@@ -1265,7 +1281,7 @@ class AppController extends ChangeNotifier {
     }
     final unitId = (snapshot['unit'] as Map?)?['id']?.toString();
     if (unitId != null && unitId.isNotEmpty) unawaited(_cacheRoster(unitId));
-    unawaited(localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]));
+    unawaited(localAsr?.updateHotwords(orgDirectory.asrTerms));
     _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
     _firstSyncFailureAt = 0;
     syncError = null;
@@ -1388,47 +1404,16 @@ class AppController extends ChangeNotifier {
         if (id != null) forces = forces.where((item) => item.id != id).toList();
         break;
       case 'roster.firefighter_added':
-        final firefighter = Firefighter.fromJson(payload);
-        firefighters = [
-          firefighter,
-          ...firefighters.where((item) => item.id != firefighter.id),
-        ];
-        unawaited(_cacheRoster(api?.unitId ?? ''));
-        unawaited(
-          localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]),
-        );
-        break;
       case 'roster.firefighter_removed':
-        firefighters = firefighters
-            .where(
-              (item) =>
-                  item.id != (event.aggregateId ?? payload['id']?.toString()),
-            )
-            .toList();
-        unawaited(
-          localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]),
-        );
-        break;
       case 'roster.hotword_added':
-        final hotword = Hotword.fromJson(payload);
-        hotwords = [
-          hotword,
-          ...hotwords.where((item) => item.id != hotword.id),
-        ];
-        unawaited(
-          localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]),
-        );
-        break;
       case 'roster.hotword_removed':
-        hotwords = hotwords
-            .where(
-              (item) =>
-                  item.id != (event.aggregateId ?? payload['id']?.toString()),
-            )
-            .toList();
-        unawaited(
-          localAsr?.updateHotwords([..._rosterNames, ..._hotwordTerms]),
-        );
+      case 'roster.station_added':
+      case 'roster.station_removed':
+        if (orgDirectory.applyEvent(event)) {
+          final rosterUnitId = api?.unitId ?? '';
+          if (rosterUnitId.isNotEmpty) unawaited(_cacheRoster(rosterUnitId));
+          unawaited(localAsr?.updateHotwords(orgDirectory.asrTerms));
+        }
         break;
     }
     _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
@@ -1739,6 +1724,7 @@ class AppController extends ChangeNotifier {
     forces = [];
     firefighters = [];
     hotwords = [];
+    stations = [];
     await _clearRosterCache();
     await localAsr?.resetHotwords();
     _authenticated = false;
@@ -2593,6 +2579,7 @@ class AppController extends ChangeNotifier {
   /// 当前认证单位的名单/热词本地缓存。缓存必须绑定 unitId，不能跨单位复用。
   static const _kCachedFirefighters = 'cached_firefighters';
   static const _kCachedHotwords = 'cached_hotwords';
+  static const _kCachedStations = 'cached_stations';
   static const _kCachedRosterUnitId = 'cached_roster_unit_id';
 
   /// 拉取名单与热词：成功写入本地缓存；失败（断网/服务器不可达）回退缓存。
@@ -2618,7 +2605,13 @@ class AppController extends ChangeNotifier {
     if (_disposed || api == null) return;
     final configuredUnitId = await Settings.unitId;
     final unitId = configuredUnitId.isNotEmpty ? configuredUnitId : api!.unitId;
-    if (unitId.isEmpty) return;
+    if (unitId.isEmpty) {
+      firefighters = [];
+      hotwords = [];
+      stations = [];
+      _notify();
+      return;
+    }
     await _restoreCachedRoster(unitId);
     if (_disposed || api == null) return;
     final a = api!;
@@ -2632,6 +2625,15 @@ class AppController extends ChangeNotifier {
       // 空数组是当前单位的合法词库状态，不能恢复其他单位或旧版本缓存。
       firefighters = f;
       hotwords = h;
+      try {
+        final fetchedStations = await a.fetchStations();
+        if (_disposed || generation != _sessionGeneration || !identical(api, a)) {
+          return;
+        }
+        stations = fetchedStations;
+      } catch (_) {
+        // 消防站接口失败时保留已恢复的本组织缓存，名单热词仍采用本次成功结果。
+      }
       _notify();
       await _cacheRoster(unitId);
     } catch (_) {
@@ -2654,6 +2656,15 @@ class AppController extends ChangeNotifier {
         _kCachedHotwords,
         jsonEncode(hotwords.map((h) => h.word).toList()),
       );
+      await sp.setString(_kCachedStations, jsonEncode(orgDirectory.stationCache));
+      final activeApi = api;
+      if (activeApi != null && activeApi.cacheScope.isNotEmpty) {
+        await ScopedJsonCache.write(
+          activeApi.cacheScope,
+          'org-stations',
+          orgDirectory.stationCache,
+        );
+      }
     } catch (_) {
       // 缓存失败不影响主流程
     }
@@ -2665,6 +2676,7 @@ class AppController extends ChangeNotifier {
       if (sp.getString(_kCachedRosterUnitId) != unitId) {
         firefighters = [];
         hotwords = [];
+        stations = [];
         _notify();
         return;
       }
@@ -2678,6 +2690,10 @@ class AppController extends ChangeNotifier {
               .toList();
       firefighters = fNames.map((n) => Firefighter(id: '', name: n)).toList();
       hotwords = hWords.map((w) => Hotword(id: '', word: w)).toList();
+      final rawStations = sp.getString(_kCachedStations);
+      orgDirectory.restoreStationCache(
+        rawStations == null ? const [] : jsonDecode(rawStations),
+      );
       _notify();
     } catch (_) {
       // 缓存损坏时也回退内置默认
@@ -2689,6 +2705,7 @@ class AppController extends ChangeNotifier {
     if (!_authenticated) {
       firefighters = [];
       hotwords = [];
+      stations = [];
       await _clearRosterCache();
       return;
     }
@@ -2701,6 +2718,7 @@ class AppController extends ChangeNotifier {
   void _loadBuiltinDefaults() {
     firefighters = [];
     hotwords = [];
+    stations = [];
     _notify();
   }
 
@@ -2710,14 +2728,11 @@ class AppController extends ChangeNotifier {
       await sp.remove(_kCachedRosterUnitId);
       await sp.remove(_kCachedFirefighters);
       await sp.remove(_kCachedHotwords);
+      await sp.remove(_kCachedStations);
       // 删除旧版本未绑定单位的缓存，避免认证切换时误用。
       await sp.remove('builtin_roster_initialized_v1');
     } catch (_) {}
   }
-
-  List<String> get _rosterNames => firefighters.map((f) => f.name).toList();
-
-  List<String> get _hotwordTerms => hotwords.map((h) => h.word).toList();
 
   /// 转写：云端优先（开关开时），失败/关闭开关时强制本地 sherpa-onnx
   Future<String> transcribeAudio(Uint8List bytes, {String? opId}) async {
@@ -2751,7 +2766,7 @@ class AppController extends ChangeNotifier {
   }) async {
     final asr = localAsr;
     if (asr == null) throw StateError('未配置本地语音识别');
-    final hotwords = [..._rosterNames, ..._hotwordTerms];
+    final hotwords = orgDirectory.asrTerms;
     OpLogService.instance.record(
       opId ?? '',
       'media_asr_hotwords',
@@ -2764,7 +2779,7 @@ class AppController extends ChangeNotifier {
   Future<String> _localTranscribe(Uint8List bytes, {String? opId}) async {
     final asr = localAsr;
     if (asr == null) throw StateError('未配置本地语音识别');
-    final hotwords = [..._rosterNames, ..._hotwordTerms];
+    final hotwords = orgDirectory.asrTerms;
     // 热词注入埋点：可验证名单/术语是否真正进入本地识别（排查同音错字问题）
     OpLogService.instance.record(
       opId ?? '',
@@ -2793,7 +2808,7 @@ class AppController extends ChangeNotifier {
         );
       }
     }
-    return localParser.parse(text, firefighters: _rosterNames);
+    return localParser.parse(text, firefighters: orgDirectory.parserNames);
   }
 
   @override

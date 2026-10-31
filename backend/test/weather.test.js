@@ -23,8 +23,8 @@ const REGEO_OK = {
   status: '1',
   info: 'OK',
   regeocode: {
-    formatted_address: '浙江省衢州市龙游县东华街道鸡鸣路146号',
-    addressComponent: { adcode: '330825', city: '衢州市', province: '浙江省', district: '龙游县' },
+    formatted_address: '示例省示例市示例县示范路1号',
+    addressComponent: { adcode: '000000', city: '示例市', province: '示例省', district: '示例县' },
   },
 };
 
@@ -32,7 +32,7 @@ const WEATHER_OK = {
   status: '1',
   info: 'OK',
   lives: [{
-    city: '龙游县',
+    city: '示例县',
     weather: '阴',
     temperature: '33',
     humidity: '43',
@@ -73,9 +73,9 @@ test('坐标按 3 位小数取整，供缓存键复用', () => {
 
 test('解析逆地理响应：正常返回', () => {
   const parsed = parseRegeo(REGEO_OK);
-  assert.equal(parsed.address, '浙江省衢州市龙游县东华街道鸡鸣路146号');
-  assert.equal(parsed.adcode, '330825');
-  assert.equal(parsed.city, '衢州市');
+  assert.equal(parsed.address, '示例省示例市示例县示范路1号');
+  assert.equal(parsed.adcode, '000000');
+  assert.equal(parsed.city, '示例市');
 });
 
 test('解析逆地理响应：上游状态失败或字段缺失时返回 null', () => {
@@ -106,7 +106,7 @@ test('解析天气响应：正常返回并保留字符串形态的温度', () =>
   assert.equal(parsed.temperature, '33');
   assert.equal(parsed.humidity, '43');
   assert.equal(parsed.windPower, '≤3');
-  assert.equal(parsed.city, '龙游县');
+  assert.equal(parsed.city, '示例县');
 });
 
 test('解析天气响应：lives 为空或缺少天气时返回 null', () => {
@@ -185,7 +185,7 @@ test('lookup：地址与天气都成功，且第二次命中缓存不再请求�
     lat: 29.03, lon: 119.18, key: 'k', fetchImpl, now: 1000,
     addressStore, coordinateStore, weatherStore,
   });
-  assert.equal(first.address, '浙江省衢州市龙游县东华街道鸡鸣路146号');
+  assert.equal(first.address, '示例省示例市示例县示范路1号');
   assert.equal(first.weather.text, '阴');
   assert.deepEqual(first.amapLocation, {
     lat: 29.03036,
@@ -218,7 +218,7 @@ test('lookup：天气失败时保留地址并标记降级', async () => {
     coordinateStore: new TtlCache(60_000),
     weatherStore: new TtlCache(60_000),
   });
-  assert.equal(result.address, '浙江省衢州市龙游县东华街道鸡鸣路146号');
+  assert.equal(result.address, '示例省示例市示例县示范路1号');
   assert.equal(result.weather, null);
   assert.equal(result.coordinateDegraded, false);
   assert.equal(result.degraded, true);
@@ -232,7 +232,7 @@ test('lookup：坐标转换失败时回退 WGS84 逆地理，并隐藏高德坐�
     coordinateStore: new TtlCache(60_000),
     weatherStore: new TtlCache(60_000),
   });
-  assert.equal(result.address, '浙江省衢州市龙游县东华街道鸡鸣路146号');
+  assert.equal(result.address, '示例省示例市示例县示范路1号');
   assert.equal(result.amapLocation, null);
   assert.equal(result.coordinateDegraded, true);
   assert.equal(fetchImpl.calls.length, 3);

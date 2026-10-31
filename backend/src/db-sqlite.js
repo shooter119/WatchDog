@@ -3,6 +3,7 @@ const { randomUUID } = require('node:crypto');
 const path = require('path');
 const fs = require('fs');
 const { forceError, forceFields } = require('./force-fields');
+const { resolveOrgSeed, parseSeedMembers, normalizeStationName } = require('./org-seed');
 
 const DATA_DIR = process.env.WATCHDOG_DATA_DIR || path.join(__dirname, '..', 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -242,8 +243,9 @@ db.exec(
   'CREATE INDEX IF NOT EXISTS idx_incident_events_time ON incident_events(incident_id, occurred_at DESC, recorded_at DESC);' +
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_incident_events_op ON incident_events(client_op_id) WHERE client_op_id IS NOT NULL;' +
   'CREATE TABLE IF NOT EXISTS stations (' +
-  'id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, normalized_name TEXT NOT NULL UNIQUE, ' +
-  'created_at INTEGER NOT NULL, created_by TEXT);' +
+  'id TEXT PRIMARY KEY, unit_id TEXT, name TEXT NOT NULL, normalized_name TEXT NOT NULL, ' +
+  'created_at INTEGER NOT NULL, created_by TEXT, UNIQUE(unit_id, normalized_name));' +
+  'CREATE INDEX IF NOT EXISTS idx_stations_unit ON stations(unit_id, name);' +
   'CREATE TABLE IF NOT EXISTS incident_forces (' +
   'id TEXT PRIMARY KEY, incident_id TEXT NOT NULL, station_id TEXT, station_name TEXT NOT NULL, ' +
   'vehicle_count INTEGER NOT NULL DEFAULT 0 CHECK(vehicle_count BETWEEN 0 AND 999), personnel_count INTEGER NOT NULL DEFAULT 0 CHECK(personnel_count BETWEEN 0 AND 999), ' +
@@ -337,13 +339,6 @@ function migrateLegacyIncidentRows() {
 migrateLegacyIncidentRows();
 if (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'scene_state'").get()) {
   db.exec('DROP TABLE scene_state');
-}
-
-for (const stationName of ['龙翔路站', '永安路站', '兴园站']) {
-  const normalized = String(stationName).replace(/\s+/g, '');
-  db.prepare(
-    'INSERT OR IGNORE INTO stations (id, name, normalized_name, created_at, created_by) VALUES (?, ?, ?, ?, ?)'
-  ).run(randomUUID(), stationName, normalized, Date.now(), 'system');
 }
 
 // Preserve existing quantities as known; only new explicit flags mark unknown.
@@ -474,12 +469,34 @@ if (hasColumn('chat_messages', 'scene')) db.exec('CREATE INDEX IF NOT EXISTS idx
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_firefighters_unit_name ON firefighters(unit_id, name)');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_hotwords_unit_word ON hotwords(unit_id, word)');
 
-// 单位种子仅允许测试环境或显式配置；生产环境绝不默认创建公开验证码。
-const seedUnit = {
-  id: process.env.WATCHDOG_SEED_UNIT_ID || (process.env.NODE_ENV === 'test' ? 'longyou-county-fire-rescue' : ''),
-  name: process.env.WATCHDOG_SEED_UNIT_NAME || (process.env.NODE_ENV === 'test' ? '龙游县消防救援大队' : ''),
-  code: process.env.WATCHDOG_SEED_UNIT_CODE || (process.env.NODE_ENV === 'test' ? '0570' : ''),
-};
+function ensureOrgScopedStations() {
+  if (!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'stations'").get()) return;
+  if (hasColumn('stations', 'unit_id')) return;
+  db.exec(`
+    CREATE TABLE stations_org (
+      id TEXT PRIMARY KEY,
+      unit_id TEXT,
+      name TEXT NOT NULL,
+      normalized_name TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      created_by TEXT,
+      UNIQUE(unit_id, normalized_name)
+    );
+    INSERT INTO stations_org (id, name, normalized_name, created_at, created_by)
+    SELECT id, name, normalized_name, created_at, created_by FROM stations;
+    DROP TABLE stations;
+    ALTER TABLE stations_org RENAME TO stations;
+    CREATE INDEX IF NOT EXISTS idx_stations_unit ON stations(unit_id, name);
+  `);
+}
+
+ensureOrgScopedStations();
+
+// 组织种子来自私有文件、环境变量，或测试用的假名示例。没有配置时不创建单位。
+const resolvedSeed = resolveOrgSeed();
+const seedUnit = resolvedSeed
+  ? { id: resolvedSeed.id, name: resolvedSeed.name, code: resolvedSeed.verificationCode }
+  : { id: '', name: '', code: '' };
 if (seedUnit.id && seedUnit.name && seedUnit.code) {
   db.prepare(
     'INSERT OR IGNORE INTO units (id, name, verification_code, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
@@ -499,79 +516,36 @@ if (seedUnit.id && seedUnit.name && seedUnit.code) {
   }
 }
 
-// 成员白名单由部署环境显式提供，格式支持 JSON 数组或“姓名[:角色],姓名[:角色]”。
-// 不把全局消防员名单自动当作认证成员，避免名单维护与访问准入意外耦合。
-function parseSeedMembers(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return [];
-  let items;
-  try {
-    const parsed = JSON.parse(raw);
-    items = Array.isArray(parsed) ? parsed : [];
-  } catch (_) {
-    items = raw.split(',').map((item) => {
-      const [realName, role = 'member'] = item.split(/[:：]/, 2);
-      return { real_name: realName, role };
-    });
-  }
-  return items.map((item) => {
-    if (typeof item === 'string') return { real_name: item, role: 'member' };
-    return { real_name: item?.real_name ?? item?.name, role: item?.role ?? 'member' };
-  }).map((item) => ({
-    realName: String(item.real_name || '').trim().slice(0, 32),
-    role: ['member', 'manager', 'admin'].includes(String(item.role)) ? String(item.role) : 'member',
-  })).filter((item) => item.realName);
-}
-
-if (seedUnit.id && process.env.WATCHDOG_SEED_UNIT_MEMBERS) {
+// 成员白名单由种子或部署环境显式提供。不把语音名单自动当作认证成员。
+if (resolvedSeed && resolvedSeed.members.length > 0) {
   const seedAt = Date.now();
   const stmt = db.prepare(
     'INSERT INTO unit_members (id, unit_id, real_name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, \'active\', ?, ?) ON CONFLICT(unit_id, real_name) DO UPDATE SET role = excluded.role, status = \'active\', updated_at = excluded.updated_at'
   );
-  for (const member of parseSeedMembers(process.env.WATCHDOG_SEED_UNIT_MEMBERS)) {
-    stmt.run(randomUUID(), seedUnit.id, member.realName, member.role, seedAt, seedAt);
+  for (const member of resolvedSeed.members) {
+    stmt.run(randomUUID(), resolvedSeed.id, member.realName, member.role, seedAt, seedAt);
   }
 }
 
-// 装机自带专业热词只写入明确配置的种子单位；没有单位配置时不创建全局词条。
-const DEFAULT_HOTWORDS = ['龙游大队', '龙游', '龙翔路站', '永安路站', '兴园站', '头车', '两车', '三车', '四车', '内攻', '搜救', '初战'];
-const existingHotwords = seedUnit.id ? db.prepare('SELECT COUNT(*) AS n FROM hotwords WHERE unit_id = ?').get(seedUnit.id).n : 0;
-if (seedUnit.id && existingHotwords === 0) {
-  const seedStmt = db.prepare('INSERT INTO hotwords (id, unit_id, word, source, created_at, updated_at) VALUES (?, ?, ?, \'builtin\', ?, ?)');
+if (resolvedSeed) {
+  const claimStation = db.prepare('UPDATE stations SET unit_id = ? WHERE unit_id IS NULL AND normalized_name = ?');
+  for (const name of resolvedSeed.stations) claimStation.run(resolvedSeed.id, normalizeStationName(name));
   const seedAt = Date.now();
-  DEFAULT_HOTWORDS.forEach((word, i) => seedStmt.run(randomUUID(), seedUnit.id, word, seedAt + i, seedAt + i));
-}
-// 新增内置术语需要补入已有安装，避免只能在新库初始化时生效。
-if (seedUnit.id) {
-  const newDefaultHotwordsStmt = db.prepare('INSERT OR IGNORE INTO hotwords (id, unit_id, word, source, created_at, updated_at) VALUES (?, ?, ?, \'builtin\', ?, ?)');
-  const now = Date.now();
-  newDefaultHotwordsStmt.run(randomUUID(), seedUnit.id, '初战', now, now);
-}
-
-// 装机自带消防员名单只写入明确配置的种子单位（龙游大队花名册 95 人）。
-// 仅当表为空时写入，避免覆盖用户已删除的姓名
-const DEFAULT_FIREFIGHTERS = [
-  // 大队部
-  '李翔', '盛承华', '楼松超', '徐向相', '柯峰', '祝彪',
-  // 龙翔路消防救援站
-  '陆河圣', '洪辰', '沈松鹏', '金志明', '陈俊鹏', '叶华杰', '杨熙豪', '施豪杰', '袁超', '马李臣',
-  '邢中本', '何家琦', '余贤耀', '徐莘焕', '杨小杰', '祝徐迁', '方文斌', '徐昊扬', '郑丽文', '郑怡',
-  '郑涛', '占鑫涛', '叶健智', '胡海龙', '伊余健', '曹建罡', '马鑫', '徐康', '张烜烨', '李微',
-  '储嘉俊', '毛伟', '陈俊安', '赵建平', '吴拥军', '路康清', '毕灵珂', '刘羽杰', '陈鑫', '廖淑明', '毛泽旭',
-  // 永安路消防救援站
-  '林成成', '程晓波', '郭逸', '蓝程雄', '成帅', '姚肖江', '毕文龙', '周志峰', '吕文建', '刘林辉',
-  '齐征臣', '严仕华', '袁友顺', '劳凯董', '方罗进', '马俊', '刘振坤', '贺智成', '丁以强', '易子云',
-  '李瑞', '宋宇', '宁成鑫', '甲巴有拉', '吉布小夫', '方梦龙',
-  // 兴园消防救援站
-  '游方远', '巫垚东', '万自良', '戴晓明', '李志鹏', '徐小龙', '吴鹏晖', '叶程刚', '陈嘉豪', '姚顺',
-  '贺官', '孙国彬', '吴志云', '陈子俊', '何金伟', '周子俊', '何哲锴', '徐刚', '姜俊翰', '文闻',
-  '张文浩', '宋博韬',
-];
-const existingFirefighters = seedUnit.id ? db.prepare('SELECT COUNT(*) AS n FROM firefighters WHERE unit_id = ?').get(seedUnit.id).n : 0;
-if (seedUnit.id && existingFirefighters === 0) {
-  const seedStmt = db.prepare('INSERT INTO firefighters (id, unit_id, name, source, created_at, updated_at) VALUES (?, ?, ?, \'builtin\', ?, ?)');
-  const seedAt = Date.now();
-  DEFAULT_FIREFIGHTERS.forEach((name, i) => seedStmt.run(randomUUID(), seedUnit.id, name, seedAt + i, seedAt + i));
+  const existingHotwords = db.prepare('SELECT COUNT(*) AS n FROM hotwords WHERE unit_id = ?').get(resolvedSeed.id).n;
+  if (existingHotwords === 0) {
+    const seedStmt = db.prepare('INSERT INTO hotwords (id, unit_id, word, source, created_at, updated_at) VALUES (?, ?, ?, \'builtin\', ?, ?)');
+    resolvedSeed.hotwords.forEach((word, i) => seedStmt.run(randomUUID(), resolvedSeed.id, word, seedAt + i, seedAt + i));
+  }
+  const existingFirefighters = db.prepare('SELECT COUNT(*) AS n FROM firefighters WHERE unit_id = ?').get(resolvedSeed.id).n;
+  if (existingFirefighters === 0) {
+    const seedStmt = db.prepare('INSERT INTO firefighters (id, unit_id, name, source, created_at, updated_at) VALUES (?, ?, ?, \'builtin\', ?, ?)');
+    resolvedSeed.firefighters.forEach((person, i) => seedStmt.run(randomUUID(), resolvedSeed.id, person.name, seedAt + i, seedAt + i));
+  }
+  const existingStations = db.prepare('SELECT COUNT(*) AS n FROM stations WHERE unit_id = ?').get(resolvedSeed.id).n;
+  if (existingStations === 0) {
+    const seedStmt = db.prepare('INSERT INTO stations (id, unit_id, name, normalized_name, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)');
+    resolvedSeed.stations.forEach((name) => seedStmt.run(randomUUID(), resolvedSeed.id, name, normalizeStationName(name), seedAt, 'system'));
+  }
 }
 
 function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}) {
@@ -951,8 +925,8 @@ function rosterUnitId(unitId) {
 }
 
 function listFirefighters(unitId = null) {
-  if (unitId == null) return db.prepare('SELECT id, name, source, created_by_member_id, created_by_name FROM firefighters ORDER BY created_at ASC').all();
-  return db.prepare('SELECT id, name, source, created_by_member_id, created_by_name FROM firefighters WHERE unit_id = ? ORDER BY created_at ASC').all(rosterUnitId(unitId));
+  if (unitId == null || String(unitId).trim() === '') return [];
+  return db.prepare('SELECT id, name, source, created_by_member_id, created_by_name FROM firefighters WHERE unit_id = ? ORDER BY created_at ASC').all(String(unitId));
 }
 
 function addFirefighter(id, name, unitId = null, { source = 'user', createdByMemberId = null, createdByName = null } = {}) {
@@ -972,8 +946,8 @@ function removeFirefighter(id, unitId = null, { memberId = null, isManager = fal
 }
 
 function listHotwords(unitId = null) {
-  if (unitId == null) return db.prepare('SELECT id, word, source, created_by_member_id, created_by_name FROM hotwords ORDER BY created_at ASC').all();
-  return db.prepare('SELECT id, word, source, created_by_member_id, created_by_name FROM hotwords WHERE unit_id = ? ORDER BY created_at ASC').all(rosterUnitId(unitId));
+  if (unitId == null || String(unitId).trim() === '') return [];
+  return db.prepare('SELECT id, word, source, created_by_member_id, created_by_name FROM hotwords WHERE unit_id = ? ORDER BY created_at ASC').all(String(unitId));
 }
 
 function addHotword(id, word, unitId = null, { source = 'user', createdByMemberId = null, createdByName = null } = {}) {
@@ -1460,20 +1434,23 @@ function listIncidentEvents(incidentId, { limit = 2000 } = {}) {
   ).all(incidentId, limitOf(limit, 2000, 5000)).map(eventWithPayload);
 }
 
-function listStations() {
-  return db.prepare('SELECT id, name, created_at, created_by FROM stations ORDER BY name ASC').all();
+function listStations(unitId = null) {
+  if (unitId == null || String(unitId).trim() === '') return [];
+  return db.prepare('SELECT id, name, unit_id, created_at, created_by FROM stations WHERE unit_id = ? ORDER BY name ASC').all(String(unitId));
 }
 
-function addStation({ name, createdBy = null } = {}) {
+function addStation({ name, createdBy = null, unitId = null } = {}) {
+  const unit = String(unitId || '').trim();
+  if (!unit) throw Object.assign(new Error('消防站必须属于单位'), { status: 400, code: 'UNIT_REQUIRED' });
   const clean = String(name || '').trim().slice(0, 80);
-  const normalized = clean.replace(/消防救援站$/, '站').replace(/\s+/g, '');
+  const normalized = normalizeStationName(clean);
   if (!normalized) throw new Error('消防站名称不能为空');
-  const existing = db.prepare('SELECT * FROM stations WHERE normalized_name = ?').get(normalized);
+  const existing = db.prepare('SELECT id, name, unit_id, created_at, created_by FROM stations WHERE unit_id = ? AND normalized_name = ?').get(unit, normalized);
   if (existing) return existing;
   const id = randomUUID();
-  db.prepare('INSERT INTO stations (id, name, normalized_name, created_at, created_by) VALUES (?, ?, ?, ?, ?)')
-    .run(id, clean, normalized, Date.now(), createdBy);
-  return db.prepare('SELECT id, name, created_at, created_by FROM stations WHERE id = ?').get(id);
+  db.prepare('INSERT INTO stations (id, unit_id, name, normalized_name, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, unit, clean, normalized, Date.now(), createdBy);
+  return db.prepare('SELECT id, name, unit_id, created_at, created_by FROM stations WHERE id = ?').get(id);
 }
 
 function listIncidentForces(incidentId) {

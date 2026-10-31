@@ -2,19 +2,19 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { nameSuggestions } = require('../src/name-match');
 
-test('祝徐谦 vs 祝徐迁 距离 1 命中', () => {
-  const result = nameSuggestions('祝徐谦', ['李翔', '祝徐迁', '方文斌']);
-  assert.deepEqual(result, ['祝徐迁']);
+test('陈建平 vs 陈建华 距离 1 命中', () => {
+  const result = nameSuggestions('陈建平', ['张伟', '陈建华', '李娜']);
+  assert.deepEqual(result, ['陈建华']);
 });
 
 test('长度差 >1 不命中', () => {
-  const result = nameSuggestions('祝徐迁', ['祝', '祝徐迁甲乙', '李翔']);
+  const result = nameSuggestions('陈建华', ['陈', '陈建华甲乙', '张伟']);
   assert.deepEqual(result, []);
 });
 
 test('完全相同被排除（含首尾或中间空格差异）', () => {
-  const result = nameSuggestions(' 祝徐迁 ', ['祝徐迁', '祝 徐迁', '  祝徐迁  ', '祝徐谦']);
-  assert.deepEqual(result, ['祝徐谦']);
+  const result = nameSuggestions(' 陈建华 ', ['陈建华', '陈 建华', '  陈建华  ', '陈建平']);
+  assert.deepEqual(result, ['陈建平']);
 });
 
 test('去重与上限 3 且保持原顺序', () => {

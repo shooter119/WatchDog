@@ -67,7 +67,7 @@ void main() {
     });
 
     test('火场指挥语境：无名单姓名也保留为 note', () {
-      final r = p.parse('带队指挥员陆和胜', firefighters: ['陆河圣']);
+      final r = p.parse('带队指挥员辰剑华', firefighters: ['陈建华']);
       expect(r.intent, 'note');
     });
 
@@ -118,34 +118,42 @@ void main() {
   });
 
   group('LocalParser 长距离报数（进入火场句式）', () {
-    test('名单姓名与压力间隔较长仍判进场（李翔进入火场，空气呼吸器压力20兆帕）', () {
+    test('名单姓名与压力间隔较长仍判进场（张伟进入火场，空气呼吸器压力20兆帕）', () {
       final p = LocalParser().parse(
-        '李翔进入火场，空气呼吸器压力20兆帕',
-        firefighters: ['李翔'],
+        '张伟进入火场，空气呼吸器压力20兆帕',
+        firefighters: ['张伟'],
       );
       expect(p.action, 'enter');
       expect(p.intent, VoiceIntent.entry);
       expect(p.people, hasLength(1));
-      expect(p.people.first.name, '李翔');
+      expect(p.people.first.name, '张伟');
       expect(p.people.first.pressureMpa, 20);
     });
 
-    test('名单姓名同音纠正：陆河圣被听成路和胜仍判进场', () {
+    test('名单姓名同音纠正：陈建华被听成辰剑华仍判进场', () {
       final p = LocalParser().parse(
-        '路和胜进入火场压力十三兆帕',
-        firefighters: ['陆河圣'],
+        '辰剑华进入火场压力十三兆帕',
+        firefighters: ['陈建华'],
       );
       expect(p.action, 'enter');
       expect(p.intent, VoiceIntent.entry);
       expect(p.people, hasLength(1));
-      expect(p.people.first.name, '陆河圣');
+      expect(p.people.first.name, '陈建华');
       expect(p.people.first.pressureMpa, 13);
+    });
+
+    test('无组织空名单不把同音字纠正成其他姓名', () {
+      final p = LocalParser().parse(
+        '辰剑华进入火场压力二十兆帕',
+        firefighters: const [],
+      );
+      expect(p.people.map((person) => person.name), isNot(contains('陈建华')));
     });
 
     test('同音纠正不误伤：读音不同的姓名不替换', () {
       final p = LocalParser().parse(
         '王刚，十五兆帕',
-        firefighters: ['陆河圣'],
+        firefighters: ['陈建华'],
       );
       expect(p.people, hasLength(1));
       expect(p.people.first.name, '王刚');

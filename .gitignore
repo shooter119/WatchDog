@@ -35,3 +35,8 @@ backend/asr-debug.js
 
 # 用户提供的私有原始资料
 .codex-attachments/
+
+# 真实组织种子（姓名、消防站、单位验证码）不得进入公开仓库
+backend/seeds/private/
+backend/seeds/*.local.json
+backend/seeds/*.private.json

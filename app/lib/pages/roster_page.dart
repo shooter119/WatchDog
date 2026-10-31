@@ -596,8 +596,8 @@ List<String> extractNamesFromPaste(String raw) {
 
 /// 从一行粘贴内容中提取姓名：
 /// - 含 Tab 视为表格行，取第一个单元格
-/// - 去掉空白后整体为 2~4 字汉字 → 直接作为姓名（兼容"李 翔"这类中间带空格的）
-/// - 否则按连续 2~4 字汉字切分，过滤职务词（兼容"盛承华 大队长"）
+/// - 去掉空白后整体为 2~4 字汉字 → 直接作为姓名（兼容"张 伟"这类中间带空格的）
+/// - 否则按连续 2~4 字汉字切分，过滤职务词（兼容"张伟 大队长"）
 List<String> _extractNames(String line) {
   final cell = line.contains('\t') ? line.split('\t').first : line;
   final compact = cell.replaceAll(RegExp(r'\s+'), '');

@@ -1789,7 +1789,7 @@ class HomePageState extends State<HomePage> {
 
   Future<void> _editForce([IncidentForce? force]) async {
     final api = widget.controller.api;
-    List<Station> stations = const [];
+    List<Station> stations = widget.controller.stations;
     List<Map<String, dynamic>> commonStations = const [];
     if (api != null) {
       try {
@@ -1800,7 +1800,8 @@ class HomePageState extends State<HomePage> {
           /* manual input remains available */
         }
       } catch (_) {
-        // 名录加载失败时仍允许现场手动填写站名。
+        // 名录加载失败时使用本组织已缓存的消防站，仍允许现场手动填写。
+        stations = widget.controller.stations;
       }
     }
     final names = <String>{
@@ -1853,7 +1854,7 @@ class HomePageState extends State<HomePage> {
                   autofocus: true,
                   decoration: const InputDecoration(
                     labelText: '消防站名称',
-                    hintText: '如：龙翔路站',
+                    hintText: '如：示例路站',
                   ),
                 ),
               Align(

@@ -8,6 +8,25 @@ import 'package:watchdog/services/update_service.dart';
 import 'package:watchdog/state/app_controller.dart';
 
 /// 模拟服务器不可达的 ApiClient（拉名单/热词必然失败）
+class _NoOrgApi extends ApiClient {
+  _NoOrgApi() : super(baseUrl: 'http://offline', incidentId: 'test', unitId: '');
+
+  @override
+  Future<List<Firefighter>> fetchFirefighters() async => [
+    Firefighter(id: '1', name: '不该出现'),
+  ];
+
+  @override
+  Future<List<Hotword>> fetchHotwords() async => [
+    Hotword(id: '1', word: '不该出现'),
+  ];
+
+  @override
+  Future<List<Station>> fetchStations() async => [
+    Station(id: '1', name: '不该出现'),
+  ];
+}
+
 class _OfflineApi extends ApiClient {
   _OfflineApi()
     : super(baseUrl: 'http://offline', incidentId: 'test', unitId: 'test-unit');
@@ -18,6 +37,9 @@ class _OfflineApi extends ApiClient {
 
   @override
   Future<List<Hotword>> fetchHotwords() async => throw Exception('网络不可达');
+
+  @override
+  Future<List<Station>> fetchStations() async => throw Exception('网络不可达');
 }
 
 /// 记录 createNote 收到的 author，验证实名随日志提交
@@ -58,7 +80,7 @@ void main() {
     addTearDown(c.dispose);
     const longId = 'manual-exit-note-12345678-1234-1234-1234-123456789abc-1793024291000';
     Future<void> write(String id) => c.addActionLog(
-      names: ['袁超'],
+      names: ['赵磊'],
       action: '出场',
       category: NoteCategory.withdraw,
       opId: id,
@@ -120,13 +142,16 @@ void main() {
         'cached_roster_unit_id': 'test-unit',
         'cached_firefighters': '["张三","李四"]',
         'cached_hotwords': '["火情","破拆"]',
+        'cached_stations': '[{"id":"s1","name":"示例路站"}]',
       });
       final c = AppController()..api = _OfflineApi();
       await c.loadRoster();
       expect(c.firefighters.map((f) => f.name), containsAll(['张三', '李四']));
       expect(c.hotwords.map((h) => h.word), containsAll(['火情', '破拆']));
-      // 本地识别热词来源可用（名单 → 人名热词）
-      expect(c.firefighters, isNotEmpty);
+      expect(c.stations.map((item) => item.name), ['示例路站']);
+      expect(c.orgDirectory.asrTerms, containsAll(['张三', '李四', '火情', '示例路站', '内攻']));
+      expect(c.orgDirectory.parserNames, containsAll(['张三', '李四']));
+      expect(c.orgDirectory.parserNames, isNot(contains('示例路站')));
     });
 
     testWidgets('addNote 携带本地实名作者，随日志提交', (tester) async {
@@ -149,6 +174,26 @@ void main() {
       await c.loadRoster();
       expect(c.firefighters, isEmpty);
       expect(c.hotwords, isEmpty);
+      expect(c.stations, isEmpty);
+      expect(c.orgDirectory.parserNames, isEmpty);
+      expect(c.orgDirectory.asrTerms, contains('内攻'));
+      expect(c.orgDirectory.asrTerms, isNot(contains('张三')));
+    });
+
+    testWidgets('无组织用户不拉取名单，识别保持通用模式', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'cached_roster_unit_id': 'other-unit',
+        'cached_firefighters': '["张三"]',
+        'cached_stations': '[{"id":"s1","name":"示例路站"}]',
+      });
+      final c = AppController()..api = _NoOrgApi();
+      await c.loadRoster();
+      expect(c.firefighters, isEmpty);
+      expect(c.stations, isEmpty);
+      expect(c.orgDirectory.parserNames, isEmpty);
+      expect(c.orgDirectory.asrTerms, contains('内攻'));
+      expect(c.orgDirectory.asrTerms, isNot(contains('不该出现')));
+      expect(c.orgDirectory.asrTerms, isNot(contains('张三')));
     });
   });
 

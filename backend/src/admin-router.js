@@ -59,7 +59,9 @@ function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, fil
     await auth.setGrant(req.admin.id, req.params.memberId, req.body.role);
     res.json({ ok: true });
   }));
-  router.get('/members', wrap(async (req, res) => res.json({ members: await auth.listMembers(req.admin.id) })));
+  router.get('/members', wrap(async (req, res) => res.json({
+    members: await auth.listMembers(req.admin.id, req.query.unit_id),
+  })));
   router.get('/units', wrap(async (req, res) => res.json({ units: await auth.listUnits(req.admin.id) })));
   router.get('/audit', wrap(async (req, res) => res.json({ events: await auth.listAudit(req.admin.id, req.query.offset) })));
   if (sites && files) router.use('/key-sites', require('./key-site-routes').createKeySiteAdminRouter(sites, files, ai));
