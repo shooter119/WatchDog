@@ -582,6 +582,25 @@ class ApiClient {
     return body['text'] as String? ?? '';
   }
 
+  /// 视频口述允许不关联警情，音频经过现有单位认证发送到服务器。
+  Future<String> transcribeMedia(Uint8List audioBytes, {String? opId}) async {
+    final res = await _client
+        .post(
+          _uri('/api/media/transcribe'),
+          headers: {..._opHeaders(opId), 'Content-Type': 'audio/wav'},
+          body: audioBytes,
+        )
+        .timeout(const Duration(seconds: 30));
+    final body = _decodeJson(res, fallback: '视频语音转写失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '视频语音转写失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '转写响应格式异常');
+    }
+    return body['text'] as String? ?? '';
+  }
+
   Future<ParseResult> parse(String text, {String? opId}) async {
     final res = await _client
         .post(

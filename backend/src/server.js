@@ -2474,10 +2474,13 @@ app.put('/api/profile', async (req, res) => {
   res.json(await db.saveDeviceProfile(device, req.body?.real_name, req.unit?.id || null));
 });
 
-app.post('/api/transcribe', async (req, res, next) => {
+app.post(['/api/transcribe', '/api/media/transcribe'], async (req, res, next) => {
   if (!CFG.asr.appId) return res.status(503).json({ error: 'ASR 未配置 VOLC_APP_KEY' });
-  const incident = await requireIncident(req, res);
-  if (!incident) return;
+  // 视频转写可不关联警情；传入警情时仍需验证其所属单位。
+  if (req.path === '/api/transcribe' || incidentKey(req)) {
+    const incident = await requireIncident(req, res);
+    if (!incident) return;
+  }
   if (upstreamRateLimited(req, 'transcribe', 20)) {
     return res.status(429).json({ error: '语音转写请求过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
   }
@@ -2485,7 +2488,6 @@ app.post('/api/transcribe', async (req, res, next) => {
   if (Number.isFinite(declaredLength) && declaredLength > 15 * 1024 * 1024) {
     return res.status(413).json({ error: '音频过大' });
   }
-  const scene = incident.id;
   const chunks = [];
   let total = 0;
   let tooLarge = false;

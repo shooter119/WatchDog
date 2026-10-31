@@ -2764,6 +2764,19 @@ class AppController extends ChangeNotifier {
     Uint8List wavBytes, {
     String? opId,
   }) async {
+    if (asrCloudEnabled && api != null) {
+      try {
+        final text = await api!.transcribeMedia(wavBytes, opId: opId);
+        return LocalAsrResult(text: text.trim());
+      } catch (_) {
+        OpLogService.instance.record(
+          opId ?? '',
+          'media_asr_fallback',
+          '在线语音识别失败，尝试本地识别',
+          level: 'warn',
+        );
+      }
+    }
     final asr = localAsr;
     if (asr == null) throw StateError('未配置本地语音识别');
     final hotwords = orgDirectory.asrTerms;

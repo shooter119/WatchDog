@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:watchdog/api/api_client.dart';
 import 'package:watchdog/models/models.dart';
 import 'package:watchdog/services/settings.dart';
+import 'package:watchdog/services/local_asr_service.dart';
 import 'package:watchdog/services/update_service.dart';
 import 'package:watchdog/state/app_controller.dart';
 
@@ -68,10 +71,54 @@ class _RecordingApi extends ApiClient {
   }
 }
 
+class _MediaAsrApi extends ApiClient {
+  _MediaAsrApi() : super(baseUrl: 'http://offline', incidentId: '');
+  bool fail = false;
+  int calls = 0;
+  String text = '现场口述';
+
+  @override
+  Future<String> transcribeMedia(Uint8List audioBytes, {String? opId}) async {
+    calls++;
+    if (fail) throw Exception('网络不可用');
+    return text;
+  }
+}
+
+class _MediaLocalAsr extends LocalAsrService {
+  int calls = 0;
+  @override
+  Future<LocalAsrResult> transcribeDetailed(Uint8List wavBytes, {List<String> hotwords = const []}) async {
+    calls++;
+    return const LocalAsrResult(text: '本地口述');
+  }
+}
+
 void main() {
   // AppController 构造会实例化 AlarmService/TtsService（插件通道），
   // 需要 testWidgets 的测试 binding 环境（与 widget_test 一致）
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('视频优先在线识别，失败或关闭时使用本地识别', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = _MediaAsrApi();
+    final local = _MediaLocalAsr();
+    final controller = AppController(localAsr: local)..api = api;
+    addTearDown(controller.dispose);
+    final audio = Uint8List.fromList([1, 2, 3]);
+    expect((await controller.transcribeMediaAudio(audio)).text, '现场口述');
+    expect(local.calls, 0);
+    api.text = '';
+    expect((await controller.transcribeMediaAudio(audio)).text, isEmpty);
+    expect(local.calls, 0);
+    api.fail = true;
+    expect((await controller.transcribeMediaAudio(audio)).text, '本地口述');
+    expect(local.calls, 1);
+    controller.asrCloudEnabled = false;
+    expect((await controller.transcribeMediaAudio(audio)).text, '本地口述');
+    expect(api.calls, 3);
+    expect(local.calls, 2);
+  });
 
   testWidgets('进出场日志压缩超长操作号，保持重试稳定且不同操作不混用', (tester) async {
     SharedPreferences.setMockInitialValues({});

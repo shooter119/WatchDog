@@ -11,7 +11,7 @@ import 'local_media_store.dart';
 
 /// 把刚拍摄的媒体登记到本机媒体库，并派生可分析的数据。
 ///
-/// 约束：视频本身不上传；只从视频里抽出 16k WAV（本机识别）与少量关键帧，
+/// 约束：视频本身不上传；抽出 16k WAV 供语音识别，以及少量关键帧，
 /// 需要分析时再把文字与关键帧交给后端。
 class MediaCaptureService {
   static const _cleanupDirName = '.cleanup';
@@ -107,7 +107,7 @@ class MediaCaptureService {
       if (cancelled()) return media;
 
       if (wavPath != null && File(wavPath).existsSync()) {
-        onProgress?.call('正在识别口述内容');
+        onProgress?.call(controller.asrCloudEnabled ? '正在联网识别口述内容' : '正在本地识别口述内容');
         try {
           final bytes = await File(wavPath).readAsBytes();
           final result = await controller.transcribeMediaAudio(bytes);
@@ -117,7 +117,7 @@ class MediaCaptureService {
           }
         } catch (_) {
           // 本地模型未安装或识别失败时保留已有转写，用户仍可手动补写或重试
-          onError?.call('本地语音识别失败，可重试识别或手动补写口述');
+          onError?.call('语音识别失败，请检查网络或本地模型后重试，也可手动补写口述');
         } finally {
           // WAV 只是中间产物，识别完即删，避免占空间
           try {

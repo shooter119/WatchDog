@@ -65,6 +65,16 @@ async function json(response) {
   return response.json();
 }
 
+test('视频语音转写无会话时仍受认证保护', async () => {
+  const response = await fetch(`${base}/api/media/transcribe`, {
+    method: 'POST',
+    headers: headers({ 'Content-Type': 'audio/wav' }),
+    body: Buffer.alloc(44),
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await json(response)).code, 'SESSION_REQUIRED');
+});
+
 test('严格认证：成员白名单、会话绑定、注销和管理角色门禁', async () => {
   let response = await fetch(`${base}/api/auth/verify`, {
     method: 'POST',
