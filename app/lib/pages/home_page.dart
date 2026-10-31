@@ -3164,15 +3164,19 @@ class _PulseMic extends StatelessWidget {
 }
 
 class _NoIncidentTaskBar extends StatelessWidget {
+  static const _title = '暂无正在处置的警情';
+  static const _actionLabel = '选择或新建警情';
+
   final VoidCallback onChooseIncident;
 
   const _NoIncidentTaskBar({required this.onChooseIncident});
 
   @override
   Widget build(BuildContext context) {
-    final compact =
-        MediaQuery.sizeOf(context).width < 360 ||
-        MediaQuery.textScalerOf(context).scale(1.0) > 1.2;
+    final titleStyle = AppTextStyles.bodyLg.copyWith(
+      color: AppColors.textPrimary,
+      fontWeight: FontWeight.w800,
+    );
     final summary = Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -3192,12 +3196,10 @@ class _NoIncidentTaskBar extends StatelessWidget {
         const SizedBox(width: AppSpacing.s3),
         Expanded(
           child: Text(
-            '暂无正在处置的警情',
-            softWrap: true,
-            style: AppTextStyles.bodyLg.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w800,
-            ),
+            _title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: titleStyle,
           ),
         ),
       ],
@@ -3206,7 +3208,7 @@ class _NoIncidentTaskBar extends StatelessWidget {
       key: const Key('choose-incident-from-home'),
       onPressed: onChooseIncident,
       icon: const Icon(Icons.add_circle_outline),
-      label: const Text('选择或新建警情'),
+      label: const Text(_actionLabel),
       style: OutlinedButton.styleFrom(
         foregroundColor: AppColors.voice,
         minimumSize: const Size(0, 48),
@@ -3219,23 +3221,62 @@ class _NoIncidentTaskBar extends StatelessWidget {
         vertical: AppSpacing.s3,
       ),
       radius: AppRadius.lg,
-      child: compact
-          ? Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = !_fitsBeside(context, constraints.maxWidth, titleStyle);
+          if (stacked) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 summary,
                 const SizedBox(height: AppSpacing.s3),
                 action,
               ],
-            )
-          : Row(
-              children: [
-                Expanded(child: summary),
-                const SizedBox(width: AppSpacing.s3),
-                action,
-              ],
-            ),
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: summary),
+              const SizedBox(width: AppSpacing.s3),
+              action,
+            ],
+          );
+        },
+      ),
     );
+  }
+
+  /// 图标、间距和按钮内边距都算进去。放得下才横排，避免标题被挤成多行。
+  static bool _fitsBeside(
+    BuildContext context,
+    double maxWidth,
+    TextStyle titleStyle,
+  ) {
+    if (!maxWidth.isFinite) return true;
+    final scaler = MediaQuery.textScalerOf(context);
+    final titleWidth = _singleLineWidth(_title, titleStyle, scaler);
+    final labelStyle =
+        Theme.of(context).textTheme.labelLarge ??
+        const TextStyle(fontSize: 14, fontWeight: FontWeight.w500);
+    final labelWidth = _singleLineWidth(_actionLabel, labelStyle, scaler);
+    // Material 3 带图标描边按钮：左右 16+24，图标 18，图标与文字间距 8，描边 1+1。
+    const buttonChrome = 16.0 + 24.0 + 18.0 + 8.0 + 2.0;
+    const summaryChrome = AppSpacing.s10 + AppSpacing.s3 + AppSpacing.s3;
+    return summaryChrome + titleWidth + buttonChrome + labelWidth <= maxWidth;
+  }
+
+  static double _singleLineWidth(
+    String text,
+    TextStyle style,
+    TextScaler scaler,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+    )..layout();
+    return painter.width;
   }
 }
 
