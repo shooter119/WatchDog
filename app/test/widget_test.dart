@@ -1541,6 +1541,9 @@ void main() {
         findsWidgets,
       ); // 默认消耗率 80L/min：6.8×20×10÷80=17
       expect(find.text('容量'), findsWidgets);
+      expect(find.textContaining('识别原文：'), findsOneWidget);
+      expect(find.text('继续语音添加'), findsNothing);
+      expect(find.text('继续添加人员，请长按底部麦克风'), findsOneWidget);
 
       // 点一次确认 → 两人全部提交（按钮在滚动卡片底部，先滚到可见）
       final confirmBtn = find.text('全部确认进入火场（2 人）');
@@ -1690,6 +1693,9 @@ void main() {
       // 剩 1 人时回到单人确认卡片
       expect(find.text('确认进入火场，开始倒计时'), findsOneWidget);
       expect(find.text('全部确认进入火场（2 人）'), findsNothing);
+      expect(find.textContaining('识别原文：'), findsOneWidget);
+      expect(find.text('继续语音添加'), findsNothing);
+      expect(find.text('继续添加人员，请长按底部麦克风'), findsOneWidget);
 
       await tester.tap(find.text('确认进入火场，开始倒计时'));
       await tester.pumpAndSettle();
