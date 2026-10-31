@@ -2470,7 +2470,7 @@ void main() {
       expect(find.text('你好，我是水元素'), findsOneWidget);
       expect(
         tester.getSize(find.byType(AssistantAvatar)),
-        const Size(112, 112),
+        const Size(72, 72),
       );
       final sampleKey = const Key('chat-sample-question-气瓶压力下降太快怎么办？');
       expect(

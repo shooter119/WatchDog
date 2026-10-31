@@ -1039,21 +1039,21 @@ class ChatPageState extends State<ChatPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.s4,
-        AppSpacing.s3,
+        AppSpacing.s1,
         AppSpacing.s4,
-        AppSpacing.s6,
+        AppSpacing.s2,
       ),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.s2,
-            vertical: AppSpacing.s2,
+            vertical: AppSpacing.s1,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const AssistantAvatar(size: 112),
-              const SizedBox(height: AppSpacing.s4),
+              const AssistantAvatar(size: 72),
+              const SizedBox(height: AppSpacing.s2),
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.s3,
@@ -1072,7 +1072,7 @@ class ChatPageState extends State<ChatPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.s3),
+              const SizedBox(height: AppSpacing.s2),
               Text(
                 '你好，我是水元素',
                 style: AppTextStyles.h2.copyWith(
@@ -1082,14 +1082,14 @@ class ChatPageState extends State<ChatPage> {
               ),
               const SizedBox(height: AppSpacing.s2),
               Text(
-                '火场里遇到困难，按住底部语音按钮说话，\n或在这里输入问题，我来帮你支招。',
+                '火场里遇到困难，按住底部语音按钮说话，或输入问题，我来帮你支招。',
                 textAlign: TextAlign.center,
-                style: AppTextStyles.bodyMd.copyWith(
+                style: AppTextStyles.label.copyWith(
                   color: AppColors.textSecondary,
-                  height: 1.5,
+                  height: 1.4,
                 ),
               ),
-              const SizedBox(height: AppSpacing.s5),
+              const SizedBox(height: AppSpacing.s3),
               _VisionCallout(onTap: _pickVisionImage),
               const SizedBox(height: AppSpacing.s2),
               const _SampleQuestion('气瓶压力下降太快怎么办？', icon: Icons.gas_meter_outlined),
@@ -1397,14 +1397,14 @@ class _AssistantOptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = AppTextStyles.bodyMd.copyWith(
+    final style = AppTextStyles.label.copyWith(
       fontWeight: FontWeight.w800,
       color: AppColors.textPrimary,
     );
     return LayoutBuilder(
       builder: (context, constraints) {
         // 四项按最长标题统一高度，大字与窄屏下也不截断问题。
-        final textWidth = max(1.0, constraints.maxWidth - 116);
+        final textWidth = max(1.0, constraints.maxWidth - 96);
         var textHeight = 0.0;
         for (final title in _titles) {
           final painter = TextPainter(
@@ -1416,18 +1416,18 @@ class _AssistantOptionCard extends StatelessWidget {
           painter.dispose();
         }
         return SizedBox(
-          height: max(44.0, textHeight) + AppSpacing.s3 * 2,
+          height: max(32.0, textHeight) + AppSpacing.s2 * 2,
           child: AppCard(
             onTap: onTap,
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s4,
-              vertical: AppSpacing.s3,
+              horizontal: AppSpacing.s3,
+              vertical: AppSpacing.s2,
             ),
             child: Row(
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
                     color: AppColors.voice.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(AppRadius.sm),
