@@ -2398,11 +2398,18 @@ void main() {
         ),
       );
       await tester.pump();
-      final allRange = find.widgetWithText(ChoiceChip, '全部');
+      // 视觉调整：时间范围选择由 ChoiceChip 改为全宽 SegmentedButton（每段 48dp）
+      final allRange = find.text('全部');
       await tester.ensureVisible(allRange);
       await tester.tap(allRange);
       await tester.pump();
       expect(find.text('13 小时'), findsOneWidget);
+      // 视觉调整：汇总数字放大到 32sp 后，2 倍字号下排名行移出首屏，需先滚动到可见
+      await tester.scrollUntilVisible(
+        find.text('消防救援一号班长'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('消防救援一号班长'), findsOneWidget);
       expect(find.textContaining('1 次 · 13 小时'), findsOneWidget);
       expect(tester.takeException(), isNull);
