@@ -245,8 +245,6 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
-                  const _VideoIntro(),
-                  const SizedBox(height: AppSpacing.s3),
                   if (_loading) const LinearProgressIndicator(),
                   if (_error != null) ...[
                     const SizedBox(height: AppSpacing.s3),
@@ -495,46 +493,6 @@ class VideoResourceCard extends StatelessWidget {
                       ),
                     ),
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VideoIntro extends StatelessWidget {
-  const _VideoIntro();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s3,
-        vertical: AppSpacing.s2,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceSubtle,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.live_tv_rounded,
-            size: 18,
-            color: AppColors.actionPrimary,
-          ),
-          const SizedBox(width: AppSpacing.s2),
-          Expanded(
-            child: Text(
-              '仅展示本单位管理员启用的授权视频资源。点击资源后在卡片内展开并播放实时画面。',
-              style: AppTextStyles.bodyMd.copyWith(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-                height: 1.5,
-              ),
-            ),
           ),
         ],
       ),
