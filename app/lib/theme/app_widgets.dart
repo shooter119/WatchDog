@@ -112,9 +112,10 @@ class AppSpacing {
 /// 圆角（radius.sm ~ radius.pill）
 class AppRadius {
   AppRadius._();
-  static const sm = 8.0;
-  static const md = 14.0;
-  static const lg = 20.0;
+  // L6：圆角收紧（sm 6 / md 10 / lg 14，pill 不变）
+  static const sm = 6.0;
+  static const md = 10.0;
+  static const lg = 14.0;
   static const xl = 28.0;
   static const pill = 999.0;
 }
