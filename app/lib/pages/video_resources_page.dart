@@ -350,15 +350,42 @@ class VideoResourceCard extends StatelessWidget {
                                 key: ValueKey(
                                   'video-resource-status-${resource.id}',
                                 ),
-                                width: 8,
-                                height: 8,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: available == null
-                                      ? AppColors.textTertiary
-                                      : available!
-                                      ? AppColors.online
-                                      : AppColors.alarm,
-                                  shape: BoxShape.circle,
+                                  color: AppColors.textSecondary,
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.pill,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      available == null
+                                          ? Icons.hourglass_empty
+                                          : available!
+                                          ? Icons.check_circle_outline
+                                          : Icons.videocam_off_outlined,
+                                      size: 14,
+                                      color: AppColors.onPrimary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      available == null
+                                          ? '检测中'
+                                          : available!
+                                          ? '在线'
+                                          : '离线·不可播放',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.onPrimary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -493,11 +520,7 @@ class _VideoIntro extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(
-            Icons.live_tv_rounded,
-            size: 18,
-            color: AppColors.actionPrimary,
-          ),
+          Icon(Icons.live_tv_rounded, size: 18, color: AppColors.actionPrimary),
           const SizedBox(width: AppSpacing.s2),
           Expanded(
             child: Text(
@@ -569,7 +592,11 @@ class _LoadFailure extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.s4),
       child: Column(
         children: [
-          Icon(Icons.cloud_off_outlined, color: AppColors.alarm, size: 32),
+          Icon(
+            Icons.cloud_off_outlined,
+            color: AppColors.textSecondary,
+            size: 32,
+          ),
           const SizedBox(height: AppSpacing.s2),
           Text(
             '视频资源加载失败',
@@ -620,9 +647,7 @@ class _AuthRequired extends StatelessWidget {
             const SizedBox(height: AppSpacing.s4),
             Text(
               '需要完成单位认证',
-              style: AppTextStyles.h2.copyWith(
-                color: AppColors.textPrimary,
-              ),
+              style: AppTextStyles.h2.copyWith(color: AppColors.textPrimary),
             ),
             const SizedBox(height: AppSpacing.s2),
             Text(

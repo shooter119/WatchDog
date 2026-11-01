@@ -179,7 +179,9 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                                 vertical: AppSpacing.s1,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.caution.withValues(alpha: 0.14),
+                                color: AppColors.caution.withValues(
+                                  alpha: 0.14,
+                                ),
                                 borderRadius: BorderRadius.circular(
                                   AppRadius.pill,
                                 ),
@@ -279,10 +281,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-              child: Text(
-                _error!,
-                style: AppTextStyles.bodyMd.copyWith(color: AppColors.alarm),
-              ),
+              child: AppNotice(kind: AppNoticeKind.error, text: _error!),
             ),
           for (final station in _stations) _buildStationRow(station),
           if (!_busy && _stations.isEmpty)

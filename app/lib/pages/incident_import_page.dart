@@ -722,7 +722,13 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                     onChanged: (v) => setDialog(() => saveCommon = v == true),
                   ),
                   if (validation != null)
-                    Text(validation!, style: TextStyle(color: AppColors.alarm)),
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.s2),
+                      child: AppNotice(
+                        kind: AppNoticeKind.error,
+                        text: validation!,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -823,7 +829,10 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                   color: AppColors.textSecondary,
                 ),
               ),
-              trailing: Icon(Icons.chevron_right, color: AppColors.textTertiary),
+              trailing: Icon(
+                Icons.chevron_right,
+                color: AppColors.textTertiary,
+              ),
               onTap: _busy
                   ? null
                   : () {
@@ -990,7 +999,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                   color: p['status'] == 'succeeded'
                       ? AppColors.safe
                       : p['status'] == 'failed'
-                      ? AppColors.alarm
+                      ? AppColors.textPrimary
                       : AppColors.textSecondary,
                 ),
                 title: Text(
@@ -1010,7 +1019,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                       p['status'].toString(),
                   style: AppTextStyles.caption.copyWith(
                     color: p['status'] == 'failed'
-                        ? AppColors.alarm
+                        ? AppColors.textPrimary
                         : AppColors.textSecondary,
                   ),
                 ),
@@ -1398,21 +1407,15 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.s3),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _error!,
-                      style: AppTextStyles.label.copyWith(
-                        color: AppColors.alarm,
-                      ),
-                    ),
-                    if (_error!.contains('权限'))
-                      TextButton(
-                        onPressed: StorageService.openAppSettings,
-                        child: const Text('打开系统设置'),
-                      ),
-                  ],
+                child: AppNotice(
+                  kind: AppNoticeKind.error,
+                  text: _error!,
+                  action: _error!.contains('权限')
+                      ? TextButton(
+                          onPressed: StorageService.openAppSettings,
+                          child: const Text('打开系统设置'),
+                        )
+                      : null,
                 ),
               ),
             if (_task == null)

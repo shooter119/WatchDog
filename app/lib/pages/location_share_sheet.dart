@@ -443,32 +443,32 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
       ),
       if (blocked) ...[
         const SizedBox(height: AppSpacing.s3),
-        _warningCard(
+        const AppNotice(
+          kind: AppNoticeKind.error,
           icon: Icons.timer_off_outlined,
-          color: AppColors.alarm,
           text: '定位已超过 5 分钟，不能直接分享。请重新定位后再发送。',
         ),
       ] else if (stale) ...[
         const SizedBox(height: AppSpacing.s3),
-        _warningCard(
+        const AppNotice(
+          kind: AppNoticeKind.warning,
           icon: Icons.schedule,
-          color: AppColors.caution,
           text: '定位已超过 2 分钟，位置可能已变化，请结合现场情况核实。',
         ),
       ],
       if (draft.hasPoorAccuracy) ...[
         const SizedBox(height: AppSpacing.s3),
-        _warningCard(
+        const AppNotice(
+          kind: AppNoticeKind.warning,
           icon: Icons.gps_off_outlined,
-          color: AppColors.caution,
           text: '定位精度较差或未提供精度，接收方可能看到明显偏移。',
         ),
       ],
       if (_addressFailed) ...[
         const SizedBox(height: AppSpacing.s3),
-        _warningCard(
+        AppNotice(
+          kind: AppNoticeKind.info,
           icon: Icons.info_outline,
-          color: AppColors.caution,
           text: draft.navigationUri == null
               ? '地址或坐标转换未完成，仍可分享 WGS84 查看位置；驾车导航已隐藏。'
               : '地址查询未完成，但高德驾车导航仍可用。',
@@ -653,37 +653,6 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         ),
         icon: Icon(icon),
         label: Text(label),
-      ),
-    );
-  }
-
-  Widget _warningCard({
-    required IconData icon,
-    required Color color,
-    required String text,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.s3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 19, color: color),
-          const SizedBox(width: AppSpacing.s2),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.label.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -232,7 +232,9 @@ void main() {
     var dot = tester.widget<Container>(
       find.byKey(const ValueKey('video-resource-status-camera-1')),
     );
-    expect((dot.decoration! as BoxDecoration).color, AppColors.online);
+    // Batch 2: 状态点替换为中性药丸胶囊（AppColors.textSecondary）与在线文本图标
+    expect((dot.decoration! as BoxDecoration).color, AppColors.textSecondary);
+    expect(find.text('在线'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
@@ -252,7 +254,9 @@ void main() {
     dot = tester.widget<Container>(
       find.byKey(const ValueKey('video-resource-status-camera-1')),
     );
-    expect((dot.decoration! as BoxDecoration).color, AppColors.alarm);
+    // Batch 2: 离线状态为中性药丸胶囊（AppColors.textSecondary）与离线文本图标
+    expect((dot.decoration! as BoxDecoration).color, AppColors.textSecondary);
+    expect(find.text('离线·不可播放'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     offlineController.dispose();

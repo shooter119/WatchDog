@@ -181,8 +181,11 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
                 style: TextStyle(color: AppColors.textSecondary),
               ),
             if (_error != null) ...[
-              Text(_error!, style: TextStyle(color: AppColors.alarm)),
-              TextButton(onPressed: _load, child: const Text('重新读取')),
+              AppNotice(
+                kind: AppNoticeKind.error,
+                text: _error!,
+                action: TextButton(onPressed: _load, child: const Text('重新读取')),
+              ),
             ],
             if (_detail == null && _error == null)
               const Center(child: CircularProgressIndicator()),

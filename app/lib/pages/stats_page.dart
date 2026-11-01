@@ -270,7 +270,7 @@ class _StatsPageState extends State<StatsPage> {
       ),
       _SummaryCard(
         icon: Icons.timer_outlined,
-        color: AppColors.voice,
+        color: AppColors.actionPrimary,
         label: '$_range累计',
         value: _fmtDuration(totalMs),
         compact: compact,

@@ -200,12 +200,12 @@ class _ArchiveSummary extends StatelessWidget {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: AppColors.voice.withValues(alpha: .14),
+            color: AppColors.actionPrimary.withValues(alpha: .14),
             borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
           child: Icon(
             Icons.inventory_2_outlined,
-            color: AppColors.voice,
+            color: AppColors.actionPrimary,
             size: 22,
           ),
         ),
@@ -431,9 +431,7 @@ class _StatItem extends StatelessWidget {
         const SizedBox(height: AppSpacing.s1),
         Text(
           label,
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textTertiary,
-          ),
+          style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
         ),
       ],
     ),
@@ -590,12 +588,12 @@ class _IncidentIdentity extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: AppColors.voice.withValues(alpha: .14),
+                color: AppColors.actionPrimary.withValues(alpha: .14),
                 borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
               child: Icon(
                 Icons.fact_check_outlined,
-                color: AppColors.voice,
+                color: AppColors.actionPrimary,
                 size: 20,
               ),
             ),
@@ -625,9 +623,7 @@ class _IncidentIdentity extends StatelessWidget {
         const SizedBox(height: AppSpacing.s1),
         Text(
           incident.number,
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textTertiary,
-          ),
+          style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
         ),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: AppSpacing.s3),
@@ -702,9 +698,7 @@ class _ArchiveMetric extends StatelessWidget {
       children: [
         Text(
           label,
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textTertiary,
-          ),
+          style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
         ),
         const SizedBox(height: AppSpacing.s1),
         Text(
@@ -770,7 +764,7 @@ class _DetailSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      Icon(icon, size: 18, color: AppColors.voice),
+      Icon(icon, size: 18, color: AppColors.actionPrimary),
       const SizedBox(width: AppSpacing.s2),
       Text(
         title,
@@ -926,7 +920,7 @@ class _TimelineEvent extends StatelessWidget {
 
   Color get _color => switch (event.type) {
     'entry' => AppColors.online,
-    'exit' => AppColors.voice,
+    'exit' => AppColors.textSecondary,
     'pressure' => AppColors.caution,
     'incident_archived' => AppColors.textSecondary,
     _ => AppColors.actionPrimary,

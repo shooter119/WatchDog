@@ -112,15 +112,11 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
                     onChanged: (value) => setDialog(() => active = value),
                   ),
                   if (validationError != null)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        validationError!,
-                        style: TextStyle(
-                          color: AppColors.alarm,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.s2),
+                      child: AppNotice(
+                        kind: AppNoticeKind.error,
+                        text: validationError!,
                       ),
                     ),
                 ],
@@ -249,7 +245,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
             Text(
               '仅管理员可维护；改地址后请立即测试，停用只隐藏不删除。',
               style: AppTextStyles.caption.copyWith(
-                fontSize: 12.5,
+                fontSize: 13,
                 color: AppColors.textTertiary,
                 height: 1.4,
               ),
