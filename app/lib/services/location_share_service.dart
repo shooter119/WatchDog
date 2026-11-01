@@ -88,9 +88,9 @@ class LocationShareDraft {
     final location = _validAmapLocation;
     if (location == null) return null;
     return Uri.https('uri.amap.com', '/navigation', {
-      'from': '',
       'to':
-          '${location.lon.toStringAsFixed(6)},${location.lat.toStringAsFixed(6)},$displayName',
+          '${location.lon.toStringAsFixed(6)},${location.lat.toStringAsFixed(6)}',
+      'coordinate': 'gaode',
       'mode': 'car',
       'policy': '0',
       'src': 'watchdog',
