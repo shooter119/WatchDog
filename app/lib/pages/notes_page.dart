@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 
 /// 火场日志页：单列时间线瀑布流，展示消防员用语音/手动记录的火场随手记，
@@ -102,7 +103,7 @@ class _NotesPageState extends State<NotesPage> {
         key: const Key('notes-manual-log-fab'),
         onPressed: () => _openEditor(null),
         tooltip: '手动记录日志',
-        backgroundColor: AppColors.voice,
+        backgroundColor: AppColors.actionPrimary,
         foregroundColor: AppColors.onPrimary,
         elevation: 3,
         focusElevation: 4,
@@ -317,7 +318,7 @@ class _NotesPageState extends State<NotesPage> {
                         icon: const Icon(Icons.delete_outline, size: 18),
                         label: const Text('删除这条日志'),
                         style: TextButton.styleFrom(
-                          foregroundColor: AppColors.alarm,
+                          foregroundColor: AppColors.textSecondary,
                           minimumSize: const Size(0, 48),
                         ),
                       ),
@@ -356,25 +357,15 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _delete(Note note) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除日志'),
-        content: Text('确认删除这条日志？\n${note.text}'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '删除日志',
+      message: '确认删除这条日志？\n${note.text}',
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     try {
       await widget.controller.deleteNote(note.id);
       if (mounted) _toast('已删除');
@@ -387,7 +378,6 @@ class _NotesPageState extends State<NotesPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: error ? AppColors.alarm : null,
         duration: const Duration(seconds: 2),
       ),
     );

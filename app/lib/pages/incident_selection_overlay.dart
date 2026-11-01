@@ -235,7 +235,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.voice),
             child: const Text('提交入队申请'),
           ),
         ],
@@ -347,7 +346,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.voice),
             child: const Text('提交入队申请'),
           ),
         ],
@@ -467,12 +465,12 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: AppColors.voice.withValues(alpha: 0.13),
+                          color: AppColors.actionPrimary.withValues(alpha: 0.13),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Icon(
                           Icons.verified_user_outlined,
-                          color: AppColors.voice,
+                          color: AppColors.actionPrimary,
                           size: 26,
                         ),
                       ),
@@ -576,10 +574,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
-                  Text(
-                    _error!,
+                  AppNotice(
                     key: const Key('auth-error'),
-                    style: TextStyle(color: AppColors.alarm, fontSize: 13),
+                    kind: AppNoticeKind.error,
+                    text: _error!,
                   ),
                 ],
               ],
@@ -602,8 +600,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           label: const Text('认证并继续'),
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(50),
-            backgroundColor: AppColors.voice,
-            foregroundColor: AppColors.onPrimary,
           ),
         ),
         if (!hasKeyboard && widget.onEnterGuestMode != null) ...[
@@ -736,8 +732,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           label: const Text('检查审批状态'),
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(48),
-            backgroundColor: AppColors.voice,
-            foregroundColor: Colors.white,
           ),
         ),
         if (widget.onEnterGuestMode != null) ...[
@@ -886,7 +880,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                             width: 44,
                                             height: 44,
                                             decoration: BoxDecoration(
-                                              color: AppColors.voice.withValues(
+                                              color: AppColors.actionPrimary.withValues(
                                                 alpha: 0.13,
                                               ),
                                               borderRadius:
@@ -895,7 +889,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                             child: Icon(
                                               Icons
                                                   .local_fire_department_outlined,
-                                              color: AppColors.voice,
+                                              color: AppColors.actionPrimary,
                                               size: 26,
                                             ),
                                           ),
@@ -951,15 +945,12 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                       ],
                                       if (_error != null) ...[
                                         const SizedBox(height: 12),
-                                        Text(
-                                          _error!,
+                                        AppNotice(
                                           key: const Key(
                                             'incident-selection-error',
                                           ),
-                                          style: TextStyle(
-                                            color: AppColors.alarm,
-                                            fontSize: 13,
-                                          ),
+                                          kind: AppNoticeKind.error,
+                                          text: _error!,
                                         ),
                                       ],
                                       const SizedBox(height: 16),
@@ -995,8 +986,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                           minimumSize: const Size.fromHeight(
                                             52,
                                           ),
-                                          backgroundColor: AppColors.voice,
-                                          foregroundColor: AppColors.onPrimary,
                                         ),
                                       ),
                                       if (widget.onEnterWithoutIncident != null)
@@ -1111,12 +1100,12 @@ class _IncidentOption extends StatelessWidget {
                 height: 38,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.voice.withValues(alpha: 0.1),
+                  color: AppColors.actionPrimary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   Icons.local_fire_department_outlined,
-                  color: AppColors.voice,
+                  color: AppColors.actionPrimary,
                   size: 22,
                 ),
               ),
@@ -1139,7 +1128,7 @@ class _IncidentOption extends StatelessWidget {
                     Text(
                       '处置中',
                       style: TextStyle(
-                        color: AppColors.voice,
+                        color: AppColors.actionPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -1152,7 +1141,7 @@ class _IncidentOption extends StatelessWidget {
                 icon: const Icon(Icons.arrow_forward, size: 17),
                 label: const Text('加入'),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.voice,
+                  foregroundColor: AppColors.actionPrimary,
                   minimumSize: const Size(72, 48),
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),

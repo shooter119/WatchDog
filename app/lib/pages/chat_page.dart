@@ -925,7 +925,7 @@ class ChatPageState extends State<ChatPage> {
                   )
                 : const Icon(Icons.camera_alt_outlined, size: 21),
             tooltip: '拍照分析',
-            color: AppColors.voice,
+            color: AppColors.actionPrimary,
           ),
         ],
       ),
@@ -948,16 +948,16 @@ class ChatPageState extends State<ChatPage> {
     return Column(
       children: [
         if (_error != null)
-          Container(
-            width: double.infinity,
-            color: AppColors.alarm.withValues(alpha: 0.08),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s4,
-              vertical: AppSpacing.s2,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.s4,
+              AppSpacing.s2,
+              AppSpacing.s4,
+              0,
             ),
-            child: Text(
-              _error!,
-              style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
+            child: AppNotice(
+              kind: AppNoticeKind.error,
+              text: _error!,
             ),
           ),
         if (_recording || (_processing && _transcript != null))
@@ -1103,10 +1103,9 @@ class ChatPageState extends State<ChatPage> {
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.s3),
-            child: Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
+            child: AppNotice(
+              kind: AppNoticeKind.error,
+              text: _error!,
             ),
           ),
       ],
@@ -1264,7 +1263,7 @@ class _MessageBubble extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.s2),
                     child: Material(
-                      color: AppColors.voice.withValues(alpha: 0.12),
+                      color: AppColors.actionPrimary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(AppRadius.pill),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -1282,7 +1281,7 @@ class _MessageBubble extends StatelessWidget {
                                 Icon(
                                   Icons.north_east_rounded,
                                   size: 15,
-                                  color: AppColors.voice,
+                                  color: AppColors.actionPrimary,
                                 ),
                                 const SizedBox(width: AppSpacing.s2),
                                 Flexible(
@@ -1429,10 +1428,10 @@ class _AssistantOptionCard extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: AppColors.voice.withValues(alpha: 0.12),
+                    color: AppColors.actionPrimary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
-                  child: Icon(icon, color: AppColors.voice),
+                  child: Icon(icon, color: AppColors.actionPrimary),
                 ),
                 const SizedBox(width: AppSpacing.s3),
                 Expanded(child: Text(title, style: style)),

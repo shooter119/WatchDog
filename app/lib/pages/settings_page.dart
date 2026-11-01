@@ -17,6 +17,7 @@ import '../services/storage_service.dart';
 import '../services/theme_controller.dart';
 import '../services/update_service.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_widgets.dart';
 import 'about_page.dart';
@@ -879,25 +880,15 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _leaveUnit() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('退出当前单位？'),
-        content: Text('退出后将清除本机的“$_unitName”认证，需要重新输入单位验证码和姓名。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
-            child: const Text('退出单位'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '退出当前单位？',
+      message: '退出后将清除本机的“$_unitName”认证，需要重新输入单位验证码和姓名。',
+      confirmLabel: '退出单位',
+      cancelLabel: '取消',
+      destructive: true,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
     await widget.controller.leaveUnit();
     if (!mounted) return;
     setState(() {
@@ -1093,7 +1084,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _switchRow(
           icon: Icons.cloud_outlined,
           title: '联网语音识别',
-          activeThumbColor: AppColors.voice,
+          activeThumbColor: AppColors.actionPrimary,
           value: _asrCloud,
           onChanged: (v) async {
             if (!v) {
@@ -1111,7 +1102,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _switchRow(
           icon: Icons.shield_outlined,
           title: '联网语义解析',
-          activeThumbColor: AppColors.voice,
+          activeThumbColor: AppColors.actionPrimary,
           value: _parseCloud,
           onChanged: (v) {
             setState(() => _parseCloud = v);
@@ -1455,12 +1446,9 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           if (_downloadError != null) ...[
             const SizedBox(height: AppSpacing.s2),
-            Text(
-              _downloadError!,
-              style: AppTextStyles.caption.copyWith(
-                color: AppColors.alarm,
-                fontWeight: FontWeight.w600,
-              ),
+            AppNotice(
+              kind: AppNoticeKind.error,
+              text: _downloadError!,
             ),
           ],
           const SizedBox(height: AppSpacing.s3),
@@ -1526,12 +1514,12 @@ class _SaveStatusBadge extends StatelessWidget {
       _SaveState.failed => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.error_outline, size: 14, color: AppColors.alarm),
+          Icon(Icons.error, size: 14, color: AppColors.textPrimary),
           const SizedBox(width: AppSpacing.s1),
           Text(
             '保存失败',
             style: AppTextStyles.caption.copyWith(
-              color: AppColors.alarm,
+              color: AppColors.textPrimary,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1966,7 +1954,7 @@ class _SettingsIconBox extends StatelessWidget {
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: AppColors.alarm,
+                  color: AppColors.actionPrimary,
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.surface, width: 1.5),
                 ),
