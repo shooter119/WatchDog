@@ -68,7 +68,7 @@ class _OpLogPageState extends State<OpLogPage> {
                   const SizedBox(height: 12),
                   if (groups.isEmpty)
                     Padding(
-                      padding: EdgeInsets.only(top: 120),
+                      padding: const EdgeInsets.only(top: 64, bottom: 48),
                       child: Column(
                         children: [
                           Icon(
@@ -98,10 +98,53 @@ class _OpLogPageState extends State<OpLogPage> {
                     )
                   else
                     ...groups.map((g) => _OpGroupCard(group: g)),
+                  _buildDangerZone(),
                 ],
               ),
             )
           : const Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  Widget _buildDangerZone() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        const Divider(height: 1),
+        const SizedBox(height: 16),
+        Text(
+          '危险区',
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Tooltip(
+          message: '清空本地日志',
+          child: SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: _clear,
+              icon: const Icon(Icons.delete_outline, size: 20),
+              label: const Text('清空本地日志'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textPrimary,
+                side: BorderSide(color: AppColors.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -149,15 +192,6 @@ class _OpLogPageState extends State<OpLogPage> {
                 onPressed: svc.syncing ? null : _flush,
                 icon: const Icon(Icons.cloud_upload_outlined, size: 18),
                 label: Text(svc.syncing ? '同步中…' : '立即同步'),
-              ),
-              IconButton(
-                onPressed: _clear,
-                tooltip: '清空本地日志',
-                icon: Icon(
-                  Icons.delete_outline,
-                  size: 20,
-                  color: AppColors.textTertiary,
-                ),
               ),
             ],
           ),
