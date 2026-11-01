@@ -98,9 +98,12 @@ void main() {
 
     final navigation = draft.navigationUri!;
     expect(navigation.path, '/navigation');
-    expect(navigation.queryParameters['from'], '');
-    expect(navigation.queryParameters['to'], '120.123450,30.256780,示例仓库火灾');
-    expect(navigation.queryParameters.containsKey('coordinate'), isFalse);
+    expect(navigation.queryParameters.containsKey('from'), isFalse);
+    expect(navigation.queryParameters['to'], '120.123450,30.256780');
+    expect(navigation.queryParameters['to'], isNot(contains(draft.incidentName)));
+    expect(navigation.queryParameters['coordinate'], 'gaode');
+    expect(navigation.queryParameters['mode'], 'car');
+    expect(navigation.queryParameters['policy'], '0');
     expect(navigation.queryParameters['src'], 'watchdog');
     expect(navigation.queryParameters['callnative'], '0');
 
@@ -141,6 +144,7 @@ void main() {
     expect(text, isNot(contains('发送人')));
     expect(text, isNot(contains('姓名')));
     expect('coordinate=wgs84'.allMatches(text), hasLength(1));
+    expect('coordinate=gaode'.allMatches(text), hasLength(1));
   });
 
   test('天气响应防御性解析高德坐标字段', () {
