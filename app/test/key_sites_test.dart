@@ -486,7 +486,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining('网络未连接'), findsOneWidget);
-    final retry = find.widgetWithText(TextButton, '重试地图');
+    // 视觉调整：失败提示改为 AppBanner，重试按钮为 OutlinedButton
+    final retry = find.widgetWithText(OutlinedButton, '重试地图');
     expect(tester.getSize(retry).height, greaterThanOrEqualTo(48));
     final before = api.resources.length;
     api.failImages = false;
