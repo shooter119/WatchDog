@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_palette.dart';
 import 'nav_icons.dart';
@@ -43,9 +44,21 @@ class AppColors {
   static Color get alarm => _palette.alarm;
   static Color get timeout => _palette.timeout;
 
+  // 双通道状态文字（用于浅色底上的文字/数字，确保达到 WCAG AA 对比度）
+  static Color get safeText => _palette.safeText;
+  static Color get cautionText => _palette.cautionText;
+  static Color get alarmText => _palette.alarmText;
+  static Color get timeoutText => _palette.timeoutText;
+
   // 动作
+  /// 破坏性操作确认按钮专用色（仅限模态确认弹窗的确认按钮）
+  static Color get destructive => _palette.destructive;
+
   /// 语音入口（麦克风按钮、录音态），图形专用。
   static Color get voice => _palette.voice;
+
+  /// 语音按钮按下态加深色
+  static Color get voicePressed => _palette.voicePressed;
   static Color get actionPrimary => _palette.actionPrimary;
 
   /// 深色底（actionPrimary/voice/alarm）上的文字与图标。
@@ -162,8 +175,16 @@ class EntryStatus {
   final IconData icon;
   final bool danger;
   final Color fg; // 整块状态卡片上的前景色
+  final Color textColor; // 浅色底上的高对比度文字颜色
 
-  const EntryStatus(this.color, this.label, this.icon, this.danger, this.fg);
+  const EntryStatus(
+    this.color,
+    this.label,
+    this.icon,
+    this.danger,
+    this.fg, [
+    Color? textColor,
+  ]) : textColor = textColor ?? color;
 
   static EntryStatus of(String status) => switch (status) {
     'normal' => EntryStatus(
@@ -172,6 +193,7 @@ class EntryStatus {
       Icons.check_circle,
       false,
       AppColors.textPrimary,
+      AppColors.safeText,
     ),
     'warn' => EntryStatus(
       AppColors.caution,
@@ -179,6 +201,7 @@ class EntryStatus {
       Icons.warning_amber_rounded,
       false,
       AppColors.textPrimary,
+      AppColors.cautionText,
     ),
     'alarm' => EntryStatus(
       AppColors.alarm,
@@ -186,6 +209,7 @@ class EntryStatus {
       Icons.notifications_active,
       true,
       AppColors.onStatus,
+      AppColors.alarmText,
     ),
     _ => EntryStatus(
       AppColors.timeout,
@@ -193,6 +217,7 @@ class EntryStatus {
       Icons.timer_off_outlined,
       true,
       AppColors.onStatus,
+      AppColors.timeoutText,
     ),
   };
 }
@@ -257,10 +282,18 @@ class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = EntryStatus.of(status);
-    final fg = onColorCard ? s.fg : s.color;
-    final bg = onColorCard
-        ? s.fg.withValues(alpha: 0.22)
-        : s.color.withValues(alpha: 0.14);
+    final Color fg;
+    final Color bg;
+    if (onColorCard) {
+      fg = s.fg;
+      bg = s.fg.withValues(alpha: 0.22);
+    } else if (s.danger) {
+      fg = AppColors.onStatus;
+      bg = s.color;
+    } else {
+      fg = s.textColor;
+      bg = s.color.withValues(alpha: 0.14);
+    }
     // 保留同行布局高度，缩小实际色块一点，避免状态胶囊视觉上显得臃肿。
     final visualHeight = height == null
         ? null
@@ -734,7 +767,7 @@ class _VoiceButtonState extends State<VoiceButton>
     if (widget.recording) {
       return Color.lerp(AppColors.voice, Colors.black, 0.22)!;
     }
-    if (_pressed) return Color.lerp(AppColors.voice, Colors.black, 0.16)!;
+    if (_pressed) return AppColors.voicePressed;
     return AppColors.voice;
   }
 
@@ -764,7 +797,12 @@ class _VoiceButtonState extends State<VoiceButton>
         onTap: _disabled ? null : widget.onTap,
         onLongPressStart: _disabled ? null : widget.onLongPressStart,
         onLongPressEnd: _disabled ? null : widget.onLongPressEnd,
-        onTapDown: _disabled ? null : (_) => setState(() => _pressed = true),
+        onTapDown: _disabled
+            ? null
+            : (_) {
+                HapticFeedback.heavyImpact();
+                setState(() => _pressed = true);
+              },
         onTapUp: _disabled ? null : (_) => setState(() => _pressed = false),
         onTapCancel: _disabled ? null : () => setState(() => _pressed = false),
         child: SizedBox(
@@ -789,10 +827,7 @@ class _VoiceButtonState extends State<VoiceButton>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: _fill,
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      width: 2,
-                    ),
+                    border: Border.all(color: AppColors.surface, width: 2.5),
                     boxShadow: [
                       BoxShadow(
                         color: glowColor,
@@ -963,4 +998,3 @@ class AppEmptyState extends StatelessWidget {
     );
   }
 }
-

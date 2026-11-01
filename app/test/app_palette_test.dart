@@ -32,9 +32,9 @@ void main() {
       expect(p.textTertiary, const Color(0xFF6B7280));
       expect(p.safe, const Color(0xFF32C943));
       expect(p.caution, const Color(0xFFFFB000));
-      expect(p.alarm, const Color(0xFFF5222D));
-      expect(p.timeout, const Color(0xFFC90016));
-      expect(p.voice, const Color(0xFFFF9500));
+      expect(p.alarm, const Color(0xFFDC2626)); // 由 #F5222D 升级以满足白字对比度
+      expect(p.timeout, const Color(0xFF7F1D1D)); // 由 #C90016 升级以拉开与 alarm 区分度
+      expect(p.voice, const Color(0xFFF95700)); // 由 #FF9500 升级以提高白字图标对比度
       expect(p.actionPrimary, const Color(0xFF111111));
       expect(p.onPrimary, const Color(0xFFFFFFFF));
       expect(p.onStatus, const Color(0xFFFFFFFF));
@@ -42,10 +42,39 @@ void main() {
       expect(p.noteInfo, const Color(0xFF2F6FED));
       expect(p.heroBackground, const Color(0xFF111111));
       expect(p.avatarBackdrop, const Color(0xFFDDF3F5));
+      // 新增双通道文字与动作色
+      expect(p.safeText, const Color(0xFF15803D));
+      expect(p.cautionText, const Color(0xFFB45309));
+      expect(p.alarmText, const Color(0xFFB91C1C));
+      expect(p.timeoutText, const Color(0xFF7F1D1D));
+      expect(p.destructive, const Color(0xFFB91C1C));
+      expect(p.voicePressed, const Color(0xFFD44000));
     });
   });
 
   group('对比度（正文 ≥4.5，图形 ≥3）', () {
+    for (final p in AppPalette.values) {
+      test('${p.id}: 双通道状态文字、告警区分度与动作色对比度', () {
+        for (final text in [
+          p.safeText,
+          p.cautionText,
+          p.alarmText,
+          p.timeoutText,
+        ]) {
+          expect(_contrast(text, p.surface), greaterThanOrEqualTo(4.5));
+          expect(_contrast(text, p.background), greaterThanOrEqualTo(4.5));
+        }
+        expect(_contrast(p.onStatus, p.alarm), greaterThanOrEqualTo(4.5));
+        expect(_contrast(p.onStatus, p.timeout), greaterThanOrEqualTo(4.5));
+        expect(
+          _contrast(p.onPrimary, p.destructive),
+          greaterThanOrEqualTo(4.5),
+        );
+        expect(_contrast(p.onPrimary, p.voice), greaterThanOrEqualTo(3.0));
+        // alarm 与 timeout 亮度对比度 ≥1.8，保证双告警色视觉分明
+        expect(_contrast(p.alarm, p.timeout), greaterThanOrEqualTo(1.8));
+      });
+    }
     for (final p in AppPalette.values) {
       test('${p.id}: 正文与弱信息', () {
         expect(
@@ -81,12 +110,8 @@ void main() {
         // safe/caution 卡片用深色文字；alarm/timeout 用浅色文字。
         expect(_contrast(p.textPrimary, p.safe), greaterThanOrEqualTo(4.5));
         expect(_contrast(p.textPrimary, p.caution), greaterThanOrEqualTo(4.5));
-        // 昼白的 alarm 白字为 4.08（历史配色，不回调）；暖砂必须 ≥4.5。
-        final alarmFloor = p.id == AppPalette.warmSand.id ? 4.5 : 4.0;
-        expect(
-          _contrast(p.onStatus, p.alarm),
-          greaterThanOrEqualTo(alarmFloor),
-        );
+        // 昼白 alarm 已升级为 #DC2626（对比度 4.83），与暖砂一致均 ≥4.5。
+        expect(_contrast(p.onStatus, p.alarm), greaterThanOrEqualTo(4.5));
         expect(_contrast(p.onStatus, p.timeout), greaterThanOrEqualTo(4.5));
       });
     }

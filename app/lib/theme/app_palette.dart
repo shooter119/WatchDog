@@ -34,7 +34,13 @@ class AppPalette {
     required this.caution,
     required this.alarm,
     required this.timeout,
+    required this.safeText,
+    required this.cautionText,
+    required this.alarmText,
+    required this.timeoutText,
+    required this.destructive,
     required this.voice,
+    required this.voicePressed,
     required this.actionPrimary,
     required this.onPrimary,
     required this.onStatus,
@@ -83,8 +89,20 @@ class AppPalette {
   final Color alarm;
   final Color timeout;
 
+  // 双通道状态文字（用于浅色底上的文字/数字，确保达到 WCAG AA 对比度）
+  final Color safeText;
+  final Color cautionText;
+  final Color alarmText;
+  final Color timeoutText;
+
+  /// 破坏性操作确认按钮专用色（仅限模态确认弹窗的确认按钮）
+  final Color destructive;
+
   /// 语音入口（麦克风按钮、录音态），图形专用
   final Color voice;
+
+  /// 语音按钮按下态加深色
+  final Color voicePressed;
 
   // 动作
   final Color actionPrimary;
@@ -131,6 +149,12 @@ class AppPalette {
   static const List<AppPalette> values = [daylight, warmSand];
 
   /// 昼白：现行高可视亮色（默认）
+  ///
+  /// 预计算 WCAG 对比度：
+  /// daylight 在 background #F2F4F7 上：safeText 4.55, cautionText 4.56, alarmText 5.87, timeoutText 9.09;
+  /// white 在 alarm #DC2626 上 4.83, 在 timeout #7F1D1D 上 10.02, 在 destructive #B91C1C 上 6.47, 在 voice #F95700 上 3.29。
+  /// warmSand 在 background #F7F5EF 上：safeText 5.85, cautionText 5.43, alarmText 6.19, timeoutText 12.17;
+  /// alarm/timeout 亮度对比度 1.97 (daylight 2.07)。
   static const AppPalette daylight = AppPalette(
     id: 'daylight',
     label: '昼白',
@@ -144,9 +168,15 @@ class AppPalette {
     textTertiary: Color(0xFF6B7280),
     safe: Color(0xFF32C943),
     caution: Color(0xFFFFB000),
-    alarm: Color(0xFFF5222D),
-    timeout: Color(0xFFC90016),
-    voice: Color(0xFFFF9500),
+    alarm: Color(0xFFDC2626),
+    timeout: Color(0xFF7F1D1D),
+    safeText: Color(0xFF15803D),
+    cautionText: Color(0xFFB45309),
+    alarmText: Color(0xFFB91C1C),
+    timeoutText: Color(0xFF7F1D1D),
+    destructive: Color(0xFFB91C1C),
+    voice: Color(0xFFF95700),
+    voicePressed: Color(0xFFD44000),
     actionPrimary: Color(0xFF111111),
     onPrimary: Color(0xFFFFFFFF),
     onStatus: Color(0xFFFFFFFF),
@@ -191,8 +221,14 @@ class AppPalette {
     safe: Color(0xFF47975F),
     caution: Color(0xFFB37B1E),
     alarm: Color(0xFFB0241B),
-    timeout: Color(0xFF8E1F17),
+    timeout: Color(0xFF5E140F),
+    safeText: Color(0xFF2E6B3F),
+    cautionText: Color(0xFF8A5A0E),
+    alarmText: Color(0xFFB0241B),
+    timeoutText: Color(0xFF5E140F),
+    destructive: Color(0xFFB91C1C),
     voice: Color(0xFFC06242),
+    voicePressed: Color(0xFFA04E33),
     actionPrimary: Color(0xFFB0543A),
     onPrimary: Color(0xFFFBF9F4),
     onStatus: Color(0xFFFBF9F4),
