@@ -919,7 +919,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ? '未认证'
         : _unitRole == 'admin' || _unitRole == 'manager' || backend != null
         ? '管理员'
-        : '认证用户';
+        : '队员';
     return _IdentityHeroCard(
       guest: guest,
       authenticated: authenticated,
@@ -1215,25 +1215,36 @@ class _SettingsPageState extends State<SettingsPage> {
   }) {
     return Column(
       children: [
-        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
-        ListTile(
-          dense: true,
-          onTap: onTap,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s4,
-            vertical: AppSpacing.s1,
-          ),
-          leading: Icon(icon, color: AppColors.caution, size: 20),
-          title: Text(
-            title,
-            style: AppTextStyles.label.copyWith(
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w700,
+        const Divider(
+          height: 1,
+          indent: AppSpacing.s4,
+          endIndent: AppSpacing.s4,
+        ),
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: ListTile(
+            dense: true,
+            visualDensity: VisualDensity.standard,
+            minVerticalPadding: AppSpacing.s1,
+            onTap: onTap,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s1,
             ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: AppTextStyles.caption.copyWith(color: AppColors.caution),
+            leading: Icon(icon, color: AppColors.caution, size: 20),
+            title: Text(
+              title,
+              style: AppTextStyles.label.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: Text(
+              subtitle,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.cautionText,
+              ),
+            ),
           ),
         ),
       ],
@@ -1265,7 +1276,7 @@ class _SettingsPageState extends State<SettingsPage> {
         vertical: AppSpacing.s2,
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 44),
+        constraints: const BoxConstraints(minHeight: 48),
         child: Row(
           children: [
             _SettingsIconBox(
@@ -1379,43 +1390,51 @@ class _SettingsPageState extends State<SettingsPage> {
       );
     }
     if (installed == null) {
-      return ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
-        leading: Icon(
-          Icons.cloud_download_outlined,
-          color: AppColors.textTertiary,
-          size: 20,
-        ),
-        title: Text(
-          '检查本地语音模型…',
-          style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+      return ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: ListTile(
+          dense: true,
+          visualDensity: VisualDensity.standard,
+          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
+          leading: Icon(
+            Icons.cloud_download_outlined,
+            color: AppColors.textTertiary,
+            size: 20,
+          ),
+          title: Text(
+            '检查本地语音模型…',
+            style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+          ),
         ),
       );
     }
     if (installed) {
-      return ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
-        leading: Icon(
-          Icons.check_circle_outline,
-          color: AppColors.safe,
-          size: 20,
-        ),
-        title: Text(
-          '本地语音模型已就绪（离线可用）',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
+      return ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: ListTile(
+          dense: true,
+          visualDensity: VisualDensity.standard,
+          contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
+          leading: Icon(
+            Icons.check_circle_outline,
+            color: AppColors.safe,
+            size: 20,
           ),
-        ),
-        trailing: TextButton(
-          onPressed: () async {
-            await widget.controller.localAsr!.removeModel();
-            _refreshModelStatus();
-          },
-          child: const Text('删除'),
+          title: Text(
+            '本地语音模型已就绪（离线可用）',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          trailing: TextButton(
+            onPressed: () async {
+              await widget.controller.localAsr!.removeModel();
+              _refreshModelStatus();
+            },
+            child: const Text('删除'),
+          ),
         ),
       );
     }
@@ -1594,185 +1613,140 @@ class _IdentityHeroCard extends StatelessWidget {
         child: Container(
           key: const Key('identity-hero'),
           decoration: BoxDecoration(
+            color: AppColors.heroBackground,
             border: Border.all(color: AppColors.heroOnDarkBorder),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.heroBackground,
-                Color.lerp(AppColors.heroBackground, Colors.black, 0.48)!,
-                Color.lerp(AppColors.heroBackground, Colors.white, 0.035)!,
-              ],
-              stops: const [0, 0.58, 1],
-            ),
           ),
           child: Material(
             type: MaterialType.transparency,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(
-                      painter: _IdentityCardTexturePainter(foreground),
-                    ),
-                  ),
-                ),
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          center: const Alignment(0.84, -1.05),
-                          radius: 1.18,
-                          colors: [
-                            foreground.withValues(alpha: 0.11),
-                            foreground.withValues(alpha: 0),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.s4,
+                AppSpacing.s4,
+                AppSpacing.s4,
+                AppSpacing.s4,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: AppSpacing.s2,
+                              runSpacing: AppSpacing.s1,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  name,
+                                  softWrap: true,
+                                  style: TextStyle(
+                                    color: foreground,
+                                    fontSize: 20,
+                                    height: 1.15,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                _HeroRoleBadge(level: level),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.s2),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Icon(
+                                    Icons.apartment_rounded,
+                                    size: 16,
+                                    color: AppColors.heroMuted,
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.s2),
+                                Expanded(
+                                  child: Text(
+                                    unit,
+                                    softWrap: true,
+                                    style: TextStyle(
+                                      color: AppColors.heroMuted,
+                                      fontSize: 14,
+                                      height: 1.35,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.s4,
-                    AppSpacing.s4,
-                    AppSpacing.s4,
-                    AppSpacing.s4,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Wrap(
-                                  spacing: AppSpacing.s2,
-                                  runSpacing: AppSpacing.s1,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text(
-                                      name,
-                                      softWrap: true,
-                                      style: TextStyle(
-                                        color: foreground,
-                                        fontSize: 20,
-                                        height: 1.15,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    _HeroRoleBadge(level: level),
-                                  ],
-                                ),
-                                const SizedBox(height: AppSpacing.s2),
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 2),
-                                      child: Icon(
-                                        Icons.apartment_rounded,
-                                        size: 16,
-                                        color: AppColors.heroMuted,
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.s2),
-                                    Expanded(
-                                      child: Text(
-                                        unit,
-                                        softWrap: true,
-                                        style: TextStyle(
-                                          color: AppColors.heroMuted,
-                                          fontSize: 14,
-                                          height: 1.35,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                      if (authenticated)
+                        PopupMenuButton<String>(
+                          key: const Key('user-actions'),
+                          tooltip: '用户操作',
+                          iconColor: foreground,
+                          onSelected: (value) {
+                            if (value == 'leave') unawaited(onLeave());
+                            if (value == 'devices') unawaited(onDevices());
+                            if (value == 'review') unawaited(onReview());
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'devices',
+                              child: Text('登录设备'),
                             ),
-                          ),
-                          if (authenticated)
-                            PopupMenuButton<String>(
-                              key: const Key('user-actions'),
-                              tooltip: '用户操作',
-                              iconColor: foreground,
-                              onSelected: (value) {
-                                if (value == 'leave') unawaited(onLeave());
-                                if (value == 'devices') unawaited(onDevices());
-                                if (value == 'review') unawaited(onReview());
-                              },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: 'devices',
-                                  child: Text('登录设备'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'review',
-                                  child: Text('离线记录待核对'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'leave',
-                                  child: Text('退出当前单位'),
-                                ),
-                              ],
+                            PopupMenuItem(
+                              value: 'review',
+                              child: Text('离线记录待核对'),
                             ),
-                          if (canScan) _HeroScanAction(onTap: onScan),
-                        ],
-                      ),
-                      if (authenticated && reviewCount > 0)
-                        TextButton.icon(
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(48, 48),
-                            foregroundColor: foreground,
-                          ),
-                          onPressed: () => unawaited(onReview()),
-                          icon: const Icon(Icons.fact_check_outlined),
-                          label: Text('$reviewCount 条离线记录待核对'),
+                            PopupMenuItem(
+                              value: 'leave',
+                              child: Text('退出当前单位'),
+                            ),
+                          ],
                         ),
-                      if (guest) ...[
-                        const SizedBox(height: AppSpacing.s4),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () => unawaited(onJoin()),
-                            icon: const Icon(
-                              Icons.add_circle_outline,
-                              size: 18,
-                            ),
-                            label: const Text('加入单位'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: foreground,
-                              backgroundColor: foreground.withValues(
-                                alpha: 0.06,
-                              ),
-                              minimumSize: const Size(48, 48),
-                              side: BorderSide(
-                                color: AppColors.heroOnDarkBorder,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppRadius.md,
-                                ),
-                              ),
-                              textStyle: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                      if (canScan) _HeroScanAction(onTap: onScan),
                     ],
                   ),
-                ),
-              ],
+                  if (authenticated && reviewCount > 0)
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                        foregroundColor: foreground,
+                      ),
+                      onPressed: () => unawaited(onReview()),
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: Text('$reviewCount 条离线记录待核对'),
+                    ),
+                  if (guest) ...[
+                    const SizedBox(height: AppSpacing.s4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => unawaited(onJoin()),
+                        icon: const Icon(Icons.add_circle_outline, size: 18),
+                        label: const Text('加入单位'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: foreground,
+                          backgroundColor: foreground.withValues(alpha: 0.06),
+                          minimumSize: const Size(48, 48),
+                          side: BorderSide(color: AppColors.heroOnDarkBorder),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1791,30 +1765,19 @@ class _HeroRoleBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s2,
-        vertical: AppSpacing.s1,
+        vertical: 3,
       ),
       decoration: BoxDecoration(
-        color: AppColors.heroOnDark.withValues(alpha: 0.07),
+        color: AppColors.heroOnDark.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(AppRadius.pill),
-        border: Border.all(color: AppColors.heroOnDarkBorder),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.verified_user_outlined,
-            size: 13,
-            color: AppColors.heroOnDark,
-          ),
-          const SizedBox(width: AppSpacing.s1),
-          Text(
-            level,
-            style: AppTextStyles.caption.copyWith(
-              color: AppColors.heroOnDark,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
+      child: Text(
+        level,
+        style: TextStyle(
+          color: AppColors.heroOnDark,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -1863,65 +1826,6 @@ class _HeroScanAction extends StatelessWidget {
       ),
     );
   }
-}
-
-class _IdentityCardTexturePainter extends CustomPainter {
-  final Color color;
-
-  const _IdentityCardTexturePainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final line = Paint()
-      ..color = color.withValues(alpha: 0.022)
-      ..strokeWidth = 0.65;
-    for (double x = -size.height; x < size.width; x += 17) {
-      canvas.drawLine(Offset(x, size.height), Offset(x + size.height, 0), line);
-    }
-
-    final ring = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8
-      ..color = color.withValues(alpha: 0.04);
-    canvas.drawCircle(
-      Offset(size.width * 0.96, -size.height * 0.09),
-      size.width * 0.48,
-      ring,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.96, -size.height * 0.09),
-      size.width * 0.33,
-      ring,
-    );
-
-    final sheenRect = Rect.fromLTWH(
-      size.width * 0.42,
-      0,
-      size.width * 0.46,
-      size.height,
-    );
-    final sheen = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-        colors: [
-          color.withValues(alpha: 0),
-          color.withValues(alpha: 0.025),
-          color.withValues(alpha: 0),
-        ],
-      ).createShader(sheenRect);
-    final path = Path()
-      ..moveTo(size.width * 0.65, 0)
-      ..lineTo(size.width * 0.88, 0)
-      ..lineTo(size.width * 0.55, size.height)
-      ..lineTo(size.width * 0.4, size.height)
-      ..close();
-    canvas.drawPath(path, sheen);
-  }
-
-  @override
-  bool shouldRepaint(covariant _IdentityCardTexturePainter oldDelegate) =>
-      oldDelegate.color != color;
 }
 
 class _SettingsIconBox extends StatelessWidget {
@@ -1995,7 +1899,7 @@ class _SettingsShortcut extends StatelessWidget {
         vertical: AppSpacing.s2,
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 44),
+        constraints: const BoxConstraints(minHeight: 48),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -2070,7 +1974,7 @@ class _SettingsLinkCard extends StatelessWidget {
           vertical: AppSpacing.s2,
         ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
+          constraints: const BoxConstraints(minHeight: 48),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2201,7 +2105,7 @@ class _SettingsAccordionState extends State<_SettingsAccordion> {
                   vertical: AppSpacing.s2,
                 ),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
+                  constraints: const BoxConstraints(minHeight: 48),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
