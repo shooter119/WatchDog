@@ -594,7 +594,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             _media.sourcePath.isEmpty
                 ? '旧资料没有无水印母版，本次只能保存带水印版；保存成功后将从本机记录中移除'
                 : '拍摄文件仅用于本次核对；保存成功后将从 App 清理，手机相册保留带水印版和无水印版',
-            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -626,7 +626,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           Text(
             '识别在本机完成，不上传音频',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+            style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
           ),
           const SizedBox(height: 6),
           TextButton.icon(
@@ -746,14 +746,14 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             const SizedBox(height: 8),
             Text(
               '关联警情后可在这里核对并写入；当前口述只会保存在本机草稿。',
-              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ],
           if (segments.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
               '按住片段可删除误识别内容，删除后可撤销',
-              style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+              style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
             ),
             const SizedBox(height: 6),
             Wrap(
@@ -779,7 +779,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                       child: Text(
                         '${_formatOffset(segment.startMs)}  ${segment.text}',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 12,
                           color: AppColors.textSecondary,
                         ),
                       ),

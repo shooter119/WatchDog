@@ -71,11 +71,21 @@ class _OrthomapPageState extends State<OrthomapPage> {
             ),
           );
         }
+        final hasDemo = maps.any((m) => m['demo'] == true);
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          itemCount: maps.length,
+          itemCount: maps.length + (hasDemo ? 1 : 0),
           itemBuilder: (context, index) {
-            final map = maps[index];
+            if (hasDemo && index == 0) {
+              return const Padding(
+                padding: EdgeInsets.only(bottom: AppSpacing.s3),
+                child: AppNotice(
+                  kind: AppNoticeKind.warning,
+                  text: '演示影像 · 非真实现场 · 不可用于定位',
+                ),
+              );
+            }
+            final map = maps[hasDemo ? index - 1 : index];
             return Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.s2),
               child: AppCard(
@@ -114,13 +124,42 @@ class _OrthomapPageState extends State<OrthomapPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              map['name'] as String,
-                              style: AppTextStyles.bodyMd.copyWith(
-                                height: 1.3,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
-                              ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    map['name'] as String,
+                                    style: AppTextStyles.bodyMd.copyWith(
+                                      height: 1.3,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                                if (map['demo'] == true) ...[
+                                  const SizedBox(width: AppSpacing.s1),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.textSecondary,
+                                      borderRadius: BorderRadius.circular(
+                                        AppRadius.pill,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '演示',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.onPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             const SizedBox(height: AppSpacing.s1),
                             Text(
@@ -221,6 +260,19 @@ class _MapViewerState extends State<_MapViewer> {
           ),
           body: Column(
             children: [
+              if (widget.map['demo'] == true)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.s4,
+                    AppSpacing.s2,
+                    AppSpacing.s4,
+                    0,
+                  ),
+                  child: AppNotice(
+                    kind: AppNoticeKind.warning,
+                    text: '演示影像 · 非真实现场 · 不可用于定位',
+                  ),
+                ),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(
@@ -229,9 +281,7 @@ class _MapViewerState extends State<_MapViewer> {
                 ),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceSubtle,
-                  border: Border(
-                    bottom: BorderSide(color: AppColors.border),
-                  ),
+                  border: Border(bottom: BorderSide(color: AppColors.border)),
                 ),
                 child: Text(
                   widget.map['demo'] == true

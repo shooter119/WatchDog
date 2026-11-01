@@ -40,11 +40,13 @@ void main() {
       MaterialApp(home: OrthomapPage(controller: controller)),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('非真实现场'), findsOneWidget);
+    // 精修 Q-G：列表顶部新增演示警告横幅，卡片原说明保留，故至少出现一次。
+    expect(find.textContaining('非真实现场'), findsWidgets);
     await tester.tap(find.text('演示影像'));
     await tester.pumpAndSettle();
     expect(find.byType(InteractiveViewer), findsOneWidget);
-    expect(find.textContaining('不可用于定位'), findsOneWidget);
+    // 详情页顶部横幅 + 原图例说明。
+    expect(find.textContaining('不可用于定位'), findsWidgets);
     final viewer = tester.widget<InteractiveViewer>(
       find.byType(InteractiveViewer),
     );

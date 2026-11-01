@@ -303,7 +303,7 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
                 Text(
                   '这些记录尚未应用到服务器。核对后重新提交，或保留原记录而不应用。退出登录不会删除记录。',
                   style: AppTextStyles.caption.copyWith(
-                    fontSize: 12.5,
+                    fontSize: 13,
                     color: AppColors.textTertiary,
                     height: 1.4,
                   ),
@@ -331,7 +331,10 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '${DateTime.fromMillisecondsSinceEpoch((row['occurred_at'] as num).toInt()).toLocal()}',
+                            _fmtTimestamp((row['occurred_at'] as num).toInt()),
+                            style: const TextStyle(
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
                           Text(_description(row)),
                           Text(_result(row)),
@@ -385,4 +388,14 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
             ),
     ),
   );
+}
+
+String _fmtTimestamp(int epochMs) {
+  final d = DateTime.fromMillisecondsSinceEpoch(epochMs).toLocal();
+  final mm = d.month.toString().padLeft(2, '0');
+  final dd = d.day.toString().padLeft(2, '0');
+  final hh = d.hour.toString().padLeft(2, '0');
+  final min = d.minute.toString().padLeft(2, '0');
+  final ss = d.second.toString().padLeft(2, '0');
+  return '$mm-$dd $hh:$min:$ss';
 }

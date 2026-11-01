@@ -44,36 +44,34 @@ class KeySiteFailure extends StatelessWidget {
   );
 }
 
-Widget _buildKeySiteEmpty({
-  required IconData icon,
-  required String message,
-}) => Padding(
-  padding: const EdgeInsets.symmetric(vertical: AppSpacing.s8),
-  child: Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        width: 88,
-        height: 88,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: AppColors.surface,
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Icon(icon, size: 40, color: AppColors.textTertiary),
+Widget _buildKeySiteEmpty({required IconData icon, required String message}) =>
+    Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.surface,
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Icon(icon, size: 40, color: AppColors.textTertiary),
+          ),
+          const SizedBox(height: AppSpacing.s4),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMd.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
-      const SizedBox(height: AppSpacing.s4),
-      Text(
-        message,
-        textAlign: TextAlign.center,
-        style: AppTextStyles.bodyMd.copyWith(
-          color: AppColors.textSecondary,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    ],
-  ),
-);
+    );
 
 /// 每条资料路由都受控制器的同步撤销信号保护，退出时立即销毁正文和图像。
 class KeySiteGate extends StatelessWidget {
@@ -380,9 +378,9 @@ class _SiteListState extends State<_SiteList> {
       }
     }
     if (unlabeledItems.isNotEmpty) {
-      groups.putIfAbsent(unlabeled, () => <KeySiteSummary>[]).addAll(
-        unlabeledItems,
-      );
+      groups
+          .putIfAbsent(unlabeled, () => <KeySiteSummary>[])
+          .addAll(unlabeledItems);
     }
     final widgets = <Widget>[];
     for (final entry in groups.entries) {
@@ -390,10 +388,7 @@ class _SiteListState extends State<_SiteList> {
         widgets.add(const SizedBox(height: AppSpacing.s2));
       }
       widgets.add(
-        SectionTitle(
-          key: ValueKey('site-group-${entry.key}'),
-          text: entry.key,
-        ),
+        SectionTitle(key: ValueKey('site-group-${entry.key}'), text: entry.key),
       );
       widgets.addAll(entry.value.map(_row));
     }
@@ -466,10 +461,7 @@ class _SiteListState extends State<_SiteList> {
               child: Center(child: CircularProgressIndicator()),
             ),
           if (!_loading && _error == null && _items.isEmpty)
-            _buildKeySiteEmpty(
-              icon: Icons.domain_outlined,
-              message: '暂无资料',
-            ),
+            _buildKeySiteEmpty(icon: Icons.domain_outlined, message: '暂无资料'),
           if (!_loading && _more && _error == null)
             Padding(
               padding: const EdgeInsets.only(top: AppSpacing.s1),
@@ -489,24 +481,19 @@ class _SiteListState extends State<_SiteList> {
     List<String> values,
     ValueChanged<String> changed,
   ) => ConstrainedBox(
-    constraints: const BoxConstraints(minHeight: 40),
+    constraints: const BoxConstraints(minHeight: 48),
     child: Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s3,
-        vertical: AppSpacing.s2,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           isExpanded: true,
-          isDense: true,
           dropdownColor: AppColors.surface,
           style: AppTextStyles.bodyMd.copyWith(
-            fontSize: 13,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
           ),
@@ -523,7 +510,6 @@ class _SiteListState extends State<_SiteList> {
                 '全部$title',
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.bodyMd.copyWith(
-                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
                 ),
@@ -536,7 +522,6 @@ class _SiteListState extends State<_SiteList> {
                   v,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.bodyMd.copyWith(
-                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
@@ -647,11 +632,7 @@ class _SiteDetailState extends State<_SiteDetail> {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(
-          Icons.warning_amber_rounded,
-          size: 16,
-          color: AppColors.caution,
-        ),
+        Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.caution),
         const SizedBox(width: AppSpacing.s2),
         Expanded(
           child: Text(
@@ -946,8 +927,9 @@ class _ModuleContentState extends State<_ModuleContent> {
                     for (final e in entries.asMap().entries)
                       Padding(
                         padding: EdgeInsets.only(
-                          bottom:
-                              e.key == entries.length - 1 ? 0 : AppSpacing.s1,
+                          bottom: e.key == entries.length - 1
+                              ? 0
+                              : AppSpacing.s1,
                         ),
                         child: Text(
                           '${e.key + 1}. ${e.value.title}',
