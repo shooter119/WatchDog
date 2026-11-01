@@ -829,10 +829,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                   color: AppColors.textSecondary,
                 ),
               ),
-              trailing: Icon(
-                Icons.chevron_right,
-                color: AppColors.textTertiary,
-              ),
+              trailing: Icon(Icons.chevron_right, color: AppColors.textTertiary),
               onTap: _busy
                   ? null
                   : () {

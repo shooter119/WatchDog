@@ -281,7 +281,9 @@ class _MapViewerState extends State<_MapViewer> {
                 ),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceSubtle,
-                  border: Border(bottom: BorderSide(color: AppColors.border)),
+                  border: Border(
+                    bottom: BorderSide(color: AppColors.border),
+                  ),
                 ),
                 child: Text(
                   widget.map['demo'] == true

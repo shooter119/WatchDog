@@ -324,9 +324,8 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
       themeAnimationDuration: Duration.zero,
       builder: (context, child) => ValueListenableBuilder<bool>(
         valueListenable: SystemPip.isActive,
-        builder: (context, inPip, _) => inPip
-            ? PipShell(session: _videoPlayback)
-            : (child ?? const SizedBox.shrink()),
+        builder: (context, inPip, _) =>
+            inPip ? PipShell(session: _videoPlayback) : (child ?? const SizedBox.shrink()),
       ),
       // 换主题时按 palette 换 key 强制重建整棵页面树：在 build 里读 AppColors
       // 的 const 组件会被 Flutter 的 identical 短路跳过，留下旧色。

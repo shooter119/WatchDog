@@ -179,9 +179,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                                 vertical: AppSpacing.s1,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.caution.withValues(
-                                  alpha: 0.14,
-                                ),
+                                color: AppColors.caution.withValues(alpha: 0.14),
                                 borderRadius: BorderRadius.circular(
                                   AppRadius.pill,
                                 ),

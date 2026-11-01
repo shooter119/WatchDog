@@ -431,7 +431,9 @@ class _StatItem extends StatelessWidget {
         const SizedBox(height: AppSpacing.s1),
         Text(
           label,
-          style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textTertiary,
+          ),
         ),
       ],
     ),
@@ -623,7 +625,9 @@ class _IncidentIdentity extends StatelessWidget {
         const SizedBox(height: AppSpacing.s1),
         Text(
           incident.number,
-          style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textTertiary,
+          ),
         ),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: AppSpacing.s3),
@@ -698,7 +702,9 @@ class _ArchiveMetric extends StatelessWidget {
       children: [
         Text(
           label,
-          style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textTertiary,
+          ),
         ),
         const SizedBox(height: AppSpacing.s1),
         Text(

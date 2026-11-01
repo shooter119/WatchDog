@@ -520,7 +520,11 @@ class _VideoIntro extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(Icons.live_tv_rounded, size: 18, color: AppColors.actionPrimary),
+          Icon(
+            Icons.live_tv_rounded,
+            size: 18,
+            color: AppColors.actionPrimary,
+          ),
           const SizedBox(width: AppSpacing.s2),
           Expanded(
             child: Text(
@@ -647,7 +651,9 @@ class _AuthRequired extends StatelessWidget {
             const SizedBox(height: AppSpacing.s4),
             Text(
               '需要完成单位认证',
-              style: AppTextStyles.h2.copyWith(color: AppColors.textPrimary),
+              style: AppTextStyles.h2.copyWith(
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: AppSpacing.s2),
             Text(

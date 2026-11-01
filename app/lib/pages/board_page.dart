@@ -310,7 +310,9 @@ class _OverviewBanner extends StatelessWidget {
         const SizedBox(height: AppSpacing.s1),
         Text(
           label,
-          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textSecondary,
+          ),
         ),
       ],
     );
@@ -354,7 +356,11 @@ class _DangerAlertBar extends StatelessWidget {
         side: BorderSide(color: color.withValues(alpha: 0.45)),
         child: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: color, size: 20),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: color,
+              size: 20,
+            ),
             const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: Text(
