@@ -193,7 +193,9 @@ void main() {
     expect(find.text('暂无待审批申请'), findsOneWidget);
     await tester.tap(find.text('已处理'));
     await tester.pumpAndSettle();
-    expect(find.text('测试申请人 · 已同意'), findsOneWidget);
+    // 视觉调整：处理结果由“姓名 · 已同意”拼接文本改为姓名 + 中性状态胶囊
+    expect(find.text('测试申请人'), findsOneWidget);
+    expect(find.text('已同意'), findsOneWidget);
     expect(find.textContaining('处理人：管理员甲'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());

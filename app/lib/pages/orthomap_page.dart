@@ -42,15 +42,15 @@ class _OrthomapPageState extends State<OrthomapPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '地图暂时无法加载，请检查网络或重新认证',
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.bodyMd.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                  const AppNotice(
+                    kind: AppNoticeKind.error,
+                    text: '地图暂时无法加载，请检查网络或重新认证',
                   ),
                   const SizedBox(height: AppSpacing.s4),
                   FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(88, 48),
+                    ),
                     onPressed: () => setState(_load),
                     child: const Text('重试'),
                   ),
@@ -71,11 +71,21 @@ class _OrthomapPageState extends State<OrthomapPage> {
             ),
           );
         }
+        final hasDemo = maps.any((m) => m['demo'] == true);
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          itemCount: maps.length,
+          itemCount: maps.length + (hasDemo ? 1 : 0),
           itemBuilder: (context, index) {
-            final map = maps[index];
+            if (hasDemo && index == 0) {
+              return const Padding(
+                padding: EdgeInsets.only(bottom: AppSpacing.s3),
+                child: AppNotice(
+                  kind: AppNoticeKind.warning,
+                  text: '演示影像 · 非真实现场 · 不可用于定位',
+                ),
+              );
+            }
+            final map = maps[hasDemo ? index - 1 : index];
             return Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.s2),
               child: AppCard(
@@ -91,7 +101,7 @@ class _OrthomapPageState extends State<OrthomapPage> {
                   ),
                 ),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
+                  constraints: const BoxConstraints(minHeight: 48),
                   child: Row(
                     children: [
                       Container(
@@ -114,13 +124,42 @@ class _OrthomapPageState extends State<OrthomapPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              map['name'] as String,
-                              style: AppTextStyles.bodyMd.copyWith(
-                                height: 1.3,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
-                              ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    map['name'] as String,
+                                    style: AppTextStyles.bodyMd.copyWith(
+                                      height: 1.3,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                                if (map['demo'] == true) ...[
+                                  const SizedBox(width: AppSpacing.s1),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.textSecondary,
+                                      borderRadius: BorderRadius.circular(
+                                        AppRadius.pill,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '演示',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.onPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             const SizedBox(height: AppSpacing.s1),
                             Text(
@@ -196,12 +235,10 @@ class _MapViewerState extends State<_MapViewer> {
           return Scaffold(
             backgroundColor: AppColors.background,
             appBar: AppBar(title: const Text('现场地图')),
-            body: Center(
-              child: Text(
-                '认证已失效，请返回后重新认证',
-                style: AppTextStyles.bodyMd.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+            body: const Center(
+              child: AppEmptyState(
+                icon: Icons.lock_outline,
+                title: '认证已失效，请返回后重新认证',
               ),
             ),
           );
@@ -214,6 +251,7 @@ class _MapViewerState extends State<_MapViewer> {
               IconButton(
                 tooltip: '恢复全图',
                 constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                iconSize: 24,
                 onPressed: () => setState(() => _reset(_viewport!)),
                 icon: const Icon(Icons.fit_screen),
               ),
@@ -221,6 +259,19 @@ class _MapViewerState extends State<_MapViewer> {
           ),
           body: Column(
             children: [
+              if (widget.map['demo'] == true)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.s4,
+                    AppSpacing.s2,
+                    AppSpacing.s4,
+                    0,
+                  ),
+                  child: AppNotice(
+                    kind: AppNoticeKind.warning,
+                    text: '演示影像 · 非真实现场 · 不可用于定位',
+                  ),
+                ),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(
@@ -243,17 +294,22 @@ class _MapViewerState extends State<_MapViewer> {
                 ),
               ),
               if (_tileFailed)
-                MaterialBanner(
-                  content: const Text('部分影像加载失败，请检查网络；认证过期请返回重登'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => setState(() {
-                        _tileFailed = false;
-                        _retry++;
-                      }),
-                      child: const Text('重试'),
-                    ),
-                  ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.s4,
+                    AppSpacing.s2,
+                    AppSpacing.s4,
+                    0,
+                  ),
+                  child: AppBanner(
+                    kind: AppBannerKind.offline,
+                    text: '部分影像加载失败，请检查网络；认证过期请返回重登',
+                    actionLabel: '重试',
+                    onAction: () => setState(() {
+                      _tileFailed = false;
+                      _retry++;
+                    }),
+                  ),
                 ),
               Expanded(
                 child: LayoutBuilder(
@@ -332,12 +388,7 @@ class _MapViewerState extends State<_MapViewer> {
                         }
                       });
                     }
-                    return ColoredBox(
-                      color: AppColors.surfaceSubtle,
-                      child: const Center(
-                        child: Icon(Icons.broken_image_outlined),
-                      ),
-                    );
+                    return const _TileFailureCell();
                   },
                 ),
               ),
@@ -345,4 +396,62 @@ class _MapViewerState extends State<_MapViewer> {
       ),
     );
   }
+}
+
+/// 瓦片加载失败单元格：斜条纹（AppColors.border）+ 浅底（AppColors.surfaceSubtle）+ 居中感叹号
+class _TileFailureCell extends StatelessWidget {
+  const _TileFailureCell();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surfaceSubtle,
+      child: CustomPaint(
+        painter: _DiagonalStripePainter(stripeColor: AppColors.border),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.s1),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceSubtle,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.error, color: AppColors.textSecondary, size: 24),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 绘制细对角斜线斑马纹，与真实地形阴影视觉区分
+class _DiagonalStripePainter extends CustomPainter {
+  final Color stripeColor;
+
+  const _DiagonalStripePainter({required this.stripeColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    final paint = Paint()
+      ..color = stripeColor
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+
+    const step = 16.0;
+    final maxD = size.width + size.height;
+    for (double offset = -size.height; offset <= maxD; offset += step) {
+      canvas.drawLine(
+        Offset(offset, 0),
+        Offset(offset + size.height, size.height),
+        paint,
+      );
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _DiagonalStripePainter oldDelegate) =>
+      oldDelegate.stripeColor != stripeColor;
 }

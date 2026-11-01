@@ -292,7 +292,7 @@ class _SiteListState extends State<_SiteList> {
         ),
         onTap: () => _open(site),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
+          constraints: const BoxConstraints(minHeight: 48),
           child: Row(
             children: [
               Container(
@@ -489,24 +489,19 @@ class _SiteListState extends State<_SiteList> {
     List<String> values,
     ValueChanged<String> changed,
   ) => ConstrainedBox(
-    constraints: const BoxConstraints(minHeight: 40),
+    constraints: const BoxConstraints(minHeight: 48),
     child: Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s3,
-        vertical: AppSpacing.s2,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           isExpanded: true,
-          isDense: true,
           dropdownColor: AppColors.surface,
           style: AppTextStyles.bodyMd.copyWith(
-            fontSize: 13,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
           ),
@@ -523,7 +518,6 @@ class _SiteListState extends State<_SiteList> {
                 '全部$title',
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.bodyMd.copyWith(
-                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
                 ),
@@ -536,7 +530,6 @@ class _SiteListState extends State<_SiteList> {
                   v,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.bodyMd.copyWith(
-                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
@@ -634,37 +627,8 @@ class _SiteDetailState extends State<_SiteDetail> {
     return value;
   }
 
-  Widget _buildCautionBanner(String message) => Container(
-    padding: const EdgeInsets.symmetric(
-      horizontal: AppSpacing.s3,
-      vertical: AppSpacing.s2,
-    ),
-    decoration: BoxDecoration(
-      color: AppColors.caution.withValues(alpha: 0.14),
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      border: Border.all(color: AppColors.caution.withValues(alpha: 0.35)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.warning_amber_rounded,
-          size: 16,
-          color: AppColors.caution,
-        ),
-        const SizedBox(width: AppSpacing.s2),
-        Expanded(
-          child: Text(
-            message,
-            style: AppTextStyles.caption.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
+  Widget _buildCautionBanner(String message) =>
+      AppNotice(kind: AppNoticeKind.warning, text: message);
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -1227,70 +1191,91 @@ class _DocumentViewerState extends State<_DocumentViewer> {
             top: false,
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.s2),
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: AppSpacing.s3,
-                runSpacing: AppSpacing.s2,
-                children: [
-                  IconButton(
-                    tooltip: '上一页',
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(color: AppColors.border, width: 1),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s3,
+                  vertical: AppSpacing.s2,
+                ),
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.s3,
+                  runSpacing: AppSpacing.s2,
+                  children: [
+                    IconButton.outlined(
+                      tooltip: '上一页',
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(52, 52),
+                        fixedSize: const Size(52, 52),
+                        padding: EdgeInsets.zero,
+                        side: BorderSide(color: AppColors.border),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      ),
+                      onPressed: _page > 1
+                          ? () => setState(() {
+                              _page--;
+                              _transform.value = Matrix4.identity();
+                            })
+                          : null,
+                      icon: Icon(
+                        Icons.chevron_left,
+                        color: _page > 1
+                            ? AppColors.textPrimary
+                            : AppColors.textTertiary,
+                      ),
                     ),
-                    onPressed: _page > 1
-                        ? () => setState(() {
-                            _page--;
-                            _transform.value = Matrix4.identity();
-                          })
-                        : null,
-                    icon: Icon(
-                      Icons.chevron_left,
-                      color: _page > 1
-                          ? AppColors.textPrimary
-                          : AppColors.textTertiary,
+                    Text(
+                      '第 $_page / $count 页',
+                      style: AppTextStyles.bodyMd.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
                     ),
-                  ),
-                  Text(
-                    '第 $_page / $count 页',
-                    style: AppTextStyles.bodyMd.copyWith(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary,
+                    IconButton.outlined(
+                      tooltip: '下一页',
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(52, 52),
+                        fixedSize: const Size(52, 52),
+                        padding: EdgeInsets.zero,
+                        side: BorderSide(color: AppColors.border),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                      ),
+                      onPressed: _page < count
+                          ? () => setState(() {
+                              _page++;
+                              _transform.value = Matrix4.identity();
+                            })
+                          : null,
+                      icon: Icon(
+                        Icons.chevron_right,
+                        color: _page < count
+                            ? AppColors.textPrimary
+                            : AppColors.textTertiary,
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: '下一页',
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(48, 52),
+                      ),
+                      onPressed: () => setState(() {
+                        _transform.value = Matrix4.identity();
+                        _reset++;
+                      }),
+                      icon: const Icon(Icons.fit_screen, size: 18),
+                      label: Text(widget.map ? '恢复全图' : '恢复整页'),
                     ),
-                    onPressed: _page < count
-                        ? () => setState(() {
-                            _page++;
-                            _transform.value = Matrix4.identity();
-                          })
-                        : null,
-                    icon: Icon(
-                      Icons.chevron_right,
-                      color: _page < count
-                          ? AppColors.textPrimary
-                          : AppColors.textTertiary,
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(48, 48),
-                    ),
-                    onPressed: () => setState(() {
-                      _transform.value = Matrix4.identity();
-                      _reset++;
-                    }),
-                    icon: const Icon(Icons.fit_screen, size: 18),
-                    label: Text(widget.map ? '恢复全图' : '恢复整页'),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1526,18 +1511,18 @@ class _PixelMapCanvasState extends State<_PixelMapCanvas> {
                 top: 0,
                 left: 0,
                 right: 0,
-                child: MaterialBanner(
-                  content: Text('部分图纸加载失败：${keySiteError(_failure!)}'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => setState(() {
-                        _failure = null;
-                        _loaded = false;
-                        _retry++;
-                      }),
-                      child: const Text('重试地图'),
-                    ),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.s2),
+                  child: AppBanner(
+                    kind: AppBannerKind.offline,
+                    text: '部分图纸加载失败：${keySiteError(_failure!)}',
+                    actionLabel: '重试地图',
+                    onAction: () => setState(() {
+                      _failure = null;
+                      _loaded = false;
+                      _retry++;
+                    }),
+                  ),
                 ),
               ),
           ],

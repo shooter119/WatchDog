@@ -112,15 +112,11 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
                     onChanged: (value) => setDialog(() => active = value),
                   ),
                   if (validationError != null)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        validationError!,
-                        style: TextStyle(
-                          color: AppColors.alarm,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.s2),
+                      child: AppNotice(
+                        kind: AppNoticeKind.error,
+                        text: validationError!,
                       ),
                     ),
                 ],
@@ -130,6 +126,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
+              style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
               child: const Text('取消'),
             ),
             FilledButton(
@@ -145,6 +142,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
                 }
                 Navigator.pop(context, true);
               },
+              style: FilledButton.styleFrom(minimumSize: const Size(64, 48)),
               child: const Text('保存'),
             ),
           ],
@@ -237,7 +235,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
           IconButton(
             tooltip: '新增视频资源',
             onPressed: _creating ? null : () => _edit(),
-            icon: const Icon(Icons.add_rounded),
+            icon: const Icon(Icons.add_rounded, size: 24),
           ),
         ],
       ),
@@ -249,7 +247,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
             Text(
               '仅管理员可维护；改地址后请立即测试，停用只隐藏不删除。',
               style: AppTextStyles.caption.copyWith(
-                fontSize: 12.5,
+                fontSize: 13,
                 color: AppColors.textTertiary,
                 height: 1.4,
               ),
@@ -258,40 +256,23 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
             if (_loading) const LinearProgressIndicator(),
             if (_error != null) ...[
               const SizedBox(height: 12),
-              AppCard(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Text(
-                      '加载失败：$_error',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(height: 1.5),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton(onPressed: _load, child: const Text('重新加载')),
-                  ],
+              AppNotice(kind: AppNoticeKind.error, text: '加载失败：$_error'),
+              const SizedBox(height: 10),
+              Center(
+                child: OutlinedButton(
+                  onPressed: _load,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                  ),
+                  child: const Text('重新加载'),
                 ),
               ),
             ],
             if (!_loading && _error == null && _resources.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 44),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.video_library_outlined,
-                      size: 46,
-                      color: AppColors.textTertiary,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      '尚未添加视频资源',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+              const Center(
+                child: AppEmptyState(
+                  icon: Icons.video_library_outlined,
+                  title: '尚未添加视频资源',
                 ),
               ),
             for (final resource in _resources) ...[
@@ -357,21 +338,57 @@ class _AdminResourceCard extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      resource.active ? '已启用 · 点击编辑' : '已停用 · 点击编辑',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: resource.active
-                            ? AppColors.textSecondary
-                            : AppColors.textTertiary,
-                      ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                resource.active
+                                    ? Icons.check_circle_outline
+                                    : Icons.videocam_off_outlined,
+                                size: 14,
+                                color: AppColors.textPrimary,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                resource.active ? '已启用' : '已停用',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '点击编辑',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
           ),
+          const SizedBox(width: 16),
           Switch(
             value: resource.active,
             onChanged: busy ? null : onActiveChanged,

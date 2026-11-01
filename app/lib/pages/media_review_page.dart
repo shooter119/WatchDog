@@ -543,7 +543,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               Icon(
                 _media.isVideo ? Icons.videocam_rounded : Icons.photo_rounded,
                 size: 18,
-                color: AppColors.voice,
+                color: AppColors.textSecondary,
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -554,21 +554,66 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               ),
               if (_submitted) ...[
                 const SizedBox(width: 8),
-                Icon(
-                  Icons.check_circle_rounded,
-                  size: 16,
-                  color: AppColors.online,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '已写入警情',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    '已写入警情',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
+              ] else if (_media.incidentId.isEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.link_off,
+                        size: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '未关联',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -594,7 +639,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             _media.sourcePath.isEmpty
                 ? '旧资料没有无水印母版，本次只能保存带水印版；保存成功后将从本机记录中移除'
                 : '拍摄文件仅用于本次核对；保存成功后将从 App 清理，手机相册保留带水印版和无水印版',
-            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
           ),
         ],
       ),
@@ -626,7 +671,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
           Text(
             '识别在本机完成，不上传音频',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+            style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
           ),
           const SizedBox(height: 6),
           TextButton.icon(
@@ -656,9 +701,9 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               Padding(
                 padding: EdgeInsets.only(top: 2),
                 child: Icon(
-                  Icons.error_outline_rounded,
+                  Icons.error,
                   size: 18,
-                  color: AppColors.timeout,
+                  color: AppColors.textPrimary,
                 ),
               ),
               const SizedBox(width: 6),
@@ -736,7 +781,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
-              child: FilledButton.tonalIcon(
+              child: FilledButton.icon(
                 onPressed: _busy || _deriving ? null : _confirmAndSubmit,
                 icon: const Icon(Icons.fact_check_outlined, size: 18),
                 label: const Text('核对无误，写入警情'),
@@ -746,14 +791,14 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
             const SizedBox(height: 8),
             Text(
               '关联警情后可在这里核对并写入；当前口述只会保存在本机草稿。',
-              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ],
           if (segments.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
               '按住片段可删除误识别内容，删除后可撤销',
-              style: TextStyle(fontSize: 11, color: AppColors.textTertiary),
+              style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
             ),
             const SizedBox(height: 6),
             Wrap(
@@ -779,7 +824,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
                       child: Text(
                         '${_formatOffset(segment.startMs)}  ${segment.text}',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 12,
                           color: AppColors.textSecondary,
                         ),
                       ),
@@ -851,7 +896,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     final enabled = !_busy && !_deriving;
     final saveAndShare = FilledButton.icon(
       key: const Key('review-save-share'),
-      style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+      style: FilledButton.styleFrom(minimumSize: const Size(0, 56)),
       onPressed: enabled ? _saveAndShare : null,
       icon: _busy
           ? const SizedBox(
@@ -867,7 +912,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     );
     final saveOnly = OutlinedButton.icon(
       key: const Key('review-save-only'),
-      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 52)),
       onPressed: enabled ? _saveOnly : null,
       icon: const Icon(Icons.save_alt_rounded, size: 18),
       label: const Text('仅保存'),
@@ -949,7 +994,7 @@ class _PreviewChip extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: Colors.white),
           const SizedBox(width: 4),
-          Text(text, style: const TextStyle(color: Colors.white, fontSize: 11)),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 12)),
         ],
       ),
     );

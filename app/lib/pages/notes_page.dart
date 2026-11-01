@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 
 /// 火场日志页：单列时间线瀑布流，展示消防员用语音/手动记录的火场随手记，
@@ -102,13 +103,15 @@ class _NotesPageState extends State<NotesPage> {
         key: const Key('notes-manual-log-fab'),
         onPressed: () => _openEditor(null),
         tooltip: '手动记录日志',
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.voice,
+        backgroundColor: AppColors.actionPrimary,
+        foregroundColor: AppColors.onPrimary,
         elevation: 3,
         focusElevation: 4,
         hoverElevation: 4,
         highlightElevation: 2,
-        shape: CircleBorder(side: BorderSide(color: AppColors.border)),
+        shape: CircleBorder(
+          side: BorderSide(color: AppColors.surface, width: 2),
+        ),
         child: const Icon(Icons.add_rounded, size: 30),
       ),
     );
@@ -125,8 +128,10 @@ class _NotesPageState extends State<NotesPage> {
 
   /// 分类筛选 chips（全部 + 6 类）
   Widget _buildFilterChips() {
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final barHeight = (48.0 * textScale).clamp(48.0, 72.0);
     return SizedBox(
-      height: AppSpacing.s10,
+      height: barHeight,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
@@ -134,31 +139,36 @@ class _NotesPageState extends State<NotesPage> {
           for (final c in ['全部', ...NoteCategory.all])
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.s2),
-              child: FilterChip(
-                label: Text(c),
-                selected: _filter == c,
-                onSelected: (_) => setState(() => _filter = c),
-                showCheckmark: false,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s3,
-                  vertical: AppSpacing.s2,
-                ),
-                labelPadding: EdgeInsets.zero,
-                selectedColor: AppColors.actionPrimary,
-                backgroundColor: AppColors.surface,
-                surfaceTintColor: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-                labelStyle: AppTextStyles.label.copyWith(
-                  color: _filter == c
-                      ? AppColors.onPrimary
-                      : AppColors.textPrimary,
-                ),
-                side: BorderSide(
-                  color: _filter == c
-                      ? AppColors.actionPrimary
-                      : AppColors.border,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: FilterChip(
+                  label: Text(c),
+                  selected: _filter == c,
+                  onSelected: (_) => setState(() => _filter = c),
+                  showCheckmark: false,
+                  materialTapTargetSize: MaterialTapTargetSize.padded,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s3,
+                    vertical: AppSpacing.s2,
+                  ),
+                  labelPadding: EdgeInsets.zero,
+                  selectedColor: AppColors.actionPrimary,
+                  backgroundColor: AppColors.surface,
+                  surfaceTintColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                  labelStyle: AppTextStyles.label.copyWith(
+                    fontSize: 14,
+                    color: _filter == c
+                        ? AppColors.onPrimary
+                        : AppColors.textPrimary,
+                  ),
+                  side: BorderSide(
+                    color: _filter == c
+                        ? AppColors.actionPrimary
+                        : AppColors.border,
+                  ),
                 ),
               ),
             ),
@@ -315,7 +325,7 @@ class _NotesPageState extends State<NotesPage> {
                         icon: const Icon(Icons.delete_outline, size: 18),
                         label: const Text('删除这条日志'),
                         style: TextButton.styleFrom(
-                          foregroundColor: AppColors.alarm,
+                          foregroundColor: AppColors.textSecondary,
                           minimumSize: const Size(0, 48),
                         ),
                       ),
@@ -354,25 +364,15 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _delete(Note note) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除日志'),
-        content: Text('确认删除这条日志？\n${note.text}'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '删除日志',
+      message: '确认删除这条日志？\n${note.text}',
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     try {
       await widget.controller.deleteNote(note.id);
       if (mounted) _toast('已删除');
@@ -383,11 +383,7 @@ class _NotesPageState extends State<NotesPage> {
 
   void _toast(String msg, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: error ? AppColors.alarm : null,
-        duration: const Duration(seconds: 2),
-      ),
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
     );
   }
 
@@ -453,21 +449,27 @@ class _TimelineNoteCard extends StatelessWidget {
             child: Column(
               children: [
                 Container(
-                  width: AppSpacing.s3,
-                  height: AppSpacing.s3,
+                  width: 14,
+                  height: 14,
                   margin: const EdgeInsets.only(top: AppSpacing.s4),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: color,
-                    border: Border.all(color: AppColors.surface, width: 2),
+                    color: AppColors.surface,
+                    border: Border.all(color: color, width: 2.5),
+                  ),
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                    ),
                   ),
                 ),
                 if (!isLast)
                   Expanded(
-                    child: Container(
-                      width: 2,
-                      color: color.withValues(alpha: 0.25),
-                    ),
+                    child: Container(width: 2.5, color: AppColors.border),
                   ),
               ],
             ),

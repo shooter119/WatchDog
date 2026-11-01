@@ -179,16 +179,12 @@ class _StatsPageState extends State<StatsPage> {
                       ),
                     ),
                     if (people.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.s10,
-                        ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: AppSpacing.s10),
                         child: Center(
-                          child: Text(
-                            '所选范围内暂无进出记录',
-                            style: AppTextStyles.bodyMd.copyWith(
-                              color: AppColors.textTertiary,
-                            ),
+                          child: AppEmptyState(
+                            icon: Icons.bar_chart_outlined,
+                            title: '所选范围内暂无进出记录',
                           ),
                         ),
                       )
@@ -215,34 +211,48 @@ class _StatsPageState extends State<StatsPage> {
         horizontal: AppSpacing.s4,
         vertical: AppSpacing.s1,
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<String>(
+          segments: [
             for (final r in _ranges)
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.s2),
-                child: ChoiceChip(
-                  label: Text(r),
-                  selected: _range == r,
-                  onSelected: (_) => setState(() => _range = r),
-                  showCheckmark: false,
-                  selectedColor: AppColors.actionPrimary,
-                  labelStyle: AppTextStyles.label.copyWith(
-                    fontWeight: _range == r ? FontWeight.w800 : FontWeight.w600,
-                    color: _range == r
-                        ? AppColors.heroOnDark
-                        : AppColors.textSecondary,
-                  ),
-                  backgroundColor: AppColors.surface,
-                  side: BorderSide(
-                    color: _range == r
-                        ? AppColors.actionPrimary
-                        : AppColors.border,
-                  ),
-                ),
-              ),
+              ButtonSegment<String>(value: r, label: Text(r)),
           ],
+          selected: {_range},
+          onSelectionChanged: (newSelection) {
+            if (newSelection.isNotEmpty) {
+              setState(() => _range = newSelection.first);
+            }
+          },
+          showSelectedIcon: false,
+          style: ButtonStyle(
+            minimumSize: const WidgetStatePropertyAll<Size>(Size(0, 48)),
+            backgroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return AppColors.actionPrimary;
+              }
+              return AppColors.surface;
+            }),
+            foregroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return AppColors.onPrimary;
+              }
+              return AppColors.textSecondary;
+            }),
+            textStyle: WidgetStateProperty.resolveWith((states) {
+              return AppTextStyles.label.copyWith(
+                fontWeight: states.contains(WidgetState.selected)
+                    ? FontWeight.w800
+                    : FontWeight.w600,
+              );
+            }),
+            side: WidgetStatePropertyAll(BorderSide(color: AppColors.border)),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -255,7 +265,7 @@ class _StatsPageState extends State<StatsPage> {
         MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
     final cards = [
       _SummaryCard(
-        icon: Icons.fire_extinguisher,
+        icon: Icons.fire_extinguisher_outlined,
         color: AppColors.textPrimary,
         label: '当前在场',
         value: '$activeCount 人',
@@ -270,7 +280,7 @@ class _StatsPageState extends State<StatsPage> {
       ),
       _SummaryCard(
         icon: Icons.timer_outlined,
-        color: AppColors.voice,
+        color: AppColors.textSecondary,
         label: '$_range累计',
         value: _fmtDuration(totalMs),
         compact: compact,
@@ -324,6 +334,9 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
+      color: AppColors.surfaceSubtle,
+      side: BorderSide(color: AppColors.border, width: 1),
+      radius: AppRadius.md,
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s3,
         vertical: AppSpacing.s3,
@@ -333,15 +346,30 @@ class _SummaryCard extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: color),
           const SizedBox(height: AppSpacing.s2),
-          Text(
-            value,
-            maxLines: compact ? null : 1,
-            overflow: compact ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: AppTextStyles.h2.copyWith(
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
+          Builder(
+            builder: (context) {
+              final text = Text(
+                value,
+                maxLines: compact ? null : 1,
+                overflow: compact
+                    ? TextOverflow.visible
+                    : TextOverflow.ellipsis,
+                style: AppTextStyles.h2.copyWith(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              );
+              // 纵向（compact）布局允许换行，不缩字；横排三卡才按宽度适配
+              return compact
+                  ? text
+                  : FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: text,
+                    );
+            },
           ),
           const SizedBox(height: AppSpacing.s1),
           Text(
@@ -375,7 +403,6 @@ class _PersonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isTop = rank <= 3;
     final rankColor = switch (rank) {
       1 => AppColors.rankGold,
       2 => AppColors.rankSilver,
@@ -399,14 +426,17 @@ class _PersonRow extends StatelessWidget {
               height: 28,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: rankColor.withValues(alpha: isTop ? 0.18 : 0.08),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                color: rankColor,
               ),
               child: Text(
                 '$rank',
                 style: AppTextStyles.label.copyWith(
                   fontWeight: FontWeight.w800,
-                  color: rankColor,
+                  // 实底徽章按底色亮度选深/浅字，保证 ≥4.5:1
+                  color: rankColor.computeLuminance() > 0.18
+                      ? AppColors.heroBackground
+                      : AppColors.onStatus,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),

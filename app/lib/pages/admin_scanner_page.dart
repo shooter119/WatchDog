@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../api/api_client.dart';
@@ -190,54 +191,69 @@ class _ScannerState extends State<_Scanner> with WidgetsBindingObserver {
         appBar: AppBar(title: const Text('扫一扫')),
         body: _finished
             ? const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    '已确认网页登录\n请回到发起二维码的浏览器继续',
-                    textAlign: TextAlign.center,
-                  ),
+                child: AppEmptyState(
+                  icon: Icons.check_circle_outline,
+                  title: '已确认网页登录',
+                  hint: '请回到发起二维码的浏览器继续',
                 ),
               )
             : _code == null
             ? Column(
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
                     child: Text(
                       '在电脑打开管理后台\nhttps://fireman119.xyz/admin/\n扫描登录二维码，有效期 2 分钟',
                       textAlign: TextAlign.center,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.4,
+                      ),
                     ),
                   ),
                   Expanded(
-                    child:
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
                         widget.scannerBuilder?.call(
-                          (value) => unawaited(_detectedValue(value)),
-                        ) ??
-                        MobileScanner(
-                          controller: _camera,
-                          onDetect: _detect,
-                          errorBuilder: (context, error) => Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text('无法使用相机，请检查相机权限或关闭其它相机页面'),
-                                  const SizedBox(height: 12),
-                                  OutlinedButton(
-                                    onPressed: ScreenOn.openAppSettings,
-                                    child: const Text('打开系统设置'),
+                              (value) => unawaited(_detectedValue(value)),
+                            ) ??
+                            MobileScanner(
+                              controller: _camera,
+                              onDetect: _detect,
+                              errorBuilder: (context, error) => Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Text('无法使用相机，请检查相机权限或关闭其它相机页面'),
+                                      const SizedBox(height: 12),
+                                      OutlinedButton(
+                                        onPressed: ScreenOn.openAppSettings,
+                                        style: OutlinedButton.styleFrom(
+                                          minimumSize: const Size(48, 48),
+                                        ),
+                                        child: const Text('打开系统设置'),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
-                          ),
+                        const IgnorePointer(
+                          child: CustomPaint(painter: _ScannerOverlayPainter()),
                         ),
+                      ],
+                    ),
                   ),
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Text(_error!),
+                      child: AppNotice(
+                        kind: AppNoticeKind.error,
+                        text: _error!,
+                      ),
                     ),
                 ],
               )
@@ -253,24 +269,100 @@ class _ScannerState extends State<_Scanner> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  Text(
-                    '姓名：${member.name}\n消防单位：${member.unitName}\n后台角色：${member.roleLabel}',
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '姓名：',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                            TextSpan(
+                              text: member.name,
+                              style: AppTextStyles.bodyMd.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.s2),
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '消防单位：',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                            TextSpan(
+                              text: member.unitName,
+                              style: AppTextStyles.bodyMd.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.s2),
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '后台角色：',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textTertiary,
+                              ),
+                            ),
+                            TextSpan(
+                              text: member.roleLabel,
+                              style: AppTextStyles.bodyMd.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 24),
-                  const Text('仅在本人正在使用的浏览器发起登录时确认。确认后仅发起该二维码的浏览器获得后台会话。'),
+                  Text(
+                    '仅在本人正在使用的浏览器发起登录时确认。确认后仅发起该二维码的浏览器获得后台会话。',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.4,
+                    ),
+                  ),
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(_error!),
+                      child: AppNotice(
+                        kind: AppNoticeKind.error,
+                        text: _error!,
+                      ),
                     ),
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: _busy ? null : _submit,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                    ),
                     child: const Text('确认登录'),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
                     onPressed: _busy ? null : () => _submit(cancel: true),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                    ),
                     child: const Text('取消登录'),
                   ),
                   if (_busy)
@@ -283,4 +375,77 @@ class _ScannerState extends State<_Scanner> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+class _ScannerOverlayPainter extends CustomPainter {
+  const _ScannerOverlayPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final scanSize = math.min(size.width, size.height) * 0.68;
+    final left = (size.width - scanSize) / 2;
+    final top = (size.height - scanSize) / 2;
+    final rect = Rect.fromLTWH(left, top, scanSize, scanSize);
+
+    // Darkened surroundings
+    final backgroundPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.52)
+      ..style = PaintingStyle.fill;
+
+    final backgroundPath = Path()
+      ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
+      ..addRect(rect)
+      ..fillType = PathFillType.evenOdd;
+
+    canvas.drawPath(backgroundPath, backgroundPaint);
+
+    // Four corner brackets (white 3px)
+    final bracketPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final cornerLength = math.min(28.0, scanSize * 0.16);
+
+    // Top-left
+    canvas.drawPath(
+      Path()
+        ..moveTo(rect.left, rect.top + cornerLength)
+        ..lineTo(rect.left, rect.top)
+        ..lineTo(rect.left + cornerLength, rect.top),
+      bracketPaint,
+    );
+
+    // Top-right
+    canvas.drawPath(
+      Path()
+        ..moveTo(rect.right - cornerLength, rect.top)
+        ..lineTo(rect.right, rect.top)
+        ..lineTo(rect.right, rect.top + cornerLength),
+      bracketPaint,
+    );
+
+    // Bottom-left
+    canvas.drawPath(
+      Path()
+        ..moveTo(rect.left, rect.bottom - cornerLength)
+        ..lineTo(rect.left, rect.bottom)
+        ..lineTo(rect.left + cornerLength, rect.bottom),
+      bracketPaint,
+    );
+
+    // Bottom-right
+    canvas.drawPath(
+      Path()
+        ..moveTo(rect.right - cornerLength, rect.bottom)
+        ..lineTo(rect.right, rect.bottom)
+        ..lineTo(rect.right, rect.bottom - cornerLength),
+      bracketPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

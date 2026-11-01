@@ -12,6 +12,7 @@ import '../services/camera_bridge.dart';
 import '../services/settings.dart';
 import '../services/watermark_settings.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 import 'media_gallery_page.dart';
 import 'media_review_page.dart';
@@ -543,10 +544,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         content: const Text('原始母版仍保留在本机。可先重试生成，或放弃后重新拍摄。'),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
             onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.discard),
             child: const Text('放弃母版'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
             onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.retry),
             child: const Text('重试生成'),
           ),
@@ -707,10 +710,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           content: const Text('当前原始母版仍保留在本机。继续生成会返回处理流程，退出并删除会放弃这份母版。'),
           actions: [
             TextButton(
+              style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
               onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.discard),
               child: const Text('退出并删除'),
             ),
             FilledButton(
+              style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
               onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.retry),
               child: const Text('继续生成'),
             ),
@@ -731,24 +736,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
     if (!mounted) return false;
     if (!_recording && !_starting) return true;
-    final leave = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('正在录像'),
-        content: const Text('退出会结束并保存这段视频。确定退出吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('继续录制'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('结束并退出'),
-          ),
-        ],
-      ),
+    final leave = await showAppConfirmDialog(
+      context,
+      title: '正在录像',
+      message: '退出会结束并保存这段视频。确定退出吗？',
+      cancelLabel: '继续录制',
+      confirmLabel: '结束并退出',
     );
-    if (leave != true) return false;
+    if (!leave) return false;
     _saveWithoutReview = true;
     await _stopRecording();
     // 等待 stopped 事件完成入库，最多 3 秒
@@ -825,20 +820,32 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             : Column(
                 key: const Key('camera-portrait-layout'),
                 children: [
-                  const Expanded(flex: 2, child: SizedBox()),
-                  AspectRatio(
-                    key: const Key('camera-portrait-preview'),
-                    aspectRatio: 16 / 9,
-                    child: _preview(creationParams),
+// 取景框在上方区域垂直居中，顶栏不压画面，控制区固定在底部 280dp
+                  _topBarContent(),
+                  Expanded(
+                    child: Center(
+                      child: AspectRatio(
+                        key: const Key('camera-portrait-preview'),
+                        aspectRatio: 16 / 9,
+                        child: _preview(creationParams, withTopBar: false),
+                      ),
+                    ),
                   ),
-                  Expanded(flex: 3, child: _bottomBar()),
+                  SizedBox(
+                    key: const Key('camera-portrait-controls-area'),
+                    height: 280,
+                    child: _bottomBar(),
+                  ),
                 ],
               ),
       ),
     );
   }
 
-  Widget _preview(Map<String, Object?> creationParams) {
+  Widget _preview(
+    Map<String, Object?> creationParams, {
+    bool withTopBar = true,
+  }) {
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -847,7 +854,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           creationParams: creationParams,
           creationParamsCodec: const StandardMessageCodec(),
         ),
-        _topBar(),
+        if (withTopBar) _topBar(),
       ],
     );
   }
@@ -859,7 +866,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: Colors.white),
+          icon: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
@@ -907,6 +914,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 22),
                 FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                  ),
                   onPressed: () async {
                     final state = await CameraBridge.requestPermissions();
                     if (!mounted) return;
@@ -932,96 +942,108 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Widget _topBar() {
+    return Positioned(top: 0, left: 0, right: 0, child: _topBarContent());
+  }
+
+  Widget _topBarContent() {
     final unlinked = (widget.controller.currentIncident?.id ?? '').isEmpty;
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 12, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: '现场资料',
-                    onPressed:
-                        (_recording ||
-                            _capturing ||
-                            _processing ||
-                            _starting ||
-                            _stateUnknown)
-                        ? null
-                        : _openGallery,
-                    icon: const Icon(
-                      Icons.photo_library_outlined,
-                      color: Colors.white,
-                    ),
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 12, 0),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: '现场资料',
+                  onPressed:
+                      (_recording ||
+                          _capturing ||
+                          _processing ||
+                          _starting ||
+                          _stateUnknown)
+                      ? null
+                      : _openGallery,
+                  icon: const Icon(
+                    Icons.photo_library_outlined,
+                    color: Colors.white,
+                    size: 24,
                   ),
-                  if (_hasPermissionBadges) ...[
-                    const SizedBox(width: 4),
-                    Flexible(child: _permissionBadges()),
-                  ],
-                  const Spacer(),
-                  _roundIcon(
-                    icon: Icons.close_rounded,
-                    tooltip: '关闭',
-                    onTap: () => _handleClose(context),
-                  ),
+                ),
+                if (_hasPermissionBadges) ...[
+                  const SizedBox(width: 4),
+                  Flexible(child: _permissionBadges()),
                 ],
+                const Spacer(),
+                _roundIcon(
+                  icon: Icons.close_rounded,
+                  tooltip: '关闭',
+                  onTap: () => _handleClose(context),
+                ),
+              ],
+            ),
+          ),
+          if (!unlinked)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Align(
+                alignment:
+                    _captureOrientation == CameraCaptureOrientation.portrait
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: _incidentChip(unlinked),
               ),
             ),
-            if (!unlinked)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: Align(
-                  alignment:
-                      _captureOrientation == CameraCaptureOrientation.portrait
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: _incidentChip(unlinked),
+          if (_recording)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
                 ),
-              ),
-            if (_recording)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(
                     color: _elapsed.inSeconds >= 50
-                        ? const Color(0xFFE65100)
-                        : const Color(0xCCD32029),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.fiber_manual_record,
-                        size: 12,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$_timerText · 剩 ${(60 - _elapsed.inSeconds).clamp(0, 60)}s',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
+                        ? const Color(0xFFFF9500)
+                        : Colors.white24,
                   ),
                 ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.fiber_manual_record,
+                      size: 10,
+                      color: Color(0xFFD32029),
+                    ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      'REC',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$_timerText · 剩 ${(60 - _elapsed.inSeconds).clamp(0, 60)}s',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -1096,30 +1118,39 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   Widget _badge(String label, IconData icon, VoidCallback? onTap) {
     return Padding(
-      padding: const EdgeInsets.only(left: 6),
+      padding: const EdgeInsets.only(left: 6, bottom: 6),
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white24),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 13, color: Colors.white70),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Container(
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white38),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: Colors.white),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1179,6 +1210,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   children: [
                     if (_stateUnknown)
                       TextButton(
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                        ),
                         onPressed: _reconcileRecording,
                         child: const Text('重试确认'),
                       ),
@@ -1188,7 +1222,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                           minimumSize: const Size(0, 48),
                         ),
                         onPressed: _retryPendingRender,
-                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        icon: const Icon(Icons.refresh_rounded, size: 20),
                         label: const Text('重新生成水印版'),
                       ),
                     if (!vertical) _modeSwitch(),
@@ -1318,7 +1352,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   Icon(
                     icon,
                     size: 16,
-                    color: selected ? AppColors.voice : Colors.white54,
+                    color: selected ? Colors.white : Colors.white54,
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -1394,7 +1428,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             const SizedBox(height: 8),
             Text(
               video ? (active ? '点击停止' : '点击开始录像') : '点击拍照',
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ],
         ),

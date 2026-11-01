@@ -441,7 +441,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
       padding: EdgeInsets.zero,
       radius: AppRadius.md,
       side: BorderSide(
-        color: selected ? AppColors.voice : AppColors.border,
+        color: selected ? AppColors.actionPrimary : AppColors.border,
         width: selected ? 1.5 : 1,
       ),
       child: ConstrainedBox(
@@ -454,7 +454,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
             horizontal: AppSpacing.s4,
             vertical: AppSpacing.s2,
           ),
-          activeColor: AppColors.voice,
+          activeColor: AppColors.actionPrimary,
           title: Text(
             title,
             style: TextStyle(
@@ -553,8 +553,8 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                 ),
               ),
         value: value,
-        activeThumbColor: AppColors.textPrimary,
-        activeTrackColor: AppColors.voice,
+        activeThumbColor: AppColors.onPrimary,
+        activeTrackColor: AppColors.actionPrimary,
         inactiveThumbColor: AppColors.textSecondary,
         inactiveTrackColor: AppColors.surface,
         trackOutlineColor: WidgetStatePropertyAll(AppColors.textSecondary),

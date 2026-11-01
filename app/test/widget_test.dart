@@ -606,6 +606,21 @@ void main() {
       );
       expect(find.text('已超时'), findsOneWidget);
     });
+
+    testWidgets('超时且 showOvertime 为 true 时显示超时时长', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CountdownText(
+              ms: -65000,
+              showOvertime: true,
+              timeoutText: '已超时',
+            ),
+          ),
+        ),
+      );
+      expect(find.text('超时 01:05'), findsOneWidget);
+    });
   });
 
   group('BoardPage 概览横幅', () {
@@ -675,11 +690,14 @@ void main() {
     testWidgets('超时卡片使用单层边框且时间标签在同一行', (tester) async {
       await _pumpBoard(tester, [_entry(name: '赵磊', remainingMin: -1)]);
       expect(find.byType(PulseGlow), findsNothing);
-      final remaining = tester.getRect(find.text('剩余时间'));
+      // L1：超时卡的“剩余时间”标签改为“已超时”
+      final remaining = tester.getRect(find.text('已超时').last);
       final elapsed = tester.getRect(find.text('持续时长'));
       expect(remaining.top, closeTo(elapsed.top, 0.1));
       final countdown = find.byType(CountdownText).last;
       expect(tester.getTopLeft(countdown).dy, greaterThan(remaining.bottom));
+      // L1 视觉分级：看板超时卡片标签为“已超时”，数值显示 +mm:ss 超出时长
+      expect(find.text('+01:00'), findsOneWidget);
       expect(find.text('更新压力'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -2380,11 +2398,18 @@ void main() {
         ),
       );
       await tester.pump();
-      final allRange = find.widgetWithText(ChoiceChip, '全部');
+      // 视觉调整：时间范围选择由 ChoiceChip 改为全宽 SegmentedButton（每段 48dp）
+      final allRange = find.text('全部');
       await tester.ensureVisible(allRange);
       await tester.tap(allRange);
       await tester.pump();
       expect(find.text('13 小时'), findsOneWidget);
+      // 视觉调整：汇总数字放大到 32sp 后，2 倍字号下排名行移出首屏，需先滚动到可见
+      await tester.scrollUntilVisible(
+        find.text('消防救援一号班长'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('消防救援一号班长'), findsOneWidget);
       expect(find.textContaining('1 次 · 13 小时'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -3214,7 +3239,8 @@ void main() {
       expect(navIcons.every((icon) => icon.size == 28), isTrue);
       expect(
         tester.widget<Text>(find.text('日志')).style?.fontWeight,
-        FontWeight.w400,
+        // 精修 Q4：未选中页签文字统一 12sp/w600（选中 w800），强光下更易读。
+        FontWeight.w600,
       );
     });
 
@@ -3488,7 +3514,8 @@ void main() {
   });
 
   group('连接状态（平滑阈值）', () {
-    testWidgets('ConnectionStatus 两态渲染：已连接绿 / 已中断红并可重试', (tester) async {
+    // 视觉规范调整：已中断图标色调整为 textPrimary（非生命安全告警），不再使用 alarm 红
+    testWidgets('ConnectionStatus 两态渲染：已连接绿 / 已中断中性色并可重试', (tester) async {
       var retried = 0;
       Future<void> pump(bool connected) => tester.pumpWidget(
         MaterialApp(
@@ -3579,6 +3606,51 @@ void main() {
       expect(find.text('同步中'), findsNothing);
       await tester.tap(find.byType(ConnectionStatus));
       expect(retries, 0);
+    });
+
+    testWidgets('AppBanner 渲染 danger / offline / warning 规范样式', (tester) async {
+      var retried = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: Column(
+              children: [
+                const AppBanner(
+                  key: Key('banner-danger'),
+                  text: '生命安全告警',
+                  kind: AppBannerKind.danger,
+                ),
+                const AppBanner(
+                  key: Key('banner-timeout'),
+                  text: '超时告警',
+                  kind: AppBannerKind.danger,
+                  timeout: true,
+                ),
+                AppBanner(
+                  key: const Key('banner-offline'),
+                  text: '网络已中断',
+                  kind: AppBannerKind.offline,
+                  actionLabel: '重试',
+                  onAction: () => retried++,
+                ),
+                const AppBanner(
+                  key: Key('banner-warning'),
+                  text: '报警音已关闭',
+                  kind: AppBannerKind.warning,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(find.text('生命安全告警'), findsOneWidget);
+      expect(find.text('超时告警'), findsOneWidget);
+      expect(find.text('网络已中断'), findsOneWidget);
+      expect(find.text('报警音已关闭'), findsOneWidget);
+      expect(find.text('重试'), findsOneWidget);
+      await tester.tap(find.text('重试'));
+      expect(retried, 1);
     });
 
     testWidgets('VoiceButton 尊重系统减少动效偏好', (tester) async {

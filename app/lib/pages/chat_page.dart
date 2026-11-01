@@ -783,30 +783,65 @@ class ChatPageState extends State<ChatPage> {
           _buildHeader(context),
           if (widget.controller.currentIncident?.info.isNotEmpty == true)
             Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.s1),
-              child: TextButton.icon(
-                onPressed: () {
-                  final api = widget.controller.api;
-                  final incident = widget.controller.currentIncident;
-                  if (api != null && incident != null) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => IncidentDetailsPage(
-                          api: api,
-                          incident: incident,
-                          controller: widget.controller,
-                        ),
+              padding: const EdgeInsets.only(
+                left: AppSpacing.s4,
+                right: AppSpacing.s4,
+                bottom: AppSpacing.s2,
+              ),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 48),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(color: AppColors.border, width: 1),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    onTap: () {
+                      final api = widget.controller.api;
+                      final incident = widget.controller.currentIncident;
+                      if (api != null && incident != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => IncidentDetailsPage(
+                              api: api,
+                              incident: incident,
+                              controller: widget.controller,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s4,
+                        vertical: AppSpacing.s2,
                       ),
-                    );
-                  }
-                },
-                icon: const Icon(Icons.info_outline, size: 15),
-                label: Text(
-                  '已结合当前警情资料 · 查看背景',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.actionPrimary,
-                    fontWeight: FontWeight.w600,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color: AppColors.actionPrimary,
+                          ),
+                          const SizedBox(width: AppSpacing.s2),
+                          Flexible(
+                            child: Text(
+                              '已结合当前警情资料 · 查看背景',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.actionPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -883,10 +918,9 @@ class ChatPageState extends State<ChatPage> {
         children: [
           IconButton(
             onPressed: widget.onBack,
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 24),
             tooltip: '返回',
             color: AppColors.textSecondary,
-            visualDensity: VisualDensity.compact,
           ),
           Expanded(
             child: Text(
@@ -902,14 +936,14 @@ class ChatPageState extends State<ChatPage> {
             onPressed: _messages.isEmpty || _sending || _clearing
                 ? null
                 : _confirmClear,
-            icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+            icon: const Icon(Icons.delete_sweep_outlined, size: 24),
             tooltip: '清空问答记录',
             color: AppColors.textTertiary,
           ),
           IconButton(
             onPressed: _showLegacyHistory,
             tooltip: '历史通用对话',
-            icon: const Icon(Icons.history, size: 20),
+            icon: const Icon(Icons.history, size: 24),
             color: AppColors.textTertiary,
           ),
           IconButton(
@@ -919,13 +953,13 @@ class ChatPageState extends State<ChatPage> {
                 : _pickVisionImage,
             icon: _visionBusy
                 ? const SizedBox(
-                    width: 20,
-                    height: 20,
+                    width: 24,
+                    height: 24,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.camera_alt_outlined, size: 21),
+                : const Icon(Icons.camera_alt_outlined, size: 24),
             tooltip: '拍照分析',
-            color: AppColors.voice,
+            color: AppColors.actionPrimary,
           ),
         ],
       ),
@@ -948,17 +982,14 @@ class ChatPageState extends State<ChatPage> {
     return Column(
       children: [
         if (_error != null)
-          Container(
-            width: double.infinity,
-            color: AppColors.alarm.withValues(alpha: 0.08),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s4,
-              vertical: AppSpacing.s2,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.s4,
+              AppSpacing.s2,
+              AppSpacing.s4,
+              0,
             ),
-            child: Text(
-              _error!,
-              style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
-            ),
+            child: AppNotice(kind: AppNoticeKind.error, text: _error!),
           ),
         if (_recording || (_processing && _transcript != null))
           _buildTranscriptPreview(),
@@ -1092,22 +1123,27 @@ class ChatPageState extends State<ChatPage> {
               const SizedBox(height: AppSpacing.s3),
               _VisionCallout(onTap: _pickVisionImage),
               const SizedBox(height: AppSpacing.s2),
-              const _SampleQuestion('气瓶压力下降太快怎么办？', icon: Icons.gas_meter_outlined),
+              const _SampleQuestion(
+                '气瓶压力下降太快怎么办？',
+                icon: Icons.gas_meter_outlined,
+              ),
               const SizedBox(height: AppSpacing.s2),
-              const _SampleQuestion('浓烟中看不清路怎么办？', icon: Icons.visibility_off_outlined),
+              const _SampleQuestion(
+                '浓烟中看不清路怎么办？',
+                icon: Icons.visibility_off_outlined,
+              ),
               const SizedBox(height: AppSpacing.s2),
-              const _SampleQuestion('破拆卷帘门有哪些注意事项？', icon: Icons.blinds_closed_outlined),
+              const _SampleQuestion(
+                '破拆卷帘门有哪些注意事项？',
+                icon: Icons.blinds_closed_outlined,
+              ),
             ],
           ),
         ),
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.s3),
-            child: Text(
-              _error!,
-              textAlign: TextAlign.center,
-              style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
-            ),
+            child: AppNotice(kind: AppNoticeKind.error, text: _error!),
           ),
       ],
     );
@@ -1171,10 +1207,12 @@ class _MessageBubble extends StatelessWidget {
                   : CrossAxisAlignment.start,
               children: [
                 AppCard(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.s4,
-                    vertical: AppSpacing.s3,
-                  ),
+                  padding: isUser
+                      ? const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.s4,
+                          vertical: AppSpacing.s3,
+                        )
+                      : EdgeInsets.zero,
                   color: isUser ? AppColors.actionPrimary : AppColors.surface,
                   side: isUser
                       ? BorderSide(color: AppColors.actionPrimary, width: 1)
@@ -1188,83 +1226,115 @@ class _MessageBubble extends StatelessWidget {
                             color: AppColors.onPrimary,
                           ),
                         )
-                      : MarkdownBody(
-                          data: body,
-                          styleSheet:
-                              MarkdownStyleSheet.fromTheme(
-                                Theme.of(context),
-                              ).copyWith(
-                                p: AppTextStyles.bodyMd.copyWith(
-                                  height: 1.5,
-                                  color: AppColors.textPrimary,
-                                ),
-                                h1: AppTextStyles.h2.copyWith(
-                                  height: 1.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textPrimary,
-                                ),
-                                h2: AppTextStyles.bodyLg.copyWith(
-                                  height: 1.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textPrimary,
-                                ),
-                                h3: AppTextStyles.bodyMd.copyWith(
-                                  height: 1.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
-                                ),
-                                strong: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textPrimary,
-                                ),
-                                em: TextStyle(
-                                  fontStyle: FontStyle.italic,
-                                  color: AppColors.textPrimary,
-                                ),
-                                blockquote: AppTextStyles.bodyMd.copyWith(
-                                  height: 1.5,
-                                  color: AppColors.textSecondary,
-                                ),
-                                blockquoteDecoration: BoxDecoration(
-                                  color: AppColors.surfaceSubtle.withValues(
-                                    alpha: 0.6,
-                                  ),
-                                  border: Border(
-                                    left: BorderSide(
-                                      color: AppColors.border,
-                                      width: 3,
-                                    ),
-                                  ),
-                                ),
-                                listBullet: AppTextStyles.bodyMd.copyWith(
-                                  height: 1.5,
-                                  color: AppColors.textSecondary,
-                                ),
-                                code: AppTextStyles.label.copyWith(
-                                  fontFamily: 'Menlo',
-                                  color: AppColors.textPrimary,
-                                  backgroundColor: AppColors.surfaceSubtle,
-                                ),
-                                codeblockDecoration: BoxDecoration(
-                                  color: AppColors.surfaceSubtle.withValues(
-                                    alpha: 0.7,
-                                  ),
-                                  borderRadius: BorderRadius.circular(
-                                    AppRadius.sm,
-                                  ),
-                                ),
-                                codeblockPadding: const EdgeInsets.symmetric(
-                                  horizontal: AppSpacing.s3,
-                                  vertical: AppSpacing.s2,
-                                ),
+                      : Stack(
+                          children: [
+                            Positioned(
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: 3,
+                              child: Container(color: AppColors.noteInfo),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.s4,
+                                vertical: AppSpacing.s3,
                               ),
+                              child: MarkdownBody(
+                                data: body,
+                                styleSheet:
+                                    MarkdownStyleSheet.fromTheme(
+                                      Theme.of(context),
+                                    ).copyWith(
+                                      p: AppTextStyles.bodyMd.copyWith(
+                                        height: 1.5,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      h1: AppTextStyles.h2.copyWith(
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      h2: AppTextStyles.bodyLg.copyWith(
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      h3: AppTextStyles.bodyMd.copyWith(
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      h4: AppTextStyles.bodyMd.copyWith(
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      h5: AppTextStyles.label.copyWith(
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      h6: AppTextStyles.label.copyWith(
+                                        height: 1.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      strong: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      em: TextStyle(
+                                        fontStyle: FontStyle.italic,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                      blockquote: AppTextStyles.bodyMd.copyWith(
+                                        height: 1.5,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      blockquoteDecoration: BoxDecoration(
+                                        color: AppColors.surfaceSubtle
+                                            .withValues(alpha: 0.6),
+                                        border: Border(
+                                          left: BorderSide(
+                                            color: AppColors.border,
+                                            width: 3,
+                                          ),
+                                        ),
+                                      ),
+                                      listBullet: AppTextStyles.bodyMd.copyWith(
+                                        height: 1.5,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      code: AppTextStyles.label.copyWith(
+                                        fontFamily: 'Menlo',
+                                        color: AppColors.textPrimary,
+                                        backgroundColor:
+                                            AppColors.surfaceSubtle,
+                                      ),
+                                      codeblockDecoration: BoxDecoration(
+                                        color: AppColors.surfaceSubtle
+                                            .withValues(alpha: 0.7),
+                                        borderRadius: BorderRadius.circular(
+                                          AppRadius.sm,
+                                        ),
+                                      ),
+                                      codeblockPadding:
+                                          const EdgeInsets.symmetric(
+                                            horizontal: AppSpacing.s3,
+                                            vertical: AppSpacing.s2,
+                                          ),
+                                    ),
+                              ),
+                            ),
+                          ],
                         ),
                 ),
                 if (followUpLabel != null && onFollowUpTap != null) ...[
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.s2),
                     child: Material(
-                      color: AppColors.voice.withValues(alpha: 0.12),
+                      color: AppColors.actionPrimary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(AppRadius.pill),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -1282,7 +1352,7 @@ class _MessageBubble extends StatelessWidget {
                                 Icon(
                                   Icons.north_east_rounded,
                                   size: 15,
-                                  color: AppColors.voice,
+                                  color: AppColors.actionPrimary,
                                 ),
                                 const SizedBox(width: AppSpacing.s2),
                                 Flexible(
@@ -1320,13 +1390,12 @@ class _MessageBubble extends StatelessWidget {
                               : () => onCopy!(body),
                           icon: const Icon(Icons.copy_rounded),
                           tooltip: '复制',
-                          iconSize: 16,
-                          visualDensity: VisualDensity.compact,
+                          iconSize: 24,
                           constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
+                            minWidth: 48,
+                            minHeight: 48,
                           ),
-                          padding: const EdgeInsets.all(AppSpacing.s1),
+                          padding: const EdgeInsets.all(AppSpacing.s2),
                           color: AppColors.textTertiary,
                         ),
                         const SizedBox(width: AppSpacing.s1),
@@ -1429,10 +1498,10 @@ class _AssistantOptionCard extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: AppColors.voice.withValues(alpha: 0.12),
+                    color: AppColors.actionPrimary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
-                  child: Icon(icon, color: AppColors.voice),
+                  child: Icon(icon, color: AppColors.actionPrimary),
                 ),
                 const SizedBox(width: AppSpacing.s3),
                 Expanded(child: Text(title, style: style)),

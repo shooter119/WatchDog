@@ -722,7 +722,13 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                     onChanged: (v) => setDialog(() => saveCommon = v == true),
                   ),
                   if (validation != null)
-                    Text(validation!, style: TextStyle(color: AppColors.alarm)),
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.s2),
+                      child: AppNotice(
+                        kind: AppNoticeKind.error,
+                        text: validation!,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -809,7 +815,10 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
             ),
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.history, color: AppColors.voice),
+              leading: Icon(
+                Icons.history_outlined,
+                color: AppColors.textSecondary,
+              ),
               title: Text(
                 '继续未完成的导入',
                 style: AppTextStyles.bodyMd.copyWith(
@@ -985,12 +994,10 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                   p['status'] == 'succeeded'
                       ? Icons.check_circle_outline
                       : p['status'] == 'failed'
-                      ? Icons.error_outline
+                      ? Icons.error
                       : Icons.hourglass_empty,
-                  color: p['status'] == 'succeeded'
-                      ? AppColors.safe
-                      : p['status'] == 'failed'
-                      ? AppColors.alarm
+                  color: p['status'] == 'failed'
+                      ? AppColors.textPrimary
                       : AppColors.textSecondary,
                 ),
                 title: Text(
@@ -1010,7 +1017,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                       p['status'].toString(),
                   style: AppTextStyles.caption.copyWith(
                     color: p['status'] == 'failed'
-                        ? AppColors.alarm
+                        ? AppColors.textPrimary
                         : AppColors.textSecondary,
                   ),
                 ),
@@ -1037,6 +1044,19 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       ),
     ],
   );
+
+  List get _conflicts =>
+      (_task?['draft'] as Map?)?['conflicts'] as List? ?? const [];
+
+  bool get _multipleIncidents =>
+      (_task?['draft'] as Map?)?['details']?['multiple_incidents'] == true;
+
+  bool get _canApply =>
+      !_busy &&
+      !(_multipleIncidents && _selectedPage == null) &&
+      !(_conflicts.isNotEmpty && !_reviewed) &&
+      !(_task?['status'] == 'partial' && !_acceptIncomplete);
+
   Widget _confirmation() {
     if (_pendingApply != null) {
       return Column(
@@ -1061,12 +1081,18 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       );
     }
 
-    final conflicts = (_task?['draft'] as Map?)?['conflicts'] as List? ?? [];
-    final multiple =
-        (_task?['draft'] as Map?)?['details']?['multiple_incidents'] == true;
+    final conflicts = _conflicts;
+    final multiple = _multipleIncidents;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (conflicts.isNotEmpty) ...[
+          const AppBanner(
+            kind: AppBannerKind.warning,
+            text: '识别结果存在差异，请在下方逐项核对并勾选确认',
+          ),
+          const SizedBox(height: AppSpacing.s3),
+        ],
         Text(
           '更新目标：${_currentIncident.displayName}',
           style: AppTextStyles.label.copyWith(color: AppColors.textSecondary),
@@ -1208,7 +1234,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
               secondary: IconButton(
                 tooltip: '编辑与匹配',
                 onPressed: () => _editForce(i),
-                icon: const Icon(Icons.edit_outlined, size: 19),
+                icon: const Icon(Icons.edit_outlined, size: 24),
               ),
             ),
           const SizedBox(height: AppSpacing.s1),
@@ -1352,28 +1378,39 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
           onPressed: _busy ? null : _loadDraft,
           child: const Text('刷新差异（重新载入识别草稿）'),
         ),
-        const SizedBox(height: AppSpacing.s2),
-        FilledButton(
-          onPressed:
-              _busy ||
-                  (multiple && _selectedPage == null) ||
-                  (conflicts.isNotEmpty && !_reviewed) ||
-                  (_task?['status'] == 'partial' && !_acceptIncomplete)
-              ? null
-              : _apply,
-          child: Text(
-            _busy
-                ? '正在提交…'
-                : _pendingApply != null
-                ? '重试提交（防重复）'
-                : '确认并更新警情',
-          ),
-        ),
         TextButton(
           onPressed: _busy ? null : _cancelTask,
           child: const Text('取消导入'),
         ),
       ],
+    );
+  }
+
+  Widget? _buildBottomBar() {
+    if (!_ready || _pendingApply != null) return null;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.s4,
+          AppSpacing.s2,
+          AppSpacing.s4,
+          AppSpacing.s3,
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: FilledButton(
+            onPressed: _canApply ? _apply : null,
+            child: Text(
+              _busy
+                  ? '正在提交…'
+                  : _pendingApply != null
+                  ? '重试提交（防重复）'
+                  : '确认并更新警情',
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1398,21 +1435,15 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.s3),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _error!,
-                      style: AppTextStyles.label.copyWith(
-                        color: AppColors.alarm,
-                      ),
-                    ),
-                    if (_error!.contains('权限'))
-                      TextButton(
-                        onPressed: StorageService.openAppSettings,
-                        child: const Text('打开系统设置'),
-                      ),
-                  ],
+                child: AppNotice(
+                  kind: AppNoticeKind.error,
+                  text: _error!,
+                  action: _error!.contains('权限')
+                      ? TextButton(
+                          onPressed: StorageService.openAppSettings,
+                          child: const Text('打开系统设置'),
+                        )
+                      : null,
                 ),
               ),
             if (_task == null)
@@ -1424,6 +1455,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
           ],
         ),
       ),
+      bottomNavigationBar: _buildBottomBar(),
     ),
   );
 }

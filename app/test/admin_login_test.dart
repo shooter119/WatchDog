@@ -10,6 +10,7 @@ import 'package:watchdog/pages/admin_scanner_page.dart';
 import 'package:watchdog/pages/settings_page.dart';
 import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/state/app_controller.dart';
+import 'package:watchdog/theme/app_widgets.dart';
 
 const capability = AdminCapability(
   memberId: 'm',
@@ -216,7 +217,7 @@ void main() {
     controller.dispose();
     api.dispose();
   });
-  testWidgets('单位manager仍显示管理员，普通成员显示认证用户', (tester) async {
+  testWidgets('单位manager仍显示管理员，普通成员显示队员', (tester) async {
     await Settings.setRealName('合成成员');
     await Settings.setUnitId('u');
     await Settings.setUnitName('合成消防单位');
@@ -241,7 +242,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('认证用户'), findsOneWidget);
+    // 视觉规范调整：普通成员角色标签由“认证用户”更新为“队员”
+    expect(find.text('队员'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
@@ -278,7 +280,7 @@ void main() {
     controller.dispose();
     api.dispose();
   });
-  testWidgets('身份Hero使用黑色卡面并保留姓名单位等级层级', (tester) async {
+  testWidgets('身份Hero使用纯色卡面并保留姓名单位等级层级', (tester) async {
     await Settings.setRealName('合成成员');
     await Settings.setUnitId('u');
     await Settings.setUnitName('合成消防单位');
@@ -297,12 +299,14 @@ void main() {
       find.byKey(const Key('identity-hero')),
     );
     final decoration = hero.decoration! as BoxDecoration;
-    final gradient = decoration.gradient! as LinearGradient;
-    expect(gradient.colors.first.computeLuminance(), lessThan(0.02));
+    // 视觉规范调整：卡面由渐变改为纯色 AppColors.heroBackground 及 1px AppColors.heroOnDarkBorder 边框
+    expect(decoration.color, AppColors.heroBackground);
+    expect(decoration.border, Border.all(color: AppColors.heroOnDarkBorder));
     expect(find.text('我的身份'), findsNothing);
     expect(find.text('合成成员'), findsOneWidget);
     expect(find.text('合成消防单位'), findsOneWidget);
-    expect(find.text('认证用户'), findsOneWidget);
+    // 视觉规范调整：普通成员角色标签由“认证用户”更新为“队员”
+    expect(find.text('队员'), findsOneWidget);
     expect(find.text('用户等级'), findsNothing);
     expect(tester.takeException(), isNull);
 

@@ -210,7 +210,9 @@ void main() {
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
     expect(adminApi.lastActive, false);
-    expect(find.text('已停用 · 点击编辑'), findsOneWidget);
+    // 视觉调整：启用状态改为中性胶囊，“点击编辑”单独显示
+    expect(find.text('已停用'), findsOneWidget);
+    expect(find.text('点击编辑'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     adminController.dispose();
@@ -232,7 +234,9 @@ void main() {
     var dot = tester.widget<Container>(
       find.byKey(const ValueKey('video-resource-status-camera-1')),
     );
-    expect((dot.decoration! as BoxDecoration).color, AppColors.online);
+    // Batch 2: 状态点替换为中性药丸胶囊（AppColors.textSecondary）与在线文本图标
+    expect((dot.decoration! as BoxDecoration).color, AppColors.textSecondary);
+    expect(find.text('在线'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
@@ -252,7 +256,9 @@ void main() {
     dot = tester.widget<Container>(
       find.byKey(const ValueKey('video-resource-status-camera-1')),
     );
-    expect((dot.decoration! as BoxDecoration).color, AppColors.alarm);
+    // Batch 2: 离线状态为中性药丸胶囊（AppColors.textSecondary）与离线文本图标
+    expect((dot.decoration! as BoxDecoration).color, AppColors.textSecondary);
+    expect(find.text('离线·不可播放'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     offlineController.dispose();

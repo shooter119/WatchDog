@@ -283,46 +283,158 @@ void main() {
       expect(find.byKey(const Key('camera-portrait-layout')), findsOneWidget);
       expect(find.byKey(const Key('camera-landscape-layout')), findsNothing);
       final preview = find.byKey(const Key('camera-portrait-preview'));
-      final size = tester.getSize(preview);
+      final previewRect = tester.getRect(preview);
+      final size = previewRect.size;
       expect(size.width / size.height, closeTo(16 / 9, 0.001));
       expect(tester.getTopLeft(preview).dy, greaterThan(100));
       final incidentChip = tester.getRect(
         find.byKey(const Key('camera-incident-chip')),
       );
+      final screenWidth = tester
+          .getRect(find.byKey(const Key('camera-portrait-layout')))
+          .width;
       expect(
         incidentChip.right,
-        closeTo(size.width - 12, 1),
+        closeTo(screenWidth - 12, 1),
         reason: '竖屏警情标签应靠右，避开左下角水印',
       );
+      final galleryButton = tester.getRect(find.byTooltip('现场资料'));
+      final closeButton = tester.getRect(find.byTooltip('关闭'));
       expect(
-        tester.getRect(find.byTooltip('关闭')).right,
-        closeTo(size.width - 12, 1),
+        closeButton.right,
+        closeTo(screenWidth - 12, 1),
         reason: '关闭按钮应靠近右侧，方便右手操作',
       );
       expect(
-        tester.getRect(find.byTooltip('现场资料')).right,
-        lessThan(tester.getRect(find.byTooltip('关闭')).left),
+        galleryButton.right,
+        lessThan(closeButton.left),
+        reason: '现场资料入口在关闭按钮左侧',
       );
-      final controls = tester.getRect(find.byKey(const Key('camera-controls')));
+
       final layout = tester.getRect(
         find.byKey(const Key('camera-portrait-layout')),
       );
-      final controlsAreaCenter =
-          (preview.evaluate().isNotEmpty
-              ? tester.getBottomLeft(preview).dy + layout.bottom
-              : layout.center.dy) /
-          2;
-      expect(
-        (controls.center.dy - controlsAreaCenter).abs(),
-        lessThan(16),
-        reason: '竖屏控制组应在留白区内垂直居中，而不是堆在取景区下方',
+      final controlsArea = tester.getRect(
+        find.byKey(const Key('camera-portrait-controls-area')),
       );
+      final controls = tester.getRect(find.byKey(const Key('camera-controls')));
+
+      // a. 取景框不遮挡顶栏元素（现场资料入口与警情标签）
+      expect(
+        previewRect.top >= galleryButton.bottom &&
+            previewRect.top >= incidentChip.bottom,
+        isTrue,
+        reason: '取景框顶部应低于现场资料按钮与警情标签底边，不发生重叠遮挡',
+      );
+
+      // b. 取景框顶部避开状态栏
+      expect(
+        previewRect.top,
+        greaterThan(0),
+        reason: '取景框顶部应留出状态栏与顶栏区域（preview.top > 0）',
+      );
+
+      // c. 取景框在顶栏底部与控制区顶部之间垂直居中
+      final topBarBottom = incidentChip.bottom;
+      final above = previewRect.top - topBarBottom;
+      final below = controlsArea.top - previewRect.bottom;
+      expect(
+        (above - below).abs(),
+        lessThan(1),
+        reason: '竖屏取景框应在顶栏底部与底部控制区之间垂直居中',
+      );
+
+      // d. 控制区固定在底部且高度在 260-300dp 之间
+      expect(
+        controlsArea.bottom,
+        closeTo(layout.bottom, 1),
+        reason: '控制区底端应紧贴屏幕底部',
+      );
+      expect(
+        controlsArea.height,
+        inInclusiveRange(260.0, 300.0),
+        reason: '控制区高度应在 260 至 300dp 范围内（实际 280dp）',
+      );
+
+      // e. camera-controls 控制组完全位于控制区内
+      expect(
+        controls.top >= controlsArea.top &&
+            controls.bottom <= controlsArea.bottom,
+        isTrue,
+        reason: '相机控制组应完整位于底部控制区内部',
+      );
+
+      // f. 快门在底部控制区内，点击目标 ≥48dp
+      final shutter = tester.getRect(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.camera_alt_rounded),
+              matching: find.byType(GestureDetector),
+            )
+            .first,
+      );
+      expect(shutter.width, greaterThanOrEqualTo(48));
+      expect(shutter.height, greaterThanOrEqualTo(48));
+      expect(
+        shutter.top >= controlsArea.top &&
+            shutter.bottom <= controlsArea.bottom,
+        isTrue,
+        reason: '快门应位于底部控制区内',
+      );
+
       expect(platformViewCreations.single['captureOrientation'], 'portrait');
 
       debugDefaultTargetPlatformOverride = null;
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
       expect(preferredOrientations(), isEmpty);
+    });
+
+    testWidgets('竖屏小屏 360×800 不溢出且取景区不被顶栏遮挡', (tester) async {
+      await pumpCamera(
+        tester,
+        CameraCaptureOrientation.portrait,
+        const Size(360, 800),
+      );
+
+      final preview = find.byKey(const Key('camera-portrait-preview'));
+      final previewRect = tester.getRect(preview);
+      expect(
+        previewRect.width / previewRect.height,
+        closeTo(16 / 9, 0.001),
+        reason: '竖屏小屏下取景框保持 16:9 比例',
+      );
+
+      expect(find.textContaining('未关联警情'), findsNothing);
+      final galleryButton = tester.getRect(find.byTooltip('现场资料'));
+      final closeButton = tester.getRect(find.byTooltip('关闭'));
+      final topBarBottom = galleryButton.bottom > closeButton.bottom
+          ? galleryButton.bottom
+          : closeButton.bottom;
+      expect(
+        previewRect.top,
+        greaterThanOrEqualTo(topBarBottom),
+        reason: '顶栏按钮应位于取景区上方的黑色区域，不压画面',
+      );
+
+      final layout = tester.getRect(
+        find.byKey(const Key('camera-portrait-layout')),
+      );
+      final controlsArea = tester.getRect(
+        find.byKey(const Key('camera-portrait-controls-area')),
+      );
+      expect(
+        controlsArea.bottom,
+        closeTo(layout.bottom, 1),
+        reason: '控制区底端应紧贴屏幕底部',
+      );
+      expect(controlsArea.height, closeTo(280, 1), reason: '控制区高度应固定为 280dp');
+
+      expect(tester.takeException(), isNull);
+
+      debugDefaultTargetPlatformOverride = null;
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
     });
 
     for (final scale in [1.5, 2.0]) {

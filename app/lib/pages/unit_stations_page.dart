@@ -97,10 +97,17 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
           ),
           actions: [
             TextButton(
+              style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
               onPressed: () => Navigator.pop(context, false),
               child: const Text('取消'),
             ),
             FilledButton(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(64, 48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+              ),
               onPressed: () => Navigator.pop(context, true),
               child: const Text('保存'),
             ),
@@ -150,7 +157,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
         ),
         onTap: _manage ? () => _edit(station) : null,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
+          constraints: const BoxConstraints(minHeight: 48),
           child: Row(
             children: [
               Expanded(
@@ -179,18 +186,33 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
                                 vertical: AppSpacing.s1,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.caution.withValues(alpha: 0.14),
+                                color: AppColors.surfaceSubtle,
                                 borderRadius: BorderRadius.circular(
                                   AppRadius.pill,
                                 ),
-                              ),
-                              child: Text(
-                                '已停用',
-                                style: AppTextStyles.caption.copyWith(
-                                  height: 1.2,
-                                  color: AppColors.caution,
-                                  fontWeight: FontWeight.w700,
+                                border: Border.all(
+                                  color: AppColors.border,
+                                  width: 1,
                                 ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.block,
+                                    size: 14,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  const SizedBox(width: AppSpacing.s1),
+                                  Text(
+                                    '已停用',
+                                    style: AppTextStyles.caption.copyWith(
+                                      height: 1.2,
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           for (final alias in aliases)
@@ -243,7 +265,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
         IconButton(
           tooltip: '新增常用队伍',
           onPressed: _busy ? null : () => _edit(),
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add, size: 24),
         ),
       ],
     ),
@@ -279,42 +301,23 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-              child: Text(
-                _error!,
-                style: AppTextStyles.bodyMd.copyWith(color: AppColors.alarm),
+              child: AppNotice(
+                kind: AppNoticeKind.error,
+                text: _error!,
+                action: TextButton(
+                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                  onPressed: _load,
+                  child: const Text('重试'),
+                ),
               ),
             ),
           for (final station in _stations) _buildStationRow(station),
           if (!_busy && _stations.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 88,
-                    height: 88,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.surface,
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Icon(
-                      Icons.groups_outlined,
-                      size: 40,
-                      color: AppColors.textTertiary,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.s4),
-                  Text(
-                    '暂无常用队伍，可在此新增，也可导入警情时保存。',
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.bodyMd.copyWith(
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+            const Center(
+              child: AppEmptyState(
+                icon: Icons.groups_outlined,
+                title: '暂无常用队伍',
+                hint: '可在此新增，也可导入警情时保存。',
               ),
             ),
         ],

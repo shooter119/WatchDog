@@ -482,6 +482,15 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                   )
                 : IndexedStack(index: _tab, children: pages);
 
+            final bool boardAlert = controller.entries.any((e) {
+              if (!e.isActive) return false;
+              final s = e.statusAt(
+                warnMin: controller.calcConfig.warnMin,
+                alarmMin: controller.calcConfig.alarmMin,
+              );
+              return s == 'alarm' || s == 'timeout';
+            });
+
             final appScaffold = Scaffold(
               body: bodyContent,
               bottomNavigationBar: ExcludeSemantics(
@@ -490,6 +499,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                   ignoring: startupGateLocked,
                   child: _BottomNav(
                     index: _tab,
+                    boardAlert: boardAlert,
                     pendingCount: controller.pendingMemberCount,
                     recording: _recording,
                     processing: _processing,
@@ -603,6 +613,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 /// 点「文字」切换为文字输入（麦克风隐藏，输入框+键盘呼出）
 class _BottomNav extends StatelessWidget {
   final int index;
+  final bool boardAlert;
   final int pendingCount;
   final bool recording; // 录音中：按钮变停止图标 + 橙色脉冲 + 上方提示
   final bool processing; // 识别/确认中：禁用语音按钮
@@ -620,6 +631,7 @@ class _BottomNav extends StatelessWidget {
 
   const _BottomNav({
     required this.index,
+    this.boardAlert = false,
     this.pendingCount = 0,
     required this.recording,
     required this.processing,
@@ -766,8 +778,10 @@ class _BottomNav extends StatelessWidget {
     return Container(
       key: const Key('bottom-nav-surface'),
       height: 68 + safeBottom,
-      // 普通警情处置页的麦克风是底部主操作，不再用顶部灰色横线切割它。
-      decoration: BoxDecoration(color: AppColors.surface),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -834,6 +848,7 @@ class _BottomNav extends StatelessWidget {
                       glyph: NavGlyph.board,
                       label: '看板',
                       selected: index == 1,
+                      hasAlert: boardAlert,
                       onTap: () => onSelect(1),
                     ),
                   ),
@@ -960,7 +975,7 @@ class _TextInputToggle extends StatelessWidget {
                 : const Duration(milliseconds: 160),
             curve: Curves.easeOut,
             margin: const EdgeInsets.symmetric(vertical: 2),
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -974,9 +989,9 @@ class _TextInputToggle extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 12,
                     height: 1.1,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: FontWeight.w600,
                     color: color,
                   ),
                 ),
@@ -994,6 +1009,7 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool selected;
   final bool hasBadge;
+  final bool hasAlert;
   final VoidCallback onTap;
 
   const _NavItem({
@@ -1001,6 +1017,7 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     this.hasBadge = false,
+    this.hasAlert = false,
     required this.onTap,
   });
 
@@ -1008,8 +1025,9 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = selected ? AppColors.textPrimary : AppColors.textTertiary;
     final disableAnimations = MediaQuery.of(context).disableAnimations;
+    final semanticsLabel = hasAlert ? '$label，有人员危险' : label;
     return Semantics(
-      label: label,
+      label: semanticsLabel,
       selected: selected,
       button: true,
       container: true,
@@ -1024,7 +1042,7 @@ class _NavItem extends StatelessWidget {
                 : const Duration(milliseconds: 160),
             curve: Curves.easeOut,
             margin: const EdgeInsets.symmetric(vertical: 2),
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1037,7 +1055,24 @@ class _NavItem extends StatelessWidget {
                       offset: const Offset(0, -1),
                       child: NavIcon(glyph: glyph, color: color, size: 28),
                     ),
-                    if (hasBadge)
+                    if (hasAlert)
+                      Positioned(
+                        right: -3,
+                        top: -3,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: AppColors.alarm,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.surface,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (hasBadge)
                       Positioned(
                         right: -2,
                         top: -2,
@@ -1056,9 +1091,9 @@ class _NavItem extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 12,
                     height: 1.1,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                     color: color,
                   ),
                 ),

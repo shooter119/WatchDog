@@ -245,8 +245,6 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
-                  const _VideoIntro(),
-                  const SizedBox(height: AppSpacing.s3),
                   if (_loading) const LinearProgressIndicator(),
                   if (_error != null) ...[
                     const SizedBox(height: AppSpacing.s3),
@@ -350,15 +348,42 @@ class VideoResourceCard extends StatelessWidget {
                                 key: ValueKey(
                                   'video-resource-status-${resource.id}',
                                 ),
-                                width: 8,
-                                height: 8,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: available == null
-                                      ? AppColors.textTertiary
-                                      : available!
-                                      ? AppColors.online
-                                      : AppColors.alarm,
-                                  shape: BoxShape.circle,
+                                  color: AppColors.textSecondary,
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.pill,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      available == null
+                                          ? Icons.hourglass_empty
+                                          : available!
+                                          ? Icons.check_circle_outline
+                                          : Icons.videocam_off_outlined,
+                                      size: 14,
+                                      color: AppColors.onPrimary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      available == null
+                                          ? '检测中'
+                                          : available!
+                                          ? '在线'
+                                          : '离线·不可播放',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.onPrimary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -475,46 +500,6 @@ class VideoResourceCard extends StatelessWidget {
   }
 }
 
-class _VideoIntro extends StatelessWidget {
-  const _VideoIntro();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s3,
-        vertical: AppSpacing.s2,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceSubtle,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.live_tv_rounded,
-            size: 18,
-            color: AppColors.actionPrimary,
-          ),
-          const SizedBox(width: AppSpacing.s2),
-          Expanded(
-            child: Text(
-              '仅展示本单位管理员启用的授权视频资源。点击资源后在卡片内展开并播放实时画面。',
-              style: AppTextStyles.bodyMd.copyWith(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-                height: 1.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _EmptyResources extends StatelessWidget {
   const _EmptyResources();
 
@@ -569,7 +554,11 @@ class _LoadFailure extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.s4),
       child: Column(
         children: [
-          Icon(Icons.cloud_off_outlined, color: AppColors.alarm, size: 32),
+          Icon(
+            Icons.cloud_off_outlined,
+            color: AppColors.textSecondary,
+            size: 32,
+          ),
           const SizedBox(height: AppSpacing.s2),
           Text(
             '视频资源加载失败',
@@ -590,6 +579,7 @@ class _LoadFailure extends StatelessWidget {
           const SizedBox(height: AppSpacing.s3),
           OutlinedButton.icon(
             onPressed: onRetry,
+            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('重新加载'),
           ),

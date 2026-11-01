@@ -426,49 +426,38 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
                   ? '正在查询地址…'
                   : (draft.address.isEmpty ? '地址暂不可用' : draft.address),
             ),
-            _infoRow('定位时间', formatLocationTime(draft.locatedAt)),
-            _infoRow(
-              '精度',
-              draft.accuracyMeters > 0
-                  ? '约 ${draft.accuracyMeters.toStringAsFixed(0)} 米'
-                  : '未提供',
-            ),
-            _infoRow(
-              'WGS84',
-              '${draft.lat.toStringAsFixed(6)}, ${draft.lon.toStringAsFixed(6)}',
-              last: true,
-            ),
+            _locationSlot(draft),
           ],
         ),
       ),
       if (blocked) ...[
         const SizedBox(height: AppSpacing.s3),
-        _warningCard(
+        const AppBanner(
+          kind: AppBannerKind.warning,
           icon: Icons.timer_off_outlined,
-          color: AppColors.alarm,
           text: '定位已超过 5 分钟，不能直接分享。请重新定位后再发送。',
         ),
       ] else if (stale) ...[
         const SizedBox(height: AppSpacing.s3),
-        _warningCard(
+        const AppBanner(
+          kind: AppBannerKind.warning,
           icon: Icons.schedule,
-          color: AppColors.caution,
           text: '定位已超过 2 分钟，位置可能已变化，请结合现场情况核实。',
         ),
       ],
       if (draft.hasPoorAccuracy) ...[
         const SizedBox(height: AppSpacing.s3),
-        _warningCard(
+        const AppBanner(
+          kind: AppBannerKind.warning,
           icon: Icons.gps_off_outlined,
-          color: AppColors.caution,
           text: '定位精度较差或未提供精度，接收方可能看到明显偏移。',
         ),
       ],
       if (_addressFailed) ...[
         const SizedBox(height: AppSpacing.s3),
-        _warningCard(
+        AppNotice(
+          kind: AppNoticeKind.info,
           icon: Icons.info_outline,
-          color: AppColors.caution,
           text: draft.navigationUri == null
               ? '地址或坐标转换未完成，仍可分享 WGS84 查看位置；驾车导航已隐藏。'
               : '地址查询未完成，但高德驾车导航仍可用。',
@@ -576,6 +565,91 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
     );
   }
 
+  Widget _locationSlot(LocationShareDraft draft) {
+    final accuracyText = draft.accuracyMeters > 0
+        ? '±${draft.accuracyMeters.toStringAsFixed(0)} m'
+        : '精度未提供';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s3,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSubtle,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'WGS84',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textTertiary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s2,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceSubtle,
+                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Text(
+                  accuracyText,
+                  style: AppTextStyles.caption.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s1),
+          Text(
+            '${draft.lat.toStringAsFixed(6)}, ${draft.lon.toStringAsFixed(6)}',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s2),
+          Row(
+            children: [
+              Icon(
+                Icons.access_time_outlined,
+                size: 14,
+                color: AppColors.textTertiary,
+              ),
+              const SizedBox(width: AppSpacing.s1),
+              Expanded(
+                child: Text(
+                  '定位时间 ${formatLocationTime(draft.locatedAt)}',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _problemCard({
     required IconData icon,
     required String title,
@@ -586,7 +660,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
       padding: const EdgeInsets.all(AppSpacing.s5),
       child: Column(
         children: [
-          Icon(icon, size: 40, color: AppColors.caution),
+          Icon(icon, size: 40, color: AppColors.textSecondary),
           const SizedBox(height: AppSpacing.s3),
           Text(
             title,
@@ -653,37 +727,6 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         ),
         icon: Icon(icon),
         label: Text(label),
-      ),
-    );
-  }
-
-  Widget _warningCard({
-    required IconData icon,
-    required Color color,
-    required String text,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.s3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 19, color: color),
-          const SizedBox(width: AppSpacing.s2),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.label.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

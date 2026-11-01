@@ -2295,7 +2295,7 @@ class HomePageState extends State<HomePage> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.logout, color: AppColors.safe),
+                      Icon(Icons.logout_outlined, color: AppColors.safe),
                       const SizedBox(width: AppSpacing.s3),
                       Expanded(
                         child: Text(
@@ -2821,6 +2821,17 @@ class HomePageState extends State<HomePage> {
       final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
       return s == 'alarm' || s == 'warn';
     }).toList();
+    final hasTimeout = activeEntries.any((e) {
+      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+      return s == 'timeout';
+    });
+    final hasAlarm = activeEntries.any((e) {
+      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+      return s == 'alarm';
+    });
+    final bannerKind = (hasTimeout || hasAlarm)
+        ? AppBannerKind.danger
+        : AppBannerKind.warning;
 
     return SingleChildScrollView(
       key: const Key('active-combat-scroll'),
@@ -2917,40 +2928,10 @@ class HomePageState extends State<HomePage> {
                 ),
                 if (dangerEntries.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.s3),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.s3,
-                      vertical: AppSpacing.s2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.alarm.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(
-                        color: AppColors.alarm.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.warning_amber_rounded,
-                          size: 16,
-                          color: AppColors.alarm,
-                        ),
-                        const SizedBox(width: AppSpacing.s2),
-                        Expanded(
-                          child: Text(
-                            '${dangerEntries.length} 名队员气瓶已进入警报或预警，请注意！',
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.alarm,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
+                  AppBanner(
+                    kind: bannerKind,
+                    timeout: hasTimeout,
+                    text: '${dangerEntries.length} 名队员气瓶已进入警报或预警，请注意！',
                   ),
                 ],
                 const SizedBox(height: AppSpacing.s3),
@@ -3030,8 +3011,8 @@ class HomePageState extends State<HomePage> {
                     ms: entry.remainingMs,
                     color: status == 'normal'
                         ? AppColors.textPrimary
-                        : s.color,
-                    size: 16,
+                        : s.textColor,
+                    size: 22,
                     timeoutText: '已超时',
                   ),
                   const SizedBox(height: AppSpacing.s1),
@@ -3886,7 +3867,7 @@ class _TaskBarState extends State<_TaskBar> {
                   IconButton(
                     key: const Key('rename-incident'),
                     onPressed: widget.onRename,
-                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    icon: const Icon(Icons.edit_outlined, size: 24),
                     tooltip: '修改名称',
                     padding: EdgeInsets.zero,
                     alignment: Alignment.centerRight,
@@ -4155,7 +4136,7 @@ class _ForceRow extends StatelessWidget {
               IconButton(
                 onPressed: onEdit,
                 tooltip: '编辑参战力量',
-                icon: const Icon(Icons.edit_outlined, size: 18),
+                icon: const Icon(Icons.edit_outlined, size: 24),
                 color: AppColors.textTertiary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
@@ -4164,7 +4145,7 @@ class _ForceRow extends StatelessWidget {
               IconButton(
                 onPressed: onRemove,
                 tooltip: '删除参战力量',
-                icon: const Icon(Icons.close, size: 20),
+                icon: const Icon(Icons.close, size: 24),
                 color: AppColors.textTertiary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,

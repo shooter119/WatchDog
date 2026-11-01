@@ -106,28 +106,31 @@ class _BoardPageState extends State<BoardPage> {
                   ),
           ),
 
-          // 断线时显示具体错误原因
-          if (widget.controller.connectionLost &&
-              widget.controller.syncError != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.s4,
-                0,
-                AppSpacing.s4,
-                AppSpacing.s2,
-              ),
-              child: Text(
-                widget.controller.syncError!,
-                style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (widget.controller.connectionLost &&
+                    !widget.controller.isGuest) ...[
+                  AppBanner(
+                    kind: AppBannerKind.offline,
+                    text: widget.controller.syncError == null
+                        ? '网络已中断，看板数据可能不是最新'
+                        : '网络已中断：${widget.controller.syncError}',
+                    actionLabel: '重试',
+                    onAction: widget.controller.refreshNow,
+                  ),
+                  const SizedBox(height: AppSpacing.s2),
+                ],
+                if (!widget.controller.alarm.soundEnabled) ...[
+                  const AppBanner(
+                    kind: AppBannerKind.warning,
+                    text: '报警音已关闭',
+                    icon: Icons.volume_off,
+                  ),
+                  const SizedBox(height: AppSpacing.s2),
+                ],
                 _OverviewBanner(entries: active, config: cfg),
                 if (danger.isNotEmpty)
                   _DangerAlertBar(entries: danger, config: cfg),
@@ -149,11 +152,11 @@ class _BoardPageState extends State<BoardPage> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       // 中央语音按钮向内容区悬浮，保留足够尾部空间，
                       // 确保最后一张人员卡片可完整滚动到按钮上方。
-                      padding: const EdgeInsets.fromLTRB(
+                      padding: EdgeInsets.fromLTRB(
                         AppSpacing.s4,
                         0,
                         AppSpacing.s4,
-                        100,
+                        120 + MediaQuery.of(context).padding.bottom,
                       ),
                       itemCount: active.length,
                       itemBuilder: (context, i) => _EntryCard(
@@ -237,47 +240,51 @@ class _OverviewBanner extends StatelessWidget {
     );
 
     return AppCard(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s4,
-        vertical: AppSpacing.s3,
-      ),
+      padding: const EdgeInsets.all(AppSpacing.s2),
       radius: AppRadius.lg,
-      child: Row(
-        children: [
-          Expanded(
-            child: _metric(
-              value: '${entries.length}',
-              label: '在场人员',
-              icon: Icons.people_outline,
-              color: AppColors.textPrimary,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceSubtle,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _metric(
+                value: '${entries.length}',
+                label: '在场人员',
+                icon: Icons.people_outline,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-          Container(width: 1, height: 40, color: AppColors.border),
-          Expanded(
-            child: _metric(
-              value: '$dangerCount',
-              label: '需关注',
-              icon: Icons.warning_amber_rounded,
-              color: AppColors.textPrimary,
+            Container(width: 1, height: 40, color: AppColors.border),
+            Expanded(
+              child: _metric(
+                value: '$dangerCount',
+                label: '需关注',
+                icon: Icons.warning_amber_rounded,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-          Container(width: 1, height: 40, color: AppColors.border),
-          Expanded(
-            child: _metric(
-              value: earliest == null ? '--' : _earliestText(earliest),
-              label: '最早到期',
-              icon: Icons.timer_outlined,
-              color: earliestStatus == null
-                  ? AppColors.textPrimary
-                  : switch (earliestStatus) {
-                      'warn' => AppColors.caution,
-                      'alarm' => AppColors.alarm,
-                      'timeout' => AppColors.timeout,
-                      _ => AppColors.textPrimary,
-                    },
+            Container(width: 1, height: 40, color: AppColors.border),
+            Expanded(
+              child: _metric(
+                value: earliest == null ? '--' : _earliestText(earliest),
+                label: '最早到期',
+                icon: Icons.timer_outlined,
+                color: earliestStatus == null
+                    ? AppColors.textPrimary
+                    : switch (earliestStatus) {
+                        'warn' => AppColors.cautionText,
+                        'alarm' => AppColors.alarmText,
+                        'timeout' => AppColors.timeoutText,
+                        _ => AppColors.textPrimary,
+                      },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -295,7 +302,8 @@ class _OverviewBanner extends StatelessWidget {
         FittedBox(
           child: Text(
             value,
-            style: AppTextStyles.h2.copyWith(
+            style: AppTextStyles.h1.copyWith(
+              fontSize: 24,
               fontWeight: FontWeight.w800,
               fontFeatures: const [FontFeature.tabularFigures()],
               color: color,
@@ -333,42 +341,16 @@ class _DangerAlertBar extends StatelessWidget {
     final worst = statuses.reduce(
       (a, b) => _severity(a) <= _severity(b) ? a : b,
     );
-    final color = switch (worst) {
-      'timeout' => AppColors.timeout,
-      'alarm' => AppColors.alarm,
-      _ => AppColors.caution,
-    };
     final earliest = entries.reduce((a, b) => a.exitAt <= b.exitAt ? a : b);
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.s2),
-      child: AppCard(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s4,
-          vertical: AppSpacing.s3,
-        ),
-        radius: AppRadius.md,
-        color: color.withValues(alpha: 0.12),
-        side: BorderSide(color: color.withValues(alpha: 0.45)),
-        child: Row(
-          children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              color: color,
-              size: 20,
-            ),
-            const SizedBox(width: AppSpacing.s2),
-            Expanded(
-              child: Text(
-                '${entries.length} 人需要关注 · 最早到期 ${_fmtRemaining(earliest.remainingMs)}',
-                style: AppTextStyles.label.copyWith(
-                  color: AppColors.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
+      child: AppBanner(
+        kind: worst == 'warn' || worst == 'normal'
+            ? AppBannerKind.warning
+            : AppBannerKind.danger,
+        timeout: worst == 'timeout',
+        text:
+            '${entries.length} 人需要关注 · 最早到期 ${_fmtRemaining(earliest.remainingMs)}',
       ),
     );
   }
@@ -470,8 +452,13 @@ class _EmptyBoard extends StatelessWidget {
 class _TimeMetric extends StatelessWidget {
   final String label;
   final Widget value;
+  final Color? labelColor;
 
-  const _TimeMetric({required this.label, required this.value});
+  const _TimeMetric({
+    required this.label,
+    required this.value,
+    this.labelColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -481,7 +468,7 @@ class _TimeMetric extends StatelessWidget {
         Text(
           label,
           style: AppTextStyles.caption.copyWith(
-            color: AppColors.textSecondary,
+            color: labelColor ?? AppColors.textSecondary,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -519,6 +506,8 @@ class _EntryCard extends StatelessWidget {
       alarmMin: config.alarmMin,
     );
     final s = EntryStatus.of(status);
+    final isTimeout =
+        status != 'normal' && status != 'warn' && status != 'alarm';
     final textScale = MediaQuery.textScalerOf(context).scale(1.0);
     // 320dp 真机上姓名、状态和更新压力可以自然同排；只在更窄视口或
     // 大字号下确实需要保留可读性时堆叠，不能把正常状态拉成整行。
@@ -531,7 +520,7 @@ class _EntryCard extends StatelessWidget {
       children: [
         StatusBadge(
           status: status,
-          onColorCard: false,
+          onColorCard: isTimeout,
           fontSize: 13,
           height: 48,
         ),
@@ -545,7 +534,7 @@ class _EntryCard extends StatelessWidget {
           width: 4,
           height: 20,
           decoration: BoxDecoration(
-            color: s.color,
+            color: isTimeout ? AppColors.onStatus : s.color,
             borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
         ),
@@ -559,12 +548,28 @@ class _EntryCard extends StatelessWidget {
             style: AppTextStyles.h2.copyWith(
               fontSize: 20,
               fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
+              color: isTimeout ? AppColors.onStatus : AppColors.textPrimary,
             ),
           ),
         ),
       ],
     );
+
+    final Color cardColor;
+    final BorderSide cardSide;
+    if (status == 'warn') {
+      cardColor = AppColors.cautionSurface;
+      cardSide = BorderSide(color: AppColors.caution, width: 1.5);
+    } else if (status == 'alarm') {
+      cardColor = AppColors.surface;
+      cardSide = BorderSide(color: AppColors.alarm, width: 2.0);
+    } else if (isTimeout) {
+      cardColor = AppColors.timeout;
+      cardSide = BorderSide(color: AppColors.timeoutText, width: 2.0);
+    } else {
+      cardColor = AppColors.surface;
+      cardSide = BorderSide(color: AppColors.border, width: 1.0);
+    }
 
     final card = AppCard(
       padding: const EdgeInsets.symmetric(
@@ -572,13 +577,8 @@ class _EntryCard extends StatelessWidget {
         vertical: AppSpacing.s3,
       ),
       radius: AppRadius.lg,
-      color: AppColors.surface,
-      side: BorderSide(
-        color: status == 'normal'
-            ? AppColors.border
-            : s.color.withValues(alpha: s.danger ? 0.65 : 0.45),
-        width: s.danger ? 1.5 : 1.0,
-      ),
+      color: cardColor,
+      side: cardSide,
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -606,21 +606,37 @@ class _EntryCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _TimeMetric(
-                  label: '剩余时间',
+                  // 超时卡：标签改为“已超时”，数值显示 +mm:ss 超出时长，
+                  // 避免“超时 mm:ss”过长被 FittedBox 缩小字号。
+                  label: isTimeout ? '已超时' : '剩余时间',
+                  labelColor: isTimeout ? AppColors.onStatus : null,
                   value: CountdownText(
                     ms: e.remainingMs,
-                    color: status == 'normal' ? AppColors.textPrimary : s.color,
-                    size: 36,
+                    color: isTimeout
+                        ? AppColors.onStatus
+                        : status == 'normal'
+                        ? AppColors.textPrimary
+                        : s.textColor,
+                    size: isTimeout ? 38 : 36,
                     timeoutText: '已超时',
+                    showOvertime: isTimeout,
+                    overtimePrefix: '+',
                   ),
                 ),
               ),
               const SizedBox(width: AppSpacing.s3),
-              Container(width: 1, height: 64, color: AppColors.border),
+              Container(
+                width: 1,
+                height: 64,
+                color: isTimeout
+                    ? AppColors.onStatus.withValues(alpha: 0.4)
+                    : AppColors.border,
+              ),
               const SizedBox(width: AppSpacing.s3),
               Expanded(
                 child: _TimeMetric(
                   label: '持续时长',
+                  labelColor: isTimeout ? AppColors.onStatus : null,
                   value: Text(
                     _elapsedTime(e),
                     style: AppTextStyles.h2.copyWith(
@@ -628,7 +644,9 @@ class _EntryCard extends StatelessWidget {
                       height: 1.0,
                       fontWeight: FontWeight.w800,
                       fontFeatures: const [FontFeature.tabularFigures()],
-                      color: AppColors.textPrimary,
+                      color: isTimeout
+                          ? AppColors.onStatus
+                          : AppColors.textPrimary,
                     ),
                   ),
                 ),
@@ -639,9 +657,13 @@ class _EntryCard extends StatelessWidget {
       ),
     );
 
+    final cardWidget = status == 'alarm'
+        ? PulseGlow(color: AppColors.alarm, radius: AppRadius.lg, child: card)
+        : card;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-      child: card,
+      child: cardWidget,
     );
   }
 

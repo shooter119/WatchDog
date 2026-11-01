@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_palette.dart';
 import 'nav_icons.dart';
@@ -29,6 +30,7 @@ class AppColors {
   static Color get background => _palette.background;
   static Color get surface => _palette.surface;
   static Color get surfaceSubtle => _palette.surfaceSubtle;
+  static Color get cautionSurface => _palette.cautionSurface;
   static Color get avatarBackdrop => _palette.avatarBackdrop;
   static Color get border => _palette.border;
 
@@ -43,9 +45,21 @@ class AppColors {
   static Color get alarm => _palette.alarm;
   static Color get timeout => _palette.timeout;
 
+  // 双通道状态文字（用于浅色底上的文字/数字，确保达到 WCAG AA 对比度）
+  static Color get safeText => _palette.safeText;
+  static Color get cautionText => _palette.cautionText;
+  static Color get alarmText => _palette.alarmText;
+  static Color get timeoutText => _palette.timeoutText;
+
   // 动作
+  /// 破坏性操作确认按钮专用色（仅限模态确认弹窗的确认按钮）
+  static Color get destructive => _palette.destructive;
+
   /// 语音入口（麦克风按钮、录音态），图形专用。
   static Color get voice => _palette.voice;
+
+  /// 语音按钮按下态加深色
+  static Color get voicePressed => _palette.voicePressed;
   static Color get actionPrimary => _palette.actionPrimary;
 
   /// 深色底（actionPrimary/voice/alarm）上的文字与图标。
@@ -53,6 +67,10 @@ class AppColors {
 
   /// 整块状态色卡片上的倒计时与按钮文字。
   static Color get onStatus => _palette.onStatus;
+
+  // 通告与提示
+  static Color get noticeWarningBg => _palette.noticeWarningBg;
+  static Color get noticeWarningFg => _palette.noticeWarningFg;
 
   // 连接
   static Color get online => _palette.online;
@@ -94,9 +112,10 @@ class AppSpacing {
 /// 圆角（radius.sm ~ radius.pill）
 class AppRadius {
   AppRadius._();
-  static const sm = 8.0;
-  static const md = 14.0;
-  static const lg = 20.0;
+  // L6：圆角收紧（sm 6 / md 10 / lg 14，pill 不变）
+  static const sm = 6.0;
+  static const md = 10.0;
+  static const lg = 14.0;
   static const xl = 28.0;
   static const pill = 999.0;
 }
@@ -162,8 +181,16 @@ class EntryStatus {
   final IconData icon;
   final bool danger;
   final Color fg; // 整块状态卡片上的前景色
+  final Color textColor; // 浅色底上的高对比度文字颜色
 
-  const EntryStatus(this.color, this.label, this.icon, this.danger, this.fg);
+  const EntryStatus(
+    this.color,
+    this.label,
+    this.icon,
+    this.danger,
+    this.fg, [
+    Color? textColor,
+  ]) : textColor = textColor ?? color;
 
   static EntryStatus of(String status) => switch (status) {
     'normal' => EntryStatus(
@@ -172,6 +199,7 @@ class EntryStatus {
       Icons.check_circle,
       false,
       AppColors.textPrimary,
+      AppColors.safeText,
     ),
     'warn' => EntryStatus(
       AppColors.caution,
@@ -179,6 +207,7 @@ class EntryStatus {
       Icons.warning_amber_rounded,
       false,
       AppColors.textPrimary,
+      AppColors.cautionText,
     ),
     'alarm' => EntryStatus(
       AppColors.alarm,
@@ -186,6 +215,7 @@ class EntryStatus {
       Icons.notifications_active,
       true,
       AppColors.onStatus,
+      AppColors.alarmText,
     ),
     _ => EntryStatus(
       AppColors.timeout,
@@ -193,8 +223,231 @@ class EntryStatus {
       Icons.timer_off_outlined,
       true,
       AppColors.onStatus,
+      AppColors.timeoutText,
     ),
   };
+}
+
+/// L5 风格通告条类型
+enum AppNoticeKind { warning, error, info }
+
+/// L5 风格通告条
+class AppNotice extends StatelessWidget {
+  final String text;
+  final AppNoticeKind kind;
+  final IconData? icon;
+  final Widget? action;
+
+  const AppNotice({
+    super.key,
+    required this.text,
+    this.kind = AppNoticeKind.warning,
+    this.icon,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color textColor;
+    final Color iconColor;
+    final Color borderAndBarColor;
+    final IconData defaultIcon;
+
+    switch (kind) {
+      case AppNoticeKind.warning:
+        bg = AppColors.noticeWarningBg;
+        textColor = AppColors.noticeWarningFg;
+        iconColor = AppColors.noticeWarningFg;
+        borderAndBarColor = AppColors.cautionText;
+        defaultIcon = Icons.warning_amber_rounded;
+      case AppNoticeKind.error:
+        bg = AppColors.surface;
+        textColor = AppColors.textPrimary;
+        iconColor = AppColors.textPrimary;
+        borderAndBarColor = AppColors.textSecondary;
+        defaultIcon = Icons.error;
+      case AppNoticeKind.info:
+        bg = AppColors.surfaceSubtle;
+        textColor = AppColors.textPrimary;
+        iconColor = AppColors.textSecondary;
+        borderAndBarColor = AppColors.border;
+        defaultIcon = Icons.info_outline;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: borderAndBarColor, width: 1.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            child: Container(color: borderAndBarColor),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.s3),
+            child: Row(
+              children: [
+                Icon(icon ?? defaultIcon, size: 20, color: iconColor),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: AppTextStyles.label.copyWith(
+                      color: textColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (action != null) ...[
+                  const SizedBox(width: AppSpacing.s2),
+                  action!,
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 全宽横幅类型（用于页面级危险 / 断线 / 报警音关闭）
+enum AppBannerKind { danger, offline, warning }
+
+/// 全宽横幅（页面级状态通告）
+class AppBanner extends StatelessWidget {
+  final String text;
+  final AppBannerKind kind;
+  final IconData? icon;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final bool timeout;
+
+  const AppBanner({
+    super.key,
+    required this.text,
+    required this.kind,
+    this.icon,
+    this.actionLabel,
+    this.onAction,
+    this.timeout = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color borderColor;
+    final Color? leftBarColor;
+    final Color iconColor;
+    final Color textColor;
+    final IconData defaultIcon;
+
+    switch (kind) {
+      case AppBannerKind.danger:
+        if (timeout) {
+          bg = AppColors.timeout;
+          borderColor = AppColors.timeoutText;
+          leftBarColor = null;
+          iconColor = AppColors.onStatus;
+          textColor = AppColors.onStatus;
+          defaultIcon = Icons.warning_rounded;
+        } else {
+          bg = AppColors.surface;
+          borderColor = AppColors.alarm;
+          leftBarColor = AppColors.alarm;
+          iconColor = AppColors.alarm;
+          textColor = AppColors.alarmText;
+          defaultIcon = Icons.warning_rounded;
+        }
+      case AppBannerKind.offline:
+        bg = AppColors.surfaceSubtle;
+        borderColor = AppColors.textSecondary;
+        leftBarColor = null;
+        iconColor = AppColors.textPrimary;
+        textColor = AppColors.textPrimary;
+        defaultIcon = Icons.cloud_off;
+      case AppBannerKind.warning:
+        bg = AppColors.noticeWarningBg;
+        borderColor = AppColors.cautionText;
+        leftBarColor = null;
+        iconColor = AppColors.noticeWarningFg;
+        textColor = AppColors.noticeWarningFg;
+        defaultIcon = Icons.warning_rounded;
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: borderColor, width: 1.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          if (leftBarColor != null)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 4,
+              child: Container(color: leftBarColor),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s3,
+            ),
+            child: Row(
+              children: [
+                Icon(icon ?? defaultIcon, size: 22, color: iconColor),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: AppTextStyles.label.copyWith(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (actionLabel != null) ...[
+                  const SizedBox(width: AppSpacing.s2),
+                  OutlinedButton(
+                    onPressed: onAction,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: textColor,
+                      side: BorderSide(color: borderColor),
+                      minimumSize: const Size(48, 48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s3,
+                      ),
+                    ),
+                    child: Text(
+                      actionLabel!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// 统一卡片容器（白色大圆角，克制阴影，少装饰）
@@ -257,10 +510,18 @@ class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = EntryStatus.of(status);
-    final fg = onColorCard ? s.fg : s.color;
-    final bg = onColorCard
-        ? s.fg.withValues(alpha: 0.22)
-        : s.color.withValues(alpha: 0.14);
+    final Color fg;
+    final Color bg;
+    if (onColorCard) {
+      fg = s.fg;
+      bg = s.fg.withValues(alpha: 0.22);
+    } else if (s.danger) {
+      fg = AppColors.onStatus;
+      bg = s.color;
+    } else {
+      fg = s.textColor;
+      bg = s.color.withValues(alpha: 0.14);
+    }
     // 保留同行布局高度，缩小实际色块一点，避免状态胶囊视觉上显得臃肿。
     final visualHeight = height == null
         ? null
@@ -363,6 +624,8 @@ class CountdownText extends StatelessWidget {
   final Color? color;
   final double size;
   final String? timeoutText; // 超时后显示的替代文案
+  final bool showOvertime; // 超时后显示超出时长（前缀 + mm:ss）
+  final String overtimePrefix;
 
   const CountdownText({
     super.key,
@@ -370,12 +633,29 @@ class CountdownText extends StatelessWidget {
     this.color,
     this.size = 56,
     this.timeoutText,
+    this.showOvertime = false,
+    this.overtimePrefix = '超时 ',
   });
 
   @override
   Widget build(BuildContext context) {
     // 默认色在 build 期解析，否则 const 默认参数会把主题色固化在编译期。
     final color = this.color ?? AppColors.textPrimary;
+    if (ms <= 0 && showOvertime) {
+      final totalSec = ms.abs() ~/ 1000;
+      final m = totalSec ~/ 60;
+      final s = totalSec % 60;
+      return Text(
+        '$overtimePrefix${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}',
+        style: TextStyle(
+          fontSize: size,
+          height: 1.0,
+          fontWeight: FontWeight.w800,
+          fontFeatures: const [FontFeature.tabularFigures()],
+          color: color,
+        ),
+      );
+    }
     if (ms <= 0 && timeoutText != null) {
       return Text(
         timeoutText!,
@@ -499,7 +779,7 @@ class _PulseGlowState extends State<PulseGlow>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: const Duration(milliseconds: 1200),
   );
   bool _disableAnimations = false;
 
@@ -546,8 +826,8 @@ class _PulseGlowState extends State<PulseGlow>
           boxShadow: [
             BoxShadow(
               color: widget.color.withValues(alpha: 0.08 + _c.value * 0.2),
-              blurRadius: 12 + _c.value * 14,
-              spreadRadius: 1 + _c.value * 2,
+              blurRadius: 6 + _c.value * 6,
+              spreadRadius: 0,
             ),
           ],
         ),
@@ -589,9 +869,9 @@ class ConnectionStatus extends StatelessWidget {
         : syncing
         ? ('同步中', Icons.cloud_sync_outlined, AppColors.textSecondary)
         : isFailed
-        ? ('同步失败', Icons.cloud_off_outlined, AppColors.caution)
+        ? ('同步失败', Icons.cloud_off_outlined, AppColors.cautionText)
         : !connected
-        ? ('已中断', Icons.cloud_off_outlined, AppColors.alarm)
+        ? ('已中断', Icons.cloud_off_outlined, AppColors.textPrimary)
         : ('已连接', Icons.cloud_done_outlined, AppColors.online);
     final inner = Row(
       mainAxisSize: MainAxisSize.min,
@@ -734,7 +1014,7 @@ class _VoiceButtonState extends State<VoiceButton>
     if (widget.recording) {
       return Color.lerp(AppColors.voice, Colors.black, 0.22)!;
     }
-    if (_pressed) return Color.lerp(AppColors.voice, Colors.black, 0.16)!;
+    if (_pressed) return AppColors.voicePressed;
     return AppColors.voice;
   }
 
@@ -764,7 +1044,12 @@ class _VoiceButtonState extends State<VoiceButton>
         onTap: _disabled ? null : widget.onTap,
         onLongPressStart: _disabled ? null : widget.onLongPressStart,
         onLongPressEnd: _disabled ? null : widget.onLongPressEnd,
-        onTapDown: _disabled ? null : (_) => setState(() => _pressed = true),
+        onTapDown: _disabled
+            ? null
+            : (_) {
+                HapticFeedback.heavyImpact();
+                setState(() => _pressed = true);
+              },
         onTapUp: _disabled ? null : (_) => setState(() => _pressed = false),
         onTapCancel: _disabled ? null : () => setState(() => _pressed = false),
         child: SizedBox(
@@ -789,10 +1074,7 @@ class _VoiceButtonState extends State<VoiceButton>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: _fill,
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      width: 2,
-                    ),
+                    border: Border.all(color: AppColors.surface, width: 2.5),
                     boxShadow: [
                       BoxShadow(
                         color: glowColor,

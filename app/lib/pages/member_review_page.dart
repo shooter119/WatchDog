@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 
 class MemberReviewPage extends StatefulWidget {
@@ -47,22 +48,13 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
     final epoch = c.protectedDataEpoch;
     if (_busy.contains(member.id) || api == null || !c.canReviewMembers) return;
     if (!approve) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('驳回入队申请'),
-          content: Text('确认驳回「${member.realName}」的申请？对方核实后可重新申请。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('确认驳回'),
-            ),
-          ],
-        ),
+      final confirmed = await showAppConfirmDialog(
+        context,
+        title: '驳回入队申请',
+        message: '确认驳回「${member.realName}」的申请？对方核实后可重新申请。',
+        confirmLabel: '确认驳回',
+        cancelLabel: '取消',
+        destructive: true,
       );
       if (confirmed != true ||
           !mounted ||
@@ -216,7 +208,7 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
             Align(
               alignment: Alignment.centerRight,
               child: Wrap(
-                spacing: AppSpacing.s2,
+                spacing: AppSpacing.s4,
                 runSpacing: AppSpacing.s2,
                 alignment: WrapAlignment.end,
                 children: [
@@ -310,32 +302,25 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
             if (!revoked && c.memberReviewError != null)
               Padding(
                 padding: const EdgeInsets.all(AppSpacing.s4),
-                child: Column(
-                  children: [
-                    Text(
-                      '审批信息加载失败：${c.memberReviewError}',
-                      style: AppTextStyles.bodyMd.copyWith(
-                        color: AppColors.alarm,
-                      ),
+                child: AppNotice(
+                  kind: AppNoticeKind.error,
+                  text: '审批信息加载失败：${c.memberReviewError}',
+                  action: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(48, 48),
                     ),
-                    const SizedBox(height: AppSpacing.s2),
-                    TextButton(
-                      onPressed: c.refreshPendingMembersCount,
-                      child: const Text('重试'),
-                    ),
-                  ],
+                    onPressed: c.refreshPendingMembersCount,
+                    child: const Text('重试'),
+                  ),
                 ),
               ),
             if (!allowed &&
                 !c.memberReviewLoading &&
                 c.memberReviewError == null)
-              Padding(
-                padding: const EdgeInsets.all(AppSpacing.s6),
-                child: Text(
-                  '无本单位审批权限，请重新认证或联系管理员',
-                  style: AppTextStyles.bodyMd.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+              const Center(
+                child: AppEmptyState(
+                  icon: Icons.lock_outline,
+                  title: '无本单位审批权限，请重新认证或联系管理员',
                 ),
               ),
             if (allowed)
@@ -346,15 +331,10 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
                       if (c.pendingMembers.isEmpty &&
                           !c.memberReviewLoading &&
                           c.memberReviewError == null)
-                        Padding(
-                          padding: const EdgeInsets.all(AppSpacing.s6),
-                          child: Center(
-                            child: Text(
-                              '暂无待审批申请',
-                              style: AppTextStyles.bodyMd.copyWith(
-                                color: AppColors.textTertiary,
-                              ),
-                            ),
+                        const Center(
+                          child: AppEmptyState(
+                            icon: Icons.inbox_outlined,
+                            title: '暂无待审批申请',
                           ),
                         ),
                       ...c.pendingMembers.map(_pending),
@@ -363,15 +343,10 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
                       if (c.memberReviewHistory.isEmpty &&
                           !c.memberReviewLoading &&
                           c.memberReviewError == null)
-                        Padding(
-                          padding: const EdgeInsets.all(AppSpacing.s6),
-                          child: Center(
-                            child: Text(
-                              '暂无已处理记录',
-                              style: AppTextStyles.bodyMd.copyWith(
-                                color: AppColors.textTertiary,
-                              ),
-                            ),
+                        const Center(
+                          child: AppEmptyState(
+                            icon: Icons.assignment_outlined,
+                            title: '暂无已处理记录',
                           ),
                         ),
                       for (final row in c.memberReviewHistory)
@@ -388,12 +363,62 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    '${row['real_name']} · ${row['review_status'] == 'approved' ? '已同意' : '已驳回'}',
-                                    style: AppTextStyles.bodyMd.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary,
-                                    ),
+                                  Wrap(
+                                    spacing: AppSpacing.s2,
+                                    runSpacing: AppSpacing.s1,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        '${row['real_name']}',
+                                        style: AppTextStyles.bodyMd.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: AppSpacing.s2,
+                                          vertical: AppSpacing.s1,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.surfaceSubtle,
+                                          borderRadius: BorderRadius.circular(
+                                            AppRadius.pill,
+                                          ),
+                                          border: Border.all(
+                                            color: AppColors.border,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              row['review_status'] == 'approved'
+                                                  ? Icons.check
+                                                  : Icons.close,
+                                              size: 14,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                            const SizedBox(
+                                              width: AppSpacing.s1,
+                                            ),
+                                            Text(
+                                              row['review_status'] == 'approved'
+                                                  ? '已同意'
+                                                  : '已驳回',
+                                              style: AppTextStyles.caption
+                                                  .copyWith(
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: AppSpacing.s1),
                                   Text(
@@ -410,6 +435,9 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
                         ),
                       if (_more && c.memberReviewHistory.length >= 50)
                         TextButton(
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(88, 48),
+                          ),
                           onPressed: _loadingMore ? null : _loadMore,
                           child: Text(_loadingMore ? '加载中' : '加载更多'),
                         ),

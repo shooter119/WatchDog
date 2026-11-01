@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'member_review_page.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 
 /// 名单管理：消防员姓名 + 专业术语（作为语音识别热词，提升识别准确率）（规范 5.5）
@@ -127,25 +128,13 @@ class _RosterPageState extends State<RosterPage>
   }
 
   Future<void> _remove(String id, bool isFirefighter, String label) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('删除「$label」？'),
-        content: Text(
-          isFirefighter ? '删除后无法恢复，语音识别时将不再匹配该姓名' : '删除后无法恢复，该术语将不再作为识别热词',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '删除「$label」？',
+      message: isFirefighter ? '删除后无法恢复，语音识别时将不再匹配该姓名' : '删除后无法恢复，该术语将不再作为识别热词',
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      destructive: true,
     );
     if (confirmed != true) return;
     try {
@@ -213,7 +202,7 @@ class _RosterPageState extends State<RosterPage>
                             hintText: _tab.index == 0 ? '输入消防员姓名…' : '输入专业术语…',
                             prefixIcon: Icon(
                               _tab.index == 0
-                                  ? Icons.person_add_alt
+                                  ? Icons.person_add_outlined
                                   : Icons.tag,
                             ),
                           ),
@@ -388,10 +377,14 @@ class _RosterPageState extends State<RosterPage>
                   ),
                   if (source != 'builtin')
                     IconButton(
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
                       icon: Icon(
                         Icons.delete_outline,
-                        color: AppColors.alarm,
-                        size: 20,
+                        color: AppColors.textSecondary,
+                        size: 24,
                       ),
                       onPressed: () => _remove(id, isFirefighter, label),
                       tooltip: '删除',
@@ -414,7 +407,7 @@ class _RosterPageState extends State<RosterPage>
           builder: (_) => MemberReviewPage(controller: widget.controller),
         ),
       ),
-      icon: const Icon(Icons.how_to_reg),
+      icon: const Icon(Icons.how_to_reg_outlined),
       label: Text('入队审批 (${widget.controller.pendingMemberCount})'),
     ),
   );
@@ -532,7 +525,7 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
             alignment: Alignment.centerRight,
             child: TextButton.icon(
               onPressed: _paste,
-              icon: const Icon(Icons.copy_all, size: 18),
+              icon: const Icon(Icons.copy_all_outlined, size: 18),
               label: const Text('从剪贴板粘贴'),
             ),
           ),
