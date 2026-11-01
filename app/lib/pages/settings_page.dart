@@ -1098,7 +1098,11 @@ class _SettingsPageState extends State<SettingsPage> {
             _autoSave();
           },
         ),
-        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+        const Divider(
+          height: 1,
+          indent: AppSpacing.s4,
+          endIndent: AppSpacing.s4,
+        ),
         _switchRow(
           icon: Icons.shield_outlined,
           title: '联网语义解析',
@@ -1446,10 +1450,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           if (_downloadError != null) ...[
             const SizedBox(height: AppSpacing.s2),
-            AppNotice(
-              kind: AppNoticeKind.error,
-              text: _downloadError!,
-            ),
+            AppNotice(kind: AppNoticeKind.error, text: _downloadError!),
           ],
           const SizedBox(height: AppSpacing.s3),
           SizedBox(
@@ -2311,7 +2312,10 @@ class _ThemeOption extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              // 三套配色并排时卡片较窄：色块用 Wrap 自动折行，勾选图标并到名称行。
+              Wrap(
+                spacing: AppSpacing.s1,
+                runSpacing: AppSpacing.s1,
                 children: [
                   for (final color in [
                     palette.background,
@@ -2322,14 +2326,26 @@ class _ThemeOption extends StatelessWidget {
                     Container(
                       width: 16,
                       height: 16,
-                      margin: const EdgeInsets.only(right: AppSpacing.s1),
                       decoration: BoxDecoration(
                         color: color,
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(color: palette.border),
                       ),
                     ),
-                  const Spacer(),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      palette.label,
+                      style: AppTextStyles.label.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                  ),
                   if (selected)
                     Icon(
                       Icons.check_circle,
@@ -2338,17 +2354,13 @@ class _ThemeOption extends StatelessWidget {
                     ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.s2),
-              Text(
-                palette.label,
-                style: AppTextStyles.label.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: palette.textPrimary,
-                ),
-              ),
               const SizedBox(height: AppSpacing.s1),
               Text(
-                palette.id == 'daylight' ? '高可视亮色' : '暖纸陶土',
+                switch (palette.id) {
+                  'daylight' => '高可视亮色',
+                  'night-tactical' => '深色护眼',
+                  _ => '暖纸陶土',
+                },
                 style: AppTextStyles.caption.copyWith(
                   color: palette.textTertiary,
                 ),

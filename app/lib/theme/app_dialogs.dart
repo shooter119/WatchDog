@@ -83,7 +83,8 @@ Widget appConfirmDialogActions(
       backgroundColor: destructive
           ? AppColors.destructive
           : AppColors.actionPrimary,
-      foregroundColor: AppColors.onPrimary,
+      // 危险确认用 onStatus 白字（对 destructive 6.47:1）；夜间主题 onPrimary 为深色。
+      foregroundColor: destructive ? AppColors.onStatus : AppColors.onPrimary,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
       ),

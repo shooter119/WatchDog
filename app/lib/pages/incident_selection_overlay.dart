@@ -465,7 +465,9 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: AppColors.actionPrimary.withValues(alpha: 0.13),
+                          color: AppColors.actionPrimary.withValues(
+                            alpha: 0.13,
+                          ),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: Icon(
@@ -598,9 +600,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                 )
               : const Icon(Icons.arrow_forward_rounded),
           label: const Text('认证并继续'),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(50),
-          ),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
         ),
         if (!hasKeyboard && widget.onEnterGuestMode != null) ...[
           const SizedBox(height: 10),
@@ -644,12 +644,12 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.15),
+                        color: AppColors.noticeWarningBg,
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.hourglass_top_rounded,
-                        color: Colors.amber,
+                        color: AppColors.noticeWarningFg,
                         size: 26,
                       ),
                     ),
@@ -720,19 +720,17 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           key: const Key('pending-check-status'),
           onPressed: _busy ? null : () => _checkPendingStatus(silent: false),
           icon: _busy
-              ? const SizedBox(
+              ? SizedBox(
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: AppColors.onPrimary,
                   ),
                 )
               : const Icon(Icons.refresh_rounded),
           label: const Text('检查审批状态'),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-          ),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
         ),
         if (widget.onEnterGuestMode != null) ...[
           const SizedBox(height: 10),
@@ -880,9 +878,8 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                             width: 44,
                                             height: 44,
                                             decoration: BoxDecoration(
-                                              color: AppColors.actionPrimary.withValues(
-                                                alpha: 0.13,
-                                              ),
+                                              color: AppColors.actionPrimary
+                                                  .withValues(alpha: 0.13),
                                               borderRadius:
                                                   BorderRadius.circular(14),
                                             ),

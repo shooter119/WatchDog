@@ -75,7 +75,10 @@ void main() {
         expect(_contrast(p.onStatus, p.alarm), greaterThanOrEqualTo(4.5));
         expect(_contrast(p.onStatus, p.timeout), greaterThanOrEqualTo(4.5));
         expect(
-          _contrast(p.onPrimary, p.destructive),
+          _contrast(
+            p.onStatus,
+            p.destructive,
+          ), // 危险确认按钮用 onStatus 白字（夜间 onPrimary 为深色）
           greaterThanOrEqualTo(4.5),
         );
         expect(_contrast(p.onPrimary, p.voice), greaterThanOrEqualTo(3.0));

@@ -28,7 +28,7 @@ ThemeData buildAppTheme([AppPalette? palette]) {
   final scheme =
       ColorScheme.fromSeed(
         seedColor: p.actionPrimary,
-        brightness: Brightness.light,
+        brightness: p.brightness,
         surface: p.surface,
       ).copyWith(
         primary: p.actionPrimary,
@@ -43,6 +43,7 @@ ThemeData buildAppTheme([AppPalette? palette]) {
 
   final theme = ThemeData(
     useMaterial3: true,
+    brightness: p.brightness,
     splashFactory: InkRipple.splashFactory,
     colorScheme: scheme,
     scaffoldBackgroundColor: p.background,
