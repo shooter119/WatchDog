@@ -49,6 +49,9 @@ void main() {
       expect(p.timeoutText, const Color(0xFF7F1D1D));
       expect(p.destructive, const Color(0xFFB91C1C));
       expect(p.voicePressed, const Color(0xFFD44000));
+      // Batch 2: 通告条告警底色与前景色
+      expect(p.noticeWarningBg, const Color(0xFFFEF3C7));
+      expect(p.noticeWarningFg, const Color(0xFF92400E));
     });
   });
 
@@ -73,6 +76,11 @@ void main() {
         expect(_contrast(p.onPrimary, p.voice), greaterThanOrEqualTo(3.0));
         // alarm 与 timeout 亮度对比度 ≥1.8，保证双告警色视觉分明
         expect(_contrast(p.alarm, p.timeout), greaterThanOrEqualTo(1.8));
+        // Batch 2: 通告条 warning 前景 vs 背景对比度 ≥4.5
+        expect(
+          _contrast(p.noticeWarningFg, p.noticeWarningBg),
+          greaterThanOrEqualTo(4.5),
+        );
       });
     }
     for (final p in AppPalette.values) {

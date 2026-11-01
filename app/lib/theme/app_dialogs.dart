@@ -18,47 +18,6 @@ Future<bool> showAppConfirmDialog(
   final result = await showDialog<bool>(
     context: context,
     builder: (dialogContext) {
-      final cancelButton = OutlinedButton(
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(48, 52),
-          foregroundColor: AppColors.textPrimary,
-          // 边框用 textSecondary（对白底 7.6:1），避免浅灰“隐形按钮”。
-          side: BorderSide(color: AppColors.textSecondary, width: 1.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          textStyle: const TextStyle(
-            fontFamily: AppFonts.family,
-            fontFamilyFallback: AppFonts.fallback,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        onPressed: () => Navigator.of(dialogContext).pop(false),
-        child: Text(cancelLabel),
-      );
-
-      final confirmButton = FilledButton(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(48, 52),
-          backgroundColor: destructive
-              ? AppColors.destructive
-              : AppColors.actionPrimary,
-          foregroundColor: AppColors.onPrimary,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          textStyle: const TextStyle(
-            fontFamily: AppFonts.family,
-            fontFamilyFallback: AppFonts.fallback,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        onPressed: () => Navigator.of(dialogContext).pop(true),
-        child: Text(confirmLabel),
-      );
-
       Widget? dialogContent;
       if (message != null && content != null) {
         dialogContent = Column(
@@ -76,16 +35,74 @@ Future<bool> showAppConfirmDialog(
         title: Text(title),
         content: dialogContent,
         actions: [
-          Row(
-            children: [
-              Expanded(child: cancelButton),
-              const SizedBox(width: 12),
-              Expanded(child: confirmButton),
-            ],
+          appConfirmDialogActions(
+            dialogContext,
+            confirmLabel: confirmLabel,
+            cancelLabel: cancelLabel,
+            destructive: destructive,
           ),
         ],
       );
     },
   );
   return result ?? false;
+}
+
+/// 确认框按钮行（Q8 规格）：左侧带边框的中性取消、右侧实心确认，间距 12dp，高 52dp。
+///
+/// 供需要自定义内容（如实时鉴权重建）的确认框复用；点击分别 `pop(false)` / `pop(true)`。
+Widget appConfirmDialogActions(
+  BuildContext context, {
+  String confirmLabel = '确定',
+  String cancelLabel = '取消',
+  bool destructive = false,
+}) {
+  final cancelButton = OutlinedButton(
+    style: OutlinedButton.styleFrom(
+      minimumSize: const Size(48, 52),
+      foregroundColor: AppColors.textPrimary,
+      // 边框用 textSecondary（对白底 7.6:1），避免浅灰“隐形按钮”。
+      side: BorderSide(color: AppColors.textSecondary, width: 1.5),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      textStyle: const TextStyle(
+        fontFamily: AppFonts.family,
+        fontFamilyFallback: AppFonts.fallback,
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    onPressed: () => Navigator.of(context).pop(false),
+    child: Text(cancelLabel),
+  );
+
+  final confirmButton = FilledButton(
+    style: FilledButton.styleFrom(
+      minimumSize: const Size(48, 52),
+      backgroundColor: destructive
+          ? AppColors.destructive
+          : AppColors.actionPrimary,
+      foregroundColor: AppColors.onPrimary,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      textStyle: const TextStyle(
+        fontFamily: AppFonts.family,
+        fontFamilyFallback: AppFonts.fallback,
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+    onPressed: () => Navigator.of(context).pop(true),
+    child: Text(confirmLabel),
+  );
+
+  return Row(
+    children: [
+      Expanded(child: cancelButton),
+      const SizedBox(width: 12),
+      Expanded(child: confirmButton),
+    ],
+  );
 }

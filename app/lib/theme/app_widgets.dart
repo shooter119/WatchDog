@@ -67,6 +67,10 @@ class AppColors {
   /// 整块状态色卡片上的倒计时与按钮文字。
   static Color get onStatus => _palette.onStatus;
 
+  // 通告与提示
+  static Color get noticeWarningBg => _palette.noticeWarningBg;
+  static Color get noticeWarningFg => _palette.noticeWarningFg;
+
   // 连接
   static Color get online => _palette.online;
 
@@ -220,6 +224,97 @@ class EntryStatus {
       AppColors.timeoutText,
     ),
   };
+}
+
+/// L5 风格通告条类型
+enum AppNoticeKind { warning, error, info }
+
+/// L5 风格通告条
+class AppNotice extends StatelessWidget {
+  final String text;
+  final AppNoticeKind kind;
+  final IconData? icon;
+  final Widget? action;
+
+  const AppNotice({
+    super.key,
+    required this.text,
+    this.kind = AppNoticeKind.warning,
+    this.icon,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color textColor;
+    final Color iconColor;
+    final Color borderAndBarColor;
+    final IconData defaultIcon;
+
+    switch (kind) {
+      case AppNoticeKind.warning:
+        bg = AppColors.noticeWarningBg;
+        textColor = AppColors.noticeWarningFg;
+        iconColor = AppColors.noticeWarningFg;
+        borderAndBarColor = AppColors.cautionText;
+        defaultIcon = Icons.warning_amber_rounded;
+      case AppNoticeKind.error:
+        bg = AppColors.surface;
+        textColor = AppColors.textPrimary;
+        iconColor = AppColors.textPrimary;
+        borderAndBarColor = AppColors.textSecondary;
+        defaultIcon = Icons.error;
+      case AppNoticeKind.info:
+        bg = AppColors.surfaceSubtle;
+        textColor = AppColors.textPrimary;
+        iconColor = AppColors.textSecondary;
+        borderAndBarColor = AppColors.border;
+        defaultIcon = Icons.info_outline;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: borderAndBarColor, width: 1.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            child: Container(color: borderAndBarColor),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.s3),
+            child: Row(
+              children: [
+                Icon(icon ?? defaultIcon, size: 20, color: iconColor),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: AppTextStyles.label.copyWith(
+                      color: textColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (action != null) ...[
+                  const SizedBox(width: AppSpacing.s2),
+                  action!,
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// 统一卡片容器（白色大圆角，克制阴影，少装饰）

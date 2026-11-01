@@ -41,6 +41,8 @@ class AppPalette {
     required this.destructive,
     required this.voice,
     required this.voicePressed,
+    required this.noticeWarningBg,
+    required this.noticeWarningFg,
     required this.actionPrimary,
     required this.onPrimary,
     required this.onStatus,
@@ -103,6 +105,10 @@ class AppPalette {
 
   /// 语音按钮按下态加深色
   final Color voicePressed;
+
+  /// L5 通告条 warning 底色与文字色
+  final Color noticeWarningBg;
+  final Color noticeWarningFg;
 
   // 动作
   final Color actionPrimary;
@@ -177,6 +183,8 @@ class AppPalette {
     destructive: Color(0xFFB91C1C),
     voice: Color(0xFFF95700),
     voicePressed: Color(0xFFD44000),
+    noticeWarningBg: Color(0xFFFEF3C7),
+    noticeWarningFg: Color(0xFF92400E),
     actionPrimary: Color(0xFF111111),
     onPrimary: Color(0xFFFFFFFF),
     onStatus: Color(0xFFFFFFFF),
@@ -229,6 +237,8 @@ class AppPalette {
     destructive: Color(0xFFB91C1C),
     voice: Color(0xFFC06242),
     voicePressed: Color(0xFFA04E33),
+    noticeWarningBg: Color(0xFFF5E9CF),
+    noticeWarningFg: Color(0xFF7A4708),
     actionPrimary: Color(0xFFB0543A),
     onPrimary: Color(0xFFFBF9F4),
     onStatus: Color(0xFFFBF9F4),
