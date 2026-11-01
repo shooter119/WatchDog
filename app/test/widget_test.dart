@@ -3214,7 +3214,8 @@ void main() {
       expect(navIcons.every((icon) => icon.size == 28), isTrue);
       expect(
         tester.widget<Text>(find.text('日志')).style?.fontWeight,
-        FontWeight.w400,
+        // 精修 Q4：未选中页签文字统一 12sp/w600（选中 w800），强光下更易读。
+        FontWeight.w600,
       );
     });
 
