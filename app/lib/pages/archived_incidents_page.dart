@@ -315,9 +315,10 @@ class _ArchivedIncidentCard extends StatelessWidget {
               IconButton(
                 tooltip: '修改名称',
                 onPressed: onRename,
-                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                 icon: const Icon(Icons.edit_outlined, size: 19),
               ),
+              const SizedBox(width: AppSpacing.s2),
               Icon(Icons.chevron_right, color: AppColors.textTertiary),
             ],
           ),
@@ -348,11 +349,13 @@ class _ArchivedIncidentCard extends StatelessWidget {
           Row(
             children: [
               _StatItem(label: '参战站点', value: '${incident.forceStationCount}'),
+              const SizedBox(width: AppSpacing.s2),
               _StatItem(
                 label: incident.unknownVehicleStationCount > 0 ? '已知车辆' : '车辆',
                 value:
                     '${incident.vehicleCount}${incident.unknownVehicleStationCount > 0 ? '+' : ''}',
               ),
+              const SizedBox(width: AppSpacing.s2),
               _StatItem(
                 label: incident.unknownPersonnelStationCount > 0
                     ? '已知人员'
@@ -360,12 +363,14 @@ class _ArchivedIncidentCard extends StatelessWidget {
                 value:
                     '${incident.personnelCount}${incident.unknownPersonnelStationCount > 0 ? '+' : ''}',
               ),
-              if (incident.unresolvedActiveCount > 0)
+              if (incident.unresolvedActiveCount > 0) ...[
+                const SizedBox(width: AppSpacing.s2),
                 _StatItem(
                   label: '未确认离场',
                   value: '${incident.unresolvedActiveCount}',
-                  color: AppColors.caution,
+                  color: AppColors.cautionText,
                 ),
+              ],
             ],
           ),
         ],
@@ -417,25 +422,38 @@ class _StatItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: AppTextStyles.h2.copyWith(
-            color: color ?? AppColors.textPrimary,
-            fontWeight: FontWeight.w800,
-            fontFeatures: const [FontFeature.tabularFigures()],
+    child: Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s2,
+        vertical: AppSpacing.s2,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSubtle,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: AppTextStyles.h2.copyWith(
+              color: color ?? AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
-        ),
-        const SizedBox(height: AppSpacing.s1),
-        Text(
-          label,
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textTertiary,
+          const SizedBox(height: AppSpacing.s1),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }
@@ -728,32 +746,8 @@ class _UnresolvedBanner extends StatelessWidget {
   const _UnresolvedBanner({required this.count});
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(
-      horizontal: AppSpacing.s3,
-      vertical: AppSpacing.s3,
-    ),
-    decoration: BoxDecoration(
-      color: AppColors.caution.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      border: Border.all(color: AppColors.caution.withValues(alpha: .35)),
-    ),
-    child: Row(
-      children: [
-        Icon(Icons.warning_amber_rounded, color: AppColors.caution, size: 20),
-        const SizedBox(width: AppSpacing.s2),
-        Expanded(
-          child: Text(
-            '归档时有 $count 名人员未确认离场',
-            style: AppTextStyles.label.copyWith(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) =>
+      AppBanner(kind: AppBannerKind.warning, text: '归档时有 $count 名人员未确认离场');
 }
 
 class _DetailSectionTitle extends StatelessWidget {
