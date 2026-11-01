@@ -30,6 +30,7 @@ class AppColors {
   static Color get background => _palette.background;
   static Color get surface => _palette.surface;
   static Color get surfaceSubtle => _palette.surfaceSubtle;
+  static Color get cautionSurface => _palette.cautionSurface;
   static Color get avatarBackdrop => _palette.avatarBackdrop;
   static Color get border => _palette.border;
 
@@ -491,6 +492,8 @@ class CountdownText extends StatelessWidget {
   final Color? color;
   final double size;
   final String? timeoutText; // 超时后显示的替代文案
+  final bool showOvertime; // 超时后显示超出时长（前缀 + mm:ss）
+  final String overtimePrefix;
 
   const CountdownText({
     super.key,
@@ -498,12 +501,29 @@ class CountdownText extends StatelessWidget {
     this.color,
     this.size = 56,
     this.timeoutText,
+    this.showOvertime = false,
+    this.overtimePrefix = '超时 ',
   });
 
   @override
   Widget build(BuildContext context) {
     // 默认色在 build 期解析，否则 const 默认参数会把主题色固化在编译期。
     final color = this.color ?? AppColors.textPrimary;
+    if (ms <= 0 && showOvertime) {
+      final totalSec = ms.abs() ~/ 1000;
+      final m = totalSec ~/ 60;
+      final s = totalSec % 60;
+      return Text(
+        '$overtimePrefix${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}',
+        style: TextStyle(
+          fontSize: size,
+          height: 1.0,
+          fontWeight: FontWeight.w800,
+          fontFeatures: const [FontFeature.tabularFigures()],
+          color: color,
+        ),
+      );
+    }
     if (ms <= 0 && timeoutText != null) {
       return Text(
         timeoutText!,
@@ -627,7 +647,7 @@ class _PulseGlowState extends State<PulseGlow>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: const Duration(milliseconds: 1200),
   );
   bool _disableAnimations = false;
 
@@ -674,8 +694,8 @@ class _PulseGlowState extends State<PulseGlow>
           boxShadow: [
             BoxShadow(
               color: widget.color.withValues(alpha: 0.08 + _c.value * 0.2),
-              blurRadius: 12 + _c.value * 14,
-              spreadRadius: 1 + _c.value * 2,
+              blurRadius: 6 + _c.value * 6,
+              spreadRadius: 0,
             ),
           ],
         ),

@@ -475,8 +475,13 @@ class _EmptyBoard extends StatelessWidget {
 class _TimeMetric extends StatelessWidget {
   final String label;
   final Widget value;
+  final Color? labelColor;
 
-  const _TimeMetric({required this.label, required this.value});
+  const _TimeMetric({
+    required this.label,
+    required this.value,
+    this.labelColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -486,7 +491,7 @@ class _TimeMetric extends StatelessWidget {
         Text(
           label,
           style: AppTextStyles.caption.copyWith(
-            color: AppColors.textSecondary,
+            color: labelColor ?? AppColors.textSecondary,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -524,6 +529,8 @@ class _EntryCard extends StatelessWidget {
       alarmMin: config.alarmMin,
     );
     final s = EntryStatus.of(status);
+    final isTimeout =
+        status != 'normal' && status != 'warn' && status != 'alarm';
     final textScale = MediaQuery.textScalerOf(context).scale(1.0);
     // 320dp 真机上姓名、状态和更新压力可以自然同排；只在更窄视口或
     // 大字号下确实需要保留可读性时堆叠，不能把正常状态拉成整行。
@@ -536,7 +543,7 @@ class _EntryCard extends StatelessWidget {
       children: [
         StatusBadge(
           status: status,
-          onColorCard: false,
+          onColorCard: isTimeout,
           fontSize: 13,
           height: 48,
         ),
@@ -550,7 +557,7 @@ class _EntryCard extends StatelessWidget {
           width: 4,
           height: 20,
           decoration: BoxDecoration(
-            color: s.color,
+            color: isTimeout ? AppColors.onStatus : s.color,
             borderRadius: BorderRadius.circular(AppRadius.pill),
           ),
         ),
@@ -564,12 +571,28 @@ class _EntryCard extends StatelessWidget {
             style: AppTextStyles.h2.copyWith(
               fontSize: 20,
               fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
+              color: isTimeout ? AppColors.onStatus : AppColors.textPrimary,
             ),
           ),
         ),
       ],
     );
+
+    final Color cardColor;
+    final BorderSide cardSide;
+    if (status == 'warn') {
+      cardColor = AppColors.cautionSurface;
+      cardSide = BorderSide(color: AppColors.caution, width: 1.5);
+    } else if (status == 'alarm') {
+      cardColor = AppColors.surface;
+      cardSide = BorderSide(color: AppColors.alarm, width: 2.0);
+    } else if (isTimeout) {
+      cardColor = AppColors.timeout;
+      cardSide = BorderSide(color: AppColors.timeoutText, width: 2.0);
+    } else {
+      cardColor = AppColors.surface;
+      cardSide = BorderSide(color: AppColors.border, width: 1.0);
+    }
 
     final card = AppCard(
       padding: const EdgeInsets.symmetric(
@@ -577,13 +600,8 @@ class _EntryCard extends StatelessWidget {
         vertical: AppSpacing.s3,
       ),
       radius: AppRadius.lg,
-      color: AppColors.surface,
-      side: BorderSide(
-        color: status == 'normal'
-            ? AppColors.border
-            : s.color.withValues(alpha: s.danger ? 0.65 : 0.45),
-        width: s.danger ? 1.5 : 1.0,
-      ),
+      color: cardColor,
+      side: cardSide,
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -611,23 +629,37 @@ class _EntryCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _TimeMetric(
-                  label: '剩余时间',
+                  // 超时卡：标签改为“已超时”，数值显示 +mm:ss 超出时长，
+                  // 避免“超时 mm:ss”过长被 FittedBox 缩小字号。
+                  label: isTimeout ? '已超时' : '剩余时间',
+                  labelColor: isTimeout ? AppColors.onStatus : null,
                   value: CountdownText(
                     ms: e.remainingMs,
-                    color: status == 'normal'
+                    color: isTimeout
+                        ? AppColors.onStatus
+                        : status == 'normal'
                         ? AppColors.textPrimary
                         : s.textColor,
-                    size: 36,
+                    size: isTimeout ? 38 : 36,
                     timeoutText: '已超时',
+                    showOvertime: isTimeout,
+                    overtimePrefix: '+',
                   ),
                 ),
               ),
               const SizedBox(width: AppSpacing.s3),
-              Container(width: 1, height: 64, color: AppColors.border),
+              Container(
+                width: 1,
+                height: 64,
+                color: isTimeout
+                    ? AppColors.onStatus.withValues(alpha: 0.4)
+                    : AppColors.border,
+              ),
               const SizedBox(width: AppSpacing.s3),
               Expanded(
                 child: _TimeMetric(
                   label: '持续时长',
+                  labelColor: isTimeout ? AppColors.onStatus : null,
                   value: Text(
                     _elapsedTime(e),
                     style: AppTextStyles.h2.copyWith(
@@ -635,7 +667,9 @@ class _EntryCard extends StatelessWidget {
                       height: 1.0,
                       fontWeight: FontWeight.w800,
                       fontFeatures: const [FontFeature.tabularFigures()],
-                      color: AppColors.textPrimary,
+                      color: isTimeout
+                          ? AppColors.onStatus
+                          : AppColors.textPrimary,
                     ),
                   ),
                 ),
@@ -646,9 +680,13 @@ class _EntryCard extends StatelessWidget {
       ),
     );
 
+    final cardWidget = status == 'alarm'
+        ? PulseGlow(color: AppColors.alarm, radius: AppRadius.lg, child: card)
+        : card;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-      child: card,
+      child: cardWidget,
     );
   }
 

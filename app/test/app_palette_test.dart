@@ -26,6 +26,7 @@ void main() {
       expect(p.background, const Color(0xFFF2F4F7));
       expect(p.surface, const Color(0xFFFFFFFF));
       expect(p.surfaceSubtle, const Color(0xFFE8ECF1));
+      expect(p.cautionSurface, const Color(0xFFFEFCE8));
       expect(p.border, const Color(0xFFD7DDE5));
       expect(p.textPrimary, const Color(0xFF111111));
       expect(p.textSecondary, const Color(0xFF4B5563));
@@ -67,6 +68,10 @@ void main() {
           expect(_contrast(text, p.surface), greaterThanOrEqualTo(4.5));
           expect(_contrast(text, p.background), greaterThanOrEqualTo(4.5));
         }
+        expect(
+          _contrast(p.cautionText, p.cautionSurface),
+          greaterThanOrEqualTo(4.5),
+        );
         expect(_contrast(p.onStatus, p.alarm), greaterThanOrEqualTo(4.5));
         expect(_contrast(p.onStatus, p.timeout), greaterThanOrEqualTo(4.5));
         expect(

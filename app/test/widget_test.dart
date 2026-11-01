@@ -606,6 +606,21 @@ void main() {
       );
       expect(find.text('已超时'), findsOneWidget);
     });
+
+    testWidgets('超时且 showOvertime 为 true 时显示超时时长', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CountdownText(
+              ms: -65000,
+              showOvertime: true,
+              timeoutText: '已超时',
+            ),
+          ),
+        ),
+      );
+      expect(find.text('超时 01:05'), findsOneWidget);
+    });
   });
 
   group('BoardPage 概览横幅', () {
@@ -675,11 +690,14 @@ void main() {
     testWidgets('超时卡片使用单层边框且时间标签在同一行', (tester) async {
       await _pumpBoard(tester, [_entry(name: '赵磊', remainingMin: -1)]);
       expect(find.byType(PulseGlow), findsNothing);
-      final remaining = tester.getRect(find.text('剩余时间'));
+      // L1：超时卡的“剩余时间”标签改为“已超时”
+      final remaining = tester.getRect(find.text('已超时').last);
       final elapsed = tester.getRect(find.text('持续时长'));
       expect(remaining.top, closeTo(elapsed.top, 0.1));
       final countdown = find.byType(CountdownText).last;
       expect(tester.getTopLeft(countdown).dy, greaterThan(remaining.bottom));
+      // L1 视觉分级：看板超时卡片标签为“已超时”，数值显示 +mm:ss 超出时长
+      expect(find.text('+01:00'), findsOneWidget);
       expect(find.text('更新压力'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

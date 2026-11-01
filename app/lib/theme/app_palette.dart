@@ -25,6 +25,7 @@ class AppPalette {
     required this.background,
     required this.surface,
     required this.surfaceSubtle,
+    required this.cautionSurface,
     required this.avatarBackdrop,
     required this.border,
     required this.textPrimary,
@@ -74,6 +75,7 @@ class AppPalette {
   final Color background;
   final Color surface;
   final Color surfaceSubtle;
+  final Color cautionSurface;
 
   /// 水元素头像的承载底色（头像位图本身不随主题变化）
   final Color avatarBackdrop;
@@ -167,6 +169,7 @@ class AppPalette {
     background: Color(0xFFF2F4F7),
     surface: Color(0xFFFFFFFF),
     surfaceSubtle: Color(0xFFE8ECF1),
+    cautionSurface: Color(0xFFFEFCE8),
     avatarBackdrop: Color(0xFFDDF3F5),
     border: Color(0xFFD7DDE5),
     textPrimary: Color(0xFF111111),
@@ -221,6 +224,7 @@ class AppPalette {
     background: Color(0xFFF7F5EF),
     surface: Color(0xFFFFFFFF),
     surfaceSubtle: Color(0xFFEFECE3),
+    cautionSurface: Color(0xFFFAF1D6),
     avatarBackdrop: Color(0xFFEDE6DA),
     border: Color(0xFFDCD6C8),
     textPrimary: Color(0xFF1F1E1D),
