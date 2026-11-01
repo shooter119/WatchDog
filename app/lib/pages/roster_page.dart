@@ -202,7 +202,7 @@ class _RosterPageState extends State<RosterPage>
                             hintText: _tab.index == 0 ? '输入消防员姓名…' : '输入专业术语…',
                             prefixIcon: Icon(
                               _tab.index == 0
-                                  ? Icons.person_add_alt
+                                  ? Icons.person_add_outlined
                                   : Icons.tag,
                             ),
                           ),
@@ -384,7 +384,7 @@ class _RosterPageState extends State<RosterPage>
                       icon: Icon(
                         Icons.delete_outline,
                         color: AppColors.textSecondary,
-                        size: 20,
+                        size: 24,
                       ),
                       onPressed: () => _remove(id, isFirefighter, label),
                       tooltip: '删除',
@@ -407,7 +407,7 @@ class _RosterPageState extends State<RosterPage>
           builder: (_) => MemberReviewPage(controller: widget.controller),
         ),
       ),
-      icon: const Icon(Icons.how_to_reg),
+      icon: const Icon(Icons.how_to_reg_outlined),
       label: Text('入队审批 (${widget.controller.pendingMemberCount})'),
     ),
   );
@@ -525,7 +525,7 @@ class _BatchImportDialogState extends State<_BatchImportDialog> {
             alignment: Alignment.centerRight,
             child: TextButton.icon(
               onPressed: _paste,
-              icon: const Icon(Icons.copy_all, size: 18),
+              icon: const Icon(Icons.copy_all_outlined, size: 18),
               label: const Text('从剪贴板粘贴'),
             ),
           ),

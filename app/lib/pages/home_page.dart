@@ -2295,7 +2295,7 @@ class HomePageState extends State<HomePage> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.logout, color: AppColors.safe),
+                      Icon(Icons.logout_outlined, color: AppColors.safe),
                       const SizedBox(width: AppSpacing.s3),
                       Expanded(
                         child: Text(
@@ -3867,7 +3867,7 @@ class _TaskBarState extends State<_TaskBar> {
                   IconButton(
                     key: const Key('rename-incident'),
                     onPressed: widget.onRename,
-                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    icon: const Icon(Icons.edit_outlined, size: 24),
                     tooltip: '修改名称',
                     padding: EdgeInsets.zero,
                     alignment: Alignment.centerRight,
@@ -4136,7 +4136,7 @@ class _ForceRow extends StatelessWidget {
               IconButton(
                 onPressed: onEdit,
                 tooltip: '编辑参战力量',
-                icon: const Icon(Icons.edit_outlined, size: 18),
+                icon: const Icon(Icons.edit_outlined, size: 24),
                 color: AppColors.textTertiary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
@@ -4145,7 +4145,7 @@ class _ForceRow extends StatelessWidget {
               IconButton(
                 onPressed: onRemove,
                 tooltip: '删除参战力量',
-                icon: const Icon(Icons.close, size: 20),
+                icon: const Icon(Icons.close, size: 24),
                 color: AppColors.textTertiary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,

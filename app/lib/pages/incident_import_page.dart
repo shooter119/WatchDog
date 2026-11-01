@@ -815,7 +815,10 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
             ),
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.history, color: AppColors.textSecondary),
+              leading: Icon(
+                Icons.history_outlined,
+                color: AppColors.textSecondary,
+              ),
               title: Text(
                 '继续未完成的导入',
                 style: AppTextStyles.bodyMd.copyWith(
@@ -1231,7 +1234,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
               secondary: IconButton(
                 tooltip: '编辑与匹配',
                 onPressed: () => _editForce(i),
-                icon: const Icon(Icons.edit_outlined, size: 19),
+                icon: const Icon(Icons.edit_outlined, size: 24),
               ),
             ),
           const SizedBox(height: AppSpacing.s1),

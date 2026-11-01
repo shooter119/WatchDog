@@ -265,7 +265,7 @@ class _StatsPageState extends State<StatsPage> {
         MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
     final cards = [
       _SummaryCard(
-        icon: Icons.fire_extinguisher,
+        icon: Icons.fire_extinguisher_outlined,
         color: AppColors.textPrimary,
         label: '当前在场',
         value: '$activeCount 人',

@@ -918,10 +918,9 @@ class ChatPageState extends State<ChatPage> {
         children: [
           IconButton(
             onPressed: widget.onBack,
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 24),
             tooltip: '返回',
             color: AppColors.textSecondary,
-            visualDensity: VisualDensity.compact,
           ),
           Expanded(
             child: Text(
@@ -937,14 +936,14 @@ class ChatPageState extends State<ChatPage> {
             onPressed: _messages.isEmpty || _sending || _clearing
                 ? null
                 : _confirmClear,
-            icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+            icon: const Icon(Icons.delete_sweep_outlined, size: 24),
             tooltip: '清空问答记录',
             color: AppColors.textTertiary,
           ),
           IconButton(
             onPressed: _showLegacyHistory,
             tooltip: '历史通用对话',
-            icon: const Icon(Icons.history, size: 20),
+            icon: const Icon(Icons.history, size: 24),
             color: AppColors.textTertiary,
           ),
           IconButton(
@@ -954,11 +953,11 @@ class ChatPageState extends State<ChatPage> {
                 : _pickVisionImage,
             icon: _visionBusy
                 ? const SizedBox(
-                    width: 20,
-                    height: 20,
+                    width: 24,
+                    height: 24,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.camera_alt_outlined, size: 21),
+                : const Icon(Icons.camera_alt_outlined, size: 24),
             tooltip: '拍照分析',
             color: AppColors.actionPrimary,
           ),
@@ -1391,7 +1390,7 @@ class _MessageBubble extends StatelessWidget {
                               : () => onCopy!(body),
                           icon: const Icon(Icons.copy_rounded),
                           tooltip: '复制',
-                          iconSize: 18,
+                          iconSize: 24,
                           constraints: const BoxConstraints(
                             minWidth: 48,
                             minHeight: 48,

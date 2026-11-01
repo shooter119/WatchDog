@@ -316,7 +316,7 @@ class _ArchivedIncidentCard extends StatelessWidget {
                 tooltip: '修改名称',
                 onPressed: onRename,
                 constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                icon: const Icon(Icons.edit_outlined, size: 19),
+                icon: const Icon(Icons.edit_outlined, size: 24),
               ),
               const SizedBox(width: AppSpacing.s2),
               Icon(Icons.chevron_right, color: AppColors.textTertiary),

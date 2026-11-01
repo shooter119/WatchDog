@@ -2252,7 +2252,7 @@ class _ThemeOption extends StatelessWidget {
                   ),
                   if (selected)
                     Icon(
-                      Icons.check_circle,
+                      Icons.check_circle_outline,
                       size: 16,
                       color: palette.actionPrimary,
                     ),

@@ -628,7 +628,11 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
           const SizedBox(height: AppSpacing.s2),
           Row(
             children: [
-              Icon(Icons.access_time, size: 14, color: AppColors.textTertiary),
+              Icon(
+                Icons.access_time_outlined,
+                size: 14,
+                color: AppColors.textTertiary,
+              ),
               const SizedBox(width: AppSpacing.s1),
               Expanded(
                 child: Text(
