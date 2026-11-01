@@ -2874,9 +2874,7 @@ class HomePageState extends State<HomePage> {
                               vertical: AppSpacing.s1,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.voice.withValues(
-                                alpha: 0.14,
-                              ),
+                              color: AppColors.voice.withValues(alpha: 0.14),
                               borderRadius: BorderRadius.circular(
                                 AppRadius.pill,
                               ),
@@ -3030,7 +3028,7 @@ class HomePageState extends State<HomePage> {
                     ms: entry.remainingMs,
                     color: status == 'normal'
                         ? AppColors.textPrimary
-                        : s.color,
+                        : s.textColor,
                     size: 16,
                     timeoutText: '已超时',
                   ),
@@ -3400,8 +3398,7 @@ class HomePageState extends State<HomePage> {
                 () => Navigator.push<void>(
                   context,
                   MaterialPageRoute(
-                    builder: (_) =>
-                        KeySitesPage(controller: widget.controller),
+                    builder: (_) => KeySitesPage(controller: widget.controller),
                   ),
                 ),
               ),

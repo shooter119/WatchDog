@@ -149,11 +149,11 @@ class _BoardPageState extends State<BoardPage> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       // 中央语音按钮向内容区悬浮，保留足够尾部空间，
                       // 确保最后一张人员卡片可完整滚动到按钮上方。
-                      padding: const EdgeInsets.fromLTRB(
+                      padding: EdgeInsets.fromLTRB(
                         AppSpacing.s4,
                         0,
                         AppSpacing.s4,
-                        100,
+                        120 + MediaQuery.of(context).padding.bottom,
                       ),
                       itemCount: active.length,
                       itemBuilder: (context, i) => _EntryCard(
@@ -237,47 +237,51 @@ class _OverviewBanner extends StatelessWidget {
     );
 
     return AppCard(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s4,
-        vertical: AppSpacing.s3,
-      ),
+      padding: const EdgeInsets.all(AppSpacing.s2),
       radius: AppRadius.lg,
-      child: Row(
-        children: [
-          Expanded(
-            child: _metric(
-              value: '${entries.length}',
-              label: '在场人员',
-              icon: Icons.people_outline,
-              color: AppColors.textPrimary,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceSubtle,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _metric(
+                value: '${entries.length}',
+                label: '在场人员',
+                icon: Icons.people_outline,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-          Container(width: 1, height: 40, color: AppColors.border),
-          Expanded(
-            child: _metric(
-              value: '$dangerCount',
-              label: '需关注',
-              icon: Icons.warning_amber_rounded,
-              color: AppColors.textPrimary,
+            Container(width: 1, height: 40, color: AppColors.border),
+            Expanded(
+              child: _metric(
+                value: '$dangerCount',
+                label: '需关注',
+                icon: Icons.warning_amber_rounded,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-          Container(width: 1, height: 40, color: AppColors.border),
-          Expanded(
-            child: _metric(
-              value: earliest == null ? '--' : _earliestText(earliest),
-              label: '最早到期',
-              icon: Icons.timer_outlined,
-              color: earliestStatus == null
-                  ? AppColors.textPrimary
-                  : switch (earliestStatus) {
-                      'warn' => AppColors.caution,
-                      'alarm' => AppColors.alarm,
-                      'timeout' => AppColors.timeout,
-                      _ => AppColors.textPrimary,
-                    },
+            Container(width: 1, height: 40, color: AppColors.border),
+            Expanded(
+              child: _metric(
+                value: earliest == null ? '--' : _earliestText(earliest),
+                label: '最早到期',
+                icon: Icons.timer_outlined,
+                color: earliestStatus == null
+                    ? AppColors.textPrimary
+                    : switch (earliestStatus) {
+                        'warn' => AppColors.cautionText,
+                        'alarm' => AppColors.alarmText,
+                        'timeout' => AppColors.timeoutText,
+                        _ => AppColors.textPrimary,
+                      },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -295,7 +299,8 @@ class _OverviewBanner extends StatelessWidget {
         FittedBox(
           child: Text(
             value,
-            style: AppTextStyles.h2.copyWith(
+            style: AppTextStyles.h1.copyWith(
+              fontSize: 24,
               fontWeight: FontWeight.w800,
               fontFeatures: const [FontFeature.tabularFigures()],
               color: color,
@@ -305,9 +310,7 @@ class _OverviewBanner extends StatelessWidget {
         const SizedBox(height: AppSpacing.s1),
         Text(
           label,
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textSecondary,
-          ),
+          style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
         ),
       ],
     );
@@ -351,11 +354,7 @@ class _DangerAlertBar extends StatelessWidget {
         side: BorderSide(color: color.withValues(alpha: 0.45)),
         child: Row(
           children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              color: color,
-              size: 20,
-            ),
+            Icon(Icons.warning_amber_rounded, color: color, size: 20),
             const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: Text(
@@ -609,7 +608,9 @@ class _EntryCard extends StatelessWidget {
                   label: '剩余时间',
                   value: CountdownText(
                     ms: e.remainingMs,
-                    color: status == 'normal' ? AppColors.textPrimary : s.color,
+                    color: status == 'normal'
+                        ? AppColors.textPrimary
+                        : s.textColor,
                     size: 36,
                     timeoutText: '已超时',
                   ),

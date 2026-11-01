@@ -102,13 +102,15 @@ class _NotesPageState extends State<NotesPage> {
         key: const Key('notes-manual-log-fab'),
         onPressed: () => _openEditor(null),
         tooltip: '手动记录日志',
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.voice,
+        backgroundColor: AppColors.voice,
+        foregroundColor: AppColors.onPrimary,
         elevation: 3,
         focusElevation: 4,
         hoverElevation: 4,
         highlightElevation: 2,
-        shape: CircleBorder(side: BorderSide(color: AppColors.border)),
+        shape: CircleBorder(
+          side: BorderSide(color: AppColors.surface, width: 2),
+        ),
         child: const Icon(Icons.add_rounded, size: 30),
       ),
     );
