@@ -12,6 +12,7 @@ import '../services/camera_bridge.dart';
 import '../services/settings.dart';
 import '../services/watermark_settings.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 import 'media_gallery_page.dart';
 import 'media_review_page.dart';
@@ -543,10 +544,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         content: const Text('原始母版仍保留在本机。可先重试生成，或放弃后重新拍摄。'),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
             onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.discard),
             child: const Text('放弃母版'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
             onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.retry),
             child: const Text('重试生成'),
           ),
@@ -707,10 +710,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           content: const Text('当前原始母版仍保留在本机。继续生成会返回处理流程，退出并删除会放弃这份母版。'),
           actions: [
             TextButton(
+              style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
               onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.discard),
               child: const Text('退出并删除'),
             ),
             FilledButton(
+              style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
               onPressed: () => Navigator.pop(ctx, _PendingRenderChoice.retry),
               child: const Text('继续生成'),
             ),
@@ -731,24 +736,14 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     }
     if (!mounted) return false;
     if (!_recording && !_starting) return true;
-    final leave = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('正在录像'),
-        content: const Text('退出会结束并保存这段视频。确定退出吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('继续录制'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('结束并退出'),
-          ),
-        ],
-      ),
+    final leave = await showAppConfirmDialog(
+      context,
+      title: '正在录像',
+      message: '退出会结束并保存这段视频。确定退出吗？',
+      cancelLabel: '继续录制',
+      confirmLabel: '结束并退出',
     );
-    if (leave != true) return false;
+    if (!leave) return false;
     _saveWithoutReview = true;
     await _stopRecording();
     // 等待 stopped 事件完成入库，最多 3 秒
@@ -859,7 +854,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: Colors.white),
+          icon: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
@@ -907,6 +902,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: 22),
                 FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                  ),
                   onPressed: () async {
                     final state = await CameraBridge.requestPermissions();
                     if (!mounted) return;
@@ -958,6 +956,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     icon: const Icon(
                       Icons.photo_library_outlined,
                       color: Colors.white,
+                      size: 24,
                     ),
                   ),
                   if (_hasPermissionBadges) ...[
@@ -993,20 +992,32 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: _elapsed.inSeconds >= 50
-                        ? const Color(0xFFE65100)
-                        : const Color(0xCCD32029),
-                    borderRadius: BorderRadius.circular(20),
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: Border.all(
+                      color: _elapsed.inSeconds >= 50
+                          ? const Color(0xFFFF9500)
+                          : Colors.white24,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(
                         Icons.fiber_manual_record,
-                        size: 12,
-                        color: Colors.white,
+                        size: 10,
+                        color: Color(0xFFD32029),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'REC',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Text(
                         '$_timerText · 剩 ${(60 - _elapsed.inSeconds).clamp(0, 60)}s',
                         style: const TextStyle(
@@ -1188,6 +1199,9 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   children: [
                     if (_stateUnknown)
                       TextButton(
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                        ),
                         onPressed: _reconcileRecording,
                         child: const Text('重试确认'),
                       ),
@@ -1197,7 +1211,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                           minimumSize: const Size(0, 48),
                         ),
                         onPressed: _retryPendingRender,
-                        icon: const Icon(Icons.refresh_rounded, size: 18),
+                        icon: const Icon(Icons.refresh_rounded, size: 20),
                         label: const Text('重新生成水印版'),
                       ),
                     if (!vertical) _modeSwitch(),
@@ -1327,7 +1341,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                   Icon(
                     icon,
                     size: 16,
-                    color: selected ? AppColors.voice : Colors.white54,
+                    color: selected ? Colors.white : Colors.white54,
                   ),
                   const SizedBox(width: 6),
                   Text(
