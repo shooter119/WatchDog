@@ -126,6 +126,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
+              style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
               child: const Text('取消'),
             ),
             FilledButton(
@@ -141,6 +142,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
                 }
                 Navigator.pop(context, true);
               },
+              style: FilledButton.styleFrom(minimumSize: const Size(64, 48)),
               child: const Text('保存'),
             ),
           ],
@@ -264,7 +266,13 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
                       style: const TextStyle(height: 1.5),
                     ),
                     const SizedBox(height: 10),
-                    OutlinedButton(onPressed: _load, child: const Text('重新加载')),
+                    OutlinedButton(
+                      onPressed: _load,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                      ),
+                      child: const Text('重新加载'),
+                    ),
                   ],
                 ),
               ),
@@ -368,6 +376,7 @@ class _AdminResourceCard extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(width: 16),
           Switch(
             value: resource.active,
             onChanged: busy ? null : onActiveChanged,

@@ -621,6 +621,7 @@ class _LoadFailure extends StatelessWidget {
           const SizedBox(height: AppSpacing.s3),
           OutlinedButton.icon(
             onPressed: onRetry,
+            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('重新加载'),
           ),

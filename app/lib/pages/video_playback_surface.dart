@@ -156,8 +156,8 @@ class FloatingVideoWindow extends StatelessWidget {
           children: [
             VideoPlaybackSurface(session: session, compact: true),
             Positioned(
-              top: 2,
-              left: 2,
+              top: 6,
+              left: 6,
               child: _OverlayButton(
                 key: const Key('video-floating-fullscreen'),
                 tooltip: '全屏播放',
@@ -166,12 +166,16 @@ class FloatingVideoWindow extends StatelessWidget {
               ),
             ),
             Positioned(
-              top: 2,
-              right: 2,
+              top: 6,
+              right: 6,
               child: _OverlayButton(
                 key: const Key('video-floating-close'),
                 tooltip: '关闭浮窗视频',
                 icon: Icons.close_rounded,
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  width: 1.5,
+                ),
                 onPressed: session.stop,
               ),
             ),
@@ -204,12 +208,14 @@ class _OverlayButton extends StatelessWidget {
   final String tooltip;
   final IconData icon;
   final VoidCallback onPressed;
+  final BorderSide? side;
 
   const _OverlayButton({
     super.key,
     required this.tooltip,
     required this.icon,
     required this.onPressed,
+    this.side,
   });
 
   @override
@@ -222,6 +228,8 @@ class _OverlayButton extends StatelessWidget {
         foregroundColor: Colors.white,
         minimumSize: const Size(48, 48),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: const CircleBorder(),
+        side: side,
       ),
       icon: Icon(icon),
     );
@@ -244,6 +252,7 @@ class _PlayerFailure extends StatelessWidget {
           style: IconButton.styleFrom(
             backgroundColor: Colors.black54,
             foregroundColor: Colors.white,
+            minimumSize: const Size(48, 48),
           ),
           icon: const Icon(Icons.refresh_rounded),
         ),
@@ -275,10 +284,14 @@ class _PlayerFailure extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  TextButton.icon(
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
                     onPressed: onRetry,
-                    style: TextButton.styleFrom(foregroundColor: Colors.white),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white70),
+                      minimumSize: const Size(0, 48),
+                    ),
                     icon: const Icon(Icons.refresh_rounded, size: 18),
                     label: const Text('重新连接'),
                   ),
