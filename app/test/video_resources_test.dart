@@ -210,7 +210,9 @@ void main() {
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
     expect(adminApi.lastActive, false);
-    expect(find.text('已停用 · 点击编辑'), findsOneWidget);
+    // 视觉调整：启用状态改为中性胶囊，“点击编辑”单独显示
+    expect(find.text('已停用'), findsOneWidget);
+    expect(find.text('点击编辑'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     adminController.dispose();

@@ -92,11 +92,9 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                 ),
                 const SizedBox(height: 12),
                 if (_error != null)
-                  Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: AppNotice(kind: AppNoticeKind.error, text: _error!),
                   ),
                 if (_busy) const LinearProgressIndicator(),
                 for (final device in _devices)
@@ -114,12 +112,18 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                               color: AppColors.textPrimary,
                             ),
                           ),
+                          const SizedBox(height: 4),
                           Text(
-                            '最近活动：${_fmtTimestamp((device['last_seen_at'] as num).toInt())}',
-                            style: const TextStyle(
-                              fontFeatures: [FontFeature.tabularFigures()],
+                            '最近活动：${_fmtTimestamp(device['last_seen_at'])}',
+                            style: AppTextStyles.caption.copyWith(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
                             ),
                           ),
+                          const SizedBox(height: 8),
                           if (device['current'] == true)
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -127,18 +131,30 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.textSecondary,
+                                color: AppColors.surfaceSubtle,
                                 borderRadius: BorderRadius.circular(
                                   AppRadius.pill,
                                 ),
+                                border: Border.all(color: AppColors.border),
                               ),
-                              child: Text(
-                                '当前设备',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.onPrimary,
-                                ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.check_circle_outline,
+                                    size: 14,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '当前设备',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ],
                               ),
                             )
                           else
@@ -158,7 +174,7 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                 const SizedBox(height: 12),
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(48, 52),
+                    minimumSize: const Size(48, 48),
                   ),
                   onPressed: _busy || !_devices.any((d) => d['current'] != true)
                       ? null
@@ -166,6 +182,7 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                   child: const Text('退出其他全部设备'),
                 ),
                 TextButton(
+                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                   onPressed: _busy ? null : _load,
                   child: const Text('刷新'),
                 ),
@@ -175,8 +192,22 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
   );
 }
 
-String _fmtTimestamp(int epochMs) {
-  final d = DateTime.fromMillisecondsSinceEpoch(epochMs).toLocal();
+String _fmtTimestamp(dynamic raw) {
+  if (raw == null) return '--';
+  DateTime? d;
+  if (raw is num) {
+    d = DateTime.fromMillisecondsSinceEpoch(raw.toInt()).toLocal();
+  } else if (raw is String) {
+    final asNum = num.tryParse(raw);
+    if (asNum != null) {
+      d = DateTime.fromMillisecondsSinceEpoch(asNum.toInt()).toLocal();
+    } else {
+      d = DateTime.tryParse(raw)?.toLocal();
+    }
+  } else if (raw is DateTime) {
+    d = raw.toLocal();
+  }
+  if (d == null) return raw.toString();
   final mm = d.month.toString().padLeft(2, '0');
   final dd = d.day.toString().padLeft(2, '0');
   final hh = d.hour.toString().padLeft(2, '0');
