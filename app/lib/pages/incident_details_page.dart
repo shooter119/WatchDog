@@ -114,10 +114,12 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
+            style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
             child: const Text('取消'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(minimumSize: const Size(64, 48)),
             child: const Text('保存'),
           ),
         ],
@@ -149,6 +151,10 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
   Widget build(BuildContext context) {
     final data = Map<String, dynamic>.from(_detail?['data'] as Map? ?? {});
     final contacts = data['contacts'] as List? ?? [];
+    final basicFields = [
+      for (final field in incidentFieldLabels.entries)
+        if (data[field.key]?.toString().isNotEmpty == true) field,
+    ];
     return Scaffold(
       appBar: AppBar(
         title: const Text('警情详情'),
@@ -157,7 +163,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
             IconButton(
               tooltip: '编辑警情资料',
               onPressed: _busy || _detail == null ? null : _edit,
-              icon: const Icon(Icons.edit_outlined),
+              icon: const Icon(Icons.edit_outlined, size: 24),
             ),
         ],
       ),
@@ -175,30 +181,50 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
               style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 10),
-            if (_detail?['offline'] == true)
-              Text(
-                '当前显示本机缓存，联网后刷新可获取最新资料。',
-                style: TextStyle(color: AppColors.textSecondary),
+            if (_detail?['offline'] == true) ...[
+              const AppBanner(
+                kind: AppBannerKind.offline,
+                text: '当前显示本机缓存，联网后刷新可获取最新资料。',
               ),
+              const SizedBox(height: 12),
+            ],
             if (_error != null) ...[
               AppNotice(
                 kind: AppNoticeKind.error,
                 text: _error!,
-                action: TextButton(onPressed: _load, child: const Text('重新读取')),
+                action: TextButton(
+                  onPressed: _load,
+                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                  child: const Text('重试'),
+                ),
               ),
+              const SizedBox(height: 12),
             ],
             if (_detail == null && _error == null)
               const Center(child: CircularProgressIndicator()),
             if (_detail != null) ...[
-              if (data.isEmpty) const Text('尚未补充警情资料，可从首页导入图片或文字。'),
-              for (final field in incidentFieldLabels.entries)
-                if (data[field.key]?.toString().isNotEmpty == true)
-                  _DetailField(
-                    label: field.value,
-                    value: data[field.key].toString(),
+              if (data.isEmpty)
+                Text(
+                  '尚未补充警情资料，可从首页导入图片或文字。',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              if (basicFields.isNotEmpty)
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < basicFields.length; i++) ...[
+                        if (i > 0) const SizedBox(height: 12),
+                        _DetailField(
+                          label: basicFields[i].value,
+                          value: data[basicFields[i].key].toString(),
+                        ),
+                      ],
+                    ],
                   ),
+                ),
               if (contacts.isNotEmpty) ...[
-                const Divider(height: 20),
+                const Divider(height: 24),
                 const Padding(
                   padding: EdgeInsets.only(bottom: 2),
                   child: Text(
@@ -269,26 +295,22 @@ class _DetailField extends StatelessWidget {
   const _DetailField({required this.label, required this.value});
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        label,
+        style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
+      ),
+      const SizedBox(height: 2),
+      SelectableText(
+        value,
+        style: AppTextStyles.bodyMd.copyWith(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
         ),
-        const SizedBox(height: 1),
-        SelectableText(
-          value,
-          style: TextStyle(
-            fontSize: 15,
-            height: 1.35,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ],
-    ),
+      ),
+    ],
   );
 }
 
@@ -315,51 +337,60 @@ class _ContactRow extends StatelessWidget {
     ].where((value) => value.trim().isNotEmpty).join(' · ');
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: normalizedPhone.isEmpty ? null : () => onCall(normalizedPhone),
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 48),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (label.isNotEmpty)
-                        Text(
-                          label,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: normalizedPhone.isEmpty
+                      ? null
+                      : () => onCall(normalizedPhone),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (label.isNotEmpty)
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                      if (normalizedPhone.isNotEmpty) ...[
-                        const SizedBox(height: 1),
-                        Text(
-                          normalizedPhone,
-                          style: TextStyle(
-                            fontSize: 15,
-                            height: 1.25,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.actionPrimary,
+                        if (normalizedPhone.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            normalizedPhone,
+                            style: AppTextStyles.bodyMd.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.actionPrimary,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-                if (normalizedPhone.isNotEmpty)
-                  Icon(
-                    Icons.call_outlined,
-                    size: 20,
-                    color: AppColors.actionPrimary,
+              ),
+              if (normalizedPhone.isNotEmpty) ...[
+                const SizedBox(width: AppSpacing.s2),
+                OutlinedButton.icon(
+                  onPressed: () => onCall(normalizedPhone),
+                  icon: const Icon(Icons.phone_outlined, size: 20),
+                  label: const Text('拨打'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                   ),
+                ),
               ],
-            ),
+            ],
           ),
         ),
       ),
