@@ -112,6 +112,7 @@ ThemeData buildAppTheme([AppPalette? palette]) {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: p.actionPrimary,
+        minimumSize: const Size(48, 48),
         textStyle: const TextStyle(
           fontFamily: AppFonts.family,
           fontFamilyFallback: AppFonts.fallback,
@@ -128,10 +129,11 @@ ThemeData buildAppTheme([AppPalette? palette]) {
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: p.surface,
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       titleTextStyle: TextStyle(
         color: p.textPrimary,
-        fontSize: 18,
-        fontWeight: FontWeight.w700,
+        fontSize: 19,
+        fontWeight: FontWeight.w800,
       ),
       contentTextStyle: TextStyle(
         color: p.textSecondary,
