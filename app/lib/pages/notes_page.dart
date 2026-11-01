@@ -128,8 +128,10 @@ class _NotesPageState extends State<NotesPage> {
 
   /// 分类筛选 chips（全部 + 6 类）
   Widget _buildFilterChips() {
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final barHeight = (48.0 * textScale).clamp(48.0, 72.0);
     return SizedBox(
-      height: AppSpacing.s10,
+      height: barHeight,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
@@ -137,31 +139,36 @@ class _NotesPageState extends State<NotesPage> {
           for (final c in ['全部', ...NoteCategory.all])
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.s2),
-              child: FilterChip(
-                label: Text(c),
-                selected: _filter == c,
-                onSelected: (_) => setState(() => _filter = c),
-                showCheckmark: false,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s3,
-                  vertical: AppSpacing.s2,
-                ),
-                labelPadding: EdgeInsets.zero,
-                selectedColor: AppColors.actionPrimary,
-                backgroundColor: AppColors.surface,
-                surfaceTintColor: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-                labelStyle: AppTextStyles.label.copyWith(
-                  color: _filter == c
-                      ? AppColors.onPrimary
-                      : AppColors.textPrimary,
-                ),
-                side: BorderSide(
-                  color: _filter == c
-                      ? AppColors.actionPrimary
-                      : AppColors.border,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: FilterChip(
+                  label: Text(c),
+                  selected: _filter == c,
+                  onSelected: (_) => setState(() => _filter = c),
+                  showCheckmark: false,
+                  materialTapTargetSize: MaterialTapTargetSize.padded,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s3,
+                    vertical: AppSpacing.s2,
+                  ),
+                  labelPadding: EdgeInsets.zero,
+                  selectedColor: AppColors.actionPrimary,
+                  backgroundColor: AppColors.surface,
+                  surfaceTintColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                  labelStyle: AppTextStyles.label.copyWith(
+                    fontSize: 14,
+                    color: _filter == c
+                        ? AppColors.onPrimary
+                        : AppColors.textPrimary,
+                  ),
+                  side: BorderSide(
+                    color: _filter == c
+                        ? AppColors.actionPrimary
+                        : AppColors.border,
+                  ),
                 ),
               ),
             ),
@@ -376,10 +383,7 @@ class _NotesPageState extends State<NotesPage> {
 
   void _toast(String msg, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        duration: const Duration(seconds: 2),
-      ),
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
     );
   }
 
@@ -445,21 +449,27 @@ class _TimelineNoteCard extends StatelessWidget {
             child: Column(
               children: [
                 Container(
-                  width: AppSpacing.s3,
-                  height: AppSpacing.s3,
+                  width: 14,
+                  height: 14,
                   margin: const EdgeInsets.only(top: AppSpacing.s4),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: color,
-                    border: Border.all(color: AppColors.surface, width: 2),
+                    color: AppColors.surface,
+                    border: Border.all(color: color, width: 2.5),
+                  ),
+                  alignment: Alignment.center,
+                  child: Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                    ),
                   ),
                 ),
                 if (!isLast)
                   Expanded(
-                    child: Container(
-                      width: 2,
-                      color: color.withValues(alpha: 0.25),
-                    ),
+                    child: Container(width: 2.5, color: AppColors.border),
                   ),
               ],
             ),
