@@ -65,25 +65,15 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
       _toast('没有超过保留期的文件');
       return;
     }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('清理过期文件？'),
-        content: Text(
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '清理过期文件？',
+      message:
           '将删除 $count 个超过 ${LocalMediaStore.retentionDays} 天的媒体文件，'
           '删除后无法恢复。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清理'),
-          ),
-        ],
-      ),
+      confirmLabel: '清理',
+      cancelLabel: '取消',
+      destructive: true,
     );
     if (confirmed != true) return;
     final removed = await MediaCaptureService.purgeExpired();
@@ -274,7 +264,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
           ),
           onTap: () => _review(media),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48),
+            constraints: const BoxConstraints(minHeight: 64),
             child: Row(
               children: [
                 _thumb(media),
@@ -301,24 +291,70 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                             ),
                           ),
                           if (media.observationId.isNotEmpty)
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.check_circle_rounded,
-                                  size: 14,
-                                  color: AppColors.online,
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.s2,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.pill,
                                 ),
-                                const SizedBox(width: AppSpacing.s1),
-                                Text(
-                                  '已写入警情',
-                                  style: AppTextStyles.caption.copyWith(
-                                    height: 1.2,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondary,
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.check_circle_outline,
+                                    size: 14,
+                                    color: AppColors.textPrimary,
                                   ),
+                                  const SizedBox(width: AppSpacing.s1),
+                                  Text(
+                                    '已写入警情',
+                                    style: AppTextStyles.caption.copyWith(
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (media.incidentId.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.s2,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.pill,
                                 ),
-                              ],
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.link_off,
+                                    size: 14,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  const SizedBox(width: AppSpacing.s1),
+                                  Text(
+                                    '未关联',
+                                    style: AppTextStyles.caption.copyWith(
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                         ],
                       ),
@@ -380,7 +416,24 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
                         value: 'attach',
                         child: Text('关联到当前警情'),
                       ),
-                    const PopupMenuItem(value: 'delete', child: Text('删除')),
+                    const PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.delete_outline,
+                            size: 18,
+                            color: AppColors.textPrimary,
+                          ),
+                          const SizedBox(width: AppSpacing.s2),
+                          Text(
+                            '删除',
+                            style: TextStyle(color: AppColors.textPrimary),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -397,8 +450,8 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
         : media.path;
     if (previewPath == null || !File(previewPath).existsSync()) {
       return Container(
-        width: 48,
-        height: 48,
+        width: 64,
+        height: 64,
         decoration: BoxDecoration(
           color: AppColors.surfaceSubtle,
           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -413,12 +466,12 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
       borderRadius: BorderRadius.circular(AppRadius.sm),
       child: Image.file(
         File(previewPath),
-        width: 48,
-        height: 48,
+        width: 64,
+        height: 64,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => Container(
-          width: 48,
-          height: 48,
+          width: 64,
+          height: 64,
           color: AppColors.surfaceSubtle,
           child: Icon(
             Icons.image_not_supported_outlined,
