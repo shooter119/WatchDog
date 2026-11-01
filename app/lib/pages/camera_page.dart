@@ -820,20 +820,32 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
             : Column(
                 key: const Key('camera-portrait-layout'),
                 children: [
-                  const Expanded(flex: 2, child: SizedBox()),
-                  AspectRatio(
-                    key: const Key('camera-portrait-preview'),
-                    aspectRatio: 16 / 9,
-                    child: _preview(creationParams),
+// 取景框在上方区域垂直居中，顶栏不压画面，控制区固定在底部 280dp
+                  _topBarContent(),
+                  Expanded(
+                    child: Center(
+                      child: AspectRatio(
+                        key: const Key('camera-portrait-preview'),
+                        aspectRatio: 16 / 9,
+                        child: _preview(creationParams, withTopBar: false),
+                      ),
+                    ),
                   ),
-                  Expanded(flex: 3, child: _bottomBar()),
+                  SizedBox(
+                    key: const Key('camera-portrait-controls-area'),
+                    height: 280,
+                    child: _bottomBar(),
+                  ),
                 ],
               ),
       ),
     );
   }
 
-  Widget _preview(Map<String, Object?> creationParams) {
+  Widget _preview(
+    Map<String, Object?> creationParams, {
+    bool withTopBar = true,
+  }) {
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -842,7 +854,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
           creationParams: creationParams,
           creationParamsCodec: const StandardMessageCodec(),
         ),
-        _topBar(),
+        if (withTopBar) _topBar(),
       ],
     );
   }
@@ -930,109 +942,108 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Widget _topBar() {
+    return Positioned(top: 0, left: 0, right: 0, child: _topBarContent());
+  }
+
+  Widget _topBarContent() {
     final unlinked = (widget.controller.currentIncident?.id ?? '').isEmpty;
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 12, 0),
-              child: Row(
-                children: [
-                  IconButton(
-                    tooltip: '现场资料',
-                    onPressed:
-                        (_recording ||
-                            _capturing ||
-                            _processing ||
-                            _starting ||
-                            _stateUnknown)
-                        ? null
-                        : _openGallery,
-                    icon: const Icon(
-                      Icons.photo_library_outlined,
-                      color: Colors.white,
-                      size: 24,
-                    ),
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 12, 0),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: '现场资料',
+                  onPressed:
+                      (_recording ||
+                          _capturing ||
+                          _processing ||
+                          _starting ||
+                          _stateUnknown)
+                      ? null
+                      : _openGallery,
+                  icon: const Icon(
+                    Icons.photo_library_outlined,
+                    color: Colors.white,
+                    size: 24,
                   ),
-                  if (_hasPermissionBadges) ...[
-                    const SizedBox(width: 4),
-                    Flexible(child: _permissionBadges()),
-                  ],
-                  const Spacer(),
-                  _roundIcon(
-                    icon: Icons.close_rounded,
-                    tooltip: '关闭',
-                    onTap: () => _handleClose(context),
-                  ),
+                ),
+                if (_hasPermissionBadges) ...[
+                  const SizedBox(width: 4),
+                  Flexible(child: _permissionBadges()),
                 ],
+                const Spacer(),
+                _roundIcon(
+                  icon: Icons.close_rounded,
+                  tooltip: '关闭',
+                  onTap: () => _handleClose(context),
+                ),
+              ],
+            ),
+          ),
+          if (!unlinked)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Align(
+                alignment:
+                    _captureOrientation == CameraCaptureOrientation.portrait
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: _incidentChip(unlinked),
               ),
             ),
-            if (!unlinked)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: Align(
-                  alignment:
-                      _captureOrientation == CameraCaptureOrientation.portrait
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: _incidentChip(unlinked),
+          if (_recording)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
                 ),
-              ),
-            if (_recording)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(
+                    color: _elapsed.inSeconds >= 50
+                        ? const Color(0xFFFF9500)
+                        : Colors.white24,
                   ),
-                  decoration: BoxDecoration(
-                    color: Colors.black87,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    border: Border.all(
-                      color: _elapsed.inSeconds >= 50
-                          ? const Color(0xFFFF9500)
-                          : Colors.white24,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.fiber_manual_record,
+                      size: 10,
+                      color: Color(0xFFD32029),
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.fiber_manual_record,
-                        size: 10,
-                        color: Color(0xFFD32029),
+                    const SizedBox(width: 5),
+                    const Text(
+                      'REC',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(width: 5),
-                      const Text(
-                        'REC',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$_timerText · 剩 ${(60 - _elapsed.inSeconds).clamp(0, 60)}s',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: [FontFeature.tabularFigures()],
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$_timerText · 剩 ${(60 - _elapsed.inSeconds).clamp(0, 60)}s',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
