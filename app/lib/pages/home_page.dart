@@ -2821,6 +2821,17 @@ class HomePageState extends State<HomePage> {
       final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
       return s == 'alarm' || s == 'warn';
     }).toList();
+    final hasTimeout = activeEntries.any((e) {
+      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+      return s == 'timeout';
+    });
+    final hasAlarm = activeEntries.any((e) {
+      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+      return s == 'alarm';
+    });
+    final bannerKind = (hasTimeout || hasAlarm)
+        ? AppBannerKind.danger
+        : AppBannerKind.warning;
 
     return SingleChildScrollView(
       key: const Key('active-combat-scroll'),
@@ -2917,40 +2928,10 @@ class HomePageState extends State<HomePage> {
                 ),
                 if (dangerEntries.isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.s3),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.s3,
-                      vertical: AppSpacing.s2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.alarm.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(
-                        color: AppColors.alarm.withValues(alpha: 0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.warning_amber_rounded,
-                          size: 16,
-                          color: AppColors.alarm,
-                        ),
-                        const SizedBox(width: AppSpacing.s2),
-                        Expanded(
-                          child: Text(
-                            '${dangerEntries.length} 名队员气瓶已进入警报或预警，请注意！',
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.alarm,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
+                  AppBanner(
+                    kind: bannerKind,
+                    timeout: hasTimeout,
+                    text: '${dangerEntries.length} 名队员气瓶已进入警报或预警，请注意！',
                   ),
                 ],
                 const SizedBox(height: AppSpacing.s3),
@@ -3031,7 +3012,7 @@ class HomePageState extends State<HomePage> {
                     color: status == 'normal'
                         ? AppColors.textPrimary
                         : s.textColor,
-                    size: 16,
+                    size: 22,
                     timeoutText: '已超时',
                   ),
                   const SizedBox(height: AppSpacing.s1),

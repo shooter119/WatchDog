@@ -318,6 +318,137 @@ class AppNotice extends StatelessWidget {
   }
 }
 
+/// 全宽横幅类型（用于页面级危险 / 断线 / 报警音关闭）
+enum AppBannerKind { danger, offline, warning }
+
+/// 全宽横幅（页面级状态通告）
+class AppBanner extends StatelessWidget {
+  final String text;
+  final AppBannerKind kind;
+  final IconData? icon;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final bool timeout;
+
+  const AppBanner({
+    super.key,
+    required this.text,
+    required this.kind,
+    this.icon,
+    this.actionLabel,
+    this.onAction,
+    this.timeout = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color borderColor;
+    final Color? leftBarColor;
+    final Color iconColor;
+    final Color textColor;
+    final IconData defaultIcon;
+
+    switch (kind) {
+      case AppBannerKind.danger:
+        if (timeout) {
+          bg = AppColors.timeout;
+          borderColor = AppColors.timeoutText;
+          leftBarColor = null;
+          iconColor = AppColors.onStatus;
+          textColor = AppColors.onStatus;
+          defaultIcon = Icons.warning_rounded;
+        } else {
+          bg = AppColors.surface;
+          borderColor = AppColors.alarm;
+          leftBarColor = AppColors.alarm;
+          iconColor = AppColors.alarm;
+          textColor = AppColors.alarmText;
+          defaultIcon = Icons.warning_rounded;
+        }
+      case AppBannerKind.offline:
+        bg = AppColors.surfaceSubtle;
+        borderColor = AppColors.textSecondary;
+        leftBarColor = null;
+        iconColor = AppColors.textPrimary;
+        textColor = AppColors.textPrimary;
+        defaultIcon = Icons.cloud_off;
+      case AppBannerKind.warning:
+        bg = AppColors.noticeWarningBg;
+        borderColor = AppColors.cautionText;
+        leftBarColor = null;
+        iconColor = AppColors.noticeWarningFg;
+        textColor = AppColors.noticeWarningFg;
+        defaultIcon = Icons.warning_rounded;
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: borderColor, width: 1.5),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          if (leftBarColor != null)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 4,
+              child: Container(color: leftBarColor),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s3,
+            ),
+            child: Row(
+              children: [
+                Icon(icon ?? defaultIcon, size: 22, color: iconColor),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: AppTextStyles.label.copyWith(
+                      color: textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (actionLabel != null) ...[
+                  const SizedBox(width: AppSpacing.s2),
+                  OutlinedButton(
+                    onPressed: onAction,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: textColor,
+                      side: BorderSide(color: borderColor),
+                      minimumSize: const Size(48, 48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s3,
+                      ),
+                    ),
+                    child: Text(
+                      actionLabel!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 统一卡片容器（白色大圆角，克制阴影，少装饰）
 class AppCard extends StatelessWidget {
   final Widget child;
@@ -737,9 +868,9 @@ class ConnectionStatus extends StatelessWidget {
         : syncing
         ? ('同步中', Icons.cloud_sync_outlined, AppColors.textSecondary)
         : isFailed
-        ? ('同步失败', Icons.cloud_off_outlined, AppColors.caution)
+        ? ('同步失败', Icons.cloud_off_outlined, AppColors.cautionText)
         : !connected
-        ? ('已中断', Icons.cloud_off_outlined, AppColors.alarm)
+        ? ('已中断', Icons.cloud_off_outlined, AppColors.textPrimary)
         : ('已连接', Icons.cloud_done_outlined, AppColors.online);
     final inner = Row(
       mainAxisSize: MainAxisSize.min,

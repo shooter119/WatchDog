@@ -3507,7 +3507,8 @@ void main() {
   });
 
   group('连接状态（平滑阈值）', () {
-    testWidgets('ConnectionStatus 两态渲染：已连接绿 / 已中断红并可重试', (tester) async {
+    // 视觉规范调整：已中断图标色调整为 textPrimary（非生命安全告警），不再使用 alarm 红
+    testWidgets('ConnectionStatus 两态渲染：已连接绿 / 已中断中性色并可重试', (tester) async {
       var retried = 0;
       Future<void> pump(bool connected) => tester.pumpWidget(
         MaterialApp(
@@ -3598,6 +3599,51 @@ void main() {
       expect(find.text('同步中'), findsNothing);
       await tester.tap(find.byType(ConnectionStatus));
       expect(retries, 0);
+    });
+
+    testWidgets('AppBanner 渲染 danger / offline / warning 规范样式', (tester) async {
+      var retried = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: Column(
+              children: [
+                const AppBanner(
+                  key: Key('banner-danger'),
+                  text: '生命安全告警',
+                  kind: AppBannerKind.danger,
+                ),
+                const AppBanner(
+                  key: Key('banner-timeout'),
+                  text: '超时告警',
+                  kind: AppBannerKind.danger,
+                  timeout: true,
+                ),
+                AppBanner(
+                  key: const Key('banner-offline'),
+                  text: '网络已中断',
+                  kind: AppBannerKind.offline,
+                  actionLabel: '重试',
+                  onAction: () => retried++,
+                ),
+                const AppBanner(
+                  key: Key('banner-warning'),
+                  text: '报警音已关闭',
+                  kind: AppBannerKind.warning,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(find.text('生命安全告警'), findsOneWidget);
+      expect(find.text('超时告警'), findsOneWidget);
+      expect(find.text('网络已中断'), findsOneWidget);
+      expect(find.text('报警音已关闭'), findsOneWidget);
+      expect(find.text('重试'), findsOneWidget);
+      await tester.tap(find.text('重试'));
+      expect(retried, 1);
     });
 
     testWidgets('VoiceButton 尊重系统减少动效偏好', (tester) async {

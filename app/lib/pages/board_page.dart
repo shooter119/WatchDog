@@ -106,28 +106,31 @@ class _BoardPageState extends State<BoardPage> {
                   ),
           ),
 
-          // 断线时显示具体错误原因
-          if (widget.controller.connectionLost &&
-              widget.controller.syncError != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.s4,
-                0,
-                AppSpacing.s4,
-                AppSpacing.s2,
-              ),
-              child: Text(
-                widget.controller.syncError!,
-                style: AppTextStyles.caption.copyWith(color: AppColors.alarm),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (widget.controller.connectionLost &&
+                    !widget.controller.isGuest) ...[
+                  AppBanner(
+                    kind: AppBannerKind.offline,
+                    text: widget.controller.syncError == null
+                        ? '网络已中断，看板数据可能不是最新'
+                        : '网络已中断：${widget.controller.syncError}',
+                    actionLabel: '重试',
+                    onAction: widget.controller.refreshNow,
+                  ),
+                  const SizedBox(height: AppSpacing.s2),
+                ],
+                if (!widget.controller.alarm.soundEnabled) ...[
+                  const AppBanner(
+                    kind: AppBannerKind.warning,
+                    text: '报警音已关闭',
+                    icon: Icons.volume_off,
+                  ),
+                  const SizedBox(height: AppSpacing.s2),
+                ],
                 _OverviewBanner(entries: active, config: cfg),
                 if (danger.isNotEmpty)
                   _DangerAlertBar(entries: danger, config: cfg),
@@ -338,42 +341,16 @@ class _DangerAlertBar extends StatelessWidget {
     final worst = statuses.reduce(
       (a, b) => _severity(a) <= _severity(b) ? a : b,
     );
-    final color = switch (worst) {
-      'timeout' => AppColors.timeout,
-      'alarm' => AppColors.alarm,
-      _ => AppColors.caution,
-    };
     final earliest = entries.reduce((a, b) => a.exitAt <= b.exitAt ? a : b);
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.s2),
-      child: AppCard(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s4,
-          vertical: AppSpacing.s3,
-        ),
-        radius: AppRadius.md,
-        color: color.withValues(alpha: 0.12),
-        side: BorderSide(color: color.withValues(alpha: 0.45)),
-        child: Row(
-          children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              color: color,
-              size: 20,
-            ),
-            const SizedBox(width: AppSpacing.s2),
-            Expanded(
-              child: Text(
-                '${entries.length} 人需要关注 · 最早到期 ${_fmtRemaining(earliest.remainingMs)}',
-                style: AppTextStyles.label.copyWith(
-                  color: AppColors.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
+      child: AppBanner(
+        kind: worst == 'warn' || worst == 'normal'
+            ? AppBannerKind.warning
+            : AppBannerKind.danger,
+        timeout: worst == 'timeout',
+        text:
+            '${entries.length} 人需要关注 · 最早到期 ${_fmtRemaining(earliest.remainingMs)}',
       ),
     );
   }
