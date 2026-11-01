@@ -7,6 +7,7 @@ import '../services/local_media_store.dart';
 import '../services/media_capture_service.dart';
 import '../services/media_share_service.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 import 'media_review_page.dart';
 
@@ -127,22 +128,13 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
   }
 
   Future<void> _delete(LocalMedia media) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除这条现场资料？'),
-        content: const Text('文件与已识别文字都会从本机删除，无法恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: '删除这条现场资料？',
+      message: '文件与已识别文字都会从本机删除，无法恢复。',
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      destructive: true,
     );
     if (confirmed != true) return;
     await MediaCaptureService.removeLocalCopy(media);
@@ -243,9 +235,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
         Text(
           hasIncident ? '在首页点「水印相机」，文件会保存在这台设备上' : '先加入或新建警情，拍摄的现场资料会归到当前警情下',
           textAlign: TextAlign.center,
-          style: AppTextStyles.caption.copyWith(
-            color: AppColors.textTertiary,
-          ),
+          style: AppTextStyles.caption.copyWith(color: AppColors.textTertiary),
         ),
       ],
     );

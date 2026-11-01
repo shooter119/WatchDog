@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/op_log_service.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 
 /// 操作日志：设置页二级页面
@@ -37,22 +38,13 @@ class _OpLogPageState extends State<OpLogPage> {
   }
 
   Future<void> _clear() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('清空本地操作日志？'),
-        content: const Text('仅清除本机日志，服务器上已同步的记录不受影响。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清空'),
-          ),
-        ],
-      ),
+    final ok = await showAppConfirmDialog(
+      context,
+      title: '清空本地操作日志？',
+      message: '仅清除本机日志，服务器上已同步的记录不受影响。',
+      confirmLabel: '清空',
+      cancelLabel: '取消',
+      destructive: true,
     );
     if (ok != true) return;
     await OpLogService.instance.clearLocal();
@@ -131,7 +123,7 @@ class _OpLogPageState extends State<OpLogPage> {
               svc.syncEnabled
                   ? (lastSync == null ? '尚未同步' : '上次同步 ${_fmtTime(lastSync)}')
                   : '已关闭，仅保存在本机',
-              style: const TextStyle(fontSize: 11.5),
+              style: const TextStyle(fontSize: 12),
             ),
             activeThumbColor: AppColors.actionPrimary,
             value: svc.syncEnabled,
@@ -180,8 +172,8 @@ class _OpLogPageState extends State<OpLogPage> {
                     child: Text(
                       '上次同步失败：$err',
                       style: TextStyle(
-                        fontSize: 11.5,
-                        color: AppColors.caution,
+                        fontSize: 12,
+                        color: AppColors.cautionText,
                       ),
                     ),
                   ),
@@ -313,7 +305,11 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                               '${_fmtDateTime(g.first.ts)} · ${g.entries.length} 步'
                               '${hasProblem ? ' · ${g.problemCount} 处异常' : ''}',
                               style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
                                 color: AppColors.textTertiary,
                               ),
                             ),
@@ -354,7 +350,7 @@ class _OpGroupCardState extends State<_OpGroupCard> {
 
   Widget _stepRow(OpLogEntry e) {
     final color = switch (e.level) {
-      'error' => AppColors.alarm,
+      'error' => AppColors.textPrimary,
       'warn' => AppColors.caution,
       _ => AppColors.textTertiary,
     };
@@ -364,12 +360,17 @@ class _OpGroupCardState extends State<_OpGroupCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-            ),
+            padding: EdgeInsets.only(top: e.level == 'error' ? 2 : 4),
+            child: e.level == 'error'
+                ? Icon(Icons.error, size: 12, color: AppColors.textPrimary)
+                : Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: color,
+                    ),
+                  ),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -391,7 +392,9 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                     Text(
                       _fmtTime(e.ts),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                         color: AppColors.textTertiary,
                       ),
                     ),
@@ -418,7 +421,9 @@ class _OpGroupCardState extends State<_OpGroupCard> {
                     child: Text(
                       _prettyJson(e.data!),
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                         height: 1.45,
                         color: AppColors.textSecondary,
                         fontFamily: 'monospace',

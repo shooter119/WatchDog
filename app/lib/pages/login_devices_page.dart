@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 
 class LoginDevicesPage extends StatefulWidget {
@@ -42,23 +43,13 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
   }
 
   Future<void> _revoke(String? id) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(id == null ? '退出其他全部设备？' : '退出这台设备？'),
-        content: const Text('目标设备的同步和语音连接会中断，需要重新登录。本机继续在线；目标设备未上传的记录会保留在当地。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('确认退出'),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: id == null ? '退出其他全部设备？' : '退出这台设备？',
+      message: '目标设备的同步和语音连接会中断，需要重新登录。本机继续在线；目标设备未上传的记录会保留在当地。',
+      confirmLabel: '确认退出',
+      cancelLabel: '取消',
+      destructive: true,
     );
     if (confirmed != true || !_authorized || !mounted) return;
     setState(() => _busy = true);
@@ -94,7 +85,7 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                 Text(
                   '新设备登录不会使其他设备下线。最近活动时间不代表设备此刻在线。',
                   style: AppTextStyles.caption.copyWith(
-                    fontSize: 12.5,
+                    fontSize: 13,
                     color: AppColors.textTertiary,
                     height: 1.4,
                   ),
@@ -124,10 +115,32 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                             ),
                           ),
                           Text(
-                            '最近活动：${DateTime.fromMillisecondsSinceEpoch((device['last_seen_at'] as num).toInt()).toLocal()}',
+                            '最近活动：${_fmtTimestamp((device['last_seen_at'] as num).toInt())}',
+                            style: const TextStyle(
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
                           if (device['current'] == true)
-                            const Text('当前设备')
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.textSecondary,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.pill,
+                                ),
+                              ),
+                              child: Text(
+                                '当前设备',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.onPrimary,
+                                ),
+                              ),
+                            )
                           else
                             OutlinedButton(
                               style: OutlinedButton.styleFrom(
@@ -143,9 +156,9 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                     ),
                   ),
                 const SizedBox(height: 12),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(48, 48),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(48, 52),
                   ),
                   onPressed: _busy || !_devices.any((d) => d['current'] != true)
                       ? null
@@ -160,4 +173,14 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
             ),
     ),
   );
+}
+
+String _fmtTimestamp(int epochMs) {
+  final d = DateTime.fromMillisecondsSinceEpoch(epochMs).toLocal();
+  final mm = d.month.toString().padLeft(2, '0');
+  final dd = d.day.toString().padLeft(2, '0');
+  final hh = d.hour.toString().padLeft(2, '0');
+  final min = d.minute.toString().padLeft(2, '0');
+  final ss = d.second.toString().padLeft(2, '0');
+  return '$mm-$dd $hh:$min:$ss';
 }

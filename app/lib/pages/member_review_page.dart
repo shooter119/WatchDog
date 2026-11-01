@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 
 class MemberReviewPage extends StatefulWidget {
@@ -47,22 +48,13 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
     final epoch = c.protectedDataEpoch;
     if (_busy.contains(member.id) || api == null || !c.canReviewMembers) return;
     if (!approve) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('驳回入队申请'),
-          content: Text('确认驳回「${member.realName}」的申请？对方核实后可重新申请。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('确认驳回'),
-            ),
-          ],
-        ),
+      final confirmed = await showAppConfirmDialog(
+        context,
+        title: '驳回入队申请',
+        message: '确认驳回「${member.realName}」的申请？对方核实后可重新申请。',
+        confirmLabel: '确认驳回',
+        cancelLabel: '取消',
+        destructive: true,
       );
       if (confirmed != true ||
           !mounted ||
@@ -310,20 +302,13 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
             if (!revoked && c.memberReviewError != null)
               Padding(
                 padding: const EdgeInsets.all(AppSpacing.s4),
-                child: Column(
-                  children: [
-                    Text(
-                      '审批信息加载失败：${c.memberReviewError}',
-                      style: AppTextStyles.bodyMd.copyWith(
-                        color: AppColors.alarm,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.s2),
-                    TextButton(
-                      onPressed: c.refreshPendingMembersCount,
-                      child: const Text('重试'),
-                    ),
-                  ],
+                child: AppNotice(
+                  kind: AppNoticeKind.error,
+                  text: '审批信息加载失败：${c.memberReviewError}',
+                  action: TextButton(
+                    onPressed: c.refreshPendingMembersCount,
+                    child: const Text('重试'),
+                  ),
                 ),
               ),
             if (!allowed &&

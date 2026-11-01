@@ -5,6 +5,7 @@ import '../api/api_client.dart';
 import '../models/models.dart';
 import '../models/key_sites.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 import 'key_sites_page.dart';
 
@@ -149,13 +150,11 @@ class _IncidentLinkState extends State<_IncidentLink> {
                     ),
                   ),
                   actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('取消'),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('确认'),
+                    // 保留实时鉴权重建，只统一按钮规格（Q8）；解除用 destructive。
+                    appConfirmDialogActions(
+                      context,
+                      confirmLabel: '确认',
+                      destructive: remove,
                     ),
                   ],
                 ),
@@ -254,11 +253,9 @@ class _IncidentLinkState extends State<_IncidentLink> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-              child: Text(
-                keySiteError(_error!),
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.alarm,
-                ),
+              child: AppNotice(
+                kind: AppNoticeKind.error,
+                text: keySiteError(_error!),
               ),
             ),
           if (link != null && widget.incident.isActive)
