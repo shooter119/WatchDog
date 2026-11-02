@@ -73,6 +73,15 @@ void main() {
     expect(AppColors.palette.id, 'daylight');
   });
 
+  test('旧夜间主题偏好回落并保存为昼白', () async {
+    SharedPreferences.setMockInitialValues({'app_theme': 'night-tactical'});
+    await ThemeController.instance.load();
+    expect(ThemeController.instance.currentId, 'daylight');
+    expect(await Settings.appThemeId, 'daylight');
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('app_theme'), 'daylight');
+  });
+
   test('主题偏好不进入服务端同步载荷', () async {
     final map = await Settings.toSyncMap();
     expect(map.containsKey('app_theme'), isFalse);

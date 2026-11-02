@@ -14,6 +14,7 @@ void main() {
   group('调色板结构', () {
     test('id 唯一且 byId 对未知值回落默认', () {
       final ids = AppPalette.values.map((p) => p.id).toSet();
+      expect(ids, {'daylight', 'warm-sand'});
       expect(ids.length, AppPalette.values.length);
       expect(AppPalette.byId('warm-sand').id, 'warm-sand');
       expect(AppPalette.byId(null).id, 'daylight');

@@ -1114,7 +1114,11 @@ class _SettingsPageState extends State<SettingsPage> {
           },
         ),
         if (widget.controller.localAsr != null) ...[
-          const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+          const Divider(
+            height: 1,
+            indent: AppSpacing.s4,
+            endIndent: AppSpacing.s4,
+          ),
           _buildModelTile(),
         ],
       ],
@@ -1134,7 +1138,11 @@ class _SettingsPageState extends State<SettingsPage> {
             _autoSave();
           },
         ),
-        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+        const Divider(
+          height: 1,
+          indent: AppSpacing.s4,
+          endIndent: AppSpacing.s4,
+        ),
         _switchRow(
           icon: Icons.notifications_none_outlined,
           title: '报警音',
@@ -1145,7 +1153,11 @@ class _SettingsPageState extends State<SettingsPage> {
             _autoSave();
           },
         ),
-        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+        const Divider(
+          height: 1,
+          indent: AppSpacing.s4,
+          endIndent: AppSpacing.s4,
+        ),
         _switchRow(
           icon: Icons.light_mode_outlined,
           title: '屏幕常亮',
@@ -1156,7 +1168,11 @@ class _SettingsPageState extends State<SettingsPage> {
             _autoSave();
           },
         ),
-        const Divider(height: 1, indent: AppSpacing.s4, endIndent: AppSpacing.s4),
+        const Divider(
+          height: 1,
+          indent: AppSpacing.s4,
+          endIndent: AppSpacing.s4,
+        ),
         _switchRow(
           icon: Icons.shield_moon_outlined,
           title: '后台值守模式',
@@ -1309,10 +1325,7 @@ class _SettingsPageState extends State<SettingsPage> {
       padding: const EdgeInsets.only(bottom: 12),
       child: DropdownButtonFormField<double>(
         initialValue: _cylinderVol,
-        decoration: const InputDecoration(
-          labelText: '气瓶容积',
-          hintText: '6.8 L',
-        ),
+        decoration: const InputDecoration(labelText: '气瓶容积', hintText: '6.8 L'),
         items: [
           for (final volume in Settings.allowedCylinderVolumes)
             DropdownMenuItem(
@@ -2206,17 +2219,17 @@ class _ThemeOption extends StatelessWidget {
               : const Duration(milliseconds: 150),
           padding: const EdgeInsets.all(AppSpacing.s3),
           decoration: BoxDecoration(
-            color: palette.surface,
-            borderRadius: BorderRadius.circular(AppRadius.sm),
+            color: selected ? AppColors.surfaceSubtle : AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-              color: selected ? palette.actionPrimary : palette.border,
+              color: selected ? AppColors.actionPrimary : AppColors.border,
               width: selected ? 2 : 1,
             ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 三套配色并排时卡片较窄：色块用 Wrap 自动折行，勾选图标并到名称行。
+              // 用目标配色预览色块，其余界面保持当前主题的视觉语言。
               Wrap(
                 spacing: AppSpacing.s1,
                 runSpacing: AppSpacing.s1,
@@ -2246,7 +2259,7 @@ class _ThemeOption extends StatelessWidget {
                       palette.label,
                       style: AppTextStyles.label.copyWith(
                         fontWeight: FontWeight.w800,
-                        color: palette.textPrimary,
+                        color: AppColors.textPrimary,
                       ),
                     ),
                   ),
@@ -2254,7 +2267,7 @@ class _ThemeOption extends StatelessWidget {
                     Icon(
                       Icons.check_circle_outline,
                       size: 16,
-                      color: palette.actionPrimary,
+                      color: AppColors.actionPrimary,
                     ),
                 ],
               ),
@@ -2262,11 +2275,10 @@ class _ThemeOption extends StatelessWidget {
               Text(
                 switch (palette.id) {
                   'daylight' => '高可视亮色',
-                  'night-tactical' => '深色护眼',
                   _ => '暖纸陶土',
                 },
                 style: AppTextStyles.caption.copyWith(
-                  color: palette.textTertiary,
+                  color: AppColors.textSecondary,
                 ),
               ),
             ],
