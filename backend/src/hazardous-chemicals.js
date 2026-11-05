@@ -45,6 +45,16 @@ function createHazardousChemicals(store) {
     return store.query(sql, params);
   }
 
+  async function resolveActorId(actorId) {
+    if (!actorId) return null;
+    try {
+      const res = await query('SELECT id FROM unit_members WHERE id = $1 LIMIT 1', [actorId]);
+      return res.rows[0]?.id || null;
+    } catch {
+      return null;
+    }
+  }
+
   return {
     async list({ query: q = '', category = '', water = '', limit = 50, offset = 0, activeOnly = true } = {}) {
       const conditions = [];
@@ -132,6 +142,7 @@ function createHazardousChemicals(store) {
       const aliases = cleanAliases(data.aliases);
       const waterReactivity = normalizeWaterReactivity(data.water_reactivity, data.forbidden_agents);
       const dangerSignColor = normalizeSignColor(data.danger_category, data.danger_sign_color);
+      const validActorId = await resolveActorId(actorId);
 
       const sql = `
         INSERT INTO hazardous_chemicals (
@@ -174,7 +185,7 @@ function createHazardousChemicals(store) {
         cleanString(data.explosion_limit),
         cleanString(data.vapor_density),
         cleanString(data.notes),
-        actorId,
+        validActorId,
         now
       ];
 
@@ -210,6 +221,7 @@ function createHazardousChemicals(store) {
         : normalizeSignColor(dangerCategory, existing.danger_sign_color);
 
       const now = Date.now();
+      const validActorId = await resolveActorId(actorId);
       const sql = `
         UPDATE hazardous_chemicals SET
           name_cn = $1,
@@ -261,7 +273,7 @@ function createHazardousChemicals(store) {
         data.explosion_limit !== undefined ? cleanString(data.explosion_limit) : existing.explosion_limit,
         data.vapor_density !== undefined ? cleanString(data.vapor_density) : existing.vapor_density,
         data.notes !== undefined ? cleanString(data.notes) : existing.notes,
-        actorId,
+        validActorId,
         now,
         id
       ];
