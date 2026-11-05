@@ -136,13 +136,16 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
     String city =
         (incident.info['administrative_area']?.toString() ?? '').trim();
 
-    // 若警情 info 中缺少位置，尝试从警情详情接口补拉一次
-    if (location.isEmpty && _gateway.fetchIncidentDetails != null) {
+    // 若警情 info 中缺少位置或行政区，尝试从警情详情接口补拉一次
+    if ((location.isEmpty || city.isEmpty) &&
+        _gateway.fetchIncidentDetails != null) {
       try {
         final details = await _gateway.fetchIncidentDetails!(incident.id);
         if (details['data'] is Map) {
           final data = Map<String, dynamic>.from(details['data'] as Map);
-          location = (data['location']?.toString() ?? '').trim();
+          if (location.isEmpty) {
+            location = (data['location']?.toString() ?? '').trim();
+          }
           if (city.isEmpty) {
             city = (data['administrative_area']?.toString() ?? '').trim();
           }
@@ -210,9 +213,13 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
       });
     } catch (e) {
       if (!mounted || gen != _loadGeneration) return;
+      final rawMsg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      final msg = rawMsg.contains('404')
+          ? '路况查询服务未就绪或正在升级（HTTP 404），请稍后重试'
+          : rawMsg;
       setState(() {
         _loading = false;
-        _error = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+        _error = msg;
       });
     }
   }
