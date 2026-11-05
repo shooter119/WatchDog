@@ -5,7 +5,9 @@ import 'package:watchdog/models/models.dart';
 import 'package:watchdog/pages/route_traffic_page.dart';
 import 'package:watchdog/services/camera_bridge.dart';
 import 'package:watchdog/state/app_controller.dart';
+import 'package:watchdog/theme/app_palette.dart';
 import 'package:watchdog/theme/app_theme.dart';
+import 'package:watchdog/theme/app_widgets.dart';
 
 class _FakeController extends AppController {
   Incident? mockIncident;
@@ -474,6 +476,245 @@ void main() {
 
       // 底栏关闭，且按江山市坐标重新发起了请求
       expect(requestedDestLat, 28.581);
+    });
+
+    testWidgets('气象卡片置顶展示（位于起终点卡片之前）', (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = _FakeController(
+        mockIncident: const Incident(
+          id: 'inc-1',
+          number: '2026-11-05-01',
+          title: '建德某厂火警',
+          status: 'active',
+          createdAt: 1000,
+          lastActivityAt: 2000,
+          info: {
+            'location': '新安东路1号',
+            'administrative_area': '建德市',
+          },
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: RouteTrafficPage(
+            controller: controller,
+            gateway: RouteTrafficGateway(
+              requestPermission: () async => true,
+              locationServiceEnabled: () async => true,
+              currentLocation: () async => const LocationFix(
+                lat: 29.491,
+                lon: 119.302,
+                accuracyMeters: 5.0,
+                provider: 'gps',
+                ageMs: 100,
+              ),
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async => mockRouteInfo,
+              openAppSettings: () async {},
+              openLocationSettings: () async {},
+              copyText: (_) async {},
+              launchNavigation: (_) async => true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final weatherTop = tester.getTopLeft(find.text('事发地气象与火场风向')).dy;
+      final endpointsTop = tester.getTopLeft(find.text('浙江省杭州市建德市新安江街道新安东路1号')).dy;
+
+      expect(weatherTop, lessThan(endpointsTop), reason: '气象卡片必须置顶于起终点卡片之前');
+    });
+
+    testWidgets('窄屏与超长预报文本下切换路线方案无 RenderFlex 溢出', (tester) async {
+      tester.view.physicalSize = const Size(320, 900); // 极窄屏幕
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final longWeatherInfo = RouteTrafficInfo(
+        destination: const RouteEndpointInfo(
+          queryAddress: '新安东路1号',
+          formattedAddress: '浙江省杭州市建德市新安江街道新安东路1号超长测试地址地址地址地址',
+        ),
+        weather: const RouteWeatherLive(
+          text: '强雷阵雨伴有冰雹',
+          temperature: '38',
+          humidity: '99',
+          windDirection: '西北偏北超强阵风',
+          windPower: '9-10',
+          city: '建德市超长行政区划测试',
+        ),
+        forecast: const RouteWeatherForecast(
+          dayWeather: '特大暴雨转大暴雨强对流大风黄色预警',
+          nightWeather: '阴转小雨局部有轻度雾霾伴微风',
+          dayTemp: '36',
+          nightTemp: '24',
+        ),
+        routes: [
+          DrivingRoutePlan(
+            strategy: '方案一避开拥堵优先高架超长策略名称',
+            distanceMeters: 168000,
+            durationSeconds: 10800,
+            trafficLights: 38,
+            overallStatus: '严重拥堵',
+            roads: const ['洋安大道超长路段一', '新安江大桥跨江通道超长路段二', '新安东路核心主干道超长三'],
+            trafficSummary: const TrafficSummary(
+              smoothMeters: 52000,
+              slowMeters: 32000,
+              jamMeters: 44000,
+              severeJamMeters: 40000,
+            ),
+            congestedSegments: const [
+              CongestedSegment(
+                road: '新安江大桥超长拥堵路段名极其狭窄空间测试专用',
+                status: '严重拥堵',
+                distanceMeters: 40000,
+              ),
+              CongestedSegment(
+                road: '新安东路某某辅路口持续缓行路段',
+                status: '缓行',
+                distanceMeters: 32000,
+              ),
+            ],
+          ),
+          const DrivingRoutePlan(
+            strategy: '方案二备选常规通道',
+            distanceMeters: 175000,
+            durationSeconds: 12000,
+            trafficLights: 45,
+            overallStatus: '畅通',
+            roads: ['洋安大道', '白沙路'],
+            trafficSummary: TrafficSummary(
+              smoothMeters: 175000,
+            ),
+          ),
+        ],
+        routeAvailable: true,
+      );
+
+      final controller = _FakeController(
+        mockIncident: const Incident(
+          id: 'inc-narrow',
+          number: '2026-11-05-03',
+          title: '窄屏测试火警',
+          status: 'active',
+          createdAt: 1000,
+          lastActivityAt: 2000,
+          info: {'location': '新安东路1号'},
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: RouteTrafficPage(
+            controller: controller,
+            gateway: RouteTrafficGateway(
+              requestPermission: () async => true,
+              locationServiceEnabled: () async => true,
+              currentLocation: () async => null,
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async => longWeatherInfo,
+              openAppSettings: () async {},
+              openLocationSettings: () async {},
+              copyText: (_) async {},
+              launchNavigation: (_) async => true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 无 RenderFlex 异常
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('严重拥堵'), findsWidgets);
+
+      // 切换到方案二
+      await tester.ensureVisible(find.byKey(const Key('route-strategy-chip-1')));
+      await tester.tap(find.byKey(const Key('route-strategy-chip-1')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('当前路线全线畅通，无明显拥堵路段。'), findsOneWidget);
+
+      // 切换回方案一
+      await tester.ensureVisible(find.byKey(const Key('route-strategy-chip-0')));
+      await tester.tap(find.byKey(const Key('route-strategy-chip-0')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('暖砂配色下各项语义色正常生效且无静态报错', (tester) async {
+      AppColors.use(AppPalette.warmSand);
+      addTearDown(AppColors.reset);
+
+      final controller = _FakeController(
+        mockIncident: const Incident(
+          id: 'inc-warm',
+          number: '2026-11-05-04',
+          title: '暖砂主题测试',
+          status: 'active',
+          createdAt: 1000,
+          lastActivityAt: 2000,
+          info: {'location': '新安东路1号'},
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(AppPalette.warmSand),
+          home: RouteTrafficPage(
+            controller: controller,
+            gateway: RouteTrafficGateway(
+              requestPermission: () async => true,
+              locationServiceEnabled: () async => true,
+              currentLocation: () async => null,
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async => mockRouteInfo,
+              openAppSettings: () async {},
+              openLocationSettings: () async {},
+              copyText: (_) async {},
+              launchNavigation: (_) async => true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('事发地气象与火场风向'), findsOneWidget);
     });
   });
 }

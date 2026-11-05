@@ -935,7 +935,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     final enabled = !_busy && !_deriving;
     final saveAndShare = FilledButton.icon(
       key: const Key('review-save-share'),
-      style: FilledButton.styleFrom(minimumSize: const Size(0, 56)),
+      style: FilledButton.styleFrom(minimumSize: const Size(0, 52)),
       onPressed: enabled ? _saveAndShare : null,
       icon: _busy
           ? const SizedBox(
@@ -964,12 +964,11 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       ),
       child: SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: Row(
           children: [
-            SizedBox(width: double.infinity, child: saveAndShare),
-            const SizedBox(height: 8),
-            SizedBox(width: double.infinity, child: saveOnly),
+            Expanded(child: saveOnly),
+            const SizedBox(width: 12),
+            Expanded(child: saveAndShare),
           ],
         ),
       ),

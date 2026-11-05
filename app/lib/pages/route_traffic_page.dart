@@ -582,6 +582,11 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
             ? routes[_selectedRouteIndex]
             : null;
 
+    final hasWeather =
+        info.weather != null ||
+        info.forecast != null ||
+        info.weatherLine != null;
+
     return Column(
       children: [
         Expanded(
@@ -594,17 +599,19 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
             ),
             children: [
               _buildLocationBanner(),
+              if (hasWeather) ...[
+                _buildWeatherCard(info),
+                const SizedBox(height: AppSpacing.s3),
+              ],
               _buildEndpointsCard(info),
-              const SizedBox(height: AppSpacing.s3),
               if (selectedRoute != null) ...[
+                const SizedBox(height: AppSpacing.s3),
                 _buildRouteOverviewCard(routes, selectedRoute),
                 const SizedBox(height: AppSpacing.s3),
                 _buildCongestionCard(selectedRoute),
                 const SizedBox(height: AppSpacing.s3),
                 _buildRoadsCard(selectedRoute),
-                const SizedBox(height: AppSpacing.s3),
               ],
-              _buildWeatherCard(info),
             ],
           ),
         ),
@@ -753,44 +760,120 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               ],
             ],
           ),
-          if (info.ambiguous && info.candidates.length > 1) ...[
-            const SizedBox(height: AppSpacing.s2),
-            InkWell(
-              onTap: () => _showCandidatePicker(info.candidates),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.alarm.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: AppColors.alarm.withValues(alpha: 0.3),
+          _buildAmbiguousBanner(info),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAmbiguousBanner(RouteTrafficInfo info) {
+    if (!info.ambiguous || info.candidates.length <= 1) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.s2),
+      child: InkWell(
+        key: const Key('route-traffic-ambiguous-banner'),
+        onTap: () => _showCandidatePicker(info.candidates),
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.noticeWarningBg,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: AppColors.caution.withValues(alpha: 0.35),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 14,
+                color: AppColors.noticeWarningFg,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  '检测到多处同名地点，当前为${_selectedCandidate?.name ?? "推荐地点"}，点此切换',
+                  style: AppTextStyles.label.copyWith(
+                    color: AppColors.noticeWarningFg,
+                    fontSize: 11,
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 14, color: AppColors.alarm),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        '检测到多处同名地点，当前为${_selectedCandidate?.name ?? "推荐地点"}，点此切换',
-                        style: AppTextStyles.label.copyWith(
-                          color: AppColors.alarm,
-                          fontSize: 11,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Icon(
-                      Icons.chevron_right,
-                      size: 14,
-                      color: AppColors.alarm,
-                    ),
-                  ],
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
+              Icon(
+                Icons.chevron_right,
+                size: 14,
+                color: AppColors.caution,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStrategySelector(List<DrivingRoutePlan> routes) {
+    if (routes.length <= 1) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.s3),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var i = 0; i < routes.length; i++) ...[
+              if (i > 0) const SizedBox(width: AppSpacing.s2),
+              Builder(
+                builder: (context) {
+                  final isSelected = _selectedRouteIndex == i;
+                  return InkWell(
+                    key: Key('route-strategy-chip-$i'),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    onTap: () {
+                      if (!isSelected) {
+                        setState(() {
+                          _selectedRouteIndex = i;
+                          _stepsExpanded = false;
+                        });
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.actionPrimary
+                            : AppColors.surface,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.actionPrimary
+                              : AppColors.border,
+                        ),
+                      ),
+                      child: Text(
+                        '方案${i + 1} · ${routes[i].strategy}',
+                        style: AppTextStyles.label.copyWith(
+                          color: isSelected
+                              ? AppColors.textOnDark
+                              : AppColors.textSecondary,
+                          fontWeight: isSelected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -804,34 +887,11 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (routes.length > 1) ...[
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (var i = 0; i < routes.length; i++) ...[
-                    if (i > 0) const SizedBox(width: AppSpacing.s2),
-                    ChoiceChip(
-                      label: Text('方案${i + 1} · ${routes[i].strategy}'),
-                      selected: _selectedRouteIndex == i,
-                      onSelected: (selected) {
-                        if (selected) {
-                          setState(() {
-                            _selectedRouteIndex = i;
-                            _stepsExpanded = false;
-                          });
-                        }
-                      },
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s3),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
+          _buildStrategySelector(routes),
+          Wrap(
+            spacing: AppSpacing.s3,
+            runSpacing: AppSpacing.s1,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 RouteTrafficInfo.formatDuration(selectedRoute.durationSeconds),
@@ -840,7 +900,6 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(width: AppSpacing.s3),
               Text(
                 RouteTrafficInfo.formatDistance(selectedRoute.distanceMeters),
                 style: AppTextStyles.bodyLg.copyWith(
@@ -848,7 +907,6 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(width: AppSpacing.s3),
               Text(
                 '红绿灯 ${selectedRoute.trafficLights} 个',
                 style: AppTextStyles.label.copyWith(
@@ -866,23 +924,35 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
 
   Widget _buildTrafficStatusBar(DrivingRoutePlan route) {
     final summary = route.trafficSummary;
-    final total = summary.totalMeters > 0 ? summary.totalMeters : route.distanceMeters;
+    final total =
+        summary.totalMeters > 0 ? summary.totalMeters : route.distanceMeters;
 
-    Color statusColor;
+    final Color badgeBg;
+    final Color badgeBorder;
+    final Color badgeText;
+
     switch (route.overallStatus) {
       case '严重拥堵':
-        statusColor = const Color(0xFFB91C1C);
+        badgeBg = AppColors.alarmSurface;
+        badgeBorder = AppColors.timeout.withValues(alpha: 0.35);
+        badgeText = AppColors.alarmText;
         break;
       case '拥堵':
       case '局部拥堵':
-        statusColor = AppColors.alarm;
+        badgeBg = AppColors.alarmSurface;
+        badgeBorder = AppColors.alarm.withValues(alpha: 0.35);
+        badgeText = AppColors.alarmText;
         break;
       case '局部缓行':
       case '缓行':
-        statusColor = const Color(0xFFF59E0B);
+        badgeBg = AppColors.cautionSurface;
+        badgeBorder = AppColors.caution.withValues(alpha: 0.35);
+        badgeText = AppColors.cautionText;
         break;
       default:
-        statusColor = const Color(0xFF10B981);
+        badgeBg = AppColors.safeSurface;
+        badgeBorder = AppColors.safe.withValues(alpha: 0.35);
+        badgeText = AppColors.safeText;
         break;
     }
 
@@ -894,24 +964,29 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.12),
+                color: badgeBg,
                 borderRadius: BorderRadius.circular(AppRadius.sm),
-                border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                border: Border.all(color: badgeBorder),
               ),
               child: Text(
                 '路况：${route.overallStatus}',
                 style: AppTextStyles.caption.copyWith(
-                  color: statusColor,
+                  color: badgeText,
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
+            const SizedBox(width: AppSpacing.s2),
             const Spacer(),
             if (summary.totalMeters > 0)
-              Text(
-                '畅通 ${RouteTrafficInfo.formatDistance(summary.smoothMeters, compactUnit: true)}',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textSecondary,
+              Flexible(
+                child: Text(
+                  '畅通 ${RouteTrafficInfo.formatDistance(summary.smoothMeters, compactUnit: true)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
           ],
@@ -927,12 +1002,12 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                   if (summary.smoothMeters > 0)
                     Expanded(
                       flex: summary.smoothMeters,
-                      child: Container(color: const Color(0xFF10B981)),
+                      child: Container(color: AppColors.safe),
                     ),
                   if (summary.slowMeters > 0)
                     Expanded(
                       flex: summary.slowMeters,
-                      child: Container(color: const Color(0xFFF59E0B)),
+                      child: Container(color: AppColors.caution),
                     ),
                   if (summary.jamMeters > 0)
                     Expanded(
@@ -942,7 +1017,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                   if (summary.severeJamMeters > 0)
                     Expanded(
                       flex: summary.severeJamMeters,
-                      child: Container(color: const Color(0xFFB91C1C)),
+                      child: Container(color: AppColors.timeout),
                     ),
                   if (summary.unknownMeters > 0)
                     Expanded(
@@ -956,6 +1031,29 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
         ],
       ],
     );
+  }
+
+  Color _trafficStatusDotColor(String status) {
+    switch (status) {
+      case '严重拥堵':
+        return AppColors.timeout;
+      case '拥堵':
+        return AppColors.alarm;
+      case '缓行':
+      default:
+        return AppColors.caution;
+    }
+  }
+
+  Color _trafficStatusTextColor(String status) {
+    switch (status) {
+      case '严重拥堵':
+      case '拥堵':
+        return AppColors.alarmText;
+      case '缓行':
+      default:
+        return AppColors.cautionText;
+    }
   }
 
   Widget _buildCongestionCard(DrivingRoutePlan route) {
@@ -974,7 +1072,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                     ? Icons.warning_amber_rounded
                     : Icons.check_circle_outline_rounded,
                 size: 18,
-                color: hasJam ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
+                color: hasJam ? AppColors.caution : AppColors.safe,
               ),
               const SizedBox(width: AppSpacing.s2),
               Text(
@@ -997,11 +1095,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: seg.status == '严重拥堵'
-                            ? const Color(0xFFB91C1C)
-                            : seg.status == '拥堵'
-                            ? AppColors.alarm
-                            : const Color(0xFFF59E0B),
+                        color: _trafficStatusDotColor(seg.status),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -1009,27 +1103,35 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                     Expanded(
                       child: Text(
                         seg.road,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.bodyMd.copyWith(
                           fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                     ),
-                    Text(
-                      '${seg.status} ${RouteTrafficInfo.formatDistance(seg.distanceMeters, compactUnit: true)}',
-                      style: AppTextStyles.label.copyWith(
-                        color: AppColors.textSecondary,
+                    const SizedBox(width: AppSpacing.s2),
+                    Flexible(
+                      child: Text(
+                        '${seg.status} ${RouteTrafficInfo.formatDistance(seg.distanceMeters, compactUnit: true)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.label.copyWith(
+                          color: _trafficStatusTextColor(seg.status),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
           ] else
-            const Text(
+            Text(
               '当前路线全线畅通，无明显拥堵路段。',
-              style: TextStyle(
-                color: Color(0xFF10B981),
+              style: AppTextStyles.bodyMd.copyWith(
+                color: AppColors.safeText,
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
               ),
             ),
         ],
@@ -1196,28 +1298,40 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                 color: AppColors.voice,
               ),
               const SizedBox(width: AppSpacing.s2),
-              Text(
-                '事发地气象与火场风向',
-                style: AppTextStyles.bodyMd.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const Spacer(),
-              if (live?.city != null && live!.city.isNotEmpty)
-                Text(
-                  live.city,
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondary,
+              Expanded(
+                child: Text(
+                  '事发地气象与火场风向',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyMd.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
                   ),
                 ),
+              ),
+              if (live?.city != null && live!.city.isNotEmpty) ...[
+                const SizedBox(width: AppSpacing.s2),
+                Flexible(
+                  child: Text(
+                    live.city,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: AppSpacing.s3),
           if (live != null) ...[
-            Row(
+            Wrap(
+              spacing: AppSpacing.s3,
+              runSpacing: AppSpacing.s1,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                if (live.text.isNotEmpty) ...[
+                if (live.text.isNotEmpty)
                   Text(
                     live.text,
                     style: AppTextStyles.h2.copyWith(
@@ -1225,9 +1339,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.s3),
-                ],
-                if (live.temperature.isNotEmpty) ...[
+                if (live.temperature.isNotEmpty)
                   Text(
                     '${live.temperature}℃',
                     style: AppTextStyles.h2.copyWith(
@@ -1235,8 +1347,6 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.s3),
-                ],
                 if (live.humidity.isNotEmpty)
                   Text(
                     '湿度 ${live.humidity}%',
@@ -1253,10 +1363,10 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                 vertical: AppSpacing.s2,
               ),
               decoration: BoxDecoration(
-                color: AppColors.voice.withValues(alpha: 0.08),
+                color: AppColors.cautionSurface,
                 borderRadius: BorderRadius.circular(AppRadius.sm),
                 border: Border.all(
-                  color: AppColors.voice.withValues(alpha: 0.2),
+                  color: AppColors.caution.withValues(alpha: 0.35),
                 ),
               ),
               child: Row(
@@ -1264,7 +1374,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                   Icon(
                     Icons.air_rounded,
                     size: 18,
-                    color: AppColors.voice,
+                    color: AppColors.caution,
                   ),
                   const SizedBox(width: AppSpacing.s2),
                   Expanded(
@@ -1274,7 +1384,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                           : '风向风力以现场实测为准',
                       style: AppTextStyles.label.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                        color: AppColors.cautionText,
                       ),
                     ),
                   ),
@@ -1300,10 +1410,12 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
             const Divider(height: 20),
             Row(
               children: [
-                Text(
-                  '今日预报：白天 ${forecast.dayWeather} ${forecast.dayTemp}℃ · 夜间 ${forecast.nightWeather} ${forecast.nightTemp}℃',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondary,
+                Expanded(
+                  child: Text(
+                    '今日预报：白天 ${forecast.dayWeather} ${forecast.dayTemp}℃ · 夜间 ${forecast.nightWeather} ${forecast.nightTemp}℃',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ),
               ],

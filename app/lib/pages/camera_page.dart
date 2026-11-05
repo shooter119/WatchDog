@@ -945,6 +945,40 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     return Positioned(top: 0, left: 0, right: 0, child: _topBarContent());
   }
 
+  Widget _modeBadge() {
+    final isVideo = _mode == _CaptureMode.video;
+    return Container(
+      key: const Key('camera-mode-badge'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isVideo ? const Color(0xFFD32029) : Colors.black54,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(
+          color: isVideo ? const Color(0xFFFF4D4F) : Colors.white24,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isVideo ? Icons.videocam_rounded : Icons.photo_camera_rounded,
+            size: 14,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isVideo ? '录像模式' : '拍照模式',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _topBarContent() {
     final unlinked = (widget.controller.currentIncident?.id ?? '').isEmpty;
     return SafeArea(
@@ -971,6 +1005,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                     size: 24,
                   ),
                 ),
+                if (!_recording) ...[
+                  const SizedBox(width: 4),
+                  _modeBadge(),
+                ],
                 if (_hasPermissionBadges) ...[
                   const SizedBox(width: 4),
                   Flexible(child: _permissionBadges()),
@@ -1321,6 +1359,21 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   Widget _modeSwitch() {
     Widget item(_CaptureMode mode, String label, IconData icon) {
       final selected = _mode == mode;
+      final Color bgColor;
+      final Color fgColor;
+      if (selected) {
+        if (mode == _CaptureMode.photo) {
+          bgColor = Colors.white;
+          fgColor = Colors.black87;
+        } else {
+          bgColor = const Color(0xFFD32029);
+          fgColor = Colors.white;
+        }
+      } else {
+        bgColor = Colors.transparent;
+        fgColor = Colors.white60;
+      }
+
       return Expanded(
         child: Semantics(
           button: true,
@@ -1343,24 +1396,24 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               padding: const EdgeInsets.symmetric(vertical: 8),
               margin: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: selected ? const Color(0xFF2A3542) : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
+                color: bgColor,
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: Column(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
                     icon,
                     size: 16,
-                    color: selected ? Colors.white : Colors.white54,
+                    color: fgColor,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     label,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                      color: selected ? Colors.white : Colors.white54,
+                      fontWeight: selected ? FontWeight.bold : FontWeight.w400,
+                      color: fgColor,
                     ),
                   ),
                 ],
@@ -1375,7 +1428,7 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       constraints: const BoxConstraints(maxWidth: 240),
       decoration: BoxDecoration(
         color: Colors.white12,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.white24),
       ),
       child: Row(
@@ -1391,6 +1444,48 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
     final video = _mode == _CaptureMode.video;
     final busy = _capturing || _processing || _starting || _stateUnknown;
     final active = video && _recording;
+
+    final Color ringColor;
+    final Color innerColor;
+    final IconData shutterIcon;
+    final Color iconColor;
+    final double iconSize;
+    final String labelText;
+    final Color capsuleBorderColor;
+    final Color capsuleBgColor;
+
+    if (!video) {
+      // 拍照模式：白色外圈 + 白色实心内圆 + 黑色相机图标 (Icons.camera_alt_rounded)，下方胶囊文字「点击拍照」
+      ringColor = Colors.white;
+      innerColor = Colors.white;
+      shutterIcon = Icons.camera_alt_rounded;
+      iconColor = Colors.black87;
+      iconSize = 30;
+      labelText = '点击拍照';
+      capsuleBorderColor = Colors.white24;
+      capsuleBgColor = Colors.black54;
+    } else if (!active) {
+      // 录像待机模式 (video && !active)：白色外圈 + 醒目红色实心内圆 (const Color(0xFFD32029)) + 白色摄像机图标 (Icons.videocam_rounded)，下方胶囊文字「点击开始录像」，带红色高亮边框
+      ringColor = Colors.white;
+      innerColor = const Color(0xFFD32029);
+      shutterIcon = Icons.videocam_rounded;
+      iconColor = Colors.white;
+      iconSize = 32;
+      labelText = '点击开始录像';
+      capsuleBorderColor = const Color(0xFFD32029);
+      capsuleBgColor = Colors.black54;
+    } else {
+      // 录像中 (video && active)：保持红色外圈 + 红色方块停止键，下方「点击停止」
+      ringColor = const Color(0xFFD32029);
+      innerColor = Colors.transparent;
+      shutterIcon = Icons.stop_rounded;
+      iconColor = const Color(0xFFD32029);
+      iconSize = 36;
+      labelText = '点击停止';
+      capsuleBorderColor = const Color(0xFFD32029);
+      capsuleBgColor = const Color(0x33D32029);
+    }
+
     return Semantics(
       button: true,
       enabled: !busy,
@@ -1407,8 +1502,8 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
               height: 76,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: active ? const Color(0xFFD32029) : Colors.white,
-                border: Border.all(color: Colors.white70, width: 4),
+                color: innerColor,
+                border: Border.all(color: ringColor, width: 4),
                 boxShadow: const [
                   BoxShadow(
                     color: Color(0x66000000),
@@ -1418,17 +1513,27 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
                 ],
               ),
               child: Icon(
-                video
-                    ? (active ? Icons.stop_rounded : Icons.fiber_manual_record)
-                    : Icons.camera_alt_rounded,
-                color: active ? Colors.white : Colors.black87,
-                size: video ? 32 : 30,
+                shutterIcon,
+                color: iconColor,
+                size: iconSize,
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              video ? (active ? '点击停止' : '点击开始录像') : '点击拍照',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: capsuleBgColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: capsuleBorderColor, width: 1.2),
+              ),
+              child: Text(
+                labelText,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),

@@ -51,6 +51,13 @@ class AppColors {
   static Color get alarmText => _palette.alarmText;
   static Color get timeoutText => _palette.timeoutText;
 
+  /// 状态浅色表面（卡片徽标/状态浅底）
+  static Color get safeSurface => _palette.safe.withValues(alpha: 0.12);
+  static Color get alarmSurface => _palette.alarm.withValues(alpha: 0.12);
+
+  /// 深色容器上的前景文字（如胶囊选中态、深色按钮），映射调色板 onPrimary
+  static Color get textOnDark => _palette.onPrimary;
+
   // 动作
   /// 破坏性操作确认按钮专用色（仅限模态确认弹窗的确认按钮）
   static Color get destructive => _palette.destructive;

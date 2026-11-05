@@ -3455,6 +3455,8 @@ class HomePageState extends State<HomePage> {
                 ),
               ),
             ),
+            const SizedBox(width: AppSpacing.s2),
+            const Expanded(child: SizedBox.shrink()),
           ],
         ),
       ],
