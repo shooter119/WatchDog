@@ -15,6 +15,7 @@ import 'location_share_sheet.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import 'report_pressure_sheet.dart';
+import 'route_traffic_page.dart';
 import 'video_resources_page.dart';
 import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
@@ -3431,6 +3432,25 @@ class HomePageState extends State<HomePage> {
                       playback: widget.videoPlayback,
                       onVideoFloating: widget.onVideoFloating,
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.s2),
+        Row(
+          children: [
+            Expanded(
+              child: _fieldTool(
+                '路况查询',
+                '查询赴现场耗时、途经道路与天气',
+                Icons.route_outlined,
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        RouteTrafficPage(controller: widget.controller),
                   ),
                 ),
               ),

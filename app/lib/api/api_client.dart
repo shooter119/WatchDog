@@ -1028,6 +1028,37 @@ class ApiClient {
     }
   }
 
+  /// 查询赴事发地沿途路况、耗时、途经道路及现场天气与风向风力。
+  Future<RouteTrafficInfo> fetchRouteTraffic({
+    required String address,
+    String? city,
+    double? originLat,
+    double? originLon,
+  }) async {
+    final trimmedCity = city?.trim() ?? '';
+    final query = <String, String>{
+      'address': address.trim(),
+      if (trimmedCity.isNotEmpty) 'city': trimmedCity,
+      if (originLat != null && originLon != null) ...{
+        'originLat': originLat.toStringAsFixed(6),
+        'originLon': originLon.toStringAsFixed(6),
+      },
+    };
+    final uri = _uri('/api/route-traffic').replace(queryParameters: query);
+    final res = await _client
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '路况查询失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '路况查询失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '路况查询响应格式异常');
+    }
+    return RouteTrafficInfo.fromJson(Map<String, dynamic>.from(body));
+  }
+
+
   /// 拉取智能体问答历史（旧→新，供聊天室恢复上下文）
   Future<List<ChatMessage>> fetchChatMessages() async {
     final res = await _client

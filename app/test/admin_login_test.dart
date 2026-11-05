@@ -346,6 +346,7 @@ void main() {
     expect(find.text('水印相机'), findsOneWidget);
     expect(find.text('定位分享'), findsOneWidget);
     expect(find.text('视频资源'), findsOneWidget);
+    expect(find.text('路况查询'), findsOneWidget);
     expect(find.text('按住下方按钮说话'), findsNothing);
     expect(find.byType(FloatingActionButton), findsNothing);
     Rect toolRect(String title) =>

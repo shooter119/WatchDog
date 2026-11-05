@@ -1189,6 +1189,57 @@ app.get('/api/weather', async (req, res) => {
   }
 });
 
+// 首页「路况查询」：聚合事发地地理编码、实况/预报天气及从当前位置到事发地的驾车路线与实时路况。
+app.get('/api/route-traffic', async (req, res) => {
+  if (!req.unit) {
+    return res.status(401).json({ error: '请先完成单位认证', code: 'UNIT_AUTH_REQUIRED' });
+  }
+  if (!CFG.amap.key) {
+    return res.status(503).json({ error: '路况与天气服务未配置', code: 'AMAP_NOT_CONFIGURED' });
+  }
+  const address = String(req.query.address || '').trim();
+  if (!address || address.length > 200) {
+    return res.status(400).json({ error: '请输入有效的事发地点（1~200 字）', code: 'ADDRESS_INVALID' });
+  }
+  const city = String(req.query.city || '').trim().slice(0, 80);
+  const rawOriginLat = req.query.originLat;
+  const rawOriginLon = req.query.originLon;
+  const hasOrigin =
+    (rawOriginLat !== undefined && rawOriginLat !== null && String(rawOriginLat).trim() !== '') ||
+    (rawOriginLon !== undefined && rawOriginLon !== null && String(rawOriginLon).trim() !== '');
+  let originLat = null;
+  let originLon = null;
+  if (hasOrigin) {
+    originLat = Number(rawOriginLat);
+    originLon = Number(rawOriginLon);
+    if (!weather.validCoord(originLat, originLon)) {
+      return res.status(400).json({ error: '起点坐标格式错误', code: 'COORD_INVALID' });
+    }
+  }
+  if (upstreamRateLimited(req, 'route_traffic', 30)) {
+    return res.status(429).json({ error: '路况查询过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
+  }
+  try {
+    const result = await weather.lookupRouteTraffic({
+      address,
+      city,
+      originLat,
+      originLon,
+      key: CFG.amap.key,
+    });
+    res.json(result);
+  } catch (e) {
+    if (e?.code === 'ADDRESS_NOT_RESOLVED') {
+      return res.status(422).json({ error: e.message, code: 'ADDRESS_NOT_RESOLVED' });
+    }
+    if (e?.code === 'ADDRESS_INVALID' || e?.code === 'COORD_INVALID') {
+      return res.status(400).json({ error: e.message, code: e.code });
+    }
+    logger.error('route_traffic_lookup_failed', e?.code || 'unknown');
+    res.status(502).json({ error: '路况与天气服务暂时不可用', code: 'AMAP_UPSTREAM_FAILED' });
+  }
+});
+
 const authFailureBuckets = new Map();
 const AUTH_FAILURE_LIMIT = 5;
 const AUTH_FAILURE_WINDOW_MS = 60 * 1000;
@@ -1469,7 +1520,7 @@ async function incidentView(incident, { forces = null, generateSuggestedTitle = 
   let info = {};
   if (syncSupported() && incident.unit_id) {
     const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
-    for (const key of ['original_category','specific_type','location','received_at']) {
+    for (const key of ['original_category','specific_type','location','administrative_area','received_at']) {
       if (detail.data[key]) info[key] = detail.data[key];
     }
   }

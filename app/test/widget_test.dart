@@ -1573,6 +1573,7 @@ void main() {
       expect(find.byKey(const ValueKey('tool-水印相机')), findsOneWidget);
       expect(find.byKey(const ValueKey('tool-定位分享')), findsOneWidget);
       expect(find.byKey(const ValueKey('tool-视频资源')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tool-路况查询')), findsOneWidget);
     });
 
     testWidgets('多人确认窄屏大字号下说明与姓名压力字段均可读', (tester) async {
@@ -3918,6 +3919,7 @@ void main() {
       expect(find.byKey(const Key('tool-水印相机')), findsOneWidget);
       expect(find.byKey(const Key('tool-定位分享')), findsOneWidget);
       expect(find.byKey(const Key('tool-视频资源')), findsOneWidget);
+      expect(find.byKey(const Key('tool-路况查询')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

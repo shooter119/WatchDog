@@ -3,13 +3,18 @@ const assert = require('node:assert/strict');
 
 const {
   lookup,
+  lookupRouteTraffic,
   parseRegeo,
+  parseGeocode,
   parseCoordinateConversion,
   parseWeather,
+  parseForecast,
+  parseDrivingRoute,
   weatherLine,
   lookupResponse,
   validCoord,
   roundCoord,
+  clearCaches,
   TtlCache,
 } = require('../src/weather');
 
@@ -281,4 +286,301 @@ test('lookup：上游超时或网络异常按降级处理，不抛出', async ()
   assert.equal(result.amapLocation, null);
   assert.equal(result.coordinateDegraded, true);
   assert.equal(result.degraded, true);
+});
+
+const GEOCODE_OK = {
+  status: '1',
+  info: 'OK',
+  geocodes: [{
+    formatted_address: '浙江省杭州市建德市新安江街道新安东路555号',
+    province: '浙江省',
+    city: '杭州市',
+    district: '建德市',
+    adcode: '330182',
+    location: '119.28123,29.47512',
+  }],
+};
+
+const FORECAST_OK = {
+  status: '1',
+  info: 'OK',
+  forecasts: [{
+    city: '建德市',
+    adcode: '330182',
+    casts: [{
+      date: '2026-11-05',
+      dayweather: '多云',
+      nightweather: '小雨',
+      daytemp: '24',
+      nighttemp: '15',
+      daywind: '东北',
+      nightwind: '北',
+      daypower: '≤3',
+      nightpower: '4',
+    }],
+  }],
+};
+
+const DRIVING_OK = {
+  status: '1',
+  info: 'OK',
+  route: {
+    origin: '119.18042,29.03036',
+    destination: '119.28123,29.47512',
+    paths: [
+      {
+        strategy: '速度最快',
+        distance: '5200',
+        duration: '680',
+        traffic_lights: '6',
+        tolls: '0',
+        toll_distance: '0',
+        steps: [
+          {
+            instruction: '沿洋安大道向东行驶1.8公里右转',
+            road: '洋安大道',
+            distance: '1800',
+            duration: '180',
+            action: '右转',
+            tmcs: [
+              { status: '畅通', distance: '1500' },
+              { status: '缓行', distance: '300' },
+            ],
+          },
+          {
+            instruction: '沿新安江大桥向南行驶1.2公里直行',
+            road: '新安江大桥',
+            distance: '1200',
+            duration: '260',
+            action: '直行',
+            tmcs: [
+              { status: '拥堵', distance: '800' },
+              { status: '严重拥堵', distance: '400' },
+            ],
+          },
+          {
+            instruction: '沿新安东路向东行驶2.2公里到达目的地',
+            road: '新安东路',
+            distance: '2200',
+            duration: '240',
+            action: '到达目的地',
+            tmcs: [
+              { status: '畅通', distance: '2200' },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+};
+
+test('parseGeocode：正常解析与直辖市空数组兜底', () => {
+  const parsed = parseGeocode(GEOCODE_OK);
+  assert.deepEqual(parsed, {
+    formattedAddress: '浙江省杭州市建德市新安江街道新安东路555号',
+    province: '浙江省',
+    city: '杭州市',
+    district: '建德市',
+    adcode: '330182',
+    location: { lat: 29.47512, lon: 119.28123, coordinate: 'gcj02' },
+  });
+
+  const municipality = parseGeocode({
+    status: '1',
+    geocodes: [{
+      formatted_address: '北京市朝阳区建国路1号',
+      province: '北京市',
+      city: [],
+      district: '朝阳区',
+      adcode: '110105',
+      location: '116.46,39.91',
+    }],
+  });
+  assert.equal(municipality.city, '北京市');
+  assert.equal(municipality.district, '朝阳区');
+
+  assert.equal(parseGeocode(null), null);
+  assert.equal(parseGeocode({ status: '0', geocodes: [{}] }), null);
+  assert.equal(parseGeocode({ status: '1', geocodes: [] }), null);
+  assert.equal(parseGeocode({ status: '1', geocodes: [{ location: '0,0' }] }), null);
+});
+
+test('parseForecast：正常解析当日预报并处理空数组字段', () => {
+  const parsed = parseForecast(FORECAST_OK);
+  assert.deepEqual(parsed, {
+    date: '2026-11-05',
+    dayWeather: '多云',
+    nightWeather: '小雨',
+    dayTemp: '24',
+    nightTemp: '15',
+    dayWind: '东北',
+    nightWind: '北',
+    dayPower: '≤3',
+    nightPower: '4',
+  });
+
+  const withEmptyArrays = parseForecast({
+    status: '1',
+    forecasts: [{
+      casts: [{
+        date: '2026-11-05',
+        dayweather: '晴',
+        nightweather: [],
+        daytemp: '28',
+        nighttemp: [],
+      }],
+    }],
+  });
+  assert.equal(withEmptyArrays.dayWeather, '晴');
+  assert.equal(withEmptyArrays.nightWeather, null);
+  assert.equal(withEmptyArrays.nightTemp, null);
+
+  assert.equal(parseForecast(null), null);
+  assert.equal(parseForecast({ status: '1', forecasts: [] }), null);
+});
+
+test('parseDrivingRoute：汇总路况里程、拥堵分段、主要途经道路与整体状态', () => {
+  const routes = parseDrivingRoute(DRIVING_OK);
+  assert.equal(routes.length, 1);
+  const route = routes[0];
+  assert.equal(route.strategy, '速度最快');
+  assert.equal(route.overallStatus, '拥堵');
+  assert.equal(route.distanceMeters, 5200);
+  assert.equal(route.durationSeconds, 680);
+  assert.equal(route.trafficLights, 6);
+  assert.deepEqual(route.roads, ['洋安大道', '新安江大桥', '新安东路']);
+  assert.deepEqual(route.trafficSummary, {
+    smoothMeters: 3700,
+    slowMeters: 300,
+    jamMeters: 800,
+    severeJamMeters: 400,
+    unknownMeters: 0,
+  });
+  assert.deepEqual(route.congestedSegments, [
+    { road: '新安江大桥', status: '严重拥堵', distanceMeters: 400 },
+    { road: '新安江大桥', status: '拥堵', distanceMeters: 800 },
+    { road: '洋安大道', status: '缓行', distanceMeters: 300 },
+  ]);
+  assert.equal(route.steps[0].status, '缓行');
+  assert.equal(route.steps[1].status, '严重拥堵');
+  assert.equal(route.steps[2].status, '畅通');
+
+  assert.deepEqual(parseDrivingRoute(null), []);
+  assert.deepEqual(parseDrivingRoute({ status: '0', route: { paths: [{}] } }), []);
+});
+
+test('lookupRouteTraffic：完整含起点路线、天气预报及二次命中缓存', async () => {
+  clearCaches();
+  const fetchImpl = (url) => {
+    fetchImpl.calls.push(url);
+    if (url.includes('/v3/geocode/geo')) {
+      return Promise.resolve({ ok: true, json: async () => GEOCODE_OK });
+    }
+    if (url.includes('/v3/weather/weatherInfo') && url.includes('extensions=base')) {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    if (url.includes('/v3/weather/weatherInfo') && url.includes('extensions=all')) {
+      return Promise.resolve({ ok: true, json: async () => FORECAST_OK });
+    }
+    if (url.includes('/v3/assistant/coordinate/convert')) {
+      return Promise.resolve({ ok: true, json: async () => CONVERT_OK });
+    }
+    if (url.includes('/v3/geocode/regeo')) {
+      return Promise.resolve({ ok: true, json: async () => REGEO_OK });
+    }
+    if (url.includes('/v3/direction/driving')) {
+      return Promise.resolve({ ok: true, json: async () => DRIVING_OK });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+  fetchImpl.calls = [];
+
+  const first = await lookupRouteTraffic({
+    address: '新安江街道新安东路555号',
+    city: '建德市',
+    originLat: 29.03,
+    originLon: 119.18,
+    key: 'test-key',
+    fetchImpl,
+    now: 1000,
+  });
+
+  assert.equal(first.destination.formattedAddress, '浙江省杭州市建德市新安江街道新安东路555号');
+  assert.equal(first.destination.adcode, '330182');
+  assert.equal(first.origin.address, '示例省示例市示例县示范路1号');
+  assert.equal(first.origin.coordinateDegraded, false);
+  assert.equal(first.weather.text, '阴');
+  assert.equal(first.weatherLine, '阴 · 33℃ · 湿度43%');
+  assert.equal(first.forecast.dayWeather, '多云');
+  assert.equal(first.routeAvailable, true);
+  assert.equal(first.routes.length, 1);
+  assert.equal(first.routes[0].overallStatus, '拥堵');
+  assert.equal(first.degraded, false);
+  assert.equal(fetchImpl.calls.length, 6);
+
+  const second = await lookupRouteTraffic({
+    address: '新安江街道新安东路555号',
+    city: '建德市',
+    originLat: 29.0301,
+    originLon: 119.1801,
+    key: 'test-key',
+    fetchImpl,
+    now: 2000,
+  });
+  assert.equal(second.routeAvailable, true);
+  assert.equal(fetchImpl.calls.length, 6, '缓存有效期内不应重复请求上游');
+});
+
+test('lookupRouteTraffic：无起点坐标时仅查询终点坐标与天气，不调用驾车规划', async () => {
+  clearCaches();
+  const fetchImpl = (url) => {
+    fetchImpl.calls.push(url);
+    if (url.includes('/v3/geocode/geo')) {
+      return Promise.resolve({ ok: true, json: async () => GEOCODE_OK });
+    }
+    if (url.includes('/v3/weather/weatherInfo') && url.includes('extensions=base')) {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    if (url.includes('/v3/weather/weatherInfo') && url.includes('extensions=all')) {
+      return Promise.resolve({ ok: true, json: async () => FORECAST_OK });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+  fetchImpl.calls = [];
+
+  const result = await lookupRouteTraffic({
+    address: '新安江街道新安东路555号',
+    key: 'test-key',
+    fetchImpl,
+  });
+  assert.equal(result.origin, null);
+  assert.equal(result.routeAvailable, false);
+  assert.deepEqual(result.routes, []);
+  assert.equal(result.weather.text, '阴');
+  assert.equal(result.degraded, false);
+  assert.equal(fetchImpl.calls.length, 3);
+});
+
+test('lookupRouteTraffic：参数校验与地址无法解析错误码', async () => {
+  clearCaches();
+  await assert.rejects(
+    () => lookupRouteTraffic({ address: '   ', key: 'k' }),
+    (error) => error.code === 'ADDRESS_INVALID',
+  );
+  await assert.rejects(
+    () => lookupRouteTraffic({ address: '测试地址', key: '' }),
+    (error) => error.code === 'AMAP_NOT_CONFIGURED',
+  );
+  await assert.rejects(
+    () => lookupRouteTraffic({ address: '测试地址', originLat: 999, originLon: 119, key: 'k' }),
+    (error) => error.code === 'COORD_INVALID',
+  );
+
+  const emptyGeoFetch = fakeFetch({
+    '/v3/geocode/geo': { status: '1', geocodes: [] },
+  });
+  await assert.rejects(
+    () => lookupRouteTraffic({ address: '完全不存在的虚构地址XYZ', key: 'k', fetchImpl: emptyGeoFetch }),
+    (error) => error.code === 'ADDRESS_NOT_RESOLVED',
+  );
 });

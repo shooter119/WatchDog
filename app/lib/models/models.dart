@@ -797,3 +797,438 @@ class WeatherInfo {
     );
   }
 }
+
+class RouteEndpointInfo {
+  final String queryAddress;
+  final String formattedAddress;
+  final String province;
+  final String city;
+  final String district;
+  final String adcode;
+  final AmapLocation? location;
+
+  const RouteEndpointInfo({
+    required this.queryAddress,
+    required this.formattedAddress,
+    this.province = '',
+    this.city = '',
+    this.district = '',
+    this.adcode = '',
+    this.location,
+  });
+
+  String get displayAddress =>
+      formattedAddress.trim().isNotEmpty ? formattedAddress.trim() : queryAddress.trim();
+
+  static RouteEndpointInfo? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final json = Map<String, dynamic>.from(raw);
+    return RouteEndpointInfo(
+      queryAddress: json['queryAddress']?.toString().trim() ?? '',
+      formattedAddress: json['formattedAddress']?.toString().trim() ?? '',
+      province: json['province']?.toString().trim() ?? '',
+      city: json['city']?.toString().trim() ?? '',
+      district: json['district']?.toString().trim() ?? '',
+      adcode: json['adcode']?.toString().trim() ?? '',
+      location: AmapLocation.fromJson(json['location']),
+    );
+  }
+}
+
+class RouteOriginInfo {
+  final String address;
+  final AmapLocation? location;
+  final bool coordinateDegraded;
+
+  const RouteOriginInfo({
+    this.address = '',
+    this.location,
+    this.coordinateDegraded = false,
+  });
+
+  static RouteOriginInfo? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final json = Map<String, dynamic>.from(raw);
+    return RouteOriginInfo(
+      address: json['address']?.toString().trim() ?? '',
+      location: AmapLocation.fromJson(json['location']),
+      coordinateDegraded: json['coordinateDegraded'] == true,
+    );
+  }
+}
+
+class RouteWeatherLive {
+  final String text;
+  final String temperature;
+  final String humidity;
+  final String windDirection;
+  final String windPower;
+  final String observedAt;
+  final String city;
+
+  const RouteWeatherLive({
+    this.text = '',
+    this.temperature = '',
+    this.humidity = '',
+    this.windDirection = '',
+    this.windPower = '',
+    this.observedAt = '',
+    this.city = '',
+  });
+
+  String get windLabel {
+    final dir = windDirection.trim();
+    final power = windPower.trim();
+    final parts = <String>[];
+    if (dir.isNotEmpty) {
+      parts.add(dir.endsWith('风') || dir.contains('风向') ? dir : '$dir风');
+    }
+    if (power.isNotEmpty) {
+      parts.add(power.endsWith('级') ? power : '$power级');
+    }
+    return parts.join(' · ');
+  }
+
+  static RouteWeatherLive? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final json = Map<String, dynamic>.from(raw);
+    return RouteWeatherLive(
+      text: json['text']?.toString().trim() ?? '',
+      temperature: json['temperature']?.toString().trim() ?? '',
+      humidity: json['humidity']?.toString().trim() ?? '',
+      windDirection: json['windDirection']?.toString().trim() ?? '',
+      windPower: json['windPower']?.toString().trim() ?? '',
+      observedAt: json['observedAt']?.toString().trim() ?? '',
+      city: json['city']?.toString().trim() ?? '',
+    );
+  }
+}
+
+class RouteWeatherForecast {
+  final String date;
+  final String dayWeather;
+  final String nightWeather;
+  final String dayTemp;
+  final String nightTemp;
+  final String dayWind;
+  final String nightWind;
+  final String dayPower;
+  final String nightPower;
+
+  const RouteWeatherForecast({
+    this.date = '',
+    this.dayWeather = '',
+    this.nightWeather = '',
+    this.dayTemp = '',
+    this.nightTemp = '',
+    this.dayWind = '',
+    this.nightWind = '',
+    this.dayPower = '',
+    this.nightPower = '',
+  });
+
+  static RouteWeatherForecast? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final json = Map<String, dynamic>.from(raw);
+    return RouteWeatherForecast(
+      date: json['date']?.toString().trim() ?? '',
+      dayWeather: json['dayWeather']?.toString().trim() ?? '',
+      nightWeather: json['nightWeather']?.toString().trim() ?? '',
+      dayTemp: json['dayTemp']?.toString().trim() ?? '',
+      nightTemp: json['nightTemp']?.toString().trim() ?? '',
+      dayWind: json['dayWind']?.toString().trim() ?? '',
+      nightWind: json['nightWind']?.toString().trim() ?? '',
+      dayPower: json['dayPower']?.toString().trim() ?? '',
+      nightPower: json['nightPower']?.toString().trim() ?? '',
+    );
+  }
+}
+
+class TrafficSummary {
+  final int smoothMeters;
+  final int slowMeters;
+  final int jamMeters;
+  final int severeJamMeters;
+  final int unknownMeters;
+
+  const TrafficSummary({
+    this.smoothMeters = 0,
+    this.slowMeters = 0,
+    this.jamMeters = 0,
+    this.severeJamMeters = 0,
+    this.unknownMeters = 0,
+  });
+
+  int get totalMeters =>
+      smoothMeters + slowMeters + jamMeters + severeJamMeters + unknownMeters;
+
+  factory TrafficSummary.fromJson(Object? raw) {
+    if (raw is! Map) return const TrafficSummary();
+    final json = Map<String, dynamic>.from(raw);
+    return TrafficSummary(
+      smoothMeters: (json['smoothMeters'] as num?)?.toInt() ?? 0,
+      slowMeters: (json['slowMeters'] as num?)?.toInt() ?? 0,
+      jamMeters: (json['jamMeters'] as num?)?.toInt() ?? 0,
+      severeJamMeters: (json['severeJamMeters'] as num?)?.toInt() ?? 0,
+      unknownMeters: (json['unknownMeters'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class CongestedSegment {
+  final String road;
+  final String status;
+  final int distanceMeters;
+
+  const CongestedSegment({
+    required this.road,
+    required this.status,
+    required this.distanceMeters,
+  });
+
+  factory CongestedSegment.fromJson(Map<String, dynamic> json) =>
+      CongestedSegment(
+        road: json['road']?.toString().trim() ?? '',
+        status: json['status']?.toString().trim() ?? '',
+        distanceMeters: (json['distanceMeters'] as num?)?.toInt() ?? 0,
+      );
+}
+
+class RouteStepInfo {
+  final String instruction;
+  final String road;
+  final int distanceMeters;
+  final int durationSeconds;
+  final String action;
+  final String status;
+
+  const RouteStepInfo({
+    required this.instruction,
+    this.road = '',
+    this.distanceMeters = 0,
+    this.durationSeconds = 0,
+    this.action = '',
+    this.status = '',
+  });
+
+  factory RouteStepInfo.fromJson(Map<String, dynamic> json) => RouteStepInfo(
+    instruction: json['instruction']?.toString().trim() ?? '',
+    road: json['road']?.toString().trim() ?? '',
+    distanceMeters: (json['distanceMeters'] as num?)?.toInt() ?? 0,
+    durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+    action: json['action']?.toString().trim() ?? '',
+    status: json['status']?.toString().trim() ?? '',
+  );
+}
+
+class DrivingRoutePlan {
+  final String strategy;
+  final int distanceMeters;
+  final int durationSeconds;
+  final int trafficLights;
+  final int tolls;
+  final int tollDistanceMeters;
+  final String overallStatus;
+  final List<String> roads;
+  final TrafficSummary trafficSummary;
+  final List<CongestedSegment> congestedSegments;
+  final List<RouteStepInfo> steps;
+
+  const DrivingRoutePlan({
+    this.strategy = '',
+    this.distanceMeters = 0,
+    this.durationSeconds = 0,
+    this.trafficLights = 0,
+    this.tolls = 0,
+    this.tollDistanceMeters = 0,
+    this.overallStatus = '畅通',
+    this.roads = const [],
+    this.trafficSummary = const TrafficSummary(),
+    this.congestedSegments = const [],
+    this.steps = const [],
+  });
+
+  factory DrivingRoutePlan.fromJson(Map<String, dynamic> json) {
+    final rawRoads = json['roads'] as List? ?? const [];
+    final rawCongested = json['congestedSegments'] as List? ?? const [];
+    final rawSteps = json['steps'] as List? ?? const [];
+    return DrivingRoutePlan(
+      strategy: json['strategy']?.toString().trim() ?? '',
+      distanceMeters: (json['distanceMeters'] as num?)?.toInt() ??
+          (json['distance'] as num?)?.toInt() ??
+          0,
+      durationSeconds: (json['durationSeconds'] as num?)?.toInt() ??
+          (json['duration'] as num?)?.toInt() ??
+          0,
+      trafficLights: (json['trafficLights'] as num?)?.toInt() ?? 0,
+      tolls: (json['tolls'] as num?)?.round() ?? 0,
+      tollDistanceMeters: (json['tollDistanceMeters'] as num?)?.toInt() ?? 0,
+      overallStatus: json['overallStatus']?.toString().trim().isNotEmpty == true
+          ? json['overallStatus'].toString().trim()
+          : '畅通',
+      roads: rawRoads
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList(growable: false),
+      trafficSummary: TrafficSummary.fromJson(json['trafficSummary']),
+      congestedSegments: rawCongested
+          .whereType<Map>()
+          .map((e) => CongestedSegment.fromJson(Map<String, dynamic>.from(e)))
+          .toList(growable: false),
+      steps: rawSteps
+          .whereType<Map>()
+          .map((e) => RouteStepInfo.fromJson(Map<String, dynamic>.from(e)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class RouteTrafficInfo {
+  final RouteEndpointInfo? destination;
+  final RouteOriginInfo? origin;
+  final RouteWeatherLive? weather;
+  final String? weatherLine;
+  final RouteWeatherForecast? forecast;
+  final List<DrivingRoutePlan> routes;
+  final bool routeAvailable;
+  final bool degraded;
+
+  const RouteTrafficInfo({
+    this.destination,
+    this.origin,
+    this.weather,
+    this.weatherLine,
+    this.forecast,
+    this.routes = const [],
+    this.routeAvailable = false,
+    this.degraded = false,
+  });
+
+  Uri? get navigationUri {
+    final loc = destination?.location;
+    if (loc == null ||
+        loc.coordinate.toLowerCase() != 'gcj02' ||
+        !loc.lat.isFinite ||
+        !loc.lon.isFinite) {
+      return null;
+    }
+    return Uri.https('uri.amap.com', '/navigation', {
+      'to': '${loc.lon.toStringAsFixed(6)},${loc.lat.toStringAsFixed(6)}',
+      'coordinate': 'gaode',
+      'mode': 'car',
+      'policy': '0',
+      'src': 'watchdog',
+      'callnative': '0',
+    });
+  }
+
+  static String formatDuration(int durationSeconds) {
+    final totalMinutes = durationSeconds <= 0
+        ? 1
+        : ((durationSeconds + 30) ~/ 60).clamp(1, 99999);
+    if (totalMinutes < 60) {
+      return '$totalMinutes 分钟';
+    }
+    final hours = totalMinutes ~/ 60;
+    final mins = totalMinutes % 60;
+    return mins == 0 ? '$hours小时' : '$hours小时$mins分';
+  }
+
+  static String formatDistance(int meters, {bool compactUnit = false}) {
+    if (meters < 1000) {
+      return compactUnit ? '$meters米' : '$meters 米';
+    }
+    final km = meters / 1000.0;
+    return compactUnit
+        ? '${km.toStringAsFixed(1)}公里'
+        : '${km.toStringAsFixed(1)} 公里';
+  }
+
+  String toSummaryText({required String incidentName, int routeIndex = 0}) {
+    final lines = <String>[];
+    final cleanIncident = incidentName.trim();
+    if (cleanIncident.isNotEmpty) {
+      lines.add('警情：$cleanIncident');
+    }
+    final destAddr = destination?.displayAddress ?? '';
+    if (destAddr.isNotEmpty) {
+      lines.add('事发地点：$destAddr');
+    }
+    final originAddr = origin?.address.trim() ?? '';
+    if (originAddr.isNotEmpty) {
+      lines.add('出发位置：$originAddr');
+    }
+    if (routes.isNotEmpty) {
+      final idx = routeIndex.clamp(0, routes.length - 1);
+      final route = routes[idx];
+      final durationText = formatDuration(route.durationSeconds);
+      final distanceText = formatDistance(route.distanceMeters);
+      lines.add(
+        '预计行程：$durationText（$distanceText，红绿灯 ${route.trafficLights} 个）',
+      );
+      lines.add('整体路况：${route.overallStatus}');
+      if (route.roads.isNotEmpty) {
+        lines.add('途经道路：${route.roads.join(' → ')}');
+      }
+      if (route.congestedSegments.isNotEmpty) {
+        final segText = route.congestedSegments
+            .map(
+              (s) =>
+                  '${s.road} · ${s.status} ${formatDistance(s.distanceMeters, compactUnit: true)}',
+            )
+            .join('；');
+        lines.add('拥堵提醒：$segText');
+      } else {
+        lines.add('拥堵提醒：当前路线全线畅通，无明显拥堵路段');
+      }
+    }
+    final live = weather;
+    if (live != null &&
+        (live.text.isNotEmpty ||
+            live.temperature.isNotEmpty ||
+            live.windLabel.isNotEmpty)) {
+      final weatherParts = <String>[
+        if (live.text.isNotEmpty) live.text,
+        if (live.temperature.isNotEmpty) '${live.temperature}℃',
+        if (live.humidity.isNotEmpty) '湿度${live.humidity}%',
+        if (live.windLabel.isNotEmpty) live.windLabel,
+      ];
+      lines.add('现场天气：${weatherParts.join(' · ')}');
+    } else if ((weatherLine ?? '').trim().isNotEmpty) {
+      lines.add('现场天气：${weatherLine!.trim()}');
+    }
+    final fc = forecast;
+    if (fc != null &&
+        (fc.dayWeather.isNotEmpty || fc.nightWeather.isNotEmpty)) {
+      lines.add(
+        '今日预报：白天${fc.dayWeather} ${fc.dayTemp}℃ / 夜间${fc.nightWeather} ${fc.nightTemp}℃',
+      );
+    }
+    final nav = navigationUri;
+    if (nav != null) {
+      lines
+        ..add('')
+        ..add('高德驾车导航：')
+        ..add(nav.toString());
+    }
+    return lines.join('\n');
+  }
+
+  factory RouteTrafficInfo.fromJson(Map<String, dynamic> json) {
+    final rawRoutes = json['routes'] as List? ?? const [];
+    return RouteTrafficInfo(
+      destination: RouteEndpointInfo.fromJson(json['destination']),
+      origin: RouteOriginInfo.fromJson(json['origin']),
+      weather: RouteWeatherLive.fromJson(json['weather']),
+      weatherLine: (json['weatherLine'] as String?)?.trim(),
+      forecast: RouteWeatherForecast.fromJson(json['forecast']),
+      routes: rawRoutes
+          .whereType<Map>()
+          .map((e) => DrivingRoutePlan.fromJson(Map<String, dynamic>.from(e)))
+          .toList(growable: false),
+      routeAvailable: json['routeAvailable'] == true,
+      degraded: json['degraded'] == true,
+    );
+  }
+}
+
