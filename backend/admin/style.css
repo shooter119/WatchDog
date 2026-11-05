@@ -10,3 +10,111 @@
 .standard-form{margin:24px 0}.form-section{min-width:0;border:1px solid var(--line);background:#fff;padding:24px;margin:0 0 24px;border-radius:12px}.form-section legend{font-size:20px;font-weight:750;padding:0 10px;color:var(--ink)}.form-section>.standard-fields{margin:20px 0}.form-section input,.form-section select,.form-section textarea{width:100%;box-sizing:border-box;min-height:44px}.form-section>button{color:var(--muted);margin-top:8px}.standard-form>button[type=submit]{min-height:48px;min-width:180px}.standard-fields label{font-weight:600}.standard-fields label input,.standard-fields label textarea{font-weight:400}.standard-fields textarea{min-height:104px;resize:vertical}@media(max-width:700px){.form-section{padding:16px}.standard-form>button[type=submit]{width:100%}}
 
 .publish-actions{position:sticky;bottom:0;background:var(--paper,#f7f7f2);z-index:5;box-shadow:0 -8px 20px #00000008}.standard-form>button[type=submit]{position:sticky;bottom:96px;z-index:4;box-shadow:0 3px 12px #00000018}
+
+
+/* 危化品应急速查库样式 */
+#hazmat-manager { margin-top: 36px; padding-top: 24px; border-top: 2px solid var(--ink); }
+.hazmat-header { margin-bottom: 24px; }
+.hazmat-header h2 { margin: 0 0 8px; font-size: 24px; }
+.hazmat-toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 24px; }
+.hazmat-search-input { flex: 2; min-width: 260px; min-height: 44px; padding: 10px 14px; font: inherit; border: 1px solid var(--line); border-radius: 6px; }
+.hazmat-select { min-height: 44px; padding: 8px 12px; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.hazmat-btn-group { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+.btn-primary { background: #a94612; color: #fff; border: 1px solid #a94612; font-weight: 600; }
+.btn-primary:hover { background: #8e380b; }
+.btn-secondary { background: #182c3e; color: #fff; border: 1px solid #182c3e; font-weight: 600; }
+.btn-secondary:hover { background: #243f57; }
+.btn-subtle { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+.btn-subtle:hover { background: #edf0f2; }
+.btn-danger-subtle { background: #fff; color: #b71c1c; border: 1px solid #ffcdd2; }
+.btn-danger-subtle:hover { background: #ffebee; }
+
+.hazmat-card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 22px; margin-bottom: 20px; box-shadow: 0 4px 14px rgba(24,44,62,0.05); }
+.hazmat-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 14px; }
+.hazmat-title-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hazmat-un-code { background: #f39c12; color: #fff; font-weight: 800; font-size: 14px; padding: 3px 10px; border-radius: 4px; letter-spacing: 1px; }
+.hazmat-name-cn { margin: 0; font-size: 22px; font-weight: 700; color: var(--ink); }
+.hazmat-name-en { color: var(--muted); font-size: 15px; font-style: italic; }
+.hazmat-cas { background: #ecf0f1; color: #566777; font-size: 13px; padding: 2px 8px; border-radius: 4px; font-family: monospace; }
+.hazmat-card-actions { display: flex; gap: 8px; }
+
+.hazmat-meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.hazmat-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 4px; display: inline-flex; align-items: center; }
+.badge-red { background: #e74c3c; color: #fff; }
+.badge-blue { background: #2980b9; color: #fff; }
+.badge-yellow { background: #f1c40f; color: #2c3e50; }
+.badge-white { background: #ffffff; color: #2c3e50; border: 1px solid #bdc3c7; }
+.badge-black_white { background: #34495e; color: #fff; }
+.badge-default { background: #95a5a6; color: #fff; }
+
+.hazmat-water-badge { font-size: 13px; font-weight: 800; padding: 4px 12px; border-radius: 4px; display: inline-flex; align-items: center; }
+.water-forbidden { background: #c0392b; color: #fff; box-shadow: 0 0 8px rgba(192, 57, 43, 0.4); animation: hazmatPulse 2s infinite; }
+.water-reactive { background: #d35400; color: #fff; }
+.water-normal { background: #27ae60; color: #fff; }
+@keyframes hazmatPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+
+.hazmat-alias-hit { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 3px 10px; border-radius: 4px; font-weight: 700; font-size: 13px; }
+.hazmat-aliases-box { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.hazmat-alias-pill { background: #eef2f5; color: var(--ink); padding: 2px 8px; border-radius: 12px; border: 1px solid #dce4ec; }
+
+.hazmat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 14px; }
+.hazmat-grid-full { grid-column: span 2; }
+.hazmat-summary-box { background: #fdf7f2; border-left: 4px solid var(--orange); padding: 10px 14px; font-size: 14px; border-radius: 0 4px 4px 0; }
+.hazmat-grid-item { background: #f9fbfb; border: 1px solid var(--line); border-radius: 6px; padding: 12px; font-size: 14px; }
+.hazmat-box-title { font-weight: 700; margin-bottom: 6px; color: var(--ink); }
+.hazmat-forbidden-box { background: #fff5f5; border-color: #ffcdd2; }
+.title-forbidden { color: #c62828; font-weight: 800; }
+.hazmat-agent-box { background: #f4fbf7; border-color: #c8e6c9; }
+.title-agent { color: #2e7d32; font-weight: 800; }
+.hazmat-box-content { line-height: 1.5; color: #2c3e50; }
+
+.hazmat-details { border: 1px dashed var(--line); border-radius: 6px; padding: 10px 14px; margin-top: 10px; background: #fafafa; }
+.hazmat-details summary { cursor: pointer; color: #2980b9; font-weight: 600; font-size: 14px; user-select: none; }
+.hazmat-detail-content { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; display: grid; gap: 8px; }
+.hazmat-detail-content p { margin: 0; }
+
+.hazmat-pager { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.hazmat-page-info { font-size: 14px; color: var(--muted); }
+
+/* 模态框样式 */
+.hazmat-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; overflow-y: auto; }
+.hazmat-modal { background: #fff; width: min(100%, 820px); max-height: 90vh; border-radius: 8px; box-shadow: 0 20px 48px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; }
+.hazmat-modal-import { width: min(100%, 580px); }
+.hazmat-modal-header { padding: 18px 24px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; background: #fbfbfc; }
+.hazmat-modal-header h3 { margin: 0; font-size: 20px; }
+.hazmat-modal-close { background: transparent; border: none; font-size: 28px; line-height: 1; cursor: pointer; color: var(--muted); min-height: 36px; padding: 0 8px; }
+.hazmat-modal-close:hover { color: var(--ink); }
+
+.hazmat-form { padding: 20px 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+.hazmat-form fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 14px 18px; margin: 0; }
+.hazmat-form legend { font-weight: 700; color: var(--ink); padding: 0 8px; font-size: 15px; }
+.hazmat-form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 12px; }
+.hazmat-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.hazmat-form input, .hazmat-form select, .hazmat-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; font: inherit; min-height: 40px; }
+.hazmat-form textarea { min-height: 60px; resize: vertical; }
+
+.hazmat-alias-editor { margin-top: 8px; }
+.hazmat-tag-container { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.hazmat-tag-pill { background: #e8f4f8; color: #2980b9; border: 1px solid #bce2f1; padding: 2px 10px; border-radius: 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+.hazmat-tag-del { cursor: pointer; font-weight: 800; color: #999; }
+.hazmat-tag-del:hover { color: #c0392b; }
+
+.hazmat-modal-footer { padding: 16px 24px; border-top: 1px solid var(--line); background: #fbfbfc; display: flex; justify-content: flex-end; gap: 12px; }
+
+/* 批量导入表单 */
+.hazmat-import-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.hazmat-file-dropzone { border: 2px dashed #3498db; background: #f8fbfe; border-radius: 8px; padding: 32px 20px; text-align: center; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.hazmat-file-dropzone input { display: none; }
+.hazmat-checkbox-label { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink); cursor: pointer; }
+.hazmat-checkbox-label input { width: 20px; height: 20px; min-height: 20px; margin: 0; }
+.hazmat-import-result { background: #fbfbfc; border: 1px solid var(--line); border-radius: 6px; padding: 14px; font-size: 14px; }
+.hazmat-err-list { margin: 8px 0 0; padding-left: 20px; color: #c0392b; font-size: 13px; max-height: 160px; overflow-y: auto; }
+.text-success { color: #27ae60; margin: 0 0 6px; }
+.text-warning { color: #d35400; margin: 10px 0 4px; font-weight: 700; }
+.text-danger { color: #c0392b; margin: 0; }
+
+@media (max-width: 768px) {
+  .hazmat-grid { grid-template-columns: 1fr; }
+  .hazmat-grid-full { grid-column: span 1; }
+  .hazmat-form-row { grid-template-columns: 1fr; }
+}

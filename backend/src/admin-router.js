@@ -13,7 +13,7 @@ const wrap = (handler) => (req, res, next) => Promise.resolve(handler(req, res))
   next(error);
 });
 
-function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, files, ai } = {}) {
+function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, files, ai, hazmats } = {}) {
   const router = express.Router();
   const limiter = new MinuteRateLimiter();
   router.use((req, res, next) => {
@@ -65,6 +65,7 @@ function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, fil
   router.get('/units', wrap(async (req, res) => res.json({ units: await auth.listUnits(req.admin.id) })));
   router.get('/audit', wrap(async (req, res) => res.json({ events: await auth.listAudit(req.admin.id, req.query.offset) })));
   if (sites && files) router.use('/key-sites', require('./key-site-routes').createKeySiteAdminRouter(sites, files, ai));
+  if (hazmats) router.use('/hazmats', require('./hazmat-routes').createHazmatAdminRouter(hazmats, auth));
   return router;
 }
 

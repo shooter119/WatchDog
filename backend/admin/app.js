@@ -4,7 +4,7 @@ const $ = (id) => document.getElementById(id);
 function endSession() {
   authGeneration++; csrf = '';
   $('workspace').hidden = true; $('welcome').textContent = ''; $('identity').textContent = '';
-  $('members').replaceChildren(); $('audit').replaceChildren(); $('site-manager')?.replaceChildren(); $('login').hidden = false;
+  $('members').replaceChildren(); $('audit').replaceChildren(); $('site-manager')?.replaceChildren(); $('hazmat-manager')?.replaceChildren(); $('login').hidden = false;
   document.dispatchEvent(new Event('admin-ended'));
 }
 const authMessages = { ADMIN_FORBIDDEN: '当前成员没有有效后台授权', ADMIN_SESSION_INVALID: '后台会话已失效，请重新扫码登录', ADMIN_CSRF_INVALID: '登录校验已失效，请刷新页面后重试', ADMIN_LAST_PLATFORM: '不能撤销最后一名有效平台管理员', ADMIN_MEMBER_INVALID: '成员状态或单位角色不满足授权条件', ADMIN_RATE_LIMITED: '请求过于频繁，请稍后重试' };
@@ -60,8 +60,17 @@ async function logout(all) {
 $('refresh').onclick = refresh;
 $('logout').onclick = () => logout(false);
 $('logout-all').onclick = () => logout(true);
-$('show-sites').onclick = () => { workspaceView = 'sites'; $('platform').hidden = true; if ($('site-manager')) $('site-manager').hidden = false; };
-$('show-permissions').onclick = () => { workspaceView = 'access'; $('platform').hidden = false; if ($('site-manager')) $('site-manager').hidden = true; };
+$('show-sites').onclick = () => { workspaceView = 'sites'; $('platform').hidden = true; if ($('site-manager')) $('site-manager').hidden = false; if ($('hazmat-manager')) $('hazmat-manager').hidden = true; };
+$('show-permissions').onclick = () => { workspaceView = 'access'; $('platform').hidden = false; if ($('site-manager')) $('site-manager').hidden = true; if ($('hazmat-manager')) $('hazmat-manager').hidden = true; };
+if ($('show-hazmats')) {
+  $('show-hazmats').onclick = () => {
+    workspaceView = 'hazmats';
+    $('platform').hidden = true;
+    if ($('site-manager')) $('site-manager').hidden = true;
+    if ($('hazmat-manager')) $('hazmat-manager').hidden = false;
+    document.dispatchEvent(new Event('hazmat-tab-activated'));
+  };
+}
 function textNode(tag, value) { const node = document.createElement(tag); node.textContent = value; return node; }
 async function ensureUnitFilter() {
   const select = $('member-unit');
@@ -107,7 +116,7 @@ $('load-members').onclick = async () => {
 $('load-audit').onclick = async () => {
   try {
     const result = await api('/audit', undefined, 'GET'); $('audit').replaceChildren();
-    const actions = { admin_initialized: '平台管理员初始化', grant_set: '更新后台授权', grant_revoked: '撤销后台授权', login_confirmed: '确认网页登录', login_cancelled: '取消网页登录', login: '后台登录', logout: '退出当前会话', logout_all: '退出全部会话', key_site_created: '新建重点单位', key_site_updated: '更新单位档案', key_site_owner_changed: '调整维护归属', key_site_disabled: '停用单位', key_site_enabled: '恢复单位', key_site_draft_saved: '保存资料草稿', key_site_draft_discarded: '放弃资料草稿', key_site_published: '发布资料版本', key_site_uploaded: '上传资料附件', key_site_task_retried: '重试处理任务', key_site_ai_requested: '请求AI资料整理', key_site_ai_retried: '重试AI失败页面', key_site_ai_cancelled: '放弃AI整理任务', key_site_ai_applied: '人工核对采用AI条目' };
+    const actions = { admin_initialized: '平台管理员初始化', grant_set: '更新后台授权', grant_revoked: '撤销后台授权', login_confirmed: '确认网页登录', login_cancelled: '取消网页登录', login: '后台登录', logout: '退出当前会话', logout_all: '退出全部会话', key_site_created: '新建重点单位', key_site_updated: '更新单位档案', key_site_owner_changed: '调整维护归属', key_site_disabled: '停用单位', key_site_enabled: '恢复单位', key_site_draft_saved: '保存资料草稿', key_site_draft_discarded: '放弃资料草稿', key_site_published: '发布资料版本', key_site_uploaded: '上传资料附件', key_site_task_retried: '重试处理任务', key_site_ai_requested: '请求AI资料整理', key_site_ai_retried: '重试AI失败页面', key_site_ai_cancelled: '放弃AI整理任务', key_site_ai_applied: '人工核对采用AI条目', hazmat_created: '新建危化品', hazmat_updated: '更新危化品', hazmat_deleted: '删除危化品', hazmat_imported: '批量导入危化品' };
     for (const event of result.events) $('audit').append(textNode('p', `${new Date(Number(event.created_at)).toLocaleString()} · ${actions[event.action] || '资料管理操作'} · 操作者 ${event.actor_name || '服务器私有初始化'}`));
   } catch (error) { $('error').textContent = error.message; }
 };

@@ -250,6 +250,7 @@ let adminAuth = null;
 let keySites = null;
 let keySiteFiles = null;
 let videoResources = null;
+let hazardousChemicals = null;
 app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
   setHeaders: (res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -265,13 +266,15 @@ if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER ||
   keySites = require('./key-sites').createKeySites(require('./postgres-store'), adminAuth);
   keySiteFiles = require('./key-site-files').createKeySiteFiles(require('./postgres-store'), keySites, adminAuth);
   videoResources = require('./video-resources').createVideoResources(require('./postgres-store'));
+  hazardousChemicals = require('./hazardous-chemicals').createHazardousChemicals(require('./postgres-store'));
   const keySiteAI = require('./key-site-ai').createKeySiteAI(require('./postgres-store'), keySites, keySiteFiles, adminAuth, CFG.llm);
-  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, { sites: keySites, files: keySiteFiles, ai: keySiteAI }));
+  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, { sites: keySites, files: keySiteFiles, ai: keySiteAI, hazmats: hazardousChemicals }));
+  if (hazardousChemicals) app.use('/api/hazmats', require('./hazmat-routes').createHazmatAppRouter(hazardousChemicals));
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteFiles.startWorker(error => logger.warn(`key_site_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteAI.startWorker(error => logger.warn(`key_site_ai_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
 }
 app.use(async (req, res, next) => {
-  if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply') return next();
+  if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply' || req.path.startsWith('/api/hazmats')) return next();
   if (SESSION_AUTH_REQUIRED) {
     const rawToken = sessionTokenFromRequest(req);
     if (!rawToken || rawToken.length > 256) {
