@@ -31,6 +31,14 @@
 - App：在 `app/` 下运行 `flutter analyze`（0 问题）+ `flutter test`。
 - 两套测试目前后端基线 300 个用例（本地 302 个通过）、App 基线 444 个用例（本地 454 个通过）；改动后不应减少，`flutter analyze` 必须保持 0 问题。
 
+## UI 与 App 调试规范
+
+- **默认调试方案（真机 + scrcpy）**：当用户指示「调试」或进行 App UI 效果预览时，默认执行方案一：
+  1. 依托 Android 实体机调试，拒绝使用或启动重型 QEMU / AVD 虚拟机；
+  2. 使用 `scrcpy` 实现低延迟、高帧率桌面投屏，直接在 Mac 窗口中查看真机 UI、字体、圆角与交互效果；
+  3. 配合 `flutter run -d <device_id>`（或直接推送构建包）实现毫秒级热重载调试。
+- **免虚拟机原则**：保持本地环境轻量，不创建和常驻几 GB 至十几 GB 的本地 AVD/QEMU 镜像。
+
 ## 多工具与多 Agent 协作规范
 
 - **指令唯一来源**：本项目规则以本地 `AGENTS.md` 为统一标准。使用 Antigravity、Codex、Cursor、Claude Code 等任何 AI 工具时，均须遵守本文件的全部规范。
