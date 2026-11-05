@@ -1543,7 +1543,7 @@ async function incidentView(incident, { forces = null, generateSuggestedTitle = 
   let info = {};
   if (syncSupported() && incident.unit_id) {
     const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
-    for (const key of ['original_category','specific_type','location','administrative_area','received_at']) {
+    for (const key of ['original_category','specific_type','location','administrative_area','received_at','situation']) {
       if (detail.data[key]) info[key] = detail.data[key];
     }
   }
@@ -3499,6 +3499,22 @@ app.post('/api/incident-observations', async (req, res, next) => {
       createdBy: deviceKey(req),
       createdAt: Date.now(),
     });
+    if (syncSupported() && req.unit?.id) {
+      try {
+        const repo = require('./incident-import-repository');
+        if (typeof repo.appendObservationToDetails === 'function') {
+          await repo.appendObservationToDetails({
+            unitId: req.unit.id,
+            incidentId: incident.id,
+            actorId: req.auth?.memberId || deviceKey(req),
+            transcript,
+            capturedAt,
+          });
+        }
+      } catch (err) {
+        logger.warn(`appendObservationToDetails error: ${err.message}`);
+      }
+    }
     res.status(201).json(created);
   } catch (error) {
     next(error);

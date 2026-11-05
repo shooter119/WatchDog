@@ -147,10 +147,19 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
     });
   }
 
+  String _formatObsTime(dynamic raw) {
+    final ms = (raw as num?)?.toInt();
+    if (ms == null || ms == 0) return '录像语音';
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)} · 录像语音';
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = Map<String, dynamic>.from(_detail?['data'] as Map? ?? {});
     final contacts = data['contacts'] as List? ?? [];
+    final observations = _detail?['observations'] as List? ?? [];
     final basicFields = [
       for (final field in incidentFieldLabels.entries)
         if (data[field.key]?.toString().isNotEmpty == true) field,
@@ -203,7 +212,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
             if (_detail == null && _error == null)
               const Center(child: CircularProgressIndicator()),
             if (_detail != null) ...[
-              if (data.isEmpty)
+              if (data.isEmpty && observations.isEmpty)
                 Text(
                   '尚未补充警情资料，可从首页导入图片或文字。',
                   style: TextStyle(color: AppColors.textSecondary),
@@ -263,6 +272,23 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
                         ),
                     ],
                   ),
+              if (observations.isNotEmpty)
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text('录像语音记录 (${observations.length})'),
+                  children: [
+                    for (final obs in observations)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: SelectableText(
+                            '${_formatObsTime(obs['captured_at'])}\n${obs['transcript'] ?? ''}',
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               for (final record in _detail!['imports'] as List? ?? [])
                 ExpansionTile(
                   tilePadding: EdgeInsets.zero,

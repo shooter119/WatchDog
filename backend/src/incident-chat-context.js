@@ -1,21 +1,22 @@
 const { forceError } = require('./force-fields');
 function redact(value) { return String(value || '').replace(/(?:\+?86[-\s]?)?1[3-9](?:[-\s]?\d){9}/g,'[联系方式已省略]').replace(/(?<!\d)(?:0\d{2,3}[-\s]?)?\d{3,4}[-\s]?\d{4}(?!\d)/g,'[联系方式已省略]'); }
 function buildContext(incident,detail,forces,observations=[]) {
-  if(!detail?.version) return null;
-  const data=detail.data || {};
+  const obsList=(observations||[]).slice(0,5).map((o)=>({
+    at:Number(o.captured_at)||null,
+    source:String(o.source_type||'video'),
+    text:redact(o.transcript).slice(0,300),
+  })).filter((o)=>o.text);
+  if(!detail?.version && obsList.length === 0) return null;
+  const data=detail?.data || {};
   const fields=['original_category','level','specific_type','place_type','location','situation','trapped','injured','hazardous_materials','received_at'];
-  return { incident_id:incident.id,version:detail.version,name:redact(incident.title||incident.number),
+  return { incident_id:incident.id,version:detail?.version||0,name:redact(incident.title||incident.number),
     facts:Object.fromEntries(fields.filter((k)=>data[k]).map((k)=>[k,redact(data[k]).slice(0,1500)])),
     risks:(data.risks||[]).map(redact),to_confirm:(data.to_confirm||[]).map(redact),
     equipment:(data.equipment||[]).map(redact),channels:(data.channels||[]).map(redact),
-    forces:forces.map((f)=>({name:redact(f.station_name),vehicles:f.vehicle_count_known===false?null:f.vehicle_count,personnel:f.personnel_count_known===false?null:f.personnel_count,status:f.deployment_status||'unknown'})),
+    forces:(forces||[]).map((f)=>({name:redact(f.station_name),vehicles:f.vehicle_count_known===false?null:f.vehicle_count,personnel:f.personnel_count_known===false?null:f.personnel_count,status:f.deployment_status||'unknown'})),
     // 现场口述：通讯员拍摄水印视频时口述的内容，已人工核对原文。
     // 只取最近若干条并截断，避免把整段对话塞进上下文。
-    observations:(observations||[]).slice(0,5).map((o)=>({
-      at:Number(o.captured_at)||null,
-      source:String(o.source_type||'video'),
-      text:redact(o.transcript).slice(0,300),
-    })).filter((o)=>o.text),
+    observations:obsList,
   };
 }
 async function loadContext(req,db) {
@@ -44,7 +45,8 @@ function safeSearchQuery(question,context) {
   // Only fixed vocabulary may reach web-search tools. No address, raw report,
   // phone, name or model-generated query is forwarded from incident context.
   const terms=['电气火灾','电表箱','住宅火灾','厂房火灾','山岳救援','蛇类处置','交通事故','危险化学品','呼吸器','个人防护','通信','人员被困'];
-  const source=[question,context?.facts?.specific_type,context?.facts?.original_category].join(' ');
+  const obsText=(context?.observations||[]).map((o)=>o.text).join(' ');
+  const source=[question,context?.facts?.specific_type,context?.facts?.original_category,context?.facts?.situation,obsText].join(' ');
   const selected=terms.filter((term)=>source.includes(term));
   return `消防救援 ${selected.length?selected.join(' '):'现场安全'} 处置要点与安全注意事项 官方资料`;
 }

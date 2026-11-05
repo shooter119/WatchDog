@@ -120,3 +120,20 @@ test('无口述记录时上下文不出现空数组噪声', () => {
   const context = buildContext({ id: 'i' }, { version: 1, data: {} }, [], []);
   assert.deepEqual(context.observations, []);
 });
+
+test('未导入通报（version=0）但有现场口述时依然构建上下文并注入固定词搜索', () => {
+  const { safeSearchQuery } = require('../src/incident-chat-context');
+  const context = buildContext(
+    { id: 'i', title: '录像口述警情' },
+    { version: 0, data: {} },
+    [],
+    [{ captured_at: 2000, source_type: 'video', transcript: '现场有人员被困，电表箱火灾' }],
+  );
+  assert.ok(context, '应正常构建 context');
+  assert.equal(context.observations.length, 1);
+  assert.ok(context.observations[0].text.includes('人员被困'));
+
+  const query = safeSearchQuery('如何处置', context);
+  assert.ok(query.includes('电表箱'), '应能命中录像口述中提及的处置词表');
+  assert.ok(query.includes('人员被困'), '应能命中人员被困');
+});

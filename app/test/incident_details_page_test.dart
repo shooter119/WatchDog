@@ -31,6 +31,14 @@ class _DetailsApi extends ApiClient {
     },
     'version': 1,
     'imports': [],
+    'observations': [
+      {
+        'id': 'obs-1',
+        'captured_at': 1762329600000,
+        'source_type': 'video',
+        'transcript': '三楼东侧窗口有一名老人被困，正在升梯救援',
+      },
+    ],
   };
 }
 
@@ -73,5 +81,33 @@ void main() {
     await tester.pump();
 
     expect(launched, [Uri(scheme: 'tel', path: '13800138000')]);
+  });
+
+  testWidgets('渲染现场情况并展示录像语音记录明细', (tester) async {
+    tester.view.physicalSize = const Size(400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: IncidentDetailsPage(
+          api: _DetailsApi(),
+          incident: _incident,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('现场情况'), findsOneWidget);
+    expect(find.text('现场有人员被困，救援通道已展开。'), findsOneWidget);
+    expect(find.text('录像语音记录 (1)'), findsOneWidget);
+
+    await tester.tap(find.text('录像语音记录 (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('三楼东侧窗口有一名老人被困'), findsOneWidget);
+    expect(find.textContaining('· 录像语音'), findsOneWidget);
   });
 }

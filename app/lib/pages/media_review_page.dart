@@ -253,6 +253,12 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
         _submitted = true;
         _busy = false;
       });
+      final incidentId = widget.controller.currentIncident?.id ?? '';
+      if (incidentId.isNotEmpty) {
+        unawaited(
+          widget.controller.refreshIncidentData(incidentId).catchError((_) {}),
+        );
+      }
       _toast('已写入警情，可继续仅保存或保存并分享');
     } catch (error) {
       if (!mounted) return;
@@ -261,6 +267,37 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       if (!mounted) return;
       setState(() => _busy = false);
       _toast('写入失败：$error；文字已保存在本机草稿');
+    }
+  }
+
+  Future<void> _autoSubmitIfNeeded() async {
+    if (_submitted || !_hasIncident || !_hasText) return;
+    final api = widget.controller.api;
+    if (api == null) return;
+    final text = _transcript.text.trim();
+    if (text.isEmpty) return;
+    try {
+      await api.createIncidentObservation(
+        transcript: text,
+        sourceType: _media.kind,
+        capturedAt: _media.capturedAt,
+        mediaRef: _media.id,
+      );
+      await LocalMediaStore.instance.updateDerived(
+        id: _media.id,
+        transcript: text,
+        observationId: _media.id,
+      );
+      _savedDraft = text;
+      _submitted = true;
+      final incidentId = widget.controller.currentIncident?.id ?? '';
+      if (incidentId.isNotEmpty) {
+        unawaited(
+          widget.controller.refreshIncidentData(incidentId).catchError((_) {}),
+        );
+      }
+    } catch (_) {
+      // 自动写入失败不阻断相册导出，文本仍保留在本地草稿中
     }
   }
 
@@ -293,6 +330,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     final paired = _media.sourcePath.isNotEmpty;
     setState(() => _busy = true);
     await _flushDraft();
+    await _autoSubmitIfNeeded();
     final saved = await _savePair(announce: false);
     if (!saved) {
       if (!mounted) return;
@@ -314,6 +352,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
     final paired = _media.sourcePath.isNotEmpty;
     setState(() => _busy = true);
     await _flushDraft();
+    await _autoSubmitIfNeeded();
     final saved = await _savePair(announce: false);
     if (!saved) {
       if (!mounted) return;

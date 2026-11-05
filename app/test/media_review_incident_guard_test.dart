@@ -317,4 +317,33 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
   });
+
+  testWidgets('有当前警情且有文本：点击仅保存自动写入警情并导出相册', (tester) async {
+    joinIncident();
+    final results = await open(tester, '现场已完成搜救，无人员被困');
+    expect(find.text('核对无误，写入警情'), findsOneWidget);
+    await tester.tap(find.text('仅保存'));
+    await _pumpAsyncAction(tester);
+
+    expect(api.transcripts, ['现场已完成搜救，无人员被困']);
+    expect(store.linked, ['media-guard']);
+    await finish(tester, results);
+  });
+
+  testWidgets('已手动写入警情后点击仅保存：不重复调用写警情接口', (tester) async {
+    joinIncident();
+    final results = await open(tester, '现场明火已灭');
+    await _tapIncidentSubmit(tester);
+    await tester.tap(find.text('确认写入'));
+    await tester.pumpAndSettle();
+    expect(api.transcripts, ['现场明火已灭']);
+
+    // 随后点击仅保存
+    await tester.tap(find.text('仅保存'));
+    await _pumpAsyncAction(tester);
+
+    // 依然只有手动写入的那 1 次，不会再次写入
+    expect(api.transcripts, ['现场明火已灭']);
+    await finish(tester, results);
+  });
 }

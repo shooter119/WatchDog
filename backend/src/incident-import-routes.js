@@ -81,7 +81,15 @@ function registerIncidentImportRoutes(app, { db, config, actorName, deviceKey, r
     const s=await scope(req);
     const detail=await repo.details(s.unitId,s.incidentId);
     const {rows}=await store.query("SELECT id,source,pages,applied_at,actor_name FROM incident_imports WHERE unit_id=$1 AND incident_id=$2 AND status='applied' ORDER BY applied_at DESC LIMIT 50",[s.unitId,s.incidentId]);
-    res.json({...detail,imports:rows.map((row)=>({...row,pages:row.pages.map((p)=>({index:p.index,raw_text:p.result?.raw_text||p.text||'',status:p.status}))}))});
+    let observations=[];
+    if(typeof db.listIncidentObservations==='function'){
+      try{
+        observations=await db.listIncidentObservations({incidentId:s.incidentId,limit:20});
+      }catch(_){
+        observations=[];
+      }
+    }
+    res.json({...detail,imports:rows.map((row)=>({...row,pages:row.pages.map((p)=>({index:p.index,raw_text:p.result?.raw_text||p.text||'',status:p.status}))})),observations});
   }));
   app.patch('/api/incidents/:id/details',wrap(async(req,res)=>{
     const s=await scope(req);

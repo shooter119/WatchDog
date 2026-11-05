@@ -186,7 +186,7 @@ async function applyImport({ unitId, incidentId, actorId, actorName, importId, o
     await db.touchIncidentActivity(incidentId, now);
     const event = await db.appendIncidentEvent({ incidentId, type: 'incident_import_applied', actorDeviceId: actorId, actorName, clientOpId: opId, payload: { import_id: importId, force_count: saved.length, details_version: version } });
     const updatedIncident = { ...await db.getIncident(incidentId, { unitId }),
-      info: Object.fromEntries(['original_category','specific_type','location','administrative_area','received_at'].filter((key) => data[key]).map((key) => [key,data[key]])) };
+      info: Object.fromEntries(['original_category','specific_type','location','administrative_area','received_at','situation'].filter((key) => data[key]).map((key) => [key,data[key]])) };
     const allForces = await db.listIncidentForces(incidentId);
     const sync = await db.appendSyncEvent({ unitId, incidentId, eventType: 'import.applied', aggregateId: importId, payload: { incident: updatedIncident, forces: allForces, details_version: version, details: { incident_id: incidentId, unit_id: unitId, data, version, updated_at: now } } });
     await db.appendSyncEvent({ unitId, eventType: 'incident.updated', aggregateId: incidentId, payload: updatedIncident });
@@ -252,5 +252,47 @@ async function mergeForces({unitId,incidentId,actorId,actorName,opId,body}) {
     return result;
   });
 }
+async function appendObservationToDetails({ unitId, incidentId, actorId, transcript, capturedAt }) {
+  const clean = String(transcript || '').trim();
+  if (!clean || !unitId || !incidentId) return null;
+  return store.transaction(async () => {
+    const incident = await incidentInUnit(unitId, incidentId, true);
+    if (incident.status !== 'active') return null;
+    const current = await details(unitId, incidentId);
+    const existingSituation = String(current.data?.situation || '').trim();
+    let newSituation = existingSituation;
+    if (!existingSituation) {
+      newSituation = clean;
+    } else if (!existingSituation.includes(clean)) {
+      newSituation = `${existingSituation}\n${clean}`;
+    }
+    if (newSituation.length > 4000) {
+      newSituation = newSituation.slice(0, 4000);
+    }
+    if (newSituation === existingSituation && current.version > 0) {
+      return current;
+    }
+    const data = { ...(current.data || {}), situation: newSituation };
+    const now = Date.now();
+    const version = (current.version || 0) + 1;
+    await store.query(
+      'INSERT INTO incident_details(incident_id, unit_id, data, version, updated_at, updated_by) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(incident_id) DO UPDATE SET data=EXCLUDED.data, version=EXCLUDED.version, updated_at=EXCLUDED.updated_at, updated_by=EXCLUDED.updated_by',
+      [incidentId, unitId, JSON.stringify(data), version, now, actorId]
+    );
+    await store.query(
+      'INSERT INTO incident_detail_history(id, incident_id, unit_id, before_data, after_data, actor_id, created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',
+      [randomUUID(), incidentId, unitId, JSON.stringify(current.data || {}), JSON.stringify(data), actorId, now]
+    );
+    await db.touchIncidentActivity(incidentId, now);
+    await db.appendSyncEvent({
+      unitId,
+      incidentId,
+      eventType: 'details.updated',
+      payload: { incident_id: incidentId, unit_id: unitId, data, version, updated_at: now },
+    });
+    return { ok: true, version, data };
+  });
+}
 module.exports.updateDetails=updateDetails;
 module.exports.mergeForces=mergeForces;
+module.exports.appendObservationToDetails=appendObservationToDetails;
