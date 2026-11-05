@@ -1216,6 +1216,24 @@ app.get('/api/route-traffic', async (req, res) => {
       return res.status(400).json({ error: '起点坐标格式错误', code: 'COORD_INVALID' });
     }
   }
+
+  const rawDestLat = req.query.destLat;
+  const rawDestLon = req.query.destLon;
+  const hasExplicitDest =
+    (rawDestLat !== undefined && rawDestLat !== null && String(rawDestLat).trim() !== '') ||
+    (rawDestLon !== undefined && rawDestLon !== null && String(rawDestLon).trim() !== '');
+  let destLat = null;
+  let destLon = null;
+  if (hasExplicitDest) {
+    destLat = Number(rawDestLat);
+    destLon = Number(rawDestLon);
+    if (!weather.validCoord(destLat, destLon)) {
+      return res.status(400).json({ error: '目标候选坐标格式错误', code: 'COORD_INVALID' });
+    }
+  }
+  const destName = String(req.query.destName || '').trim().slice(0, 120);
+  const destAdcode = String(req.query.destAdcode || '').trim().slice(0, 30);
+
   if (upstreamRateLimited(req, 'route_traffic', 30)) {
     return res.status(429).json({ error: '路况查询过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
   }
@@ -1225,6 +1243,11 @@ app.get('/api/route-traffic', async (req, res) => {
       city,
       originLat,
       originLon,
+      unitName: req.unit?.name || '',
+      destLat,
+      destLon,
+      destName,
+      destAdcode,
       key: CFG.amap.key,
     });
     res.json(result);

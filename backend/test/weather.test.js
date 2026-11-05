@@ -10,6 +10,10 @@ const {
   parseWeather,
   parseForecast,
   parseDrivingRoute,
+  cleanUnitJurisdictionName,
+  normalizeNaturalVillage,
+  extractPrefixWord,
+  completeFormattedAddress,
   weatherLine,
   lookupResponse,
   validCoord,
@@ -559,6 +563,142 @@ test('lookupRouteTraffic：无起点坐标时仅查询终点坐标与天气，�
   assert.equal(result.weather.text, '阴');
   assert.equal(result.degraded, false);
   assert.equal(fetchImpl.calls.length, 3);
+});
+
+test('cleanUnitJurisdictionName 与 normalizeNaturalVillage 与 completeFormattedAddress 工具测试', () => {
+  assert.equal(cleanUnitJurisdictionName('示范县消防救援大队'), '示范县');
+  assert.equal(cleanUnitJurisdictionName('示例市消防救援大队'), '示例市');
+  assert.equal(cleanUnitJurisdictionName('示范市消防救援支队'), '示范市');
+
+  assert.equal(normalizeNaturalVillage('航埠殿前村4村'), '航埠殿前村四村');
+  assert.equal(normalizeNaturalVillage('双港村2组'), '双港村二组');
+
+  assert.equal(extractPrefixWord('航埠殿前村4村'), '航埠');
+  assert.equal(extractPrefixWord('航埠镇殿前村'), '航埠');
+
+  assert.equal(
+    completeFormattedAddress('浙江省衢州市柯城区航埠镇殿前村', '航埠殿前村4村'),
+    '浙江省衢州市柯城区航埠镇殿前村4村'
+  );
+  assert.equal(
+    completeFormattedAddress('浙江省衢州市柯城区航埠镇殿前村4村', '航埠殿前村4村'),
+    '浙江省衢州市柯城区航埠镇殿前村4村'
+  );
+});
+
+test('lookupRouteTraffic：单位属地消歧与同名村多候选返回', async () => {
+  clearCaches();
+  const fetchImpl = (url) => {
+    if (url.includes('/v3/geocode/geo') && url.includes('address=%E7%A4%BA%E8%8C%83%E5%8E%BF')) {
+      // 示范县属地解析 -> 衢州市
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          status: '1',
+          geocodes: [{
+            formatted_address: '浙江省衢州市示范县',
+            province: '浙江省',
+            city: '衢州市',
+            district: '示范县',
+            adcode: '330825',
+            location: '119.17,29.02',
+          }],
+        }),
+      });
+    }
+    if (url.includes('/v3/geocode/geo') && url.includes('address=%E4%B8%9C%E5%B1%B1%E6%9D%91')) {
+      // 查询东山村 -> 初始地理编码
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          status: '1',
+          geocodes: [{
+            formatted_address: '浙江省衢州市常山县东山村',
+            province: '浙江省',
+            city: '衢州市',
+            district: '常山县',
+            adcode: '330822',
+            location: '118.339,28.825',
+          }],
+        }),
+      });
+    }
+    if (url.includes('/v3/assistant/inputtips')) {
+      // 返回两个不同区县、相距甚远的东山村候选
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          status: '1',
+          tips: [
+            {
+              name: '东山村',
+              district: '浙江省衢州市常山县',
+              adcode: '330822',
+              location: '118.339,28.825',
+              address: [],
+            },
+            {
+              name: '东山村',
+              district: '浙江省衢州市江山市',
+              adcode: '330881',
+              location: '118.480,28.581',
+              address: [],
+            },
+          ],
+        }),
+      });
+    }
+    if (url.includes('/v3/weather/weatherInfo')) {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+
+  const res = await lookupRouteTraffic({
+    address: '东山村',
+    unitName: '示范县消防救援大队',
+    key: 'test-key',
+    fetchImpl,
+  });
+
+  assert.equal(res.ambiguous, true, '同名村应被标记为 ambiguous');
+  assert.ok(res.candidates.length >= 2, '应返回候选列表');
+  assert.equal(res.candidates[0].district, '浙江省衢州市常山县');
+  assert.equal(res.candidates[1].district, '浙江省衢州市江山市');
+});
+
+test('lookupRouteTraffic：手动指定候选目标坐标时直接精准定位', async () => {
+  clearCaches();
+  const fetchImpl = (url) => {
+    if (url.includes('/v3/weather/weatherInfo') && url.includes('extensions=base')) {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    if (url.includes('/v3/weather/weatherInfo') && url.includes('extensions=all')) {
+      return Promise.resolve({ ok: true, json: async () => FORECAST_OK });
+    }
+    if (url.includes('/v3/direction/driving')) {
+      return Promise.resolve({ ok: true, json: async () => DRIVING_OK });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+
+  const res = await lookupRouteTraffic({
+    address: '东山村',
+    destLat: 28.581,
+    destLon: 118.480,
+    destName: '浙江省衢州市江山市东山村',
+    destAdcode: '330881',
+    originLat: 29.03,
+    originLon: 119.18,
+    key: 'test-key',
+    fetchImpl,
+  });
+
+  assert.equal(res.ambiguous, false);
+  assert.deepEqual(res.candidates, []);
+  assert.equal(res.destination.location.lat, 28.581);
+  assert.equal(res.destination.location.lon, 118.480);
+  assert.equal(res.destination.formattedAddress, '浙江省衢州市江山市东山村');
 });
 
 test('lookupRouteTraffic：参数校验与地址无法解析错误码', async () => {

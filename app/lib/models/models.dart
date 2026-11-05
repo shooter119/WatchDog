@@ -1083,6 +1083,56 @@ class DrivingRoutePlan {
   }
 }
 
+class RouteDestinationCandidate {
+  final String name;
+  final String formattedAddress;
+  final String province;
+  final String city;
+  final String district;
+  final String adcode;
+  final AmapLocation? location;
+
+  const RouteDestinationCandidate({
+    required this.name,
+    required this.formattedAddress,
+    this.province = '',
+    this.city = '',
+    this.district = '',
+    this.adcode = '',
+    this.location,
+  });
+
+  String get displayAddress =>
+      formattedAddress.trim().isNotEmpty ? formattedAddress.trim() : name.trim();
+
+  factory RouteDestinationCandidate.fromJson(Map<String, dynamic> json) {
+    return RouteDestinationCandidate(
+      name: (json['name']?.toString() ?? '').trim(),
+      formattedAddress: (json['formattedAddress']?.toString() ?? '').trim(),
+      province: (json['province']?.toString() ?? '').trim(),
+      city: (json['city']?.toString() ?? '').trim(),
+      district: (json['district']?.toString() ?? '').trim(),
+      adcode: (json['adcode']?.toString() ?? '').trim(),
+      location: AmapLocation.fromJson(json['location']),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'formattedAddress': formattedAddress,
+    'province': province,
+    'city': city,
+    'district': district,
+    'adcode': adcode,
+    if (location != null)
+      'location': {
+        'lat': location!.lat,
+        'lon': location!.lon,
+        'coordinate': location!.coordinate,
+      },
+  };
+}
+
 class RouteTrafficInfo {
   final RouteEndpointInfo? destination;
   final RouteOriginInfo? origin;
@@ -1092,6 +1142,8 @@ class RouteTrafficInfo {
   final List<DrivingRoutePlan> routes;
   final bool routeAvailable;
   final bool degraded;
+  final bool ambiguous;
+  final List<RouteDestinationCandidate> candidates;
 
   const RouteTrafficInfo({
     this.destination,
@@ -1102,6 +1154,8 @@ class RouteTrafficInfo {
     this.routes = const [],
     this.routeAvailable = false,
     this.degraded = false,
+    this.ambiguous = false,
+    this.candidates = const [],
   });
 
   Uri? get navigationUri {
@@ -1216,6 +1270,7 @@ class RouteTrafficInfo {
 
   factory RouteTrafficInfo.fromJson(Map<String, dynamic> json) {
     final rawRoutes = json['routes'] as List? ?? const [];
+    final rawCandidates = json['candidates'] as List? ?? const [];
     return RouteTrafficInfo(
       destination: RouteEndpointInfo.fromJson(json['destination']),
       origin: RouteOriginInfo.fromJson(json['origin']),
@@ -1228,6 +1283,11 @@ class RouteTrafficInfo {
           .toList(growable: false),
       routeAvailable: json['routeAvailable'] == true,
       degraded: json['degraded'] == true,
+      ambiguous: json['ambiguous'] == true,
+      candidates: rawCandidates
+          .whereType<Map>()
+          .map((e) => RouteDestinationCandidate.fromJson(Map<String, dynamic>.from(e)))
+          .toList(growable: false),
     );
   }
 }

@@ -1034,6 +1034,10 @@ class ApiClient {
     String? city,
     double? originLat,
     double? originLon,
+    double? destLat,
+    double? destLon,
+    String? destName,
+    String? destAdcode,
   }) async {
     final trimmedCity = city?.trim() ?? '';
     final query = <String, String>{
@@ -1043,6 +1047,12 @@ class ApiClient {
         'originLat': originLat.toStringAsFixed(6),
         'originLon': originLon.toStringAsFixed(6),
       },
+      if (destLat != null && destLon != null) ...{
+        'destLat': destLat.toStringAsFixed(6),
+        'destLon': destLon.toStringAsFixed(6),
+      },
+      if ((destName?.trim() ?? '').isNotEmpty) 'destName': destName!.trim(),
+      if ((destAdcode?.trim() ?? '').isNotEmpty) 'destAdcode': destAdcode!.trim(),
     };
     final uri = _uri('/api/route-traffic').replace(queryParameters: query);
     final res = await _client

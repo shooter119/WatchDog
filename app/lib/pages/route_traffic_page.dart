@@ -22,6 +22,10 @@ class RouteTrafficGateway {
     String? city,
     double? originLat,
     double? originLon,
+    double? destLat,
+    double? destLon,
+    String? destName,
+    String? destAdcode,
   }) fetchRouteTraffic;
   final Future<Map<String, dynamic>> Function(String incidentId)?
   fetchIncidentDetails;
@@ -71,6 +75,8 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
   String _targetCity = '';
   bool _missingLocation = false;
   int _loadGeneration = 0;
+  RouteDestinationCandidate? _selectedCandidate;
+  bool _candidateDialogPrompted = false;
 
   @override
   void initState() {
@@ -86,6 +92,10 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
             String? city,
             double? originLat,
             double? originLon,
+            double? destLat,
+            double? destLon,
+            String? destName,
+            String? destAdcode,
           }) async {
             final api = widget.controller.api;
             if (api == null) throw Exception('未连接服务端');
@@ -94,6 +104,10 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               city: city,
               originLat: originLat,
               originLon: originLon,
+              destLat: destLat,
+              destLon: destLon,
+              destName: destName,
+              destAdcode: destAdcode,
             );
           },
           fetchIncidentDetails: (id) async {
@@ -202,6 +216,10 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
         city: _targetCity.isNotEmpty ? _targetCity : null,
         originLat: fix?.lat,
         originLon: fix?.lon,
+        destLat: _selectedCandidate?.location?.lat,
+        destLon: _selectedCandidate?.location?.lon,
+        destName: _selectedCandidate?.name,
+        destAdcode: _selectedCandidate?.adcode,
       );
 
       if (!mounted || gen != _loadGeneration) return;
@@ -211,6 +229,16 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
         _selectedRouteIndex = 0;
         _error = null;
       });
+
+      if (info.ambiguous &&
+          info.candidates.length > 1 &&
+          !_candidateDialogPrompted &&
+          _selectedCandidate == null) {
+        _candidateDialogPrompted = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showCandidatePicker(info.candidates);
+        });
+      }
     } catch (e) {
       if (!mounted || gen != _loadGeneration) return;
       final rawMsg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
@@ -268,6 +296,120 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('路况简报已复制')));
     }
+  }
+
+  void _showCandidatePicker(List<RouteDestinationCandidate> candidates) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.s4,
+                  AppSpacing.s3,
+                  AppSpacing.s4,
+                  AppSpacing.s2,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.location_city_rounded,
+                      size: 20,
+                      color: AppColors.alarm,
+                    ),
+                    const SizedBox(width: AppSpacing.s2),
+                    Expanded(
+                      child: Text(
+                        '发现多处同名地点，请确认目的地',
+                        style: AppTextStyles.bodyMd.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () => Navigator.of(ctx).pop(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: candidates.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, index) {
+                    final cand = candidates[index];
+                    final isSelected =
+                        _selectedCandidate?.formattedAddress ==
+                            cand.formattedAddress ||
+                        (_selectedCandidate == null && index == 0);
+                    return ListTile(
+                      key: Key('route-candidate-item-$index'),
+                      leading: Icon(
+                        isSelected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked,
+                        color:
+                            isSelected ? AppColors.voice : AppColors.textSecondary,
+                        size: 20,
+                      ),
+                      title: Text(
+                        cand.name,
+                        style: AppTextStyles.bodyMd.copyWith(
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: Text(
+                        cand.displayAddress,
+                        style: AppTextStyles.label.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      trailing: cand.district.isNotEmpty
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                cand.district,
+                                style: AppTextStyles.label.copyWith(
+                                  fontSize: 11,
+                                ),
+                              ),
+                            )
+                          : null,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        setState(() {
+                          _selectedCandidate = cand;
+                        });
+                        unawaited(_load());
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _startNavigation() async {
@@ -593,8 +735,61 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                   ),
                 ),
               ),
+              if (info.candidates.length > 1) ...[
+                InkWell(
+                  key: const Key('route-traffic-switch-candidate'),
+                  onTap: () => _showCandidatePicker(info.candidates),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
+                      '切换',
+                      style: AppTextStyles.label.copyWith(
+                        color: AppColors.voice,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
+          if (info.ambiguous && info.candidates.length > 1) ...[
+            const SizedBox(height: AppSpacing.s2),
+            InkWell(
+              onTap: () => _showCandidatePicker(info.candidates),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.alarm.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AppColors.alarm.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 14, color: AppColors.alarm),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        '检测到多处同名地点，当前为${_selectedCandidate?.name ?? "推荐地点"}，点此切换',
+                        style: AppTextStyles.label.copyWith(
+                          color: AppColors.alarm,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 14,
+                      color: AppColors.alarm,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

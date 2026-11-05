@@ -185,6 +185,10 @@ void main() {
                 city,
                 originLat,
                 originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
               }) async => mockRouteInfo,
               fetchIncidentDetails: (id) async => {'data': {}},
               openAppSettings: () async {},
@@ -250,6 +254,10 @@ void main() {
                 city,
                 originLat,
                 originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
               }) async {
                 expect(address, '新安东路1号');
                 expect(city, '建德市');
@@ -348,6 +356,10 @@ void main() {
                 city,
                 originLat,
                 originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
               }) async {
                 expect(originLat, isNull);
                 expect(originLon, isNull);
@@ -373,6 +385,95 @@ void main() {
       // 终点和天气依然展示
       expect(find.text('事发地气象与火场风向'), findsOneWidget);
       expect(find.text('多云'), findsWidgets);
+    });
+
+    testWidgets('存在同名村歧义时展示候选切换并支持手动选择', (tester) async {
+      final controller = _FakeController(
+        mockIncident: const Incident(
+          id: 'inc-ambiguous',
+          number: '2026-11-05-02',
+          title: '东山村民房火灾',
+          status: 'active',
+          createdAt: 1000,
+          lastActivityAt: 2000,
+          info: {'location': '东山村'},
+        ),
+      );
+
+      final ambiguousInfo = RouteTrafficInfo(
+        destination: const RouteEndpointInfo(
+          queryAddress: '东山村',
+          formattedAddress: '浙江省衢州市常山县东山村',
+          province: '浙江省',
+          city: '衢州市',
+          district: '常山县',
+          adcode: '330822',
+          location: AmapLocation(lat: 28.825, lon: 118.339, coordinate: 'gcj02'),
+        ),
+        ambiguous: true,
+        candidates: const [
+          RouteDestinationCandidate(
+            name: '东山村',
+            formattedAddress: '浙江省衢州市常山县东山村',
+            district: '常山县',
+            adcode: '330822',
+            location: AmapLocation(lat: 28.825, lon: 118.339, coordinate: 'gcj02'),
+          ),
+          RouteDestinationCandidate(
+            name: '东山村',
+            formattedAddress: '浙江省衢州市江山市东山村',
+            district: '江山市',
+            adcode: '330881',
+            location: AmapLocation(lat: 28.581, lon: 118.480, coordinate: 'gcj02'),
+          ),
+        ],
+      );
+
+      double? requestedDestLat;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: RouteTrafficPage(
+            controller: controller,
+            gateway: RouteTrafficGateway(
+              requestPermission: () async => true,
+              locationServiceEnabled: () async => true,
+              currentLocation: () async => null,
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async {
+                requestedDestLat = destLat;
+                return ambiguousInfo;
+              },
+              openAppSettings: () async {},
+              openLocationSettings: () async {},
+              copyText: (_) async {},
+              launchNavigation: (_) async => true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 应当自动弹出多候选选择底栏
+      expect(find.text('发现多处同名地点，请确认目的地'), findsOneWidget);
+      expect(find.text('常山县'), findsOneWidget);
+      expect(find.text('江山市'), findsOneWidget);
+
+      // 点选江山市候选
+      await tester.tap(find.byKey(const Key('route-candidate-item-1')));
+      await tester.pumpAndSettle();
+
+      // 底栏关闭，且按江山市坐标重新发起了请求
+      expect(requestedDestLat, 28.581);
     });
   });
 }

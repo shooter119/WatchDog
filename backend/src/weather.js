@@ -17,6 +17,7 @@ const WEATHER_TTL_MS = 20 * 60 * 1000;
 const GEOCODE_TTL_MS = 10 * 60 * 1000;
 const FORECAST_TTL_MS = 20 * 60 * 1000;
 const ROUTE_TTL_MS = 2 * 60 * 1000;
+const UNIT_JURISDICTION_TTL_MS = 24 * 60 * 60 * 1000;
 // 3 位小数约 110 米，足够区分同一现场的不同拍摄点，又能让相邻设备命中同一缓存。
 const COORD_DIGITS = 3;
 
@@ -316,6 +317,7 @@ const weatherCache = new TtlCache(WEATHER_TTL_MS);
 const geocodeCache = new TtlCache(GEOCODE_TTL_MS);
 const forecastCache = new TtlCache(FORECAST_TTL_MS);
 const routeCache = new TtlCache(ROUTE_TTL_MS);
+const unitJurisdictionCache = new TtlCache(UNIT_JURISDICTION_TTL_MS, 50);
 
 async function fetchJson(url, fetchImpl) {
   const controller = new AbortController();
@@ -432,22 +434,146 @@ function clearCaches() {
   geocodeCache.clear();
   forecastCache.clear();
   routeCache.clear();
+  unitJurisdictionCache.clear();
+}
+
+/** 清理消防单位名称中的队伍后缀，提取属地词根（如「示范县消防救援大队」->「示范县」）。 */
+function cleanUnitJurisdictionName(unitName) {
+  let name = strOrEmpty(unitName);
+  if (!name) return '';
+  name = name.replace(/(?:消防救援支队|消防救援大队|消防救援站|特勤站|专职消防队|森林消防大队|消安委办|应急救援大队|消防大队|消防支队|消防站)$/, '');
+  return name.trim();
+}
+
+/** 解析并缓存单位所属的区县、地级市与省份。 */
+async function resolveUnitJurisdiction({
+  unitName,
+  key,
+  fetchImpl = fetch,
+  now = Date.now(),
+  cache = unitJurisdictionCache,
+} = {}) {
+  const cleanName = cleanUnitJurisdictionName(unitName);
+  if (!cleanName || !key) return null;
+  const cached = cache.get(cleanName, now);
+  if (cached) return cached;
+  try {
+    const url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(cleanName)}&output=JSON&key=${encodeURIComponent(key)}`;
+    const geo = parseGeocode(await fetchJson(url, fetchImpl));
+    if (geo) {
+      const res = {
+        name: cleanName,
+        province: geo.province,
+        city: geo.city || geo.province,
+        district: geo.district,
+        adcode: geo.adcode,
+      };
+      cache.set(cleanName, res, now);
+      return res;
+    }
+  } catch (_) {}
+  return null;
+}
+
+const DIGIT_TO_CN = { '1': '一', '2': '二', '3': '三', '4': '四', '5': '五', '6': '六', '7': '七', '8': '八', '9': '九', '10': '十' };
+
+/** 规范化自然村、生产队序号（将「4村」转为「四村」以提升高德匹配精度）。 */
+function normalizeNaturalVillage(address) {
+  if (!address) return '';
+  return address.replace(/(\d+)(村|组|队)/g, (m, num, unit) => {
+    const cn = DIGIT_TO_CN[num] || num;
+    return `${cn}${unit}`;
+  });
+}
+
+/** 提取地址中的乡镇/片区前置限定词（如「航埠殿前村4村」中的「航埠」）。 */
+function extractPrefixWord(address) {
+  const clean = strOrEmpty(address);
+  if (!clean) return '';
+  const townMatch = clean.match(/^([\u4e00-\u9fa5]{2,6}?)(?:镇|乡|街道)/);
+  if (townMatch) return townMatch[1];
+  const villagePrefixMatch = clean.match(/^([\u4e00-\u9fa5]{2,4})(?=[\u4e00-\u9fa5]{2,4}村)/);
+  if (villagePrefixMatch) return villagePrefixMatch[1];
+  return '';
+}
+
+/** 计算两个经纬度坐标之间的球面距离（米）。 */
+function geoDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
+/** 保留原始输入中的细分后缀（如「4村」、「四村」、「12号」），避免高德截断。 */
+function completeFormattedAddress(formattedAddress, rawAddress) {
+  const base = strOrEmpty(formattedAddress);
+  const raw = strOrEmpty(rawAddress);
+  if (!base || !raw) return base || raw;
+  const tailMatch = raw.match(/(\d+|[一二三四五六七八九十]+)(村|组|队|弄|号)$/);
+  if (tailMatch) {
+    const tail = tailMatch[0];
+    if (!base.endsWith(tail)) {
+      return `${base}${tail}`;
+    }
+  }
+  return base;
+}
+
+/** 从 inputtips 响应中提取有效地理候选点。 */
+function parseCandidatesFromTips(payload) {
+  if (!payload || String(payload.status) !== '1') return [];
+  const tips = Array.isArray(payload.tips) ? payload.tips : [];
+  const candidates = [];
+  for (const tip of tips) {
+    const rawLoc = strOrEmpty(tip.location);
+    if (!rawLoc) continue;
+    const parts = rawLoc.split(',').map((p) => Number(p.trim()));
+    if (parts.length !== 2) continue;
+    const [lon, lat] = parts;
+    if (!validCoord(lat, lon)) continue;
+    const name = strOrEmpty(tip.name);
+    const district = strOrEmpty(tip.district);
+    const addr = Array.isArray(tip.address) ? tip.address.join('') : strOrEmpty(tip.address);
+    const full = district ? (district.includes(name) ? district : `${district}${name}`) : (addr || name);
+    candidates.push({
+      name,
+      formattedAddress: full,
+      province: '',
+      city: '',
+      district,
+      adcode: strOrEmpty(tip.adcode),
+      location: { lat, lon, coordinate: 'gcj02' },
+    });
+  }
+  return candidates;
 }
 
 /**
  * 综合查询事发地坐标、目的地实况天气与当日预报、以及从当前位置到事发地的驾车路线与实时路况。
+ * 支持单位属地范围锁定、前缀限定词消歧、同名村多候选返回以及用户手动指定候选。
  */
 async function lookupRouteTraffic({
   address,
   city = '',
   originLat = null,
   originLon = null,
+  unitName = '',
+  destLat = null,
+  destLon = null,
+  destName = '',
+  destAdcode = '',
   key,
   fetchImpl = fetch,
   now = Date.now(),
   addressStore = addressCache,
   coordinateStore = coordinateCache,
   weatherStore = weatherCache,
+  unitStore = unitJurisdictionCache,
   geocodeStore,
   forecastStore,
   routeStore,
@@ -486,16 +612,150 @@ async function lookupRouteTraffic({
   const fcStore = forecastStore || forecastCacheArg || forecastCache;
   const rtStore = routeStore || routeCacheArg || routeCache;
 
-  const cleanCity = strOrEmpty(city).slice(0, 80);
-  const geocodeKey = `${cleanCity}::${cleanAddress}`;
-  let geocode = geoStore.get(geocodeKey, now);
-  if (!geocode) {
-    const cityParam = cleanCity ? `&city=${encodeURIComponent(cleanCity)}` : '';
-    const url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(cleanAddress)}` +
-      `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
-    geocode = parseGeocode(await fetchJson(url, fetchImpl));
-    if (geocode) geoStore.set(geocodeKey, geocode, now);
+  let geocode = null;
+  let ambiguous = false;
+  let candidates = [];
+
+  const explicitLat = destLat !== null && destLat !== undefined && String(destLat).trim() !== '' ? Number(destLat) : null;
+  const explicitLon = destLon !== null && destLon !== undefined && String(destLon).trim() !== '' ? Number(destLon) : null;
+  const hasExplicitDest = explicitLat !== null && explicitLon !== null && validCoord(explicitLat, explicitLon);
+
+  if (hasExplicitDest) {
+    geocode = {
+      formattedAddress: destName ? completeFormattedAddress(destName, cleanAddress) : cleanAddress,
+      province: '',
+      city: strOrEmpty(city),
+      district: '',
+      adcode: strOrEmpty(destAdcode),
+      location: { lat: explicitLat, lon: explicitLon, coordinate: 'gcj02' },
+    };
+    ambiguous = false;
+    candidates = [];
+  } else {
+    // 1. 获取当前单位属地信息（本级区县与上一级地级市）
+    const unitJurisdiction = await resolveUnitJurisdiction({
+      unitName,
+      key,
+      fetchImpl,
+      now,
+      cache: unitStore,
+    });
+    const cleanCity = strOrEmpty(city).slice(0, 80);
+    const effectiveCity = cleanCity || unitJurisdiction?.city || '';
+    const unitDistrict = unitJurisdiction?.district || '';
+
+    const prefixWord = extractPrefixWord(cleanAddress);
+    const normalizedAddress = normalizeNaturalVillage(cleanAddress);
+
+    // 2. 尝试常规地理编码查询
+    const geocodeKey = `${effectiveCity}::${cleanAddress}`;
+    let primaryGeocode = geoStore.get(geocodeKey, now);
+    if (!primaryGeocode) {
+      const cityParam = effectiveCity ? `&city=${encodeURIComponent(effectiveCity)}` : '';
+      const url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(cleanAddress)}` +
+        `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
+      primaryGeocode = parseGeocode(await fetchJson(url, fetchImpl));
+      if (!primaryGeocode && normalizedAddress !== cleanAddress) {
+        const urlNorm = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(normalizedAddress)}` +
+          `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
+        primaryGeocode = parseGeocode(await fetchJson(urlNorm, fetchImpl));
+      }
+      if (primaryGeocode) geoStore.set(geocodeKey, primaryGeocode, now);
+    }
+
+    // 检查地理编码结果是否出现跨市或前缀丢失（例如输入包含「航埠」，结果却跳到「临海市」且无「航埠」）
+    let isPrimaryValid = Boolean(primaryGeocode);
+    if (primaryGeocode) {
+      const fullText = `${primaryGeocode.formattedAddress}${primaryGeocode.province}${primaryGeocode.city}${primaryGeocode.district}`;
+      if (prefixWord && !fullText.includes(prefixWord)) {
+        isPrimaryValid = false;
+      }
+      const regionText = `${primaryGeocode.province}${primaryGeocode.city}${primaryGeocode.district}`;
+      if (effectiveCity && !regionText.includes(effectiveCity) && !effectiveCity.includes(primaryGeocode.city || '') && !effectiveCity.includes(primaryGeocode.district || '')) {
+        isPrimaryValid = false;
+      }
+    }
+
+    // 3. 在需要消歧、多候选发现或初次地理编码不合格时查询候选建议
+    let tipCandidates = [];
+    const isShortVillage = cleanAddress.length <= 6 && cleanAddress.endsWith('村') && !cleanAddress.includes('镇') && !cleanAddress.includes('街道');
+    const needCandidatesLookup = !isPrimaryValid || isShortVillage;
+    if (needCandidatesLookup) {
+      try {
+        const tipsQuery = prefixWord ? `${prefixWord}${normalizedAddress.replace(prefixWord, '')}` : normalizedAddress;
+        const cityParam = effectiveCity ? `&city=${encodeURIComponent(effectiveCity)}&citylimit=true` : '';
+        const tipsUrl = `${AMAP_BASE}/v3/assistant/inputtips?keywords=${encodeURIComponent(tipsQuery)}` +
+          `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
+        tipCandidates = parseCandidatesFromTips(await fetchJson(tipsUrl, fetchImpl));
+      } catch (_) {}
+    }
+
+    // 对候选建议打分和排序
+    const scoredCandidates = [];
+    for (const cand of tipCandidates) {
+      let score = 0;
+      const candFull = `${cand.formattedAddress}${cand.name}${cand.district}`;
+      if (prefixWord && candFull.includes(prefixWord)) score += 100;
+      if (unitDistrict && (cand.district.includes(unitDistrict) || candFull.includes(unitDistrict))) score += 30;
+      if (effectiveCity && (cand.district.includes(effectiveCity) || candFull.includes(effectiveCity))) score += 15;
+      if (cand.name === cleanAddress || cand.name === normalizedAddress) score += 20;
+      scoredCandidates.push({ ...cand, score });
+    }
+    scoredCandidates.sort((a, b) => b.score - a.score);
+
+    // 去除相距过近（< 1500米）且名字相似的重复候选
+    const dedupedCandidates = [];
+    for (const item of scoredCandidates) {
+      const dup = dedupedCandidates.some((existing) =>
+        geoDistance(existing.location.lat, existing.location.lon, item.location.lat, item.location.lon) < 1500 &&
+        (existing.name.includes(item.name) || item.name.includes(existing.name))
+      );
+      if (!dup) dedupedCandidates.push(item);
+    }
+
+    // 判断是否存在多个同名且无法排除的候选点
+    if (dedupedCandidates.length >= 2) {
+      const first = dedupedCandidates[0];
+      const second = dedupedCandidates[1];
+      const dist = geoDistance(first.location.lat, first.location.lon, second.location.lat, second.location.lon);
+      // 若前两位得分差距不显著（如缺少前缀区分）且相距超过 2000 米，判定为同名村歧义
+      if (dist > 2000 && Math.abs(first.score - second.score) < 50) {
+        ambiguous = true;
+        candidates = dedupedCandidates.slice(0, 6).map((c) => ({
+          name: c.name,
+          formattedAddress: completeFormattedAddress(c.formattedAddress, cleanAddress),
+          province: c.province || '',
+          city: c.city || effectiveCity,
+          district: c.district || '',
+          adcode: c.adcode || '',
+          location: c.location,
+        }));
+      }
+    }
+
+    if (isPrimaryValid) {
+      geocode = {
+        ...primaryGeocode,
+        formattedAddress: completeFormattedAddress(primaryGeocode.formattedAddress, cleanAddress),
+      };
+    } else if (dedupedCandidates.length > 0) {
+      const best = dedupedCandidates[0];
+      geocode = {
+        formattedAddress: completeFormattedAddress(best.formattedAddress, cleanAddress),
+        province: best.province || '',
+        city: best.city || effectiveCity,
+        district: best.district || '',
+        adcode: best.adcode || '',
+        location: best.location,
+      };
+    } else if (primaryGeocode) {
+      geocode = {
+        ...primaryGeocode,
+        formattedAddress: completeFormattedAddress(primaryGeocode.formattedAddress, cleanAddress),
+      };
+    }
   }
+
   if (!geocode) {
     const error = new Error('未能解析该事发地点，请补充更详细的地址信息');
     error.code = 'ADDRESS_NOT_RESOLVED';
@@ -570,6 +830,8 @@ async function lookupRouteTraffic({
       adcode: geocode.adcode,
       location: geocode.location,
     },
+    ambiguous,
+    candidates,
     origin: hasOrigin ? {
       address: originGeo?.address || null,
       location: originAmapLocation || { lat: originLatitude, lon: originLongitude, coordinate: 'wgs84' },
@@ -593,6 +855,13 @@ module.exports = {
   parseWeather,
   parseForecast,
   parseDrivingRoute,
+  parseCandidatesFromTips,
+  resolveUnitJurisdiction,
+  cleanUnitJurisdictionName,
+  normalizeNaturalVillage,
+  extractPrefixWord,
+  geoDistance,
+  completeFormattedAddress,
   weatherLine,
   lookupResponse,
   validCoord,
