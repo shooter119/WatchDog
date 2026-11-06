@@ -1,14 +1,29 @@
 'use strict';
 (() => {
-  const labels = { maps: '地图', plans: '应急预案', cards: '作战信息卡', organization: '组织架构', hazards: '危险品' };
+  const labels = { maps: '地图与 360° 全景', plans: '应急预案', cards: '作战信息卡', organization: '组织架构', hazards: '危险品' };
   let schema, fieldLabels = {}, fields = {};
   const recordFields = (module, kind) => kind ? schema.kinds[kind].fields : fields[module];
   const profileFields = { name: '重点单位名称', short_name: '简称', address: '地址', district: '辖区', site_type: '类型' };
   let member, units = [], limits, current, module = 'cards', offset = 0, dirty = false, query = {}, taskTimer;
   let manager;
   const node = (tag, text, className) => { const n = document.createElement(tag); if (text) n.textContent = text; if (className) n.className = className; return n; };
-  const button = (text, action, className) => { const b = node('button', text, className); b.type = 'button'; b.onclick = () => Promise.resolve(action()).catch(report); return b; };
-  const report = error => { $('error').textContent = error.message; $('error').scrollIntoView({ block: 'nearest' }); };
+  const button = (text, action, className) => {
+    const cls = className === 'primary' ? 'btn btn-primary' : (className ? `btn ${className}` : 'btn btn-secondary');
+    const b = node('button', text, cls);
+    b.type = 'button';
+    b.onclick = () => Promise.resolve(action()).catch(report);
+    return b;
+  };
+  const notify = (msg, type = 'info') => {
+    if (typeof showToast === 'function') showToast(msg, type);
+    if (typeof setError === 'function') setError('');
+  };
+  const report = error => {
+    const msg = error?.message || String(error);
+    if (typeof setError === 'function') setError(msg);
+    else { $('error').hidden = false; $('error').textContent = msg; }
+    $('error')?.scrollIntoView({ block: 'nearest' });
+  };
   const date = time => new Date(Number(time)).toLocaleString();
   function input(form, label, value = '', { multiline = false, required = false, type = 'text' } = {}) {
     const wrapper = node('label', label), field = node(multiline ? 'textarea' : 'input');
@@ -51,21 +66,38 @@
   }
   async function list() {
     clearTimeout(taskTimer); current = null; dirty = false; manager.replaceChildren();
-    const head = node('div', '', 'section-head'); head.append(node('h2', '重点单位档案'), button('新建重点单位', () => editProfile())); manager.append(head, standardGuide());
+    const isPanoView = typeof workspaceView !== 'undefined' && workspaceView === 'panos';
+    const head = node('div', '', 'section-head');
+    head.append(
+      node('h2', isPanoView ? '360° 全景漫游 · 选择重点单位' : '重点单位档案'),
+      button('新建重点单位', () => editProfile(), 'primary')
+    );
+    manager.append(head);
+    if (isPanoView) {
+      const panoBanner = node('div', '在下方重点单位右侧点击「360° 全景图」，即可上传单张或多张 2:1 全景图（支持 8K/14K 航拍全景），或直接打开自建 Pannellum 360° 全景漫游。', 'notice pano-feature-banner');
+      manager.append(panoBanner);
+    } else {
+      manager.append(standardGuide());
+    }
     const search = node('form', '', 'search-bar');
     const q = input(search, '搜索名称、简称或地址', query.q || '');
     const district = input(search, '辖区', query.district || '');
     const type = input(search, '类型', query.site_type || '');
-    const submit = node('button', '查询'); submit.type = 'submit'; search.append(submit);
+    const submit = node('button', '查询', 'btn btn-secondary'); submit.type = 'submit'; search.append(submit);
     search.onsubmit = event => { event.preventDefault(); query = { q: q.value, district: district.value, site_type: type.value }; offset = 0; dirty = false; list().catch(report); };
     manager.append(search);
     const result = await api(`/key-sites?${new URLSearchParams({ ...query, offset })}`, undefined, 'GET');
     const table = node('div', '', 'site-list'); manager.append(table);
-    if (!result.sites.length) table.append(node('p', '暂无匹配单位。可新建档案，或调整搜索条件。', 'empty'));
+    if (!result.sites.length) table.append(node('p', '暂无匹配单位。可新建档案，或调整搜索条件。', 'empty-state'));
     for (const site of result.sites) {
       const row = node('div', '', 'site-row');
       const info = node('div'); info.append(node('h3', site.name), node('p', site.address), node('small', `${site.district || '辖区未填'} · ${site.site_type || '类型未填'} · ${site.active ? '有效' : '已停用'} · ${site.published_version ? `已发布 v${site.published_version}` : '尚未发布'}`));
-      row.append(info, button('维护资料', () => open(site.id))); table.append(row);
+      const actions = node('div', '', 'button-group');
+      actions.append(
+        button('360° 全景图', () => open(site.id, 'maps', true), 'primary'),
+        button('维护资料', () => open(site.id))
+      );
+      row.append(info, actions); table.append(row);
     }
     const pagination = node('div', '', 'actions');
     if (offset) pagination.append(button('上一页', () => { offset = Math.max(0, offset - 20); return list(); }));
@@ -104,16 +136,31 @@
     };
     manager.append(form); dirty = false;
   }
-  async function open(id) {
+  async function open(id, targetModule, focusPano = false) {
     if (!mayLeave()) return;
+    if (targetModule) module = targetModule;
     clearTimeout(taskTimer); current = await api(`/key-sites/${id}`, undefined, 'GET'); dirty = false;
     manager.replaceChildren();
     const { site } = current;
     manager.append(button('← 返回单位列表', () => mayLeave() ? list() : undefined));
-    const head = node('div', '', 'section-head'); head.append(node('h2', site.name), button('编辑档案', () => editProfile(site)), button(site.active ? '停用单位' : '恢复单位', async () => {
-      if (!confirm(site.active ? '停用后不能新关联，历史警情仍保留引用版本。确认停用？' : '确认恢复此单位？')) return;
-      await api(`/key-sites/${id}`, { ...site, active: !site.active }, 'PUT'); dirty = false; await open(id);
-    })); const summary = node('p'); summary.id = 'site-summary'; manager.append(head, summary); updateSummary();
+    const head = node('div', '', 'section-head');
+    const headActions = node('div', '', 'button-group');
+    headActions.append(
+      button('360° 全景管理', () => {
+        if (!mayLeave()) return;
+        module = 'maps';
+        renderModule();
+        dirty = false;
+        $('pano-upload-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 'primary'),
+      button('编辑档案', () => editProfile(site)),
+      button(site.active ? '停用单位' : '恢复单位', async () => {
+        if (!confirm(site.active ? '停用后不能新关联，历史警情仍保留引用版本。确认停用？' : '确认恢复此单位？')) return;
+        await api(`/key-sites/${id}`, { ...site, active: !site.active }, 'PUT'); dirty = false; await open(id);
+      })
+    );
+    head.append(node('h2', site.name), headActions);
+    const summary = node('p'); summary.id = 'site-summary'; manager.append(head, summary); updateSummary();
     const notice = node('div', '按分项表单填写后保存。草稿仅维护人员可见，发布后 App 中的已认证有效成员可查看。', 'notice'); manager.append(notice, standardGuide());
     const tabs = node('nav', '', 'module-tabs'); tabs.setAttribute('aria-label', '资料分类');
     for (const key of ['cards','maps','plans','organization','hazards']) tabs.append(button(labels[key], () => { if (mayLeave()) { module = key; renderModule(); dirty = false; } }, key === module ? 'active' : ''));
@@ -124,7 +171,9 @@
       if (!confirm('将草稿恢复为最新已发布内容（尚未发布时清空）。已发布版本和地图文件保留，确认继续？')) return;
       await api(`/key-sites/${id}/draft/discard`, { revision: current.draft.revision }); dirty = false; await open(id);
     }), button('查看发布历史', history)); manager.append(actions);
-
+    if (focusPano) {
+      setTimeout(() => $('pano-upload-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+    }
   }
   const repeatable = new Set(['productionUnit', 'warehouseStock', 'storageTank', 'contact']);
   const multilineFields = new Set(['notes','useAndZones','firePumps','escapeRoutes','extinguishingAgents','processFlow','specialWarnings','confidentiality','risk','response','responsibilities','onsiteHydrants','municipalHydrants','naturalWater']);
@@ -199,7 +248,7 @@
     const add = node('div', '', 'record-tools');
     for (const [kind, spec] of Object.entries(schema.kinds).filter(([, spec]) => spec.module === module)) add.append(button(`＋ 添加${spec.label}`, () => { addRecord(kind); dirty = true; }));
     if (!Object.values(schema.kinds).some(spec => spec.module === module)) add.append(button(`＋ 添加${labels[module]}分项`, () => { addRecord(''); dirty = true; }));
-    const submit = node('button', `保存${labels[module]}`, 'primary'); submit.type = 'submit';
+    const submit = node('button', `保存${labels[module]}`, 'btn btn-primary'); submit.type = 'submit';
     form.append(add, submit); root.append(form);
     form.onsubmit = async event => {
       event.preventDefault(); submit.disabled = true;
@@ -217,21 +266,91 @@
           return [{ ...(record.kind ? { kind: record.kind } : {}), title: record.title.value.trim(), body, fields: values, sources }];
         });
         current.draft = await api(`/key-sites/${current.site.id}/draft`, { revision: current.draft.revision, content: next }, 'PUT');
-        dirty = false; updateSummary(); $('error').textContent = '已保存。发布后 App 可查看。'; renderModule();
+        dirty = false; updateSummary(); notify('已保存。发布后 App 可查看。', 'success'); renderModule();
       } catch (error) { report(error); } finally { submit.disabled = false; }
     };
-    if (module === 'maps') { const assets = node('div'); assets.id = 'assets'; root.append(assets); renderMapFiles(); }
+    if (module === 'maps') { const assets = node('div'); assets.id = 'assets'; root.prepend(assets); renderMapFiles(); }
     for (const b of manager.querySelectorAll('.module-tabs button')) b.classList.toggle('active', b.textContent === labels[module]);
   }
   function renderMapFiles() {
     const root = $('assets'); if (!root || !current) return;
-    const statusText = status => ({ queued: '排队中', processing: '处理中', ready: '可使用', failed: '处理失败' }[status] || status);
-    root.replaceChildren(
-      node('h3', '平面地图文件（可选）'),
-      node('p', '需要在 App 查看平面地图时，可上传 PDF、JPG 或 PNG，处理完成后在上方分项中选择文件和页码。', 'muted'),
+    clearTimeout(taskTimer);
+    const statusText = status => ({ queued: '排队中…', processing: '正在后台压制处理…', ready: '可使用', failed: '处理失败' }[status] || status);
+    root.replaceChildren();
+
+    const panoSection = node('div', '', 'pano-upload-section');
+    panoSection.id = 'pano-upload-section';
+    panoSection.append(
+      node('h3', '🌐 360° 全景图管理（支持单单位上传 2 张或多张机位）'),
+      node('p', '支持上传 2:1 等距圆柱投影（equirectangular）全景 JPG/PNG（兼容 8192×4096 网页图及 14400×7200 航拍原图，系统自动压制为 8K 网页全景）。面积较大的重点单位可一次或分批上传多张全景图。', 'muted'),
     );
-    const upload = node('input'); upload.type = 'file'; upload.accept = '.pdf,.jpg,.jpeg,.png'; upload.setAttribute('aria-label', '选择地图文件'); root.append(upload);
-    root.append(button('上传平面地图', async () => {
+    const panoToolbar = node('div', '', 'upload-toolbar');
+    const panoInput = node('input'); panoInput.type = 'file'; panoInput.multiple = true; panoInput.accept = '.jpg,.jpeg,.png';
+    panoInput.setAttribute('aria-label', '选择360度全景图');
+    const maxPanoBytes = limits.panoFileBytes || limits.fileBytes;
+    panoToolbar.append(
+      panoInput,
+      button('上传 360° 全景图', async () => {
+        if (dirty) throw new Error('请先保存下方表单，再上传全景图');
+        const selectedFiles = [...panoInput.files];
+        if (!selectedFiles.length) throw new Error('请先选择至少一张 360° 全景图（JPG/PNG）');
+        for (const file of selectedFiles) {
+          if (file.size > maxPanoBytes) throw new Error(`「${file.name}」超过全景图大小限制（最大 ${Math.round(maxPanoBytes / 1024 / 1024)} MB）`);
+        }
+        const epoch = authGeneration, id = current.site.id;
+        for (let i = 0; i < selectedFiles.length; i++) {
+          const file = selectedFiles[i];
+          notify(`正在上传第 ${i + 1}/${selectedFiles.length} 张全景图：${file.name}…`);
+          const form = new FormData(); form.append('file', file);
+          const response = await fetch(`/api/admin/key-sites/${id}/attachments/maps?panorama=1`, {
+            method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf }, body: form,
+          });
+          const result = await response.json();
+          if (epoch !== authGeneration) throw new Error('后台会话已失效，请重新扫码登录');
+          if (response.status === 401) endSession();
+          if (!response.ok) throw new Error(result.error || `「${file.name}」上传失败`);
+        }
+        if (!current || current.site.id !== id) return;
+        notify(`已成功上传 ${selectedFiles.length} 张全景图，正在后台压制处理…`, 'success');
+        await refreshMapFiles();
+      }, 'primary'),
+      button('刷新处理状态', refreshMapFiles)
+    );
+    panoSection.append(panoToolbar);
+
+    const panos = current.attachments.filter(file => file.module === 'maps' && file.metadata?.panorama);
+    const readyPanos = panos.filter(file => file.status === 'ready');
+    if (readyPanos.length) {
+      const launchWrap = node('div', '', 'pano-launch-bar');
+      launchWrap.append(button(`🌐 打开本单位 360° 全景漫游（已就绪 ${readyPanos.length} 张机位）`, () => {
+        window.open(`/admin/pano.html?siteId=${encodeURIComponent(current.site.id)}`, '_blank', 'noopener');
+      }, 'primary'));
+      panoSection.append(launchWrap);
+    }
+    for (const file of panos) {
+      const row = node('div', '', 'asset-row');
+      const dims = file.metadata?.width && file.metadata?.height ? ` (${file.metadata.width}×${file.metadata.height})` : '';
+      const badge = node('span', statusText(file.status), `pill-badge ${file.status === 'ready' ? 'pill-water-normal' : (file.status === 'failed' ? 'pill-water-forbidden' : 'pill-water-reactive')}`);
+      const meta = node('div', '', 'asset-meta');
+      meta.append(node('strong', `360° 全景 · ${file.filename}${dims}`), badge);
+      row.append(meta);
+      if (file.status === 'ready') {
+        row.append(button('360° 预览此机位', () => {
+          window.open(`/admin/pano.html?siteId=${encodeURIComponent(current.site.id)}&attachmentId=${encodeURIComponent(file.id)}`, '_blank', 'noopener');
+        }, 'primary'));
+      }
+      panoSection.append(row);
+    }
+    root.append(panoSection);
+
+    const mapSection = node('div', '', 'map-upload-section');
+    mapSection.append(
+      node('h3', '平面地图文件（可选）'),
+      node('p', '需要在 App 查看平面地图时，可上传 PDF、JPG 或 PNG，处理完成后在下方分项中选择文件和页码。', 'muted'),
+    );
+    const mapToolbar = node('div', '', 'upload-toolbar');
+    const upload = node('input'); upload.type = 'file'; upload.accept = '.pdf,.jpg,.jpeg,.png'; upload.setAttribute('aria-label', '选择地图文件');
+    mapToolbar.append(upload, button('上传平面地图', async () => {
       if (dirty) throw new Error('请先保存表单，再上传地图');
       const file = upload.files[0]; if (!file) throw new Error('请先选择地图文件');
       if (file.size > limits.fileBytes) throw new Error('文件超过大小限制');
@@ -242,65 +361,20 @@
       if (response.status === 401) endSession();
       if (!response.ok) throw new Error(result.error || '上传失败');
       if (!current || current.site.id !== id) return;
-      $('error').textContent = '地图已上传，请刷新处理状态后选择地图文件。'; await refreshMapFiles();
+      notify('地图已上传，正在后台处理…', 'success'); await refreshMapFiles();
     }), button('刷新处理状态', refreshMapFiles));
+    mapSection.append(mapToolbar);
     for (const file of current.attachments.filter(file => file.module === 'maps' && !file.metadata?.panorama)) {
-      root.append(node('p', `${file.filename} · ${statusText(file.status)}`));
-    }
-
-    const panoSection = node('div', '', 'pano-upload-section');
-    panoSection.append(
-      node('h3', '360° 全景图（支持单单位上传 2 张或多张）'),
-      node('p', '支持上传 2:1 等距圆柱投影（equirectangular）全景 JPG/PNG（兼容 8192×4096 网页图及 14400×7200 航拍原图，系统自动压制为 8K 网页全景）。面积较大的重点单位可一次或分批上传多张全景图。', 'muted'),
-    );
-    const panoInput = node('input'); panoInput.type = 'file'; panoInput.multiple = true; panoInput.accept = '.jpg,.jpeg,.png';
-    panoInput.setAttribute('aria-label', '选择360度全景图');
-    panoSection.append(panoInput);
-    const maxPanoBytes = limits.panoFileBytes || limits.fileBytes;
-    panoSection.append(button('上传 360° 全景图', async () => {
-      if (dirty) throw new Error('请先保存表单，再上传全景图');
-      const selectedFiles = [...panoInput.files];
-      if (!selectedFiles.length) throw new Error('请先选择至少一张 360° 全景图（JPG/PNG）');
-      for (const file of selectedFiles) {
-        if (file.size > maxPanoBytes) throw new Error(`「${file.name}」超过全景图大小限制（最大 ${Math.round(maxPanoBytes / 1024 / 1024)} MB）`);
-      }
-      const epoch = authGeneration, id = current.site.id;
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
-        $('error').textContent = `正在上传第 ${i + 1}/${selectedFiles.length} 张全景图：${file.name}…`;
-        const form = new FormData(); form.append('file', file);
-        const response = await fetch(`/api/admin/key-sites/${id}/attachments/maps?panorama=1`, {
-          method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf }, body: form,
-        });
-        const result = await response.json();
-        if (epoch !== authGeneration) throw new Error('后台会话已失效，请重新扫码登录');
-        if (response.status === 401) endSession();
-        if (!response.ok) throw new Error(result.error || `「${file.name}」上传失败`);
-      }
-      if (!current || current.site.id !== id) return;
-      $('error').textContent = `已成功上传 ${selectedFiles.length} 张全景图，正在后台压制处理，可点击「刷新处理状态」查看。`;
-      await refreshMapFiles();
-    }, 'primary'), button('刷新处理状态', refreshMapFiles));
-
-    const panos = current.attachments.filter(file => file.module === 'maps' && file.metadata?.panorama);
-    const readyPanos = panos.filter(file => file.status === 'ready');
-    if (readyPanos.length) {
-      panoSection.append(button(`打开本单位 360° 全景漫游（共 ${readyPanos.length} 张）`, () => {
-        window.open(`/admin/pano.html?siteId=${encodeURIComponent(current.site.id)}`, '_blank', 'noopener');
-      }, 'primary'));
-    }
-    for (const file of panos) {
       const row = node('div', '', 'asset-row');
-      const dims = file.metadata?.width && file.metadata?.height ? ` (${file.metadata.width}×${file.metadata.height})` : '';
-      row.append(node('strong', `360° 全景 · ${file.filename}${dims}`), node('span', statusText(file.status)));
-      if (file.status === 'ready') {
-        row.append(button('360° 预览此图', () => {
-          window.open(`/admin/pano.html?siteId=${encodeURIComponent(current.site.id)}&attachmentId=${encodeURIComponent(file.id)}`, '_blank', 'noopener');
-        }));
-      }
-      panoSection.append(row);
+      row.append(node('strong', file.filename), node('span', statusText(file.status), 'pill-badge'));
+      mapSection.append(row);
     }
-    root.append(panoSection);
+    root.append(mapSection);
+
+    const hasPending = current.attachments.some(f => f.module === 'maps' && (f.status === 'queued' || f.status === 'processing'));
+    if (hasPending && !dirty) {
+      taskTimer = setTimeout(() => { refreshMapFiles().catch(() => {}); }, 2500);
+    }
   }
   async function refreshMapFiles() {
     if (dirty) throw new Error('请先保存表单，再刷新地图文件');
@@ -314,7 +388,7 @@
     if (!confirm(`发布「${target.name}」到 App？发布后全平台已认证有效成员可查看，未发布的草稿不会展示。`)) return;
     const result = await api(`/key-sites/${target.id}/publish`, { revision: target.revision, profileRevision: target.profileRevision, confirmPlatformSharing: true });
     if (current?.site.id === target.id) await open(target.id);
-    $('error').textContent = `${target.name} 已发布 v${result.version}，App 可查看。`;
+    notify(`${target.name} 已发布 v${result.version}，App 可查看。`, 'success');
   }
   async function history() {
     const result = await api(`/key-sites/${current.site.id}/history`, undefined, 'GET');
@@ -339,6 +413,22 @@
     if (!result.versions.length) panel.append(node('p', '暂无发布记录')); manager.querySelector('.history')?.remove(); manager.append(panel); panel.scrollIntoView({ block: 'nearest' });
   }
   document.addEventListener('admin-ready', event => start(event.detail).catch(report));
+  document.addEventListener('pano-tab-activated', () => {
+    if (!member) return;
+    if (current) {
+      if (!mayLeave()) return;
+      module = 'maps';
+      renderModule();
+      dirty = false;
+      setTimeout(() => $('pano-upload-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+    } else {
+      list().catch(report);
+    }
+  });
+  document.addEventListener('sites-tab-activated', () => {
+    if (!member) return;
+    if (!current) list().catch(report);
+  });
   document.addEventListener('admin-ended', () => { clearTimeout(taskTimer); member = null; current = null; dirty = false; });
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
 })();

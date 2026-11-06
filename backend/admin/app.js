@@ -71,26 +71,34 @@ function switchView(view) {
   workspaceView = view;
   const titles = {
     sites: '重点单位资料',
+    panos: '360° 全景漫游与机位管理',
     hazmats: '危化品速查库',
     access: '后台授权与审计'
   };
 
   const navSites = $('show-sites');
+  const navPanos = $('show-panos');
   const navHazmats = $('show-hazmats');
   const navPerms = $('show-permissions');
 
   if (navSites) navSites.classList.toggle('active', view === 'sites');
+  if (navPanos) navPanos.classList.toggle('active', view === 'panos');
   if (navHazmats) navHazmats.classList.toggle('active', view === 'hazmats');
   if (navPerms) navPerms.classList.toggle('active', view === 'access');
 
   const pageTitle = $('page-title');
   if (pageTitle) pageTitle.textContent = titles[view] || '综合管理后台';
 
-  if ($('site-manager')) $('site-manager').hidden = view !== 'sites';
+  const isSitesRelated = view === 'sites' || view === 'panos';
+  if ($('site-manager')) $('site-manager').hidden = !isSitesRelated;
   if ($('hazmat-manager')) $('hazmat-manager').hidden = view !== 'hazmats';
   if ($('platform')) $('platform').hidden = view !== 'access';
 
-  if (view === 'hazmats') {
+  if (view === 'panos') {
+    document.dispatchEvent(new Event('pano-tab-activated'));
+  } else if (view === 'sites') {
+    document.dispatchEvent(new Event('sites-tab-activated'));
+  } else if (view === 'hazmats') {
     document.dispatchEvent(new Event('hazmat-tab-activated'));
   }
 }
@@ -168,6 +176,9 @@ $('logout').onclick = () => logout(false);
 $('logout-all').onclick = () => logout(true);
 
 $('show-sites').onclick = () => switchView('sites');
+if ($('show-panos')) {
+  $('show-panos').onclick = () => switchView('panos');
+}
 if ($('show-hazmats')) {
   $('show-hazmats').onclick = () => switchView('hazmats');
 }
