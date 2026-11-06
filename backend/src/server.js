@@ -254,7 +254,7 @@ let hazardousChemicals = null;
 app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
   setHeaders: (res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'");
   },
 }));
 if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER || (process.env.NODE_ENV === 'test' ? 'sqlite' : 'postgres')).toLowerCase())) {

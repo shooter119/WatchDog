@@ -22,6 +22,7 @@ await check('admin_shell_and_security_headers', async () => {
   const response = await request(origin, '/admin/'); assert.equal(response.status, 200);
   assert.match(await response.text(), /火场智控 · 资料管理/);
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.match(response.headers.get('content-security-policy'), /connect-src 'self' blob:/);
   assert.match(response.headers.get('cache-control'), /no-store/);
   for (const path of ['/admin/app.js', '/admin/sites.js', '/admin/hazmats.js', '/admin/style.css', '/admin/pano.html', '/admin/pano.js', '/admin/pano.css', '/admin/lib/pannellum.js', '/admin/lib/pannellum.css', '/admin/lib/PANNELUM-LICENSE.txt']) assert.equal((await request(origin, path)).status, 200);
 });

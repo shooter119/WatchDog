@@ -28,7 +28,7 @@ fireman119.xyz {
   }
 
   encode zstd gzip
-  @adminSurface path /admin /admin/* /api/admin /api/admin/*
+  @adminSurface path /admin /admin/* /api/admin /api/admin/* /api/key-sites /api/key-sites/*
   handle @adminSurface {
     reverse_proxy backend:3000
   }
