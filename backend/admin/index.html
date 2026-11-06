@@ -1,17 +1,188 @@
 <!doctype html>
 <html lang="zh-CN">
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>火场智控 · 资料管理</title>
-<link rel="stylesheet" href="/admin/style.css">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>火场智控 · 综合管理后台</title>
+  <link rel="stylesheet" href="/admin/style.css">
+</head>
 <body>
-<header><strong>火场智控 <span>资料管理</span></strong><span>重点单位资料库</span></header>
-<main>
-<section id="login" class="login">
-  <div><p class="eyebrow">WATCHDOG / 资料工作台</p><h1>让现场资料，<br>在需要时触手可及。</h1><p>使用 App 扫码，在手机上核对身份并确认登录。<br>只有获得后台授权的有效成员可以进入。</p><ol><li>打开火场智控 App「设置」</li><li>点击用户信息中的「扫一扫」</li><li>核对本人身份，确认网页登录</li></ol></div>
-  <article><h2>扫码登录</h2><div id="qr" aria-label="登录二维码"></div><p id="login-state" role="status">正在生成二维码…</p><button id="refresh">刷新二维码</button><p class="muted">二维码两分钟内有效，请勿转发。</p></article>
+
+<!-- 登录视图 -->
+<section id="login" class="login-view">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h2>火场智控</h2>
+        <span class="brand-badge">控制台</span>
+      </div>
+    </div>
+    
+    <p class="login-desc">救援现场安全管控 · 数字化档案与应急中台</p>
+
+    <div class="qr-container">
+      <div id="qr" class="qr-frame" aria-label="登录二维码"></div>
+      <p id="login-state" class="qr-status" role="status">正在生成安全令牌…</p>
+    </div>
+
+    <button id="refresh" class="btn btn-secondary btn-block">刷新二维码</button>
+
+    <div class="login-steps">
+      <div class="step-item">
+        <span class="step-num">1</span>
+        <span>打开 App「设置」</span>
+      </div>
+      <div class="step-item">
+        <span class="step-num">2</span>
+        <span>点击身份卡「扫一扫」</span>
+      </div>
+      <div class="step-item">
+        <span class="step-num">3</span>
+        <span>手机核对并确认登录</span>
+      </div>
+    </div>
+
+    <p class="login-tip">二维码两分钟内有效，仅限获授权的管理员使用</p>
+  </div>
 </section>
-<section id="workspace" hidden><p class="eyebrow">管理工作台</p><h1 id="welcome"></h1><p id="identity"></p><div class="actions"><button id="logout">退出当前会话</button><button id="logout-all">退出全部后台会话</button></div><nav class="workspace-nav" aria-label="管理导航"><button id="show-sites">重点单位资料</button><button id="show-hazmats">危化品速查库</button><button id="show-permissions" hidden>后台授权与审计</button></nav><section id="hazmat-manager" hidden></section><section id="platform" hidden><h2>后台授权</h2><p>单位管理角色与后台授权独立。开通前请核对成员姓名及所属消防单位。平台管理员按组织筛选成员。</p><label>组织 <select id="member-unit"><option value="">全部组织</option></select></label> <button id="load-members">加载成员</button><div id="members"></div><h2>操作审计</h2><button id="load-audit">加载最新记录</button><div id="audit"></div></section></section>
-<p id="error" role="alert"></p>
-</main><footer>填写分项表单并保存，发布后 App 中的已认证有效成员可查看。</footer>
-<script src="/admin/app.js" defer></script><script src="/admin/sites.js" defer></script><script src="/admin/hazmats.js" defer></script>
-</body></html>
+
+<!-- 已登录工作台视图 -->
+<div id="workspace" class="workspace-layout" hidden>
+  <!-- 左侧常驻侧边栏 -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path>
+        </svg>
+      </div>
+      <div class="sidebar-title">
+        <strong>火场智控</strong>
+        <span class="sidebar-tag">Admin</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="系统导航">
+      <button id="show-sites" class="nav-item active">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect>
+          <path d="M9 22v-4h6v4"></path>
+          <path d="M8 6h.01"></path>
+          <path d="M16 6h.01"></path>
+          <path d="M8 10h.01"></path>
+          <path d="M16 10h.01"></path>
+          <path d="M8 14h.01"></path>
+          <path d="M16 14h.01"></path>
+        </svg>
+        <span>重点单位资料</span>
+      </button>
+
+      <button id="show-hazmats" class="nav-item">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 2v7.31"></path>
+          <path d="M14 9.3V2"></path>
+          <path d="M8.5 2h7"></path>
+          <path d="M14 9.3a6.5 6.5 0 1 1-4 0"></path>
+          <path d="M5.52 16h12.96"></path>
+        </svg>
+        <span>危化品速查库</span>
+      </button>
+
+      <button id="show-permissions" class="nav-item" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+        <span>后台授权与审计</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="system-status">
+        <span class="status-dot"></span>
+        <span class="system-ver">WatchDog v1.13</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主操作区域 -->
+  <div class="main-wrapper">
+    <!-- 顶部栏 -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 id="page-title" class="topbar-title">重点单位资料</h1>
+      </div>
+
+      <div class="topbar-right">
+        <div class="user-chip">
+          <span class="user-avatar" id="user-avatar">官</span>
+          <div class="user-meta">
+            <span id="welcome" class="user-name"></span>
+            <span id="identity" class="user-role"></span>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <button id="logout" class="btn btn-subtle btn-sm">退出会话</button>
+          <button id="logout-all" class="btn btn-subtle btn-sm text-muted">全退</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 工作区主体内容 -->
+    <main class="content-body">
+      <!-- 重点单位容器 -->
+      <section id="site-manager"></section>
+
+      <!-- 危化品容器 -->
+      <section id="hazmat-manager" hidden></section>
+
+      <!-- 权限与审计容器 -->
+      <section id="platform" hidden>
+        <div class="panel-section">
+          <div class="section-head">
+            <div>
+              <h2>后台授权管理</h2>
+              <p class="muted">单位管理角色与独立后台授权分离。开通前请核实指战员姓名及所属单位。</p>
+            </div>
+            <div class="toolbar-actions">
+              <label class="inline-filter">
+                <span>组织</span>
+                <select id="member-unit" class="select-sm">
+                  <option value="">全部组织</option>
+                </select>
+              </label>
+              <button id="load-members" class="btn btn-secondary btn-sm">刷新成员列表</button>
+            </div>
+          </div>
+          <div id="members" class="members-grid"></div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-head">
+            <div>
+              <h2>管理操作审计</h2>
+              <p class="muted">全量不可篡改的平台关键管理操作日志记录。</p>
+            </div>
+            <button id="load-audit" class="btn btn-subtle btn-sm">加载最新日志</button>
+          </div>
+          <div id="audit" class="audit-stream"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- 全局悬浮消息提示 -->
+<div id="toast" class="toast-notice" hidden role="status"></div>
+<p id="error" class="error-banner" role="alert" hidden></p>
+
+<script src="/admin/app.js" defer></script>
+<script src="/admin/sites.js" defer></script>
+<script src="/admin/hazmats.js" defer></script>
+</body>
+</html>
