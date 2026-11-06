@@ -117,7 +117,7 @@ test('POST /api/chat 警情简报主动进入现场研判模式', async () => {
     method: 'POST',
     headers: H,
     body: JSON.stringify({
-      message: '江山市消防支队接到警情：居民家中发现一条蛇，出动1车7人，请求到场处置。',
+      message: '示例市消防支队接到警情：居民家中发现一条蛇，出动1车7人，请求到场处置。',
     }),
   });
   assert.equal(res.status, 200);

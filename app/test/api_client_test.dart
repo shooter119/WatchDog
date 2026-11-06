@@ -403,7 +403,7 @@ void main() {
       await server.close(force: true);
     });
 
-    const incident = '江山市消防支队接到警情：居民家中发现一条蛇，出动1车7人，请求到场处置。';
+    const incident = '示例市消防支队接到警情：居民家中发现一条蛇，出动1车7人，请求到场处置。';
     final reply = await api.sendChatMessage(incident);
     final body = await requestBody.future;
 

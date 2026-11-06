@@ -7,7 +7,7 @@ import 'package:watchdog/services/watermark_settings.dart';
 Future<void> openPage(
   WidgetTester tester, {
   double scale = 1,
-  String unitName = '衢州市消防救援支队',
+  String unitName = '示例市消防救援支队',
 }) async {
   SharedPreferences.setMockInitialValues({'unit_name': unitName});
   await tester.pumpWidget(
@@ -40,13 +40,13 @@ Future<void> openPage(
 void main() {
   testWidgets('空抬头使用登录单位，编辑同步预览', (tester) async {
     await openPage(tester);
-    expect(find.text('衢州市消防救援支队'), findsOneWidget);
+    expect(find.text('示例市消防救援支队'), findsOneWidget);
     await tester.enterText(find.byType(TextField).first, '通信保障分队');
     await tester.pump();
     expect(find.text('通信保障分队'), findsNWidgets(2));
     await tester.enterText(find.byType(TextField).first, '');
     await tester.pump();
-    expect(find.text('衢州市消防救援支队'), findsOneWidget);
+    expect(find.text('示例市消防救援支队'), findsOneWidget);
   });
 
   testWidgets('返回时自动保存输入并离开', (tester) async {
@@ -99,11 +99,11 @@ void main() {
 
   testWidgets('预览蓝条白字对比度至少 4.5', (tester) async {
     await openPage(tester);
-    final title = tester.widget<Text>(find.text('衢州市消防救援支队'));
+    final title = tester.widget<Text>(find.text('示例市消防救援支队'));
     final bar = tester.widget<Container>(
       find
           .ancestor(
-            of: find.text('衢州市消防救援支队'),
+            of: find.text('示例市消防救援支队'),
             matching: find.byWidgetPredicate(
               (w) => w is Container && w.color != null,
             ),

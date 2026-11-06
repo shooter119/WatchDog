@@ -140,13 +140,13 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
                   _textField(
                     controller: _unitTitle,
                     label: '单位抬头',
-                    hint: '例如：浙江总队衢州市消防救援支队',
+                    hint: '例如：示例省总队示例市消防救援支队',
                     helper: '水印顶部蓝条的单位名称；留空使用当前登录单位名称',
                   ),
                   _textField(
                     controller: _department,
                     label: '拍摄单位',
-                    hint: '例如：衢州市消防救援支队通信保障分队',
+                    hint: '例如：示例市消防救援支队通信保障分队',
                     helper: '水印底部蓝条的拍摄班组或部门；留空不显示',
                   ),
                   _textField(
@@ -279,7 +279,7 @@ class _WatermarkSettingsPageState extends State<WatermarkSettingsPage> {
     final rows = <(String, String)>[
       if (s.showTime) ('拍摄\r\n时间', '2026.10.18 星期日 08:39'),
       if (s.showWeather) ('天气', '晴 21℃ 东南风2级 湿度87%'),
-      if (s.showLocation) ('地点', '衢州市 · 某某有限公司'),
+      if (s.showLocation) ('地点', '示例市 · 某某有限公司'),
       if (s.showCoordinates) ('经度', '东经 118°22′'),
       if (s.showCoordinates) ('纬度', '北纬 29°0′'),
       if (s.actorName.isNotEmpty) ('拍摄人', s.actorName),

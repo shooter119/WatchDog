@@ -11,7 +11,7 @@
 - 设计任务的辅助文件、UI 风格规范、个人介绍网站和过程资料仅保存在本地，不进入公开代码仓库；正式运行资源按用途放入 App 资产目录。
 - **README 同步核查**：每次改动完成后核查 README 是否有必要更新（品牌、功能、架构、入口变化都算）；README 有实质内容变更时，App 内「关于我们」页（`app/lib/pages/about_page.dart`）必须同步更新，反之亦然。
 - 提交前必须通过验证（见下），构建/测试失败不允许提交。
-- **后端代码（backend/src/、deploy/）有修改时，先完成本地验证；由智能体自主决定是否部署到线上及执行数据库迁移。** 当前线上部署使用 VPS Docker Compose；智能体在本地测试全绿（后端 npm test 302、App flutter analyze 0 警告 + flutter test 454，CI 门禁基线分别为 300 / 444）且确认接口兼容后，可自主执行 VPS 部署与迁移，并在部署完成后完成线上健康检查与路由验收。
+- **后端代码（backend/src/、deploy/）有修改时，先完成本地验证；由研发流程在本地验证通过后执行部署与数据库迁移。** 当前线上部署使用 VPS Docker Compose；在本地测试全绿（后端 npm test 302、App flutter analyze 0 警告 + flutter test 471，CI 门禁基线分别为 300 / 444）且确认接口兼容后，可执行 VPS 部署与迁移，并在部署完成后完成线上健康检查与路由验收。
   本机文档转换用例（key-sites）需要 `soffice`（LibreOffice）与 `pdfinfo`/`pdftoppm`（poppler）在 PATH 上，否则这 14 条必然失败；发版脚本只在这两个组件缺失、且失败用例与已知清单逐条一致时放行，否则一律判为真实失败。
 - **版本号与发版由用户决定**：用户要求发版时，依据改动规模判断升级幅度（小优化/修复 → 补丁 +0.0.1；新功能 → 次版本 +0.1.0；重大重构/首个稳定版 → 主版本 +1.0.0），`+` 号后构建号必须递增。同步更新 `app/pubspec.yaml` 的 `version:` 与 `app/lib/pages/settings_page.dart` 的 `appVersion` 常量。
 - **发版流程**：验证通过后按用户要求 commit + push，再 `git tag v<版本号>+<构建号>` + `git push origin <tag>`；当前公开仓库不再包含正式 APK 发布 workflow，签名构建与发布需按私有流程执行。
@@ -29,7 +29,7 @@
 
 - 后端：在 `backend/` 下运行 `npm test`（node:test），改 server/db/parse/calc 必须通过。
 - App：在 `app/` 下运行 `flutter analyze`（0 问题）+ `flutter test`。
-- 两套测试目前后端基线 300 个用例（本地 302 个通过）、App 基线 444 个用例（本地 454 个通过）；改动后不应减少，`flutter analyze` 必须保持 0 问题。
+- 两套测试目前后端基线 300 个用例（本地 302 个通过）、App 基线 444 个用例（本地 471 个通过）；改动后不应减少，`flutter analyze` 必须保持 0 问题。
 
 ## UI 与 App 调试规范
 
@@ -43,13 +43,14 @@
   3. 配合 `flutter run -d <device_id>`（或直接推送构建包）实现毫秒级热重载调试。
 - **免虚拟机原则**：保持本地环境轻量，不创建和常驻几 GB 至十几 GB 的本地 AVD/QEMU 镜像。
 
-## 多工具与多 Agent 协作规范
+## 协作与脱敏安全规范
 
-- **指令唯一来源**：本项目规则以本地 `AGENTS.md` 为统一标准。使用 Antigravity、Codex、Cursor、Claude Code 等任何 AI 工具时，均须遵守本文件的全部规范。
-- **严禁按工具名建分支**：不得创建类似 `codex-dev`、`antigravity-branch` 等分支。所有分支必须按功能或问题命名（如 `feat/<模块>`、`fix/<问题>`、`refactor/<目标>`），不同工具在同一业务分支上接力协同。
-- **绿色交接原则（交接门禁）**：任何 AI 工具在会话结束或转交给下一工具前，本地工作区代码必须保持可编译且测试全过（后端 `npm test` 302、门禁基线 300，App `flutter analyze` 0 警告 + `flutter test` 454、门禁基线 444），严禁留下编译报错或半成品的脏代码交给下一个工具。
-- **小粒度交接提交**：工具切换前建议进行小粒度的本地 commit（如 `wip: <已完成内容>，待<下一阶段>`），并在提交信息中明确当前进度和待办项，避免未提交的改动在切换工具时被意外覆盖或误报。
-- **工具专用缓存与配置不入库**：各 AI 工具生成的临时会话、缓存、运行日志及专有配置目录（如 `.cursor/`、`.claude/`、`scratch/` 等）不得提交入库。
+- **指令唯一来源**：本项目规则以本地 `AGENTS.md` 为统一标准。
+- **严禁泄露敏感信息**：在项目任何说明文档、代码注释、提示词、示例配置或单元测试中，**严禁出现真实的消防单位名称、队站名称、真实人名、具体地址或单位登录验证码/密钥**；所有示例与测试一律使用「示例省/示例市/示例县消防救援大队」「示例路站」「张三/李四」「1001」等虚拟脱敏占位。
+- **严禁出现外部编辑软件名称**：项目文档、代码、配置及提交信息中，**不得出现任何具体编辑软件或代码辅助工具的名称**；分支命名必须按业务功能或问题命名（如 `feat/<模块>`、`fix/<问题>`、`refactor/<目标>`）。
+- **绿色交接原则（交接门禁）**：在每次会话结束或交接前，本地工作区代码必须保持可编译且测试全过（后端 `npm test` 302、门禁基线 300，App `flutter analyze` 0 警告 + `flutter test` 471、门禁基线 444），严禁留下编译报错或半成品的脏代码。
+- **小粒度交接提交**：阶段性修改建议进行小粒度的本地 commit（如 `wip: <已完成内容>，待<下一阶段>`），并在提交信息中明确当前进度和待办项。
+- **临时缓存与配置不入库**：临时会话、缓存、运行日志及私有配置目录不得提交入库。
 
 ## 架构速览
 
@@ -75,7 +76,7 @@ app/                     Flutter 客户端（org com.firewatch.watchdog，版本
   lib/services/offline_queue.dart 本地 SQLite 现场操作队列（进退场/压力/随手记，联网幂等补传）
   lib/services/local_asr_service.dart sherpa-onnx 本地离线语音识别与降噪
   lib/services/          audio / tts / alarm / screen_on / settings / op_log / diagnostic_log
-  test/                  widget 测试 + 姓名解析测试（454 个用例，CI 门禁基线 444）
+  test/                  widget 测试 + 姓名解析测试（471 个用例，CI 门禁基线 444）
 deploy/                  部署脚本与配置（VPS Docker Compose + Caddy + 模型分发）
 ```
 

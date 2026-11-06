@@ -25,7 +25,7 @@ website/
 # 内部 UI 风格与设计规范，仅保留在本地
 fire-rescue-safety-app-ui-spec-*.md
 
-# 本地协作与 Codex 工作约定，不进入公开仓库
+# 本地协作与工作约定，不进入公开仓库
 AGENTS.md
 
 # 临时调试脚本（含真实 key，不入库）
@@ -33,9 +33,6 @@ backend/asr-debug.js
 .playwright-mcp/
 .playwright-cli/
 .od-skills/
-
-# 用户提供的私有原始资料
-.codex-attachments/
 
 # 真实组织种子（姓名、消防站、单位验证码）不得进入公开仓库
 backend/seeds/private/

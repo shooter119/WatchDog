@@ -374,7 +374,7 @@ void main() {
       // 默认五项全开：预览包含时间、天气、地点与经纬度。
       expect(find.text('拍摄\r\n时间'), findsOneWidget);
       expect(find.text('晴 21℃ 东南风2级 湿度87%'), findsOneWidget);
-      expect(find.text('衢州市 · 某某有限公司'), findsOneWidget);
+      expect(find.text('示例市 · 某某有限公司'), findsOneWidget);
       expect(find.text('东经 118°22′'), findsOneWidget);
       expect(find.text('北纬 29°0′'), findsOneWidget);
     });
@@ -384,7 +384,7 @@ void main() {
       await _pumpPage(tester, const WatermarkSettingsPage());
 
       final fields = find.byType(TextField);
-      await tester.enterText(fields.at(0), '浙江总队测试支队');
+      await tester.enterText(fields.at(0), '示例省总队测试支队');
       await tester.enterText(fields.at(1), '通信保障分队');
       await tester.enterText(fields.at(2), '张三');
       await tester.pump();
@@ -402,7 +402,7 @@ void main() {
       expect(find.text('拍摄\r\n时间'), findsNothing);
       expect(find.text('晴 21℃ 东南风2级 湿度87%'), findsNothing);
       // 其他字段保持可见。
-      expect(find.text('衢州市 · 某某有限公司'), findsOneWidget);
+      expect(find.text('示例市 · 某某有限公司'), findsOneWidget);
       await tester.pumpAndSettle();
       final saved = await WatermarkSettings.load();
       expect(saved.showTime, isFalse);

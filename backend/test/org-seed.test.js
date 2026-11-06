@@ -5,22 +5,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { resolveOrgSeed, EXAMPLE_SEED_PATH } = require('../src/org-seed');
 
-const secret = (...parts) => parts.join('');
-const FORBIDDEN = [
-  secret('龙游县', '消防救援大队'),
-  secret('longyou-', 'county-fire-rescue'),
-  secret('龙翔', '路站'),
-  secret('永安', '路站'),
-  secret('兴园', '站'),
-  secret('龙游', '大队'),
-  secret('李', '翔'),
-  secret('陆河', '圣'),
-  secret('盛承', '华'),
-  secret('游方', '远'),
-  secret('鸡鸣路', '146号'),
-  secret('05', '70'),
-];
-
 function walk(dir, found = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (['node_modules', '.git', 'build', '.dart_tool', 'data'].includes(entry.name)) continue;
@@ -81,16 +65,17 @@ test('未配置的生产环境不创建示例组织', () => {
   assert.equal(resolveOrgSeed({ NODE_ENV: 'test', WATCHDOG_SKIP_SEED: '1' }), null);
 });
 
-test('公开源码不再包含真实单位名单和验证码', () => {
+test('公开源码与文档仅保留示例组织种子', () => {
   const root = path.join(__dirname, '..', '..');
   const files = sourceFiles(root);
   assert.ok(files.length > 100, `公开源码文件过少，扫描可能失效: ${files.length}`);
-  const hits = [];
-  for (const file of files) {
-    const text = fs.readFileSync(file, 'utf8');
-    for (const word of FORBIDDEN) {
-      if (text.includes(word)) hits.push(`${path.relative(root, file)}: ${word}`);
-    }
-  }
-  assert.deepEqual(hits, []);
+  const seedFiles = files.filter((file) => file.includes(`${path.sep}backend${path.sep}seeds${path.sep}`));
+  assert.deepEqual(
+    seedFiles.map((file) => path.basename(file)).sort(),
+    ['README.md', 'org.example.json'],
+  );
+  const example = JSON.parse(fs.readFileSync(EXAMPLE_SEED_PATH, 'utf8'));
+  assert.equal(example.organization.name, '示例县消防救援大队');
+  assert.equal(example.organization.verificationCode, '1001');
 });
+

@@ -134,7 +134,7 @@ test('/api/weather 响应保留旧字段并追加高德坐标，旧版字段不�
   const response = lookupResponse({
     address: '测试地址',
     adcode: '330825',
-    city: '衢州市',
+    city: '示例市',
     weather: parseWeather(WEATHER_OK),
     amapLocation: { lat: 29.03036, lon: 119.18042, coordinate: 'gcj02' },
     coordinateDegraded: false,
@@ -142,7 +142,7 @@ test('/api/weather 响应保留旧字段并追加高德坐标，旧版字段不�
   });
   assert.equal(response.address, '测试地址');
   assert.equal(response.adcode, '330825');
-  assert.equal(response.city, '衢州市');
+  assert.equal(response.city, '示例市');
   assert.equal(response.line, '阴 · 33℃ · 湿度43%');
   assert.equal(response.degraded, false);
   assert.deepEqual(response.amapLocation, {
@@ -577,12 +577,12 @@ test('cleanUnitJurisdictionName 与 normalizeNaturalVillage 与 completeFormatte
   assert.equal(extractPrefixWord('航埠镇殿前村'), '航埠');
 
   assert.equal(
-    completeFormattedAddress('浙江省衢州市柯城区航埠镇殿前村', '航埠殿前村4村'),
-    '浙江省衢州市柯城区航埠镇殿前村4村'
+    completeFormattedAddress('示例省示例市示例区航埠镇殿前村', '航埠殿前村4村'),
+    '示例省示例市示例区航埠镇殿前村4村'
   );
   assert.equal(
-    completeFormattedAddress('浙江省衢州市柯城区航埠镇殿前村4村', '航埠殿前村4村'),
-    '浙江省衢州市柯城区航埠镇殿前村4村'
+    completeFormattedAddress('示例省示例市示例区航埠镇殿前村4村', '航埠殿前村4村'),
+    '示例省示例市示例区航埠镇殿前村4村'
   );
 });
 
@@ -590,15 +590,15 @@ test('lookupRouteTraffic：单位属地消歧与同名村多候选返回', async
   clearCaches();
   const fetchImpl = (url) => {
     if (url.includes('/v3/geocode/geo') && url.includes('address=%E7%A4%BA%E8%8C%83%E5%8E%BF')) {
-      // 示范县属地解析 -> 衢州市
+      // 示范县属地解析 -> 示例市
       return Promise.resolve({
         ok: true,
         json: async () => ({
           status: '1',
           geocodes: [{
-            formatted_address: '浙江省衢州市示范县',
-            province: '浙江省',
-            city: '衢州市',
+            formatted_address: '示例省示例市示范县',
+            province: '示例省',
+            city: '示例市',
             district: '示范县',
             adcode: '330825',
             location: '119.17,29.02',
@@ -613,10 +613,10 @@ test('lookupRouteTraffic：单位属地消歧与同名村多候选返回', async
         json: async () => ({
           status: '1',
           geocodes: [{
-            formatted_address: '浙江省衢州市常山县东山村',
-            province: '浙江省',
-            city: '衢州市',
-            district: '常山县',
+            formatted_address: '示例省示例市甲县东山村',
+            province: '示例省',
+            city: '示例市',
+            district: '甲县',
             adcode: '330822',
             location: '118.339,28.825',
           }],
@@ -632,14 +632,14 @@ test('lookupRouteTraffic：单位属地消歧与同名村多候选返回', async
           tips: [
             {
               name: '东山村',
-              district: '浙江省衢州市常山县',
+              district: '示例省示例市甲县',
               adcode: '330822',
               location: '118.339,28.825',
               address: [],
             },
             {
               name: '东山村',
-              district: '浙江省衢州市江山市',
+              district: '示例省示例市乙市',
               adcode: '330881',
               location: '118.480,28.581',
               address: [],
@@ -663,8 +663,8 @@ test('lookupRouteTraffic：单位属地消歧与同名村多候选返回', async
 
   assert.equal(res.ambiguous, true, '同名村应被标记为 ambiguous');
   assert.ok(res.candidates.length >= 2, '应返回候选列表');
-  assert.equal(res.candidates[0].district, '浙江省衢州市常山县');
-  assert.equal(res.candidates[1].district, '浙江省衢州市江山市');
+  assert.equal(res.candidates[0].district, '示例省示例市甲县');
+  assert.equal(res.candidates[1].district, '示例省示例市乙市');
 });
 
 test('lookupRouteTraffic：手动指定候选目标坐标时直接精准定位', async () => {
@@ -686,7 +686,7 @@ test('lookupRouteTraffic：手动指定候选目标坐标时直接精准定位',
     address: '东山村',
     destLat: 28.581,
     destLon: 118.480,
-    destName: '浙江省衢州市江山市东山村',
+    destName: '示例省示例市乙市东山村',
     destAdcode: '330881',
     originLat: 29.03,
     originLon: 119.18,
@@ -698,7 +698,7 @@ test('lookupRouteTraffic：手动指定候选目标坐标时直接精准定位',
   assert.deepEqual(res.candidates, []);
   assert.equal(res.destination.location.lat, 28.581);
   assert.equal(res.destination.location.lon, 118.480);
-  assert.equal(res.destination.formattedAddress, '浙江省衢州市江山市东山村');
+  assert.equal(res.destination.formattedAddress, '示例省示例市乙市东山村');
 });
 
 test('lookupRouteTraffic：参数校验与地址无法解析错误码', async () => {

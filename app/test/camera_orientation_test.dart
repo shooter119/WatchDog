@@ -230,7 +230,7 @@ void main() {
         controller.currentIncident = const Incident(
           id: 'incident-1',
           number: '2026-001',
-          title: '沈家衢江边人员想跳桥',
+          title: '示范河边人员想跳桥',
           status: 'active',
           createdAt: 1,
           lastActivityAt: 1,

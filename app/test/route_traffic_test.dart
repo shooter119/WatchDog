@@ -405,10 +405,10 @@ void main() {
       final ambiguousInfo = RouteTrafficInfo(
         destination: const RouteEndpointInfo(
           queryAddress: '东山村',
-          formattedAddress: '浙江省衢州市常山县东山村',
-          province: '浙江省',
-          city: '衢州市',
-          district: '常山县',
+          formattedAddress: '示例省示例市甲县东山村',
+          province: '示例省',
+          city: '示例市',
+          district: '甲县',
           adcode: '330822',
           location: AmapLocation(lat: 28.825, lon: 118.339, coordinate: 'gcj02'),
         ),
@@ -416,15 +416,15 @@ void main() {
         candidates: const [
           RouteDestinationCandidate(
             name: '东山村',
-            formattedAddress: '浙江省衢州市常山县东山村',
-            district: '常山县',
+            formattedAddress: '示例省示例市甲县东山村',
+            district: '甲县',
             adcode: '330822',
             location: AmapLocation(lat: 28.825, lon: 118.339, coordinate: 'gcj02'),
           ),
           RouteDestinationCandidate(
             name: '东山村',
-            formattedAddress: '浙江省衢州市江山市东山村',
-            district: '江山市',
+            formattedAddress: '示例省示例市乙市东山村',
+            district: '乙市',
             adcode: '330881',
             location: AmapLocation(lat: 28.581, lon: 118.480, coordinate: 'gcj02'),
           ),
@@ -467,14 +467,14 @@ void main() {
 
       // 应当自动弹出多候选选择底栏
       expect(find.text('发现多处同名地点，请确认目的地'), findsOneWidget);
-      expect(find.text('常山县'), findsOneWidget);
-      expect(find.text('江山市'), findsOneWidget);
+      expect(find.text('甲县'), findsOneWidget);
+      expect(find.text('乙市'), findsOneWidget);
 
-      // 点选江山市候选
+      // 点选乙市候选
       await tester.tap(find.byKey(const Key('route-candidate-item-1')));
       await tester.pumpAndSettle();
 
-      // 底栏关闭，且按江山市坐标重新发起了请求
+      // 底栏关闭，且按乙市坐标重新发起了请求
       expect(requestedDestLat, 28.581);
     });
 
