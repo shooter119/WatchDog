@@ -13,8 +13,7 @@
 | [AGENTS.md](AGENTS.md) | 当前协作、验证、发版与部署约定 | 当前权威规则 |
 | [README.md](README.md) | 面向使用者的产品介绍、功能和开发入口 | 当前产品说明 |
 | [STATUS.md](STATUS.md) | 项目状态、架构与开发验证概况 | 状态快照，需结合当前代码阅读 |
-| [fire-rescue-safety-app-ui-spec-v0.1.md](fire-rescue-safety-app-ui-spec-v0.1.md) | 早期三入口、高可视亮色方案 | 历史基线，已由 V0.2 更新 |
-| [fire-rescue-safety-app-ui-spec-v0.2.md](fire-rescue-safety-app-ui-spec-v0.2.md) | Android 优先、多入口导航及现行视觉规范 | 后续设计基线；如与实现冲突，以当前代码为准 |
+| [fire-rescue-safety-app-ui-spec-v2.0.md](fire-rescue-safety-app-ui-spec-v2.0.md) | 现行 V2.0 全局设计规范（Tokens v2、三套调色板、零重影卡片、主页/看板职责解耦） | 当前唯一 UI 规范（旧版 V0.1/V0.2 已清理） |
 
 ## 项目演进
 
