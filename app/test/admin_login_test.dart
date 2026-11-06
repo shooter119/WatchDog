@@ -299,9 +299,9 @@ void main() {
       find.byKey(const Key('identity-hero')),
     );
     final decoration = hero.decoration! as BoxDecoration;
-    // 视觉规范调整：卡面由渐变改为纯色 AppColors.heroBackground 及 1px AppColors.heroOnDarkBorder 边框
-    expect(decoration.color, AppColors.heroBackground);
-    expect(decoration.border, Border.all(color: AppColors.heroOnDarkBorder));
+    // 视觉规范调整：卡面由旧深色大卡改为统一浅色主题卡面（AppColors.surface 及 1px AppColors.border 边框）
+    expect(decoration.color, AppColors.surface);
+    expect(decoration.border, Border.all(color: AppColors.border));
     expect(find.text('我的身份'), findsNothing);
     expect(find.text('合成成员'), findsOneWidget);
     expect(find.text('合成消防单位'), findsOneWidget);

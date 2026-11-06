@@ -1072,6 +1072,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         activeThumbColor: activeThumbColor,
+        activeTrackColor: activeThumbColor.withValues(alpha: 0.25),
         value: value,
         onChanged: onChanged,
       ),
@@ -1176,7 +1177,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _switchRow(
           icon: Icons.shield_moon_outlined,
           title: '后台值守模式',
-          activeThumbColor: AppColors.safe,
+          activeThumbColor: AppColors.actionPrimary,
           value: _keepAlive,
           onChanged: _toggleKeepAlive,
         ),
@@ -1615,29 +1616,23 @@ class _IdentityHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = AppColors.heroOnDark;
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        boxShadow: AppShadow.float,
+        boxShadow: AppShadow.card,
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadius.lg),
         child: Container(
           key: const Key('identity-hero'),
           decoration: BoxDecoration(
-            color: AppColors.heroBackground,
-            border: Border.all(color: AppColors.heroOnDarkBorder),
+            color: AppColors.surface,
+            border: Border.all(color: AppColors.border),
           ),
           child: Material(
             type: MaterialType.transparency,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.s4,
-                AppSpacing.s4,
-                AppSpacing.s4,
-                AppSpacing.s4,
-              ),
+              padding: const EdgeInsets.all(AppSpacing.s4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -1657,7 +1652,7 @@ class _IdentityHeroCard extends StatelessWidget {
                                   name,
                                   softWrap: true,
                                   style: TextStyle(
-                                    color: foreground,
+                                    color: AppColors.textPrimary,
                                     fontSize: 20,
                                     height: 1.15,
                                     fontWeight: FontWeight.w800,
@@ -1675,7 +1670,7 @@ class _IdentityHeroCard extends StatelessWidget {
                                   child: Icon(
                                     Icons.apartment_rounded,
                                     size: 16,
-                                    color: AppColors.heroMuted,
+                                    color: AppColors.textTertiary,
                                   ),
                                 ),
                                 const SizedBox(width: AppSpacing.s2),
@@ -1684,7 +1679,7 @@ class _IdentityHeroCard extends StatelessWidget {
                                     unit,
                                     softWrap: true,
                                     style: TextStyle(
-                                      color: AppColors.heroMuted,
+                                      color: AppColors.textSecondary,
                                       fontSize: 14,
                                       height: 1.35,
                                       fontWeight: FontWeight.w500,
@@ -1700,7 +1695,7 @@ class _IdentityHeroCard extends StatelessWidget {
                         PopupMenuButton<String>(
                           key: const Key('user-actions'),
                           tooltip: '用户操作',
-                          iconColor: foreground,
+                          iconColor: AppColors.textSecondary,
                           onSelected: (value) {
                             if (value == 'leave') unawaited(onLeave());
                             if (value == 'devices') unawaited(onDevices());
@@ -1724,16 +1719,24 @@ class _IdentityHeroCard extends StatelessWidget {
                       if (canScan) _HeroScanAction(onTap: onScan),
                     ],
                   ),
-                  if (authenticated && reviewCount > 0)
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                        minimumSize: const Size(48, 48),
-                        foregroundColor: foreground,
+                  if (authenticated && reviewCount > 0) ...[
+                    const SizedBox(height: AppSpacing.s2),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(48, 36),
+                          foregroundColor: AppColors.actionPrimary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.s2,
+                          ),
+                        ),
+                        onPressed: () => unawaited(onReview()),
+                        icon: const Icon(Icons.fact_check_outlined, size: 18),
+                        label: Text('$reviewCount 条离线记录待核对'),
                       ),
-                      onPressed: () => unawaited(onReview()),
-                      icon: const Icon(Icons.fact_check_outlined),
-                      label: Text('$reviewCount 条离线记录待核对'),
                     ),
+                  ],
                   if (guest) ...[
                     const SizedBox(height: AppSpacing.s4),
                     SizedBox(
@@ -1743,10 +1746,14 @@ class _IdentityHeroCard extends StatelessWidget {
                         icon: const Icon(Icons.add_circle_outline, size: 18),
                         label: const Text('加入单位'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: foreground,
-                          backgroundColor: foreground.withValues(alpha: 0.06),
+                          foregroundColor: AppColors.actionPrimary,
+                          backgroundColor:
+                              AppColors.actionPrimary.withValues(alpha: 0.06),
                           minimumSize: const Size(48, 48),
-                          side: BorderSide(color: AppColors.heroOnDarkBorder),
+                          side: BorderSide(
+                            color:
+                                AppColors.actionPrimary.withValues(alpha: 0.4),
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(AppRadius.md),
                           ),
@@ -1781,13 +1788,13 @@ class _HeroRoleBadge extends StatelessWidget {
         vertical: 3,
       ),
       decoration: BoxDecoration(
-        color: AppColors.heroOnDark.withValues(alpha: 0.14),
+        color: AppColors.actionPrimary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(
         level,
         style: TextStyle(
-          color: AppColors.heroOnDark,
+          color: AppColors.actionPrimary,
           fontSize: 13,
           fontWeight: FontWeight.w800,
         ),
@@ -1814,9 +1821,9 @@ class _HeroScanAction extends StatelessWidget {
           vertical: AppSpacing.s2,
         ),
         decoration: BoxDecoration(
-          color: AppColors.heroOnDark.withValues(alpha: 0.08),
+          color: AppColors.surfaceSubtle,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.heroOnDarkBorder),
+          border: Border.all(color: AppColors.border),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1824,13 +1831,13 @@ class _HeroScanAction extends StatelessWidget {
             Icon(
               Icons.qr_code_scanner_rounded,
               size: 24,
-              color: AppColors.heroOnDark,
+              color: AppColors.textPrimary,
             ),
             const SizedBox(height: AppSpacing.s1),
             Text(
               '扫一扫',
               style: AppTextStyles.caption.copyWith(
-                color: AppColors.heroOnDark,
+                color: AppColors.textPrimary,
                 fontWeight: FontWeight.w700,
               ),
             ),
