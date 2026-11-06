@@ -420,3 +420,52 @@ test('警情历史引用首次关联时间在HTTP响应中为JSON数字', async 
   assert.equal(typeof data.history[0].first_linked_at, 'number');
   assert.equal(data.history[0].first_linked_at, state.history[0].first_linked_at);
 });
+
+test('360度全景支持单重点单位上传多张2:1全景图、压制转换及双端鉴权读取', async () => {
+  const site = await create('多机位全景合成单位');
+  const wrongRatio = await sharp({ create: { width: 600, height: 400, channels: 3, background: '#1e293b' } }).jpeg().toBuffer();
+  await reject(() => files.upload('manager', site.id, 'maps', { originalname: '非全景.jpg', buffer: wrongRatio }, { panorama: true }), 'KEY_SITE_PANO_RATIO_INVALID');
+
+  const panoBuf1 = await sharp({ create: { width: 1200, height: 600, channels: 3, background: '#334155' } }).jpeg().toBuffer();
+  const panoBuf2 = await sharp({ create: { width: 1600, height: 800, channels: 3, background: '#0f172a' } }).png().toBuffer();
+  const form1 = new FormData(); form1.append('file', new Blob([panoBuf1], { type: 'image/jpeg' }), 'north-scene.jpg');
+  const form2 = new FormData(); form2.append('file', new Blob([panoBuf2], { type: 'image/png' }), 'south-scene.png');
+
+  const up1 = await request(`/api/admin/key-sites/${site.id}/attachments/maps?panorama=1`, { session: manager, method: 'POST', form: form1 });
+  const up2 = await request(`/api/admin/key-sites/${site.id}/attachments/maps?panorama=1`, { session: manager, method: 'POST', form: form2 });
+  assert.equal(up1.status, 201); assert.equal(up2.status, 201);
+  const att1 = await up1.json(), att2 = await up2.json();
+
+  const ready1 = await finishAttachment(att1.id);
+  const ready2 = await finishAttachment(att2.id);
+  assert.equal(ready1.status, 'ready'); assert.equal(ready2.status, 'ready');
+  assert.equal(ready1.metadata.panorama.type, 'equirectangular');
+  assert.equal(ready1.metadata.panorama.width, 1200);
+  assert.equal(ready2.metadata.panorama.width, 1600);
+
+  // Admin can preview both panoramas before publishing
+  const adminPano1 = await request(`/api/admin/key-sites/${site.id}/attachments/${att1.id}/panorama.jpg`, { session: manager });
+  const adminPano2 = await request(`/api/admin/key-sites/${site.id}/attachments/${att2.id}/panorama.jpg`, { session: manager });
+  assert.equal(adminPano1.status, 200); assert.equal(adminPano2.status, 200);
+
+  // Bind both panoramas into a single key site entry and publish
+  const content = shape.emptyContent();
+  content.maps.push({
+    title: '厂区航拍全景漫游',
+    fields: { capturedAt: '2026-11-06', area: '南北厂区' },
+    sources: [
+      { attachmentId: att1.id, page: 1, paragraph: '1号机位：北厂区上空' },
+      { attachmentId: att2.id, page: 1, paragraph: '2号机位：南罐区上空' },
+    ],
+  });
+  await save(site, content);
+  const version = await publish(site);
+  assert.equal(version.version, 1);
+  assert.deepEqual(new Set(version.attachment_ids), new Set([att1.id, att2.id]));
+
+  // App authenticated reader can read both published panoramas, unauthenticated is rejected
+  const appPano1 = await request(`/api/key-sites/${site.id}/versions/1/attachments/${att1.id}/panorama.jpg`, { session: null, member: 'reader' });
+  const appPano2 = await request(`/api/key-sites/${site.id}/versions/1/attachments/${att2.id}/panorama.jpg`, { session: null, member: 'reader' });
+  assert.equal(appPano1.status, 200); assert.equal(appPano2.status, 200);
+  assert.equal((await request(`/api/key-sites/${site.id}/versions/1/attachments/${att1.id}/panorama.jpg`, { session: null })).status, 401);
+});

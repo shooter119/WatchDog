@@ -23,7 +23,7 @@ await check('admin_shell_and_security_headers', async () => {
   assert.match(await response.text(), /火场智控 · 资料管理/);
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.match(response.headers.get('cache-control'), /no-store/);
-  for (const path of ['/admin/app.js', '/admin/sites.js', '/admin/hazmats.js', '/admin/style.css']) assert.equal((await request(origin, path)).status, 200);
+  for (const path of ['/admin/app.js', '/admin/sites.js', '/admin/hazmats.js', '/admin/style.css', '/admin/pano.html', '/admin/pano.js', '/admin/pano.css', '/admin/lib/pannellum.js', '/admin/lib/pannellum.css', '/admin/lib/PANNELUM-LICENSE.txt']) assert.equal((await request(origin, path)).status, 200);
 });
 await check('hazmat_api_protected_by_session', async () => {
   const response = await request(origin, '/api/admin/hazmats');
@@ -56,6 +56,7 @@ await check('qr_browser_binding_and_pending_state', async () => {
 });
 await check('private_dossiers_and_legacy_maps_require_authentication', async () => {
   for (const path of ['/api/key-sites', '/api/key-sites/access', '/api/key-sites/guess/versions/1/attachments/guess/pages/1.jpg',
+    '/api/key-sites/guess/versions/1/attachments/guess/panorama.jpg',
     '/api/key-sites/guess/versions/1/attachments/guess/maps/1/tiles/0/0/0.jpg', '/api/key-sites/guess/versions/1/attachments/guess/source', '/api/maps', '/api/admin-app/capability']) {
     const response = await request(apiOrigin, path); assert.equal(response.status, 401, `unguarded route ${path}`);
   }

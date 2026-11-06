@@ -63,15 +63,28 @@ function createKeySiteFiles(store, sites, auth, { root = path.resolve(process.en
     if (!idValid(id)) throw error('附件不存在', 'KEY_SITE_FILE_NOT_FOUND', 404);
     return path.join(root, id);
   }
-  async function inspect(buffer, filename, module) {
-    if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > caps.fileBytes) throw error('文件超过上传大小限制', 'KEY_SITE_UPLOAD_TOO_LARGE', 413);
+  async function inspect(buffer, filename, module, { panorama = false } = {}) {
+    const maxBytes = panorama ? caps.panoFileBytes : caps.fileBytes;
+    const maxPixels = panorama ? caps.panoPixels : caps.pixels;
+    if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > maxBytes) throw error('文件超过上传大小限制', 'KEY_SITE_UPLOAD_TOO_LARGE', 413);
     const ext = path.extname(filename).toLowerCase();
+    if (panorama && (module !== 'maps' || !['.png', '.jpg', '.jpeg'].includes(ext))) {
+      throw error('全景图仅支持在地图与全景模块上传JPG或PNG图片', 'KEY_SITE_PANO_INVALID', 415);
+    }
     if (['.png', '.jpg', '.jpeg'].includes(ext)) {
       let metadata;
-      try { metadata = await sharp(buffer, { limitInputPixels: caps.pixels }).metadata(); }
+      try { metadata = await sharp(buffer, { limitInputPixels: maxPixels }).metadata(); }
       catch (_) { throw error('图片无效或像素超过限制'); }
-      if (!['jpeg', 'png'].includes(metadata.format) || metadata.width * metadata.height > caps.pixels
+      if (!['jpeg', 'png'].includes(metadata.format) || metadata.width * metadata.height > maxPixels
         || metadata.width > caps.dimension || metadata.height > caps.dimension || (metadata.pages || 1) !== 1) throw error('图片像素或帧数超过限制');
+      if (panorama) {
+        const swapped = metadata.orientation >= 5 && metadata.orientation <= 8;
+        const w = swapped ? metadata.height : metadata.width;
+        const h = swapped ? metadata.width : metadata.height;
+        if (!w || !h || Math.abs(w / h - 2) > 0.08) {
+          throw error('全景图须为 2:1 等距圆柱投影（equirectangular）比例', 'KEY_SITE_PANO_RATIO_INVALID', 415);
+        }
+      }
       return { mime: metadata.format === 'png' ? 'image/png' : 'image/jpeg', ext: metadata.format === 'png' ? '.png' : '.jpg' };
     }
     if (ext === '.pdf' && buffer.subarray(0, 5).toString() === '%PDF-') return { mime: 'application/pdf', ext };
@@ -81,11 +94,12 @@ function createKeySiteFiles(store, sites, auth, { root = path.resolve(process.en
     }
     throw error('仅支持PDF、DOCX、JPG、PNG，不支持旧版DOC或可执行附件');
   }
-  async function upload(memberId, siteId, module, file) {
+  async function upload(memberId, siteId, module, file, options = {}) {
     await sites.maintain(memberId, siteId);
     if (!MODULES.includes(module) || !file) throw error('请选择资料分类和文件', 'KEY_SITE_FILE_REQUIRED', 400);
+    const panorama = Boolean(options?.panorama);
     const filename = String(file.originalname || '附件').replace(/[\x00-\x1f/\\]/g, '_').slice(0, 180);
-    const info = await inspect(file.buffer, filename, module);
+    const info = await inspect(file.buffer, filename, module, { panorama });
     const id = randomUUID(), folder = directory(id), time = Date.now();
     try {
       return await store.transaction(async () => {
@@ -102,7 +116,7 @@ function createKeySiteFiles(store, sites, auth, { root = path.resolve(process.en
         await fs.writeFile(path.join(folder, `original${info.ext}`), file.buffer, { flag: 'wx', mode: 0o600 });
         const rowFile = (await query(`INSERT INTO key_site_attachments(id,site_id,module,filename,mime,size_bytes,sha256,metadata,uploaded_by,created_at)
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-        [id, siteId, module, filename, info.mime, file.buffer.length, createHash('sha256').update(file.buffer).digest('hex'), JSON.stringify({ ext: info.ext }), memberId, time]))[0];
+        [id, siteId, module, filename, info.mime, file.buffer.length, createHash('sha256').update(file.buffer).digest('hex'), JSON.stringify({ ext: info.ext, ...(panorama ? { panorama: true } : {}) }), memberId, time]))[0];
         await query(`INSERT INTO key_site_tasks(id,site_id,attachment_id,kind,created_at,updated_at)
           VALUES($1,$2,$3,$4,$5,$5)`, [randomUUID(), siteId, id, module === 'maps' ? 'map' : 'document', time]);
         await auth.audit(memberId, 'key_site_uploaded', id);
@@ -148,6 +162,35 @@ function createKeySiteFiles(store, sites, auth, { root = path.resolve(process.en
     const metadata = { ext: attachment.metadata.ext, output: path.basename(output), pages: 1 };
     await fs.mkdir(output, { recursive: true, mode: 0o700 });
     if (attachment.mime.startsWith('image/')) {
+      if (attachment.metadata?.panorama) {
+        const panoPath = path.join(output, 'panorama.jpg');
+        const savedPano = await sharp(original, { limitInputPixels: caps.panoPixels })
+          .rotate()
+          .flatten({ background: '#000000' })
+          .resize({ width: caps.panoMaxWidth, height: caps.panoMaxHeight, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: caps.panoQuality })
+          .toFile(panoPath);
+        reserve(savedPano.size);
+        const savedPreview = await sharp(panoPath, { limitInputPixels: caps.panoPixels })
+          .resize({ width: 2048, height: 1024, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 82 })
+          .toFile(path.join(output, 'page-1.jpg'));
+        reserve(savedPreview.size);
+        metadata.width = savedPano.width;
+        metadata.height = savedPano.height;
+        metadata.panorama = {
+          width: savedPano.width,
+          height: savedPano.height,
+          type: 'equirectangular',
+          hfov: 105,
+          minHfov: 35,
+          maxHfov: 120,
+          pitch: -5,
+          yaw: 20,
+          autoRotate: -1.6,
+        };
+        return metadata;
+      }
       const saved = await sharp(original, { limitInputPixels: caps.pixels }).rotate().flatten({ background: '#ffffff' }).jpeg({ quality: 90 }).toFile(path.join(output, 'page-1.jpg'));
       reserve(saved.size);
       const dimensions = await sharp(path.join(output, 'page-1.jpg')).metadata();
@@ -279,6 +322,9 @@ function createKeySiteFiles(store, sites, auth, { root = path.resolve(process.en
       if (kind === 'pdf') {
         if (attachment.mime.startsWith('image/')) throw error('此附件不是PDF', 'KEY_SITE_FILE_NOT_FOUND', 404);
         file = path.join(output, 'original.pdf');
+      } else if (kind === 'panorama') {
+        if (!attachment.metadata?.panorama) throw error('此附件不是全景图', 'KEY_SITE_FILE_NOT_FOUND', 404);
+        file = path.join(output, 'panorama.jpg');
       } else if (kind === 'page') {
         const page = Number(parts[0]);
         if (!Number.isInteger(page) || page < 1 || page > attachment.metadata.pages) throw error('页码不存在', 'KEY_SITE_FILE_NOT_FOUND', 404);

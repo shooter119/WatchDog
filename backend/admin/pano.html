@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>火场智控 · 360° 全景查看器</title>
+  <link rel="stylesheet" href="/admin/lib/pannellum.css">
+  <link rel="stylesheet" href="/admin/pano.css">
+</head>
+<body>
+  <div id="stage">
+    <div id="viewer" class="pano-viewport" aria-label="360度全景视图"></div>
+    <div id="viewer-right" class="pano-viewport" aria-hidden="true" hidden></div>
+  </div>
+
+  <div id="titlebar">
+    <div class="title-main">
+      <span class="badge-360">360° 全景</span>
+      <h1 id="pano-title">正在加载重点单位全景…</h1>
+    </div>
+    <p id="pano-subtitle">请稍候</p>
+  </div>
+
+  <div id="loading" role="status" aria-live="polite">
+    <div class="loading-card">
+      <div class="spinner" id="loading-spinner"></div>
+      <p id="loading-text">正在加载全景图…</p>
+      <div class="progress-track" id="progress-track">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <button type="button" id="btn-retry" class="retry-btn" hidden>重新加载</button>
+    </div>
+  </div>
+
+  <nav id="scene-bar" aria-label="全景机位切换" hidden></nav>
+
+  <div id="toolbar" role="toolbar" aria-label="全景控制工具栏">
+    <button type="button" id="btn-rotate" class="tool-btn active" aria-pressed="true">
+      <span class="tool-icon">↻</span>
+      <span class="tool-label">自动旋转</span>
+    </button>
+    <button type="button" id="btn-reset" class="tool-btn">
+      <span class="tool-icon">⌖</span>
+      <span class="tool-label">初始视角</span>
+    </button>
+    <button type="button" id="btn-vr" class="tool-btn" aria-pressed="false">
+      <span class="tool-icon">🥽</span>
+      <span class="tool-label">VR 模式</span>
+    </button>
+    <button type="button" id="btn-fullscreen" class="tool-btn" aria-pressed="false">
+      <span class="tool-icon">⛶</span>
+      <span class="tool-label">全屏</span>
+    </button>
+    <button type="button" id="btn-bgm" class="tool-btn" aria-pressed="false" hidden>
+      <span class="tool-icon">♪</span>
+      <span class="tool-label">背景音乐</span>
+    </button>
+  </div>
+
+  <script src="/admin/lib/pannellum.js" defer></script>
+  <script src="/admin/pano.js" defer></script>
+</body>
+</html>

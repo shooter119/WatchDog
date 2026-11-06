@@ -806,3 +806,5 @@ a:hover { text-decoration: underline; }
   .form-grid-2, .drawer-grid, .standard-fields { grid-template-columns: 1fr; }
   .drawer-panel { width: 100%; }
 }
+
+.pano-bind-box{margin:16px 0;padding:16px;background:var(--surface-subtle,#f8faf9);border:1px solid var(--border,#d7dfe4);border-radius:8px;display:grid;gap:12px}.pano-bind-row{display:grid;grid-template-columns:minmax(180px,1.2fr) minmax(200px,1.5fr) auto;gap:12px;align-items:center}.pano-check-label{display:flex;flex-direction:row;align-items:center;gap:10px;color:var(--text-primary,#182c3e);font-weight:600;cursor:pointer}.pano-check-label input[type=checkbox]{margin:0}.pano-upload-section{margin-top:28px;padding-top:22px;border-top:2px dashed var(--border,#b9c5cd)}@media(max-width:700px){.pano-bind-row{grid-template-columns:1fr}}

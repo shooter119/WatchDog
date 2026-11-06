@@ -138,11 +138,13 @@ function createKeySites(store, auth, now = Date.now) {
       if (attachments.length !== ids.length || attachments.some(item => item.status !== 'ready')) fail('来源附件未就绪或不属于本单位', 'KEY_SITE_SOURCE_INVALID', 409);
       const byId = new Map(attachments.map(item => [item.id, item]));
       for (const module of shape.MODULES) for (const entry of data[module]) {
-        if (module === 'maps' && entry.sources.length > 1) fail('每张地图最多关联一份地图文件及页码', 'KEY_SITE_SOURCE_INVALID', 400);
+        const allPanorama = module === 'maps' && entry.sources.length > 0
+          && entry.sources.every(source => Boolean(byId.get(source.attachmentId)?.metadata?.panorama));
+        if (module === 'maps' && entry.sources.length > 1 && !allPanorama) fail('每张地图最多关联一份地图文件及页码', 'KEY_SITE_SOURCE_INVALID', 400);
         for (const source of entry.sources) {
           const attachment = byId.get(source.attachmentId);
           if ((source.page && source.page > Number(attachment.metadata.pages || 1))
-            || (module === 'maps' && !attachment.metadata.map)) fail('来源页码或地图切片不匹配', 'KEY_SITE_SOURCE_INVALID', 400);
+            || (module === 'maps' && !attachment.metadata.map && !attachment.metadata.panorama)) fail('来源页码或地图切片不匹配', 'KEY_SITE_SOURCE_INVALID', 400);
         }
       }
       const version = (await query(`INSERT INTO key_site_versions(id,site_id,version,profile,content,attachment_ids,published_by,published_at)

@@ -1,4 +1,5 @@
-const DEFAULT_LIMITS = { fileBytes: 20 * 1024 * 1024, pages: 200, pixels: 40000000, dimension: 30000,
+const DEFAULT_LIMITS = { fileBytes: 20 * 1024 * 1024, panoFileBytes: 50 * 1024 * 1024, pages: 200,
+  pixels: 40000000, panoPixels: 150000000, dimension: 30000, panoMaxWidth: 8192, panoMaxHeight: 4096, panoQuality: 88,
   quotaBytes: 2 * 1024 ** 3, unitPending: 10, timeoutMs: 120000, taskTimeoutMs: 600000, concurrency: 2,
   aiPages: 20, aiConcurrency: 1, aiRequestTimeoutMs: 90000, aiTaskTimeoutMs: 1200000, aiResultBytes: 2 * 1024 * 1024 };
 function keySiteLimits(overrides = {}) {

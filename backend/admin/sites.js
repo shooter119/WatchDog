@@ -149,12 +149,42 @@
       if (entry.body) body = input(section, '补充内容', entry.body, { multiline: true });
       const record = { kind, entry, title, controls, body, removed: false, existing: !!existing }; records.push(record);
       if (module === 'maps') {
-        const label = node('label', '地图文件（选填）'), select = node('select');
-        select.append(new Option('暂不关联地图文件', ''));
-        for (const file of current.attachments.filter(file => file.status === 'ready' && file.metadata?.map)) select.append(new Option(file.filename, file.id));
-        select.value = entry.sources?.[0]?.attachmentId || ''; select.onchange = () => { dirty = true; };
+        const mapFiles = current.attachments.filter(file => file.status === 'ready' && file.metadata?.map);
+        const panoFiles = current.attachments.filter(file => file.status === 'ready' && file.metadata?.panorama);
+        const existingSources = entry.sources || [];
+        const firstMapSource = existingSources.find(s => mapFiles.some(f => f.id === s.attachmentId));
+        const label = node('label', '平面地图文件（选填，与 360° 全景二选一）'), select = node('select');
+        select.append(new Option('暂不关联平面地图文件', ''));
+        for (const file of mapFiles) select.append(new Option(file.filename, file.id));
+        select.value = firstMapSource?.attachmentId || ''; select.onchange = () => { dirty = true; };
         label.append(select); section.append(label);
-        record.file = select; record.page = input(section, '地图页码', entry.sources?.[0]?.page || 1, { type: 'number' }); record.page.min = '1'; record.page.max = String(limits.pages);
+        record.file = select; record.page = input(section, '地图页码', firstMapSource?.page || 1, { type: 'number' }); record.page.min = '1'; record.page.max = String(limits.pages);
+
+        const panoBox = node('div', '', 'pano-bind-box');
+        panoBox.append(node('strong', '360° 全景图关联（可多选，支持单单位绑定 2 张或多张不同机位全景）'));
+        record.panos = [];
+        if (!panoFiles.length) {
+          panoBox.append(node('p', '下方上传 360° 全景图并处理完成后，可在此勾选 1 张或多张全景图关联到本分项。', 'muted'));
+        } else {
+          for (const file of panoFiles) {
+            const matched = existingSources.find(s => s.attachmentId === file.id);
+            const row = node('div', '', 'pano-bind-row');
+            const checkLabel = node('label', '', 'pano-check-label');
+            const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.checked = Boolean(matched);
+            checkbox.onchange = () => { dirty = true; if (checkbox.checked) select.value = ''; };
+            checkLabel.append(checkbox, node('span', file.filename));
+            const sceneName = node('input'); sceneName.type = 'text'; sceneName.placeholder = '机位名称（如：厂区北门、南侧罐区）';
+            sceneName.value = matched?.paragraph || ''; sceneName.maxLength = 120;
+            sceneName.oninput = () => { dirty = true; };
+            const previewBtn = button('360° 预览', () => {
+              window.open(`/admin/pano.html?siteId=${encodeURIComponent(current.site.id)}&attachmentId=${encodeURIComponent(file.id)}`, '_blank', 'noopener');
+            });
+            row.append(checkLabel, sceneName, previewBtn);
+            panoBox.append(row);
+            record.panos.push({ id: file.id, checkbox, sceneName });
+          }
+        }
+        section.append(panoBox);
       }
       section.append(button('移除此分项', () => { record.removed = true; section.remove(); dirty = true; }));
       sections.append(section);
@@ -178,7 +208,11 @@
         next[module] = records.filter(record => !record.removed).flatMap(record => {
           const values = Object.fromEntries(Object.entries(record.controls).map(([key, control]) => [key, control.value.trim()]));
           const body = record.body?.value || '';
-          const sources = record.file?.value ? [{ attachmentId: record.file.value, page: Number(record.page.value) || 1, paragraph: '' }] : [];
+          const selectedPanos = (record.panos || []).filter(item => item.checkbox.checked)
+            .map(item => ({ attachmentId: item.id, page: 1, paragraph: item.sceneName.value.trim() }));
+          const sources = selectedPanos.length
+            ? selectedPanos
+            : (record.file?.value ? [{ attachmentId: record.file.value, page: Number(record.page.value) || 1, paragraph: '' }] : []);
           if (!record.existing && !Object.values(values).some(Boolean) && !body && !sources.length && record.title.value === record.entry.title) return [];
           return [{ ...(record.kind ? { kind: record.kind } : {}), title: record.title.value.trim(), body, fields: values, sources }];
         });
@@ -191,9 +225,13 @@
   }
   function renderMapFiles() {
     const root = $('assets'); if (!root || !current) return;
-    root.replaceChildren(node('h3', '地图文件（可选）'), node('p', '需要在 App 查看地图时，可上传 PDF、JPG 或 PNG，处理完成后在地图分项中选择文件和页码。选择文件后保存表单，再发布即可在 App 查看。', 'muted'));
+    const statusText = status => ({ queued: '排队中', processing: '处理中', ready: '可使用', failed: '处理失败' }[status] || status);
+    root.replaceChildren(
+      node('h3', '平面地图文件（可选）'),
+      node('p', '需要在 App 查看平面地图时，可上传 PDF、JPG 或 PNG，处理完成后在上方分项中选择文件和页码。', 'muted'),
+    );
     const upload = node('input'); upload.type = 'file'; upload.accept = '.pdf,.jpg,.jpeg,.png'; upload.setAttribute('aria-label', '选择地图文件'); root.append(upload);
-    root.append(button('上传地图', async () => {
+    root.append(button('上传平面地图', async () => {
       if (dirty) throw new Error('请先保存表单，再上传地图');
       const file = upload.files[0]; if (!file) throw new Error('请先选择地图文件');
       if (file.size > limits.fileBytes) throw new Error('文件超过大小限制');
@@ -205,8 +243,64 @@
       if (!response.ok) throw new Error(result.error || '上传失败');
       if (!current || current.site.id !== id) return;
       $('error').textContent = '地图已上传，请刷新处理状态后选择地图文件。'; await refreshMapFiles();
-    }), button('刷新地图处理状态', refreshMapFiles));
-    for (const file of current.attachments.filter(file => file.module === 'maps')) root.append(node('p', `${file.filename} · ${{ queued: '排队中', processing: '处理中', ready: '可使用', failed: '处理失败' }[file.status] || file.status}`));
+    }), button('刷新处理状态', refreshMapFiles));
+    for (const file of current.attachments.filter(file => file.module === 'maps' && !file.metadata?.panorama)) {
+      root.append(node('p', `${file.filename} · ${statusText(file.status)}`));
+    }
+
+    const panoSection = node('div', '', 'pano-upload-section');
+    panoSection.append(
+      node('h3', '360° 全景图（支持单单位上传 2 张或多张）'),
+      node('p', '支持上传 2:1 等距圆柱投影（equirectangular）全景 JPG/PNG（兼容 8192×4096 网页图及 14400×7200 航拍原图，系统自动压制为 8K 网页全景）。面积较大的重点单位可一次或分批上传多张全景图。', 'muted'),
+    );
+    const panoInput = node('input'); panoInput.type = 'file'; panoInput.multiple = true; panoInput.accept = '.jpg,.jpeg,.png';
+    panoInput.setAttribute('aria-label', '选择360度全景图');
+    panoSection.append(panoInput);
+    const maxPanoBytes = limits.panoFileBytes || limits.fileBytes;
+    panoSection.append(button('上传 360° 全景图', async () => {
+      if (dirty) throw new Error('请先保存表单，再上传全景图');
+      const selectedFiles = [...panoInput.files];
+      if (!selectedFiles.length) throw new Error('请先选择至少一张 360° 全景图（JPG/PNG）');
+      for (const file of selectedFiles) {
+        if (file.size > maxPanoBytes) throw new Error(`「${file.name}」超过全景图大小限制（最大 ${Math.round(maxPanoBytes / 1024 / 1024)} MB）`);
+      }
+      const epoch = authGeneration, id = current.site.id;
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        $('error').textContent = `正在上传第 ${i + 1}/${selectedFiles.length} 张全景图：${file.name}…`;
+        const form = new FormData(); form.append('file', file);
+        const response = await fetch(`/api/admin/key-sites/${id}/attachments/maps?panorama=1`, {
+          method: 'POST', credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf }, body: form,
+        });
+        const result = await response.json();
+        if (epoch !== authGeneration) throw new Error('后台会话已失效，请重新扫码登录');
+        if (response.status === 401) endSession();
+        if (!response.ok) throw new Error(result.error || `「${file.name}」上传失败`);
+      }
+      if (!current || current.site.id !== id) return;
+      $('error').textContent = `已成功上传 ${selectedFiles.length} 张全景图，正在后台压制处理，可点击「刷新处理状态」查看。`;
+      await refreshMapFiles();
+    }, 'primary'), button('刷新处理状态', refreshMapFiles));
+
+    const panos = current.attachments.filter(file => file.module === 'maps' && file.metadata?.panorama);
+    const readyPanos = panos.filter(file => file.status === 'ready');
+    if (readyPanos.length) {
+      panoSection.append(button(`打开本单位 360° 全景漫游（共 ${readyPanos.length} 张）`, () => {
+        window.open(`/admin/pano.html?siteId=${encodeURIComponent(current.site.id)}`, '_blank', 'noopener');
+      }, 'primary'));
+    }
+    for (const file of panos) {
+      const row = node('div', '', 'asset-row');
+      const dims = file.metadata?.width && file.metadata?.height ? ` (${file.metadata.width}×${file.metadata.height})` : '';
+      row.append(node('strong', `360° 全景 · ${file.filename}${dims}`), node('span', statusText(file.status)));
+      if (file.status === 'ready') {
+        row.append(button('360° 预览此图', () => {
+          window.open(`/admin/pano.html?siteId=${encodeURIComponent(current.site.id)}&attachmentId=${encodeURIComponent(file.id)}`, '_blank', 'noopener');
+        }));
+      }
+      panoSection.append(row);
+    }
+    root.append(panoSection);
   }
   async function refreshMapFiles() {
     if (dirty) throw new Error('请先保存表单，再刷新地图文件');

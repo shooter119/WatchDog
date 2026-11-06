@@ -8,6 +8,7 @@ const wrap = handler => (req, res, next) => Promise.resolve(handler(req, res)).c
 function createKeySiteAdminRouter(sites, files, ai) {
   const router = express.Router();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: files.limits.fileBytes, files: 1, fields: 2, parts: 3 } }).single('file');
+  const uploadPano = multer({ storage: multer.memoryStorage(), limits: { fileSize: files.limits.panoFileBytes || files.limits.fileBytes, files: 1, fields: 2, parts: 3 } }).single('file');
   let uploading = 0;
   router.use((req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
   router.get('/limits', (req, res) => res.json({ limits: files.limits, aiAvailable: ai?.available() || false, schema: require('./key-site-content').SCHEMA }));
@@ -36,12 +37,16 @@ function createKeySiteAdminRouter(sites, files, ai) {
       let released = false;
       const release = () => { if (!released) { released = true; uploading--; } };
       req.once('aborted', release); res.once('finish', release); res.once('close', release);
-      upload(req, res, err => {
+      const isPano = ['1', 'true'].includes(String(req.query.panorama || '').toLowerCase());
+      (isPano ? uploadPano : upload)(req, res, err => {
         if (err) return res.status(413).json({ code: 'KEY_SITE_UPLOAD_LIMIT', error: '文件数量、大小或字段超过上传限制' });
         next();
       });
     }).catch(err => err.status ? res.status(err.status).json({ code: err.code, error: err.message }) : next(err));
-  }, wrap(async (req, res) => res.status(201).json(await files.upload(req.admin.id, req.params.id, req.params.module, req.file))));
+  }, wrap(async (req, res) => {
+    const panorama = ['1', 'true'].includes(String(req.query.panorama || '').toLowerCase());
+    return res.status(201).json(await files.upload(req.admin.id, req.params.id, req.params.module, req.file, { panorama }));
+  }));
   router.post('/tasks/:taskId/retry', wrap(async (req, res) => res.json(await files.retry(req.admin.id, req.params.taskId))));
   router.use('/:id/attachments/:attachmentId', attachmentRouter(sites, files, true));
   return router;
@@ -71,6 +76,7 @@ function attachmentRouter(sites, files, admin) {
   });
   router.get('/source', send('source'));
   router.get('/document.pdf', send('pdf'));
+  router.get('/panorama.jpg', send('panorama'));
   router.get('/pages/:page.jpg', send('page', req => [req.params.page]));
   router.get('/tiles/:z/:x/:y.jpg', send('tile', req => [req.params.z, req.params.x, req.params.y]));
   router.get('/maps/:page/tiles/:z/:x/:y.jpg', send('tile', req => [req.params.page, req.params.z, req.params.x, req.params.y]));
