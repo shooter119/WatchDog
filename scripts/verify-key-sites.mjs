@@ -23,7 +23,11 @@ await check('admin_shell_and_security_headers', async () => {
   assert.match(await response.text(), /火场智控 · 资料管理/);
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.match(response.headers.get('cache-control'), /no-store/);
-  for (const path of ['/admin/app.js', '/admin/sites.js', '/admin/style.css']) assert.equal((await request(origin, path)).status, 200);
+  for (const path of ['/admin/app.js', '/admin/sites.js', '/admin/hazmats.js', '/admin/style.css']) assert.equal((await request(origin, path)).status, 200);
+});
+await check('hazmat_api_protected_by_session', async () => {
+  const response = await request(origin, '/api/admin/hazmats');
+  assert.equal(response.status, 401);
 });
 await check('ordinary_app_token_cannot_authorize_admin', async () => {
   const response = await request(origin, '/api/admin/me', { headers: { Authorization: 'Bearer synthetic-invalid-app-session' } });
