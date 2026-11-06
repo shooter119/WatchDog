@@ -12,6 +12,7 @@
 | [onnxruntime](https://github.com/microsoft/onnxruntime) | 模型推理（经 sherpa-onnx 分发） | MIT |
 | [PostgreSQL](https://www.postgresql.org) | 服务端数据库 | PostgreSQL License |
 | [Caddy](https://caddyserver.com) | 服务端反向代理与 HTTPS | Apache-2.0 |
+| [Pannellum 2.5.7](https://pannellum.org) | 重点单位 360° 全景 WebGL 渲染引擎 | MIT |
 
 ## Flutter 依赖
 
