@@ -210,10 +210,18 @@ class AppPalette {
     heroOnDarkRing: Color(0x0AFFFFFF),
     heroOnDarkRingFaint: Color(0x08FFFFFF),
     cardShadow: [
-      BoxShadow(color: Color(0x14111111), blurRadius: 3, offset: Offset(0, 1)),
+      BoxShadow(
+        color: Color(0x0F000000),
+        blurRadius: 6,
+        offset: Offset(0, 2),
+      ),
     ],
     floatShadow: [
-      BoxShadow(color: Color(0x29111111), blurRadius: 10, offset: Offset(0, 4)),
+      BoxShadow(
+        color: Color(0x1F000000),
+        blurRadius: 12,
+        offset: Offset(0, 4),
+      ),
     ],
   );
 
@@ -265,10 +273,18 @@ class AppPalette {
     heroOnDarkRing: Color(0x0AFBF7F0),
     heroOnDarkRingFaint: Color(0x08FBF7F0),
     cardShadow: [
-      BoxShadow(color: Color(0x123D2E24), blurRadius: 3, offset: Offset(0, 1)),
+      BoxShadow(
+        color: Color(0x0E3D2E24),
+        blurRadius: 6,
+        offset: Offset(0, 2),
+      ),
     ],
     floatShadow: [
-      BoxShadow(color: Color(0x243D2E24), blurRadius: 10, offset: Offset(0, 4)),
+      BoxShadow(
+        color: Color(0x1A3D2E24),
+        blurRadius: 12,
+        offset: Offset(0, 4),
+      ),
     ],
   );
 }

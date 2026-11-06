@@ -283,11 +283,11 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
                 fontFeatures: const [FontFeature.tabularFigures()],
-                color: disabled
-                    ? AppColors.textTertiary.withValues(alpha: 0.3)
-                    : selected
+                color: selected
                     ? AppColors.onPrimary
-                    : AppColors.textPrimary,
+                    : (disabled
+                        ? AppColors.textTertiary.withValues(alpha: 0.4)
+                        : AppColors.textPrimary),
               ),
             ),
           ),
@@ -299,12 +299,64 @@ class _ReportPressureSheetState extends State<ReportPressureSheet> {
   Future<void> _submit() async {
     final lv = _effective;
     if (lv == null || _submitting) return;
+
+    final current = widget.entry.pressureMpa;
+    if (current != null && lv > current + 0.01) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: AppColors.caution, size: 24),
+              const SizedBox(width: AppSpacing.s2),
+              const Text('压力调高确认'),
+            ],
+          ),
+          content: Text(
+            '队员 ${widget.entry.name} 当前压力为 ${current.toStringAsFixed(1)} MPa，'
+            '拟更新为更大的 ${_fmt(lv)} MPa。\n\n'
+            '气瓶正常工作通常只降不升。若是校正上一次误报的读数，请点击「确认调高」继续。',
+            style: AppTextStyles.bodyMd.copyWith(color: AppColors.textPrimary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.caution,
+                foregroundColor: AppColors.textPrimary,
+              ),
+              child: const Text('确认调高'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
     setState(() => _submitting = true);
     try {
       await widget.controller.updatePressure(
         id: widget.entry.id,
         pressureMpa: lv,
       );
+      // 同步写一条火场日志，格式与进出场日志一致："姓名 更新气瓶压力为 X MPa"
+      try {
+        await widget.controller.addNote(
+          '${widget.entry.name} 更新气瓶压力为 ${_fmt(lv)} MPa',
+          category: 'entry',
+        );
+      } catch (logErr) {
+        // 写日志失败不阻断压力更新结果
+        debugPrint('addNote for pressure report failed: $logErr');
+      }
+
       if (!mounted) return;
       Navigator.pop(context, lv);
     } catch (err) {

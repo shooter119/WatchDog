@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'admin_scanner_page.dart';
+import 'component_gallery_page.dart';
 
 import 'login_devices_page.dart';
 import 'offline_review_page.dart';
@@ -855,6 +857,17 @@ class _SettingsPageState extends State<SettingsPage> {
               MaterialPageRoute(builder: (_) => const AboutPage()),
             ),
           ),
+          if (kDebugMode) ...[
+            const SizedBox(height: AppSpacing.s2),
+            _SettingsLinkCard(
+              icon: Icons.palette_outlined,
+              title: 'UI 规范与组件画廊（调试）',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ComponentGalleryPage()),
+              ),
+            ),
+          ],
           const SizedBox(height: AppSpacing.s6),
           Column(
             children: [

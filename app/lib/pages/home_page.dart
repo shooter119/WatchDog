@@ -2818,21 +2818,36 @@ class HomePageState extends State<HomePage> {
     List<Entry> activeEntries,
   ) {
     final cfg = widget.controller.calcConfig;
-    final dangerEntries = activeEntries.where((e) {
-      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
-      return s == 'alarm' || s == 'warn';
-    }).toList();
-    final hasTimeout = activeEntries.any((e) {
+    final timeoutEntries = activeEntries.where((e) {
       final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
       return s == 'timeout';
-    });
-    final hasAlarm = activeEntries.any((e) {
+    }).toList();
+    final alarmEntries = activeEntries.where((e) {
       final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
       return s == 'alarm';
-    });
-    final bannerKind = (hasTimeout || hasAlarm)
-        ? AppBannerKind.danger
-        : AppBannerKind.warning;
+    }).toList();
+    final warnEntries = activeEntries.where((e) {
+      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+      return s == 'warn';
+    }).toList();
+
+    final AppBannerKind? bannerKind;
+    final String? bannerText;
+    final bool hasTimeout = timeoutEntries.isNotEmpty;
+
+    if (timeoutEntries.isNotEmpty) {
+      bannerKind = AppBannerKind.danger;
+      bannerText = '${timeoutEntries.length} 名队员已超时，请立即组织撤离或搜救！';
+    } else if (alarmEntries.isNotEmpty) {
+      bannerKind = AppBannerKind.danger;
+      bannerText = '${alarmEntries.length} 名队员气瓶已进入严重报警，请注意！';
+    } else if (warnEntries.isNotEmpty) {
+      bannerKind = AppBannerKind.warning;
+      bannerText = '${warnEntries.length} 名队员气瓶已进入预警，请注意把控撤离时间！';
+    } else {
+      bannerKind = null;
+      bannerText = null;
+    }
 
     return SingleChildScrollView(
       key: const Key('active-combat-scroll'),
@@ -2841,8 +2856,8 @@ class HomePageState extends State<HomePage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           AppCard(
-            radius: AppRadius.md,
-            padding: const EdgeInsets.all(AppSpacing.s4),
+            radius: AppRadius.lg,
+            padding: const EdgeInsets.all(AppSpacing.cardInner),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2927,12 +2942,12 @@ class HomePageState extends State<HomePage> {
                       ),
                   ],
                 ),
-                if (dangerEntries.isNotEmpty) ...[
+                if (bannerKind != null && bannerText != null) ...[
                   const SizedBox(height: AppSpacing.s3),
                   AppBanner(
                     kind: bannerKind,
                     timeout: hasTimeout,
-                    text: '${dangerEntries.length} 名队员气瓶已进入警报或预警，请注意！',
+                    text: bannerText,
                   ),
                 ],
                 const SizedBox(height: AppSpacing.s3),
@@ -2953,10 +2968,30 @@ class HomePageState extends State<HomePage> {
   Widget _activeEntryCard(BuildContext context, Entry entry, CalcConfig cfg) {
     final status = entry.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
     final s = EntryStatus.of(status);
+    final isTimeout = status == 'timeout';
+    final isAlarm = status == 'alarm';
+    final isWarn = status == 'warn';
+
+    final Color cardBg;
+    final Color cardBorder;
+    if (isTimeout) {
+      cardBg = AppColors.timeoutSurface;
+      cardBorder = AppColors.timeout;
+    } else if (isAlarm) {
+      cardBg = AppColors.alarmSurface;
+      cardBorder = AppColors.alarm;
+    } else if (isWarn) {
+      cardBg = AppColors.cautionSurface;
+      cardBorder = AppColors.caution;
+    } else {
+      cardBg = AppColors.surface;
+      cardBorder = AppColors.border.withValues(alpha: 0.85);
+    }
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: () {
           showModalBottomSheet<double>(
             context: context,
@@ -2964,7 +2999,7 @@ class HomePageState extends State<HomePage> {
             backgroundColor: AppColors.background,
             shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.vertical(
-                top: Radius.circular(AppRadius.lg),
+                top: Radius.circular(AppRadius.xl),
               ),
             ),
             builder: (_) => ReportPressureSheet(
@@ -2974,25 +3009,25 @@ class HomePageState extends State<HomePage> {
           );
         },
         child: Container(
-          constraints: const BoxConstraints(minHeight: 56),
+          constraints: const BoxConstraints(minHeight: 60),
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s3,
-            vertical: AppSpacing.s2,
+            horizontal: AppSpacing.s4,
+            vertical: AppSpacing.s3,
           ),
           decoration: BoxDecoration(
-            color: s.color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(AppRadius.sm),
+            color: cardBg,
+            borderRadius: BorderRadius.circular(AppRadius.md),
             border: Border.all(
-              color: s.color.withValues(alpha: 0.35),
-              width: 1,
+              color: cardBorder,
+              width: 1.0,
             ),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
                 entry.name,
-                style: AppTextStyles.bodyLg.copyWith(
-                  fontSize: 16,
+                style: AppTextStyles.title.copyWith(
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
                 ),
@@ -3002,11 +3037,12 @@ class HomePageState extends State<HomePage> {
                 status: status,
                 onColorCard: false,
                 fontSize: 12,
-                height: 24,
+                height: 22,
               ),
               const Spacer(),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   CountdownText(
                     ms: entry.remainingMs,
@@ -3016,20 +3052,21 @@ class HomePageState extends State<HomePage> {
                     size: 22,
                     timeoutText: '已超时',
                   ),
-                  const SizedBox(height: AppSpacing.s1),
+                  const SizedBox(height: 2),
                   Text(
                     '${(entry.pressureMpa ?? 0).toStringAsFixed(1)} MPa',
                     style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textTertiary,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(width: AppSpacing.s2),
+              const SizedBox(width: AppSpacing.s1),
               Icon(
                 Icons.chevron_right_rounded,
-                size: 18,
+                size: 20,
                 color: AppColors.textTertiary,
               ),
             ],
@@ -3472,25 +3509,37 @@ class HomePageState extends State<HomePage> {
     message: subtitle,
     child: Material(
       color: AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.md),
+      borderRadius: BorderRadius.circular(AppRadius.lg),
       child: InkWell(
         key: ValueKey('tool-$title'),
         onTap: open,
-        borderRadius: BorderRadius.circular(AppRadius.md),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         child: Container(
           constraints: const BoxConstraints(minHeight: 88),
           padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s2,
+            horizontal: AppSpacing.s3,
             vertical: AppSpacing.s3,
           ),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border, width: 1),
-            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(
+              color: AppColors.border.withValues(alpha: 0.85),
+              width: 1,
+            ),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            boxShadow: AppShadow.subtle,
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 24, color: AppColors.voice),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.voice.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 20, color: AppColors.voice),
+              ),
               const SizedBox(height: AppSpacing.s2),
               Text(
                 title,

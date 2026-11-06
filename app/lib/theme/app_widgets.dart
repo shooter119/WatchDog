@@ -54,6 +54,7 @@ class AppColors {
   /// 状态浅色表面（卡片徽标/状态浅底）
   static Color get safeSurface => _palette.safe.withValues(alpha: 0.12);
   static Color get alarmSurface => _palette.alarm.withValues(alpha: 0.12);
+  static Color get timeoutSurface => _palette.timeout.withValues(alpha: 0.12);
 
   /// 深色容器上的前景文字（如胶囊选中态、深色按钮），映射调色板 onPrimary
   static Color get textOnDark => _palette.onPrimary;
@@ -114,17 +115,23 @@ class AppSpacing {
   static const s6 = 24.0;
   static const s8 = 32.0;
   static const s10 = 40.0;
+
+  // 语义化别名：规范页面留白节奏
+  static const pageMargin = s4; // 页面水平外边距 16
+  static const cardInner = s4; // 卡片内边距 16
+  static const cardGap = s3; // 卡片之间间距 12
+  static const sectionGap = s6; // 区块间距 24
 }
 
-/// 圆角（radius.sm ~ radius.pill）
+/// 圆角（radius.xs ~ radius.pill）
 class AppRadius {
   AppRadius._();
-  // L6：圆角收紧（sm 6 / md 10 / lg 14，pill 不变）
-  static const sm = 6.0;
-  static const md = 10.0;
-  static const lg = 14.0;
-  static const xl = 28.0;
-  static const pill = 999.0;
+  static const xs = 4.0; // 进度条、小微色块
+  static const sm = 8.0; // 标签、输入框内嵌套
+  static const md = 12.0; // 按钮、输入框、普通小卡
+  static const lg = 16.0; // 主卡片（饱满现代）
+  static const xl = 24.0; // 弹窗、底栏浮层
+  static const pill = 999.0; // 状态胶囊
 }
 
 /// 克制阴影（随主题走：暖砂用暖褐投影，避免冷黑压在暖纸上发脏）
@@ -132,9 +139,18 @@ class AppShadow {
   AppShadow._();
   static List<BoxShadow> get card => AppColors.palette.cardShadow;
   static List<BoxShadow> get float => AppColors.palette.floatShadow;
+
+  /// 浅层悬浮态（小卡片 hover / pressed / 选中微凸起）
+  static List<BoxShadow> get subtle => [
+    BoxShadow(
+      color: AppColors.palette.cardShadow.first.color,
+      blurRadius: 4,
+      offset: const Offset(0, 1.5),
+    ),
+  ];
 }
 
-/// 字级层级（type.display.xl ~ type.caption）
+/// 字级层级（displayXl ~ caption）
 class AppTextStyles {
   AppTextStyles._();
   static const displayXl = TextStyle(
@@ -149,14 +165,31 @@ class AppTextStyles {
     fontWeight: FontWeight.w800,
     fontFeatures: [FontFeature.tabularFigures()],
   );
+  static const displayMd = TextStyle(
+    fontSize: 32,
+    height: 1.1,
+    fontWeight: FontWeight.w800,
+    fontFeatures: [FontFeature.tabularFigures()],
+  );
+  static const numberMd = TextStyle(
+    fontSize: 28,
+    height: 1.15,
+    fontWeight: FontWeight.w700,
+    fontFeatures: [FontFeature.tabularFigures()],
+  );
   static const h1 = TextStyle(
     fontSize: 24,
     height: 1.2,
     fontWeight: FontWeight.w800,
   );
   static const h2 = TextStyle(
-    fontSize: 22,
+    fontSize: 20,
     height: 1.25,
+    fontWeight: FontWeight.w700,
+  );
+  static const title = TextStyle(
+    fontSize: 17,
+    height: 1.35,
     fontWeight: FontWeight.w700,
   );
   static const bodyLg = TextStyle(
@@ -352,7 +385,6 @@ class AppBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color bg;
     final Color borderColor;
-    final Color? leftBarColor;
     final Color iconColor;
     final Color textColor;
     final IconData defaultIcon;
@@ -360,33 +392,29 @@ class AppBanner extends StatelessWidget {
     switch (kind) {
       case AppBannerKind.danger:
         if (timeout) {
-          bg = AppColors.timeout;
-          borderColor = AppColors.timeoutText;
-          leftBarColor = null;
-          iconColor = AppColors.onStatus;
-          textColor = AppColors.onStatus;
-          defaultIcon = Icons.warning_rounded;
+          bg = AppColors.timeoutSurface;
+          borderColor = AppColors.timeout;
+          iconColor = AppColors.timeoutText;
+          textColor = AppColors.timeoutText;
+          defaultIcon = Icons.error_rounded;
         } else {
-          bg = AppColors.surface;
+          bg = AppColors.alarmSurface;
           borderColor = AppColors.alarm;
-          leftBarColor = AppColors.alarm;
-          iconColor = AppColors.alarm;
+          iconColor = AppColors.alarmText;
           textColor = AppColors.alarmText;
           defaultIcon = Icons.warning_rounded;
         }
       case AppBannerKind.offline:
         bg = AppColors.surfaceSubtle;
-        borderColor = AppColors.textSecondary;
-        leftBarColor = null;
-        iconColor = AppColors.textPrimary;
+        borderColor = AppColors.border;
+        iconColor = AppColors.textSecondary;
         textColor = AppColors.textPrimary;
         defaultIcon = Icons.cloud_off;
       case AppBannerKind.warning:
-        bg = AppColors.noticeWarningBg;
-        borderColor = AppColors.cautionText;
-        leftBarColor = null;
-        iconColor = AppColors.noticeWarningFg;
-        textColor = AppColors.noticeWarningFg;
+        bg = AppColors.cautionSurface;
+        borderColor = AppColors.caution;
+        iconColor = AppColors.cautionText;
+        textColor = AppColors.cautionText;
         defaultIcon = Icons.warning_rounded;
     }
 
@@ -395,75 +423,61 @@ class AppBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: borderColor, width: 1.5),
+        border: Border.all(color: borderColor, width: 1.0),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s3,
+      ),
+      child: Row(
         children: [
-          if (leftBarColor != null)
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: 4,
-              child: Container(color: leftBarColor),
-            ),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s4,
-              vertical: AppSpacing.s3,
-            ),
-            child: Row(
-              children: [
-                Icon(icon ?? defaultIcon, size: 22, color: iconColor),
-                const SizedBox(width: AppSpacing.s2),
-                Expanded(
-                  child: Text(
-                    text,
-                    style: AppTextStyles.label.copyWith(
-                      color: textColor,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                if (actionLabel != null) ...[
-                  const SizedBox(width: AppSpacing.s2),
-                  OutlinedButton(
-                    onPressed: onAction,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: textColor,
-                      side: BorderSide(color: borderColor),
-                      minimumSize: const Size(48, 48),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.s3,
-                      ),
-                    ),
-                    child: Text(
-                      actionLabel!,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+          Icon(icon ?? defaultIcon, size: 22, color: iconColor),
+          const SizedBox(width: AppSpacing.s2),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTextStyles.label.copyWith(
+                color: textColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
+          if (actionLabel != null) ...[
+            const SizedBox(width: AppSpacing.s2),
+            OutlinedButton(
+              onPressed: onAction,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: textColor,
+                side: BorderSide(color: borderColor),
+                minimumSize: const Size(48, 48),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s3,
+                ),
+              ),
+              child: Text(
+                actionLabel!,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// 统一卡片容器（白色大圆角，克制阴影，少装饰）
+/// 统一卡片容器（饱满圆角，分层微阴影，极细微边框）
 class AppCard extends StatelessWidget {
   final Widget child;
   final Color? color;
   final BorderSide? side;
   final EdgeInsetsGeometry padding;
   final double radius;
+  final List<BoxShadow>? shadow;
   final VoidCallback? onTap;
 
   const AppCard({
@@ -471,35 +485,38 @@ class AppCard extends StatelessWidget {
     required this.child,
     this.color,
     this.side,
-    this.padding = const EdgeInsets.all(16),
-    this.radius = AppRadius.md,
+    this.padding = const EdgeInsets.all(AppSpacing.cardInner),
+    this.radius = AppRadius.lg,
+    this.shadow,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: AppShadow.card,
+    final effectiveRadius = BorderRadius.circular(radius);
+    return Material(
+      color: color ?? AppColors.surface,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: effectiveRadius,
+        side: side ??
+            BorderSide(
+              color: AppColors.border.withValues(alpha: 0.85),
+              width: 1,
+            ),
       ),
-      child: Material(
-        color: color ?? AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(radius),
-          side: side ?? BorderSide(color: AppColors.border, width: 1),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(padding: padding, child: child),
-        ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: effectiveRadius,
+        child: Padding(padding: padding, child: child),
       ),
     );
   }
 }
 
-/// 状态胶囊徽章（图标 + 文字，颜色与文字同时表意）
+/// 状态胶囊徽章（微圆点 + 文字，颜色与文字同时表意）
 class StatusBadge extends StatelessWidget {
   final String status;
   final bool onColorCard; // 是否位于整块状态色卡片上（浅色底/深色底自适应）
@@ -519,15 +536,19 @@ class StatusBadge extends StatelessWidget {
     final s = EntryStatus.of(status);
     final Color fg;
     final Color bg;
+    final Color dotColor;
     if (onColorCard) {
       fg = s.fg;
       bg = s.fg.withValues(alpha: 0.22);
+      dotColor = s.fg;
     } else if (s.danger) {
       fg = AppColors.onStatus;
       bg = s.color;
+      dotColor = AppColors.onStatus;
     } else {
       fg = s.textColor;
       bg = s.color.withValues(alpha: 0.14);
+      dotColor = s.color;
     }
     // 保留同行布局高度，缩小实际色块一点，避免状态胶囊视觉上显得臃肿。
     final visualHeight = height == null
@@ -541,22 +562,38 @@ class StatusBadge extends StatelessWidget {
         child: Container(
           height: visualHeight,
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: onColorCard
+                  ? Colors.transparent
+                  : (s.danger
+                      ? Colors.transparent
+                      : s.color.withValues(alpha: 0.28)),
+              width: 0.8,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(s.icon, size: 14, color: fg),
-              const SizedBox(width: 4),
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 5),
               Text(
                 s.label,
                 style: TextStyle(
                   color: fg,
                   fontSize: fontSize,
                   fontWeight: FontWeight.w800,
+                  letterSpacing: 0.2,
                 ),
               ),
             ],
@@ -567,7 +604,7 @@ class StatusBadge extends StatelessWidget {
   }
 }
 
-/// 分区小标题
+/// 分区小标题（增强视觉层级与左侧装饰线圆角）
 class SectionTitle extends StatelessWidget {
   final String text;
   final Widget? trailing;
@@ -583,38 +620,37 @@ class SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10, top: 4),
+      padding: const EdgeInsets.only(bottom: AppSpacing.s3, top: AppSpacing.s2),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Container(
-              width: 3,
-              height: 14,
-              decoration: BoxDecoration(
-                color: AppColors.actionPrimary,
-                borderRadius: BorderRadius.circular(2),
-              ),
+          Container(
+            width: 3.5,
+            height: 15,
+            decoration: BoxDecoration(
+              color: AppColors.actionPrimary,
+              borderRadius: BorderRadius.circular(AppRadius.xs),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.s2),
           Expanded(
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Flexible(
                   child: Text(
                     text,
-                    style: TextStyle(
+                    style: AppTextStyles.label.copyWith(
                       color: AppColors.textSecondary,
-                      fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
+                      letterSpacing: 0.4,
                     ),
                   ),
                 ),
-                if (inline != null) ...[const SizedBox(width: 4), inline!],
+                if (inline != null) ...[
+                  const SizedBox(width: AppSpacing.s1),
+                  inline!,
+                ],
               ],
             ),
           ),

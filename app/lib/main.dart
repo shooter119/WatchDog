@@ -780,7 +780,13 @@ class _BottomNav extends StatelessWidget {
       height: 68 + safeBottom,
       decoration: BoxDecoration(
         color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.border)),
+        border: Border(
+          top: BorderSide(
+            color: AppColors.border.withValues(alpha: 0.8),
+            width: 1,
+          ),
+        ),
+        boxShadow: AppShadow.float,
       ),
       child: Stack(
         clipBehavior: Clip.none,

@@ -83,11 +83,15 @@ ThemeData buildAppTheme([AppPalette? palette]) {
       suffixIconColor: p.textTertiary,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: BorderSide(color: p.border),
+        borderSide: BorderSide(
+          color: p.border.withValues(alpha: 0.85),
+        ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
-        borderSide: BorderSide(color: p.border),
+        borderSide: BorderSide(
+          color: p.border.withValues(alpha: 0.85),
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -98,6 +102,7 @@ ThemeData buildAppTheme([AppPalette? palette]) {
       style: FilledButton.styleFrom(
         backgroundColor: p.actionPrimary,
         foregroundColor: p.onPrimary,
+        elevation: 0,
         minimumSize: const Size(48, 52),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
@@ -114,6 +119,9 @@ ThemeData buildAppTheme([AppPalette? palette]) {
       style: TextButton.styleFrom(
         foregroundColor: p.actionPrimary,
         minimumSize: const Size(48, 48),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
         textStyle: const TextStyle(
           fontFamily: AppFonts.family,
           fontFamilyFallback: AppFonts.fallback,
@@ -126,11 +134,16 @@ ThemeData buildAppTheme([AppPalette? palette]) {
       backgroundColor: p.actionPrimary,
       contentTextStyle: TextStyle(color: p.onPrimary),
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: p.surface,
       actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+      ),
       titleTextStyle: TextStyle(
         color: p.textPrimary,
         fontSize: 19,

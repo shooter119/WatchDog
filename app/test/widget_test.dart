@@ -851,6 +851,41 @@ void main() {
       expect(c.reported, [9.0]);
     });
 
+    testWidgets('更新压力大于当前压力需弹窗二次确认，确认后记录火场日志', (tester) async {
+      final c = _FakeController(
+        entries: [_entry(name: '李娜', remainingMin: 20, pressureMpa: 20)],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ReportPressureSheet(controller: c, entry: c.entries.first),
+          ),
+        ),
+      );
+      // 手动输入比当前 20 更大的 25
+      await tester.enterText(find.byType(TextField), '25');
+      await tester.pump();
+      await tester.tap(find.text('确认更新 25 MPa'));
+      await tester.pumpAndSettle();
+
+      // 弹出确认弹窗
+      expect(find.text('压力调高确认'), findsOneWidget);
+      // 点击取消则不提交
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(c.reported, isEmpty);
+
+      // 再次点击提交，这次点确认调高
+      await tester.tap(find.text('确认更新 25 MPa'));
+      await tester.pumpAndSettle();
+      expect(find.text('压力调高确认'), findsOneWidget);
+      await tester.tap(find.text('确认调高'));
+      await tester.pumpAndSettle();
+      expect(c.reported, [25.0]);
+      expect(c.notes.any((n) => n.text.contains('李娜 更新气瓶压力为 25 MPa')), isTrue);
+    });
+
     testWidgets('压力弹窗窄屏大字号标题可换行，键盘下提交按钮可滚动到', (tester) async {
       tester.view.physicalSize = const Size(320 * 3, 720 * 3);
       tester.view.devicePixelRatio = 3.0;
