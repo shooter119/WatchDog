@@ -33,7 +33,7 @@ import 'video_resource_admin_page.dart';
 import 'watermark_settings_page.dart';
 
 /// 当前版本号（fallback：运行时由 package_info_plus 读取 pubspec version 覆盖，测试环境用此常量）
-const appVersion = '1.14.0+97';
+const appVersion = '1.15.0+98';
 
 class SettingsPage extends StatefulWidget {
   final AppController controller;
