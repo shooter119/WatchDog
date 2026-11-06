@@ -99,6 +99,10 @@ test('严格认证：成员白名单、会话绑定、注销和管理角色门�
   assert.equal(response.status, 401);
   assert.equal((await json(response)).code, 'SESSION_REQUIRED');
 
+  response = await fetch(`${base}/api/hazmats`, { headers: headers() });
+  assert.equal(response.status, 401);
+  assert.equal((await json(response)).code, 'SESSION_REQUIRED');
+
   const sessionHeaders = headers({ Authorization: `Bearer ${memberAuth.session_token}` });
   response = await fetch(`${base}/api/auth/refresh`, { method: 'POST', headers: sessionHeaders });
   assert.equal(response.status, 200);

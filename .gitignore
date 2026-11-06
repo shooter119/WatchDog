@@ -38,3 +38,4 @@ backend/asr-debug.js
 backend/seeds/private/
 backend/seeds/*.local.json
 backend/seeds/*.private.json
+*.xlsx

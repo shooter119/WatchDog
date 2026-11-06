@@ -269,12 +269,11 @@ if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER ||
   hazardousChemicals = require('./hazardous-chemicals').createHazardousChemicals(require('./postgres-store'));
   const keySiteAI = require('./key-site-ai').createKeySiteAI(require('./postgres-store'), keySites, keySiteFiles, adminAuth, CFG.llm);
   app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, { sites: keySites, files: keySiteFiles, ai: keySiteAI, hazmats: hazardousChemicals }));
-  if (hazardousChemicals) app.use('/api/hazmats', require('./hazmat-routes').createHazmatAppRouter(hazardousChemicals));
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteFiles.startWorker(error => logger.warn(`key_site_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteAI.startWorker(error => logger.warn(`key_site_ai_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
 }
 app.use(async (req, res, next) => {
-  if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply' || req.path.startsWith('/api/hazmats')) return next();
+  if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply') return next();
   if (SESSION_AUTH_REQUIRED) {
     const rawToken = sessionTokenFromRequest(req);
     if (!rawToken || rawToken.length > 256) {
@@ -338,6 +337,7 @@ if (keySites) app.use('/api/key-sites', require('./key-site-routes').createKeySi
 if (keySites) app.use('/api/incidents', require('./incident-key-sites').createIncidentKeySiteRouter(
   require('./incident-key-sites').createIncidentKeySites(require('./postgres-store'), db, keySites),
 ));
+if (hazardousChemicals) app.use('/api/hazmats', require('./hazmat-routes').createHazmatAppRouter(hazardousChemicals));
 
 // Maps inherit the same session and unit authentication as business APIs.
 app.use('/api/maps', require('./orthomaps').createOrthomapRouter(
