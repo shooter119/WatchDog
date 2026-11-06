@@ -57,6 +57,7 @@ class _OpLogPageState extends State<OpLogPage> {
     final logs = svc.logs;
     final groups = _groupByOp(logs);
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('操作日志')),
       body: _init
           ? RefreshIndicator(
@@ -278,106 +279,105 @@ class _OpGroupCardState extends State<_OpGroupCard> {
     final g = widget.group;
     final hasProblem = g.problemCount > 0;
     final disableAnimations = MediaQuery.of(context).disableAnimations;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        radius: AppRadius.md,
+        side: BorderSide(
           color: hasProblem
               ? AppColors.caution.withValues(alpha: 0.5)
               : AppColors.border,
         ),
-        boxShadow: AppShadow.card,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Semantics(
-            container: true,
-            button: true,
-            excludeSemantics: true,
-            expanded: _expanded,
-            label: '${g.summary}，${_expanded ? '已展开' : '已收起'}',
-            hint: _expanded ? '点击收起操作详情' : '点击展开操作详情',
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: InkWell(
-              excludeFromSemantics: true,
-              borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              container: true,
+              button: true,
+              excludeSemantics: true,
+              expanded: _expanded,
+              label: '${g.summary}，${_expanded ? '已展开' : '已收起'}',
+              hint: _expanded ? '点击收起操作详情' : '点击展开操作详情',
               onTap: () => setState(() => _expanded = !_expanded),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 48),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        hasProblem
-                            ? Icons.error_outline
-                            : Icons.check_circle_outline,
-                        size: 18,
-                        color: hasProblem ? AppColors.caution : AppColors.safe,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              g.summary,
-                              style: TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              '${_fmtDateTime(g.first.ts)} · ${g.entries.length} 步'
-                              '${hasProblem ? ' · ${g.problemCount} 处异常' : ''}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                                color: AppColors.textTertiary,
-                              ),
-                            ),
-                          ],
+              child: InkWell(
+                excludeFromSemantics: true,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          hasProblem
+                              ? Icons.error_outline
+                              : Icons.check_circle_outline,
+                          size: 18,
+                          color: hasProblem ? AppColors.caution : AppColors.safe,
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(
-                        _expanded ? Icons.expand_less : Icons.expand_more,
-                        size: 20,
-                        color: AppColors.textTertiary,
-                      ),
-                    ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                g.summary,
+                                style: TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${_fmtDateTime(g.first.ts)} · ${g.entries.length} 步'
+                                '${hasProblem ? ' · ${g.problemCount} 处异常' : ''}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                  color: AppColors.textTertiary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          _expanded ? Icons.expand_less : Icons.expand_more,
+                          size: 20,
+                          color: AppColors.textTertiary,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          AnimatedCrossFade(
-            duration: disableAnimations
-                ? Duration.zero
-                : const Duration(milliseconds: 180),
-            crossFadeState: _expanded
-                ? CrossFadeState.showFirst
-                : CrossFadeState.showSecond,
-            firstChild: Column(
-              children: [
-                const Divider(height: 1, indent: 14, endIndent: 14),
-                for (final e in g.entries) _stepRow(e),
-              ],
+            AnimatedCrossFade(
+              duration: disableAnimations
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              crossFadeState: _expanded
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              firstChild: Column(
+                children: [
+                  const Divider(height: 1, indent: 14, endIndent: 14),
+                  for (final e in g.entries) _stepRow(e),
+                ],
+              ),
+              secondChild: const SizedBox(width: double.infinity),
             ),
-            secondChild: const SizedBox(width: double.infinity),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -324,36 +324,66 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
                   ),
                 for (final row in _rows)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.only(bottom: AppSpacing.s3),
                     child: AppCard(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(AppSpacing.s4),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             _fmtTimestamp((row['occurred_at'] as num).toInt()),
-                            style: const TextStyle(
-                              fontFeatures: [FontFeature.tabularFigures()],
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textTertiary,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
                             ),
                           ),
-                          Text(_description(row)),
-                          Text(_result(row)),
+                          const SizedBox(height: AppSpacing.s1),
+                          Text(
+                            _description(row),
+                            style: AppTextStyles.bodyMd.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.s1),
+                          Text(
+                            _result(row),
+                            style: AppTextStyles.label.copyWith(
+                              color: AppColors.textSecondary,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.s3),
                           if (row['owner_member_id'] == '' ||
                               row['owner_unit_id'] == '')
                             OutlinedButton(
                               style: OutlinedButton.styleFrom(
                                 minimumSize: const Size(48, 48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.md,
+                                  ),
+                                ),
                               ),
                               onPressed: _busy ? null : () => _claim(row),
                               child: const Text('确认本人旧记录'),
                             )
                           else
                             Wrap(
-                              spacing: 8,
+                              spacing: AppSpacing.s2,
+                              runSpacing: AppSpacing.s2,
                               children: [
                                 OutlinedButton(
                                   style: OutlinedButton.styleFrom(
                                     minimumSize: const Size(48, 48),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        AppRadius.md,
+                                      ),
+                                    ),
                                   ),
                                   onPressed:
                                       _busy || row['retry_request'] != null
@@ -364,6 +394,11 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
                                 FilledButton(
                                   style: FilledButton.styleFrom(
                                     minimumSize: const Size(48, 48),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        AppRadius.md,
+                                      ),
+                                    ),
                                   ),
                                   onPressed: _busy
                                       ? null

@@ -468,7 +468,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                           color: AppColors.actionPrimary.withValues(
                             alpha: 0.13,
                           ),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(AppRadius.md),
                         ),
                         child: Icon(
                           Icons.verified_user_outlined,
@@ -645,7 +645,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       height: 44,
                       decoration: BoxDecoration(
                         color: AppColors.noticeWarningBg,
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                       ),
                       child: Icon(
                         Icons.hourglass_top_rounded,
@@ -881,7 +881,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                               color: AppColors.actionPrimary
                                                   .withValues(alpha: 0.13),
                                               borderRadius:
-                                                  BorderRadius.circular(14),
+                                                  BorderRadius.circular(AppRadius.md),
                                             ),
                                             child: Icon(
                                               Icons

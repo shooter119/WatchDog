@@ -165,6 +165,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
         if (data[field.key]?.toString().isNotEmpty == true) field,
     ];
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('警情详情'),
         actions: [
@@ -178,7 +179,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             if (widget.controller != null)
               IncidentKeySiteSection(
@@ -187,7 +188,10 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
               ),
             Text(
               widget.incident.displayName,
-              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+              style: AppTextStyles.h2.copyWith(
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 10),
             if (_detail?['offline'] == true) ...[
@@ -233,22 +237,28 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
                   ),
                 ),
               if (contacts.isNotEmpty) ...[
-                const Divider(height: 24),
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 2),
-                  child: Text(
-                    '岗位人员与联系方式',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                const SizedBox(height: AppSpacing.s4),
+                const SectionTitle(text: '岗位人员与联系方式'),
+                AppCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s3,
+                    vertical: AppSpacing.s2,
+                  ),
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < contacts.length; i++) ...[
+                        if (i > 0) const Divider(height: 1),
+                        _ContactRow(
+                          key: ValueKey('incident-contact-$i'),
+                          role: contacts[i]['role']?.toString() ?? '',
+                          name: contacts[i]['name']?.toString() ?? '',
+                          phone: contacts[i]['phone']?.toString() ?? '',
+                          onCall: _dialPhone,
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                for (var i = 0; i < contacts.length; i++)
-                  _ContactRow(
-                    key: ValueKey('incident-contact-$i'),
-                    role: contacts[i]['role']?.toString() ?? '',
-                    name: contacts[i]['name']?.toString() ?? '',
-                    phone: contacts[i]['phone']?.toString() ?? '',
-                    onCall: _dialPhone,
-                  ),
               ],
               for (final field in {
                 'risks': '风险信息',
@@ -258,53 +268,138 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
                 'channels': '通信频道',
               }.entries)
                 if ((data[field.key] as List? ?? []).isNotEmpty)
-                  ExpansionTile(
-                    tilePadding: EdgeInsets.zero,
-                    title: Text(field.value),
-                    children: [
-                      for (final item in data[field.key] as List)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(item.toString()),
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.s3),
+                    child: AppCard(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s4,
+                        vertical: AppSpacing.s1,
+                      ),
+                      child: Theme(
+                        data: Theme.of(
+                          context,
+                        ).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          tilePadding: EdgeInsets.zero,
+                          childrenPadding: const EdgeInsets.only(
+                            bottom: AppSpacing.s2,
                           ),
+                          title: Text(
+                            field.value,
+                            style: AppTextStyles.bodyMd.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          children: [
+                            for (final item in data[field.key] as List)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    item.toString(),
+                                    style: AppTextStyles.bodyMd.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                    ],
+                      ),
+                    ),
                   ),
               if (observations.isNotEmpty)
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  title: Text('录像语音记录 (${observations.length})'),
-                  children: [
-                    for (final obs in observations)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: SelectableText(
-                            '${_formatObsTime(obs['captured_at'])}\n${obs['transcript'] ?? ''}',
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.s3),
+                  child: AppCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s4,
+                      vertical: AppSpacing.s1,
+                    ),
+                    child: Theme(
+                      data: Theme.of(
+                        context,
+                      ).copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: const EdgeInsets.only(
+                          bottom: AppSpacing.s2,
+                        ),
+                        title: Text(
+                          '录像语音记录 (${observations.length})',
+                          style: AppTextStyles.bodyMd.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
                           ),
                         ),
+                        children: [
+                          for (final obs in observations)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: SelectableText(
+                                  '${_formatObsTime(obs['captured_at'])}\n${obs['transcript'] ?? ''}',
+                                  style: AppTextStyles.bodyMd.copyWith(
+                                    color: AppColors.textSecondary,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                    ),
+                  ),
                 ),
               for (final record in _detail!['imports'] as List? ?? [])
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  title: Text(
-                    record['source'] == 'images' ? '图片导入记录' : '文字导入记录',
-                  ),
-                  subtitle: Text('确认人：${record['actor_name']}'),
-                  children: [
-                    for (final p in record['pages'] as List)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: SelectableText(
-                          '第${p['index']}页\n${p['raw_text']}',
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.s3),
+                  child: AppCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s4,
+                      vertical: AppSpacing.s1,
+                    ),
+                    child: Theme(
+                      data: Theme.of(
+                        context,
+                      ).copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: const EdgeInsets.only(
+                          bottom: AppSpacing.s2,
                         ),
+                        title: Text(
+                          record['source'] == 'images' ? '图片导入记录' : '文字导入记录',
+                          style: AppTextStyles.bodyMd.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '确认人：${record['actor_name']}',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                        children: [
+                          for (final p in record['pages'] as List)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: SelectableText(
+                                '第${p['index']}页\n${p['raw_text']}',
+                                style: AppTextStyles.bodyMd.copyWith(
+                                  color: AppColors.textSecondary,
+                                  height: 1.45,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                    ),
+                  ),
                 ),
             ],
           ],

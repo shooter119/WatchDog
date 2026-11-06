@@ -139,10 +139,9 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
           ),
           Text(
             '人员详情',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
+            style: AppTextStyles.h2.copyWith(
               color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
             ),
           ),
           const Spacer(),
@@ -164,14 +163,11 @@ class _EntryDetailPageState extends State<EntryDetailPage> {
     );
     final s = EntryStatus.of(status);
 
-    final banner = Container(
+    final banner = AppCard(
+      radius: AppRadius.lg,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: s.color,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: s.fg.withValues(alpha: 0.4), width: 1),
-        boxShadow: AppShadow.card,
-      ),
+      color: s.color,
+      side: BorderSide(color: s.fg.withValues(alpha: 0.4), width: 1.0),
       child: Row(
         children: [
           Container(

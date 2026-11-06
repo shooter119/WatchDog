@@ -99,9 +99,9 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                 if (_busy) const LinearProgressIndicator(),
                 for (final device in _devices)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.only(bottom: AppSpacing.s3),
                     child: AppCard(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(AppSpacing.s4),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -112,7 +112,7 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                               color: AppColors.textPrimary,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: AppSpacing.s1),
                           Text(
                             '最近活动：${_fmtTimestamp(device['last_seen_at'])}',
                             style: AppTextStyles.caption.copyWith(
@@ -123,12 +123,12 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                               ],
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: AppSpacing.s3),
                           if (device['current'] == true)
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
+                                horizontal: AppSpacing.s3,
+                                vertical: 5,
                               ),
                               decoration: BoxDecoration(
                                 color: AppColors.surfaceSubtle,
@@ -145,10 +145,10 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                                     size: 14,
                                     color: AppColors.textPrimary,
                                   ),
-                                  const SizedBox(width: 4),
+                                  const SizedBox(width: AppSpacing.s1),
                                   Text(
                                     '当前设备',
-                                    style: TextStyle(
+                                    style: AppTextStyles.caption.copyWith(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w700,
                                       color: AppColors.textPrimary,
@@ -161,6 +161,11 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                             OutlinedButton(
                               style: OutlinedButton.styleFrom(
                                 minimumSize: const Size(48, 48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.md,
+                                  ),
+                                ),
                               ),
                               onPressed: _busy
                                   ? null
@@ -171,10 +176,13 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
                       ),
                     ),
                   ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.s3),
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(48, 48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
                   ),
                   onPressed: _busy || !_devices.any((d) => d['current'] != true)
                       ? null

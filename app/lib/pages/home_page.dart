@@ -3401,51 +3401,43 @@ class HomePageState extends State<HomePage> {
     VoidCallback open,
   ) => Tooltip(
     message: subtitle,
-    child: Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(AppRadius.lg),
-      child: InkWell(
-        key: ValueKey('tool-$title'),
-        onTap: open,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 88),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s3,
-            vertical: AppSpacing.s3,
-          ),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: AppColors.border.withValues(alpha: 0.85),
-              width: 1,
+    child: AppCard(
+      key: ValueKey('tool-$title'),
+      radius: AppRadius.lg,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s3,
+        vertical: AppSpacing.s3,
+      ),
+      side: BorderSide(
+        color: AppColors.border.withValues(alpha: 0.85),
+        width: 1.0,
+      ),
+      onTap: open,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.voice.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 20, color: AppColors.voice),
             ),
-            borderRadius: BorderRadius.circular(AppRadius.lg),
-            boxShadow: AppShadow.subtle,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: AppColors.voice.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, size: 20, color: AppColors.voice),
+            const SizedBox(height: AppSpacing.s2),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.label.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
               ),
-              const SizedBox(height: AppSpacing.s2),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.label.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     ),
