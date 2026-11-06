@@ -2897,8 +2897,8 @@ class HomePageState extends State<HomePage> {
                           const SizedBox(width: AppSpacing.s2),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.s2,
-                              vertical: AppSpacing.s1,
+                              horizontal: 8,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
                               color: AppColors.voice.withValues(
@@ -2912,7 +2912,7 @@ class HomePageState extends State<HomePage> {
                               '在场${activeEntries.length}人',
                               style: AppTextStyles.caption.copyWith(
                                 color: AppColors.voice,
-                                height: 1.1,
+                                height: 1.25,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -3009,10 +3009,10 @@ class HomePageState extends State<HomePage> {
           );
         },
         child: Container(
-          constraints: const BoxConstraints(minHeight: 60),
+          constraints: const BoxConstraints(minHeight: 72),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.s4,
-            vertical: AppSpacing.s3,
+            vertical: AppSpacing.s4,
           ),
           decoration: BoxDecoration(
             color: cardBg,
@@ -3028,16 +3028,17 @@ class HomePageState extends State<HomePage> {
               Text(
                 entry.name,
                 style: AppTextStyles.title.copyWith(
+                  fontSize: 18,
+                  height: 1.25,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
                 ),
               ),
-              const SizedBox(width: AppSpacing.s2),
+              const SizedBox(width: AppSpacing.s3),
               StatusBadge(
                 status: status,
                 onColorCard: false,
                 fontSize: 12,
-                height: 22,
               ),
               const Spacer(),
               Column(
@@ -3049,21 +3050,23 @@ class HomePageState extends State<HomePage> {
                     color: status == 'normal'
                         ? AppColors.textPrimary
                         : s.textColor,
-                    size: 22,
+                    size: 24,
                     timeoutText: '已超时',
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     '${(entry.pressureMpa ?? 0).toStringAsFixed(1)} MPa',
                     style: AppTextStyles.caption.copyWith(
                       color: AppColors.textSecondary,
+                      fontSize: 13,
+                      height: 1.2,
                       fontWeight: FontWeight.w600,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(width: AppSpacing.s1),
+              const SizedBox(width: AppSpacing.s2),
               Icon(
                 Icons.chevron_right_rounded,
                 size: 20,

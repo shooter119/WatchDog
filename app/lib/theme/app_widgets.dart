@@ -420,6 +420,7 @@ class AppBanner extends StatelessWidget {
 
     return Container(
       width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -427,9 +428,10 @@ class AppBanner extends StatelessWidget {
       ),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s4,
-        vertical: AppSpacing.s3,
+        vertical: AppSpacing.s3 + 2,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon ?? defaultIcon, size: 22, color: iconColor),
           const SizedBox(width: AppSpacing.s2),
@@ -439,6 +441,7 @@ class AppBanner extends StatelessWidget {
               style: AppTextStyles.label.copyWith(
                 color: textColor,
                 fontSize: 14,
+                height: 1.35,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -550,55 +553,46 @@ class StatusBadge extends StatelessWidget {
       bg = s.color.withValues(alpha: 0.14);
       dotColor = s.color;
     }
-    // 保留同行布局高度，缩小实际色块一点，避免状态胶囊视觉上显得臃肿。
-    final visualHeight = height == null
-        ? null
-        : height! > 4
-        ? height! - 4
-        : height;
-    return SizedBox(
-      height: height,
-      child: Center(
-        child: Container(
-          height: visualHeight,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            border: Border.all(
-              color: onColorCard
+    return Container(
+      constraints: BoxConstraints(minHeight: height ?? 26),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(
+          color: onColorCard
+              ? Colors.transparent
+              : (s.danger
                   ? Colors.transparent
-                  : (s.danger
-                      ? Colors.transparent
-                      : s.color.withValues(alpha: 0.28)),
-              width: 0.8,
+                  : s.color.withValues(alpha: 0.28)),
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: dotColor,
+              shape: BoxShape.circle,
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: dotColor,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                s.label,
-                style: TextStyle(
-                  color: fg,
-                  fontSize: fontSize,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
+          const SizedBox(width: 5),
+          Text(
+            s.label,
+            style: TextStyle(
+              color: fg,
+              fontSize: fontSize,
+              height: 1.2,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -692,7 +686,7 @@ class CountdownText extends StatelessWidget {
         '$overtimePrefix${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}',
         style: TextStyle(
           fontSize: size,
-          height: 1.0,
+          height: 1.15,
           fontWeight: FontWeight.w800,
           fontFeatures: const [FontFeature.tabularFigures()],
           color: color,
@@ -704,7 +698,7 @@ class CountdownText extends StatelessWidget {
         timeoutText!,
         style: TextStyle(
           fontSize: size,
-          height: 1.0,
+          height: 1.15,
           fontWeight: FontWeight.w800,
           color: color,
         ),
@@ -721,7 +715,7 @@ class CountdownText extends StatelessWidget {
       text,
       style: TextStyle(
         fontSize: size,
-        height: 1.0,
+        height: 1.15,
         fontWeight: FontWeight.w800,
         fontFeatures: const [FontFeature.tabularFigures()],
         color: color,
