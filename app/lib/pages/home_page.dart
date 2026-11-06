@@ -2835,40 +2835,30 @@ class HomePageState extends State<HomePage> {
     final bool hasWarn = warnEntries.isNotEmpty;
 
     final String overallStatus;
-    final String summaryText;
     final Color cardBorder;
     final Color statusSurfaceBg;
     final Color statusBorderColor;
-    final Color statusTextColor;
 
     if (hasTimeout) {
       overallStatus = 'timeout';
-      summaryText = '${timeoutEntries.length} 名队员已超时，请立即查看看板组织撤离或搜救！';
       cardBorder = AppColors.timeout;
       statusSurfaceBg = AppColors.timeoutSurface;
       statusBorderColor = AppColors.timeout;
-      statusTextColor = AppColors.timeoutText;
     } else if (hasAlarm) {
       overallStatus = 'alarm';
-      summaryText = '${alarmEntries.length} 名队员气瓶已进入严重报警，点击看板查看详情';
       cardBorder = AppColors.alarm;
       statusSurfaceBg = AppColors.alarmSurface;
       statusBorderColor = AppColors.alarm;
-      statusTextColor = AppColors.alarmText;
     } else if (hasWarn) {
       overallStatus = 'warn';
-      summaryText = '${warnEntries.length} 名队员气瓶已进入预警，请注意把控撤离时间';
       cardBorder = AppColors.caution;
       statusSurfaceBg = AppColors.cautionSurface;
       statusBorderColor = AppColors.caution;
-      statusTextColor = AppColors.cautionText;
     } else {
       overallStatus = 'normal';
-      summaryText = '全员气瓶状态正常 · 点击看板查看详细倒计时与压力';
       cardBorder = AppColors.border.withValues(alpha: 0.85);
       statusSurfaceBg = AppColors.surfaceSubtle;
       statusBorderColor = AppColors.border.withValues(alpha: 0.85);
-      statusTextColor = AppColors.textSecondary;
     }
 
     return SingleChildScrollView(
@@ -2914,34 +2904,14 @@ class HomePageState extends State<HomePage> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (widget.onEntryConfirmed != null)
-                      TextButton.icon(
-                        onPressed: widget.onEntryConfirmed,
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.s2,
-                            vertical: AppSpacing.s1,
-                          ),
-                          minimumSize: const Size(48, 44),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: const Icon(Icons.dashboard_outlined, size: 16),
-                        label: Text(
-                          '看板',
-                          style: AppTextStyles.label.copyWith(
-                            color: AppColors.actionPrimary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.s3),
                 Container(
-                  constraints: const BoxConstraints(minHeight: 76),
+                  constraints: const BoxConstraints(minHeight: 60),
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.s4,
-                    vertical: AppSpacing.s4,
+                    vertical: AppSpacing.s3,
                   ),
                   decoration: BoxDecoration(
                     color: statusSurfaceBg,
@@ -2955,46 +2925,28 @@ class HomePageState extends State<HomePage> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    '${activeEntries.length} 人进入火场',
-                                    style: AppTextStyles.h2.copyWith(
-                                      fontSize: 22,
-                                      height: 1.25,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.textPrimary,
-                                      fontFeatures: const [
-                                        FontFeature.tabularFigures(),
-                                      ],
-                                    ),
-                                  ),
+                            Flexible(
+                              child: Text(
+                                '${activeEntries.length} 人进入火场',
+                                style: AppTextStyles.h2.copyWith(
+                                  fontSize: 22,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
                                 ),
-                                const SizedBox(width: AppSpacing.s3),
-                                StatusBadge(
-                                  status: overallStatus,
-                                  onColorCard: false,
-                                  fontSize: 12,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              summaryText,
-                              style: AppTextStyles.bodyMd.copyWith(
-                                fontSize: 13,
-                                height: 1.35,
-                                fontWeight: overallStatus == 'normal'
-                                    ? FontWeight.w500
-                                    : FontWeight.w700,
-                                color: statusTextColor,
                               ),
+                            ),
+                            const SizedBox(width: AppSpacing.s3),
+                            StatusBadge(
+                              status: overallStatus,
+                              onColorCard: false,
+                              fontSize: 12,
                             ),
                           ],
                         ),
