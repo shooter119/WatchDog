@@ -33,6 +33,10 @@
 
 ## UI 与 App 调试规范
 
+- **唯一 UI 设计规范**：本地 `fire-rescue-safety-app-ui-spec-v2.0.md` 与代码实现 `app/lib/theme/`（`app_palette.dart`、`app_widgets.dart`、`app_theme.dart`）是当前唯一 UI 规范标准（旧版 v0.1 / v0.2 已废止删除）：
+  1. **严禁手写带阴影与边框叠加的 Container**：所有业务卡片统一复用 `AppCard`（默认圆角 `AppRadius.lg = 16`），横幅统一复用 `AppBanner` / `AppNotice`，区块标题统一复用 `SectionTitle`，杜绝内外双层边框或彩色边框叠加阴影导致的边缘重影；
+  2. **严禁固定矮高度挤压文字**：`StatusBadge` 与 `CountdownText` 保持自适应最小高度与紧凑行高，严禁截断或压扁字形；
+  3. **主页与看板职责分明**：主页「现场监控」仅展示单行在场人数与最高风险胶囊，点击跳看板；详细人员空呼压力与倒计时统一在看板页展示。
 - **默认调试方案（真机 + scrcpy）**：当用户指示「调试」或进行 App UI 效果预览时，默认执行方案一：
   1. 依托 Android 实体机调试，拒绝使用或启动重型 QEMU / AVD 虚拟机；
   2. 使用 `scrcpy` 实现低延迟、高帧率桌面投屏，直接在 Mac 窗口中查看真机 UI、字体、圆角与交互效果；
