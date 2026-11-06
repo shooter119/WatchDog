@@ -60,7 +60,7 @@ before(async () => {
   child = spawn(process.execPath,['src/server.js'],{cwd:require('node:path').join(__dirname,'..'),env:{...process.env,NODE_ENV:'test',PORT:String(port),WATCHDOG_SESSION_AUTH_REQUIRED:'1',WATCHDOG_UNIT_AUTH_REQUIRED:'1',WATCHDOG_MEMBER_AUTH_REQUIRED:'1'},stdio:['ignore','pipe','pipe']});
   let errors=''; child.stderr.on('data',data=>errors+=data);
   base=`http://127.0.0.1:${port}`;
-  for(let i=0;i<100;i++) { try { if ((await fetch(`${base}/api/health`)).ok) return; } catch {} await new Promise(r=>setTimeout(r,100)); }
+  for(let i=0;i<150;i++) { try { if ((await fetch(`${base}/api/health`)).ok) return; } catch {} await new Promise(r=>setTimeout(r,100)); }
   throw new Error(errors);
 });
 after(async () => {

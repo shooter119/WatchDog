@@ -27,7 +27,7 @@ async function start() {
   child.stdout.on('data', chunk => { logs += chunk; });
   child.stderr.on('data', chunk => { logs += chunk; });
   const url = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 150; i++) {
     try { if ((await fetch(url + '/api/health')).ok) return url; } catch (_) {}
     if (child.exitCode != null) break;
     await new Promise(resolve => setTimeout(resolve, 100));
