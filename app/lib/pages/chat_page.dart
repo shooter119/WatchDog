@@ -1207,12 +1207,10 @@ class _MessageBubble extends StatelessWidget {
                   : CrossAxisAlignment.start,
               children: [
                 AppCard(
-                  padding: isUser
-                      ? const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.s4,
-                          vertical: AppSpacing.s3,
-                        )
-                      : EdgeInsets.zero,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s4,
+                    vertical: AppSpacing.s3,
+                  ),
                   color: isUser ? AppColors.actionPrimary : AppColors.surface,
                   side: isUser
                       ? BorderSide(color: AppColors.actionPrimary, width: 1)
@@ -1226,108 +1224,91 @@ class _MessageBubble extends StatelessWidget {
                             color: AppColors.onPrimary,
                           ),
                         )
-                      : Stack(
-                          children: [
-                            Positioned(
-                              left: 0,
-                              top: 0,
-                              bottom: 0,
-                              width: 3,
-                              child: Container(color: AppColors.noteInfo),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.s4,
-                                vertical: AppSpacing.s3,
-                              ),
-                              child: MarkdownBody(
-                                data: body,
-                                styleSheet:
-                                    MarkdownStyleSheet.fromTheme(
-                                      Theme.of(context),
-                                    ).copyWith(
-                                      p: AppTextStyles.bodyMd.copyWith(
-                                        height: 1.5,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      h1: AppTextStyles.h2.copyWith(
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      h2: AppTextStyles.bodyLg.copyWith(
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      h3: AppTextStyles.bodyMd.copyWith(
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      h4: AppTextStyles.bodyMd.copyWith(
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      h5: AppTextStyles.label.copyWith(
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      h6: AppTextStyles.label.copyWith(
-                                        height: 1.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      strong: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      em: TextStyle(
-                                        fontStyle: FontStyle.italic,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                      blockquote: AppTextStyles.bodyMd.copyWith(
-                                        height: 1.5,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                      blockquoteDecoration: BoxDecoration(
-                                        color: AppColors.surfaceSubtle
-                                            .withValues(alpha: 0.6),
-                                        border: Border(
-                                          left: BorderSide(
-                                            color: AppColors.border,
-                                            width: 3,
-                                          ),
-                                        ),
-                                      ),
-                                      listBullet: AppTextStyles.bodyMd.copyWith(
-                                        height: 1.5,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                      code: AppTextStyles.label.copyWith(
-                                        fontFamily: 'Menlo',
-                                        color: AppColors.textPrimary,
-                                        backgroundColor:
-                                            AppColors.surfaceSubtle,
-                                      ),
-                                      codeblockDecoration: BoxDecoration(
-                                        color: AppColors.surfaceSubtle
-                                            .withValues(alpha: 0.7),
-                                        borderRadius: BorderRadius.circular(
-                                          AppRadius.sm,
-                                        ),
-                                      ),
-                                      codeblockPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: AppSpacing.s3,
-                                            vertical: AppSpacing.s2,
-                                          ),
+                      : MarkdownBody(
+                          data: body,
+                          styleSheet:
+                              MarkdownStyleSheet.fromTheme(
+                                Theme.of(context),
+                              ).copyWith(
+                                p: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h1: AppTextStyles.h2.copyWith(
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h2: AppTextStyles.bodyLg.copyWith(
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h3: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h4: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h5: AppTextStyles.label.copyWith(
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                h6: AppTextStyles.label.copyWith(
+                                  height: 1.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                strong: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                                em: TextStyle(
+                                  fontStyle: FontStyle.italic,
+                                  color: AppColors.textPrimary,
+                                ),
+                                blockquote: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                                blockquoteDecoration: BoxDecoration(
+                                  color: AppColors.surfaceSubtle
+                                      .withValues(alpha: 0.6),
+                                  border: Border(
+                                    left: BorderSide(
+                                      color: AppColors.border,
+                                      width: 3,
+                                    ),
+                                  ),
+                                ),
+                                listBullet: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
+                                  color: AppColors.textSecondary,
+                                ),
+                                code: AppTextStyles.label.copyWith(
+                                  fontFamily: 'Menlo',
+                                  color: AppColors.textPrimary,
+                                  backgroundColor:
+                                      AppColors.surfaceSubtle,
+                                ),
+                                codeblockDecoration: BoxDecoration(
+                                  color: AppColors.surfaceSubtle
+                                      .withValues(alpha: 0.7),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.sm,
+                                  ),
+                                ),
+                                codeblockPadding:
+                                    const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.s3,
+                                      vertical: AppSpacing.s2,
                                     ),
                               ),
-                            ),
-                          ],
                         ),
                 ),
                 if (followUpLabel != null && onFollowUpTap != null) ...[
