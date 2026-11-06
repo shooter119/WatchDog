@@ -1676,6 +1676,44 @@ void main() {
       expect(api.created, ['张伟', '李娜']);
     });
 
+    testWidgets('首页仅显示精简在场人数摘要，不铺开单人压力列表，点击可跳转看板', (tester) async {
+      var jumpToBoard = 0;
+      final c = _FakeController(
+        entries: [
+          _entry(name: '张伟', remainingMin: 20, pressureMpa: 22),
+          _entry(name: '李娜', remainingMin: 8, pressureMpa: 15),
+        ],
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: HomePage(
+              controller: c,
+              audioService: _FakeAudio(),
+              onEntryConfirmed: () => jumpToBoard++,
+            ),
+          ),
+        ),
+      );
+
+      // 首页展示精简摘要：2 人进入火场 + 预警提示，不展开具体姓名和 MPa 列表
+      expect(find.text('现场监控'), findsOneWidget);
+      expect(find.text('2 人进入火场'), findsOneWidget);
+      expect(find.textContaining('1 名队员气瓶已进入预警'), findsOneWidget);
+      expect(find.text('张伟'), findsNothing);
+      expect(find.text('22.0 MPa'), findsNothing);
+
+      // 点击卡片或「看板」按钮触发跳转
+      await tester.tap(find.text('2 人进入火场'));
+      await tester.pump();
+      expect(jumpToBoard, 1);
+
+      await tester.tap(find.text('看板'));
+      await tester.pump();
+      expect(jumpToBoard, 2);
+    });
+
     testWidgets('缺压力时一次列出全部错误，补充后可一次性通过', (tester) async {
       final api = _FakeApi(multiPressure: false);
       final c = _FakeController()..api = api;

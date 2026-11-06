@@ -14,7 +14,6 @@ import 'incident_details_page.dart';
 import 'location_share_sheet.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
-import 'report_pressure_sheet.dart';
 import 'route_traffic_page.dart';
 import 'video_resources_page.dart';
 import '../services/audio_service.dart';
@@ -2831,22 +2830,45 @@ class HomePageState extends State<HomePage> {
       return s == 'warn';
     }).toList();
 
-    final AppBannerKind? bannerKind;
-    final String? bannerText;
     final bool hasTimeout = timeoutEntries.isNotEmpty;
+    final bool hasAlarm = alarmEntries.isNotEmpty;
+    final bool hasWarn = warnEntries.isNotEmpty;
 
-    if (timeoutEntries.isNotEmpty) {
-      bannerKind = AppBannerKind.danger;
-      bannerText = '${timeoutEntries.length} 名队员已超时，请立即组织撤离或搜救！';
-    } else if (alarmEntries.isNotEmpty) {
-      bannerKind = AppBannerKind.danger;
-      bannerText = '${alarmEntries.length} 名队员气瓶已进入严重报警，请注意！';
-    } else if (warnEntries.isNotEmpty) {
-      bannerKind = AppBannerKind.warning;
-      bannerText = '${warnEntries.length} 名队员气瓶已进入预警，请注意把控撤离时间！';
+    final String overallStatus;
+    final String summaryText;
+    final Color cardBorder;
+    final Color statusSurfaceBg;
+    final Color statusBorderColor;
+    final Color statusTextColor;
+
+    if (hasTimeout) {
+      overallStatus = 'timeout';
+      summaryText = '${timeoutEntries.length} 名队员已超时，请立即查看看板组织撤离或搜救！';
+      cardBorder = AppColors.timeout;
+      statusSurfaceBg = AppColors.timeoutSurface;
+      statusBorderColor = AppColors.timeout;
+      statusTextColor = AppColors.timeoutText;
+    } else if (hasAlarm) {
+      overallStatus = 'alarm';
+      summaryText = '${alarmEntries.length} 名队员气瓶已进入严重报警，点击看板查看详情';
+      cardBorder = AppColors.alarm;
+      statusSurfaceBg = AppColors.alarmSurface;
+      statusBorderColor = AppColors.alarm;
+      statusTextColor = AppColors.alarmText;
+    } else if (hasWarn) {
+      overallStatus = 'warn';
+      summaryText = '${warnEntries.length} 名队员气瓶已进入预警，请注意把控撤离时间';
+      cardBorder = AppColors.caution;
+      statusSurfaceBg = AppColors.cautionSurface;
+      statusBorderColor = AppColors.caution;
+      statusTextColor = AppColors.cautionText;
     } else {
-      bannerKind = null;
-      bannerText = null;
+      overallStatus = 'normal';
+      summaryText = '全员气瓶状态正常 · 点击看板查看详细倒计时与压力';
+      cardBorder = AppColors.border.withValues(alpha: 0.85);
+      statusSurfaceBg = AppColors.surfaceSubtle;
+      statusBorderColor = AppColors.border.withValues(alpha: 0.85);
+      statusTextColor = AppColors.textSecondary;
     }
 
     return SingleChildScrollView(
@@ -2858,6 +2880,8 @@ class HomePageState extends State<HomePage> {
           AppCard(
             radius: AppRadius.lg,
             padding: const EdgeInsets.all(AppSpacing.cardInner),
+            side: BorderSide(color: cardBorder, width: 1.0),
+            onTap: widget.onEntryConfirmed,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -2865,8 +2889,8 @@ class HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
-                      width: 32,
-                      height: 32,
+                      width: 34,
+                      height: 34,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: AppColors.voice,
@@ -2879,45 +2903,15 @@ class HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(width: AppSpacing.s2),
                     Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              '现场监控',
-                              style: AppTextStyles.bodyLg.copyWith(
-                                color: AppColors.textPrimary,
-                                fontSize: 16,
-                                height: 1.2,
-                                fontWeight: FontWeight.w800,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.s2),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.voice.withValues(
-                                alpha: 0.14,
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                AppRadius.pill,
-                              ),
-                            ),
-                            child: Text(
-                              '在场${activeEntries.length}人',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.voice,
-                                height: 1.25,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        '现场监控',
+                        style: AppTextStyles.bodyLg.copyWith(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          height: 1.25,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (widget.onEntryConfirmed != null)
@@ -2928,7 +2922,7 @@ class HomePageState extends State<HomePage> {
                             horizontal: AppSpacing.s2,
                             vertical: AppSpacing.s1,
                           ),
-                          minimumSize: const Size(48, 48),
+                          minimumSize: const Size(48, 44),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         icon: const Icon(Icons.dashboard_outlined, size: 16),
@@ -2942,139 +2936,84 @@ class HomePageState extends State<HomePage> {
                       ),
                   ],
                 ),
-                if (bannerKind != null && bannerText != null) ...[
-                  const SizedBox(height: AppSpacing.s3),
-                  AppBanner(
-                    kind: bannerKind,
-                    timeout: hasTimeout,
-                    text: bannerText,
-                  ),
-                ],
                 const SizedBox(height: AppSpacing.s3),
-                for (var i = 0; i < activeEntries.length; i++) ...[
-                  if (i > 0) const SizedBox(height: AppSpacing.s2),
-                  _activeEntryCard(context, activeEntries[i], cfg),
-                ],
+                Container(
+                  constraints: const BoxConstraints(minHeight: 76),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s4,
+                    vertical: AppSpacing.s4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusSurfaceBg,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(
+                      color: statusBorderColor,
+                      width: 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    '${activeEntries.length} 人进入火场',
+                                    style: AppTextStyles.h2.copyWith(
+                                      fontSize: 22,
+                                      height: 1.25,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.textPrimary,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.s3),
+                                StatusBadge(
+                                  status: overallStatus,
+                                  onColorCard: false,
+                                  fontSize: 12,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              summaryText,
+                              style: AppTextStyles.bodyMd.copyWith(
+                                fontSize: 13,
+                                height: 1.35,
+                                fontWeight: overallStatus == 'normal'
+                                    ? FontWeight.w500
+                                    : FontWeight.w700,
+                                color: statusTextColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.s2),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 22,
+                        color: AppColors.textTertiary,
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(height: AppSpacing.s4),
           _buildFieldTools(context),
         ],
-      ),
-    );
-  }
-
-  Widget _activeEntryCard(BuildContext context, Entry entry, CalcConfig cfg) {
-    final status = entry.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
-    final s = EntryStatus.of(status);
-    final isTimeout = status == 'timeout';
-    final isAlarm = status == 'alarm';
-    final isWarn = status == 'warn';
-
-    final Color cardBg;
-    final Color cardBorder;
-    if (isTimeout) {
-      cardBg = AppColors.timeoutSurface;
-      cardBorder = AppColors.timeout;
-    } else if (isAlarm) {
-      cardBg = AppColors.alarmSurface;
-      cardBorder = AppColors.alarm;
-    } else if (isWarn) {
-      cardBg = AppColors.cautionSurface;
-      cardBorder = AppColors.caution;
-    } else {
-      cardBg = AppColors.surface;
-      cardBorder = AppColors.border.withValues(alpha: 0.85);
-    }
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        onTap: () {
-          showModalBottomSheet<double>(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: AppColors.background,
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(AppRadius.xl),
-              ),
-            ),
-            builder: (_) => ReportPressureSheet(
-              controller: widget.controller,
-              entry: entry,
-            ),
-          );
-        },
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 72),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s4,
-            vertical: AppSpacing.s4,
-          ),
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(
-              color: cardBorder,
-              width: 1.0,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                entry.name,
-                style: AppTextStyles.title.copyWith(
-                  fontSize: 18,
-                  height: 1.25,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s3),
-              StatusBadge(
-                status: status,
-                onColorCard: false,
-                fontSize: 12,
-              ),
-              const Spacer(),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CountdownText(
-                    ms: entry.remainingMs,
-                    color: status == 'normal'
-                        ? AppColors.textPrimary
-                        : s.textColor,
-                    size: 24,
-                    timeoutText: '已超时',
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '${(entry.pressureMpa ?? 0).toStringAsFixed(1)} MPa',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      height: 1.2,
-                      fontWeight: FontWeight.w600,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: AppSpacing.s2),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: AppColors.textTertiary,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
