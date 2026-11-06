@@ -112,8 +112,7 @@ void main() {
       expect(uri!.scheme, 'https');
       expect(uri.host, 'uri.amap.com');
       expect(uri.path, '/navigation');
-      expect(uri.queryParameters['to'], '119.281000,29.474000');
-      expect(uri.queryParameters['mode'], 'car');
+      expect(uri.queryParameters, {'to': '119.281000,29.474000'});
     });
 
     test('生成路况纯文本简报', () {

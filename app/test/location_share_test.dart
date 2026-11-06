@@ -91,21 +91,17 @@ void main() {
     final draft = _draft();
     expect(draft.markerUri.host, 'uri.amap.com');
     expect(draft.markerUri.path, '/marker');
-    expect(draft.markerUri.queryParameters['position'], '120.120000,30.250000');
-    expect(draft.markerUri.queryParameters['coordinate'], 'wgs84');
-    expect(draft.markerUri.queryParameters['src'], 'watchdog');
-    expect(draft.markerUri.queryParameters['callnative'], '0');
+    expect(
+      draft.markerUri.queryParameters,
+      {'position': '120.123450,30.256780'},
+    );
 
     final navigation = draft.navigationUri!;
     expect(navigation.path, '/navigation');
-    expect(navigation.queryParameters.containsKey('from'), isFalse);
-    expect(navigation.queryParameters['to'], '120.123450,30.256780');
-    expect(navigation.queryParameters['to'], isNot(contains(draft.incidentName)));
-    expect(navigation.queryParameters['coordinate'], 'gaode');
-    expect(navigation.queryParameters['mode'], 'car');
-    expect(navigation.queryParameters['policy'], '0');
-    expect(navigation.queryParameters['src'], 'watchdog');
-    expect(navigation.queryParameters['callnative'], '0');
+    expect(
+      navigation.queryParameters,
+      {'to': '120.123450,30.256780'},
+    );
 
     final degraded = LocationShareDraft(
       incidentName: draft.incidentName,
@@ -118,7 +114,13 @@ void main() {
       amapLocation: null,
     );
     expect(degraded.navigationUri, isNull);
-    expect(degraded.markerUri.toString(), contains('coordinate=wgs84'));
+    expect(
+      degraded.markerUri.queryParameters,
+      {
+        'position': '120.120000,30.250000',
+        'coordinate': 'wgs84',
+      },
+    );
   });
 
   test('分享文案按固定顺序输出、链接独立成行且不包含发送人', () {
@@ -131,9 +133,9 @@ void main() {
       '精度：约 8.0 米',
       'WGS84：30.250000, 120.120000',
       '查看位置：',
-      'https://uri.amap.com/marker?',
+      'https://uri.amap.com/marker?position=120.123450%2C30.256780',
       '驾车导航：',
-      'https://uri.amap.com/navigation?',
+      'https://uri.amap.com/navigation?to=120.123450%2C30.256780',
     ];
     var previous = -1;
     for (final field in fields) {
@@ -143,8 +145,9 @@ void main() {
     }
     expect(text, isNot(contains('发送人')));
     expect(text, isNot(contains('姓名')));
-    expect('coordinate=wgs84'.allMatches(text), hasLength(1));
-    expect('coordinate=gaode'.allMatches(text), hasLength(1));
+    expect(text, isNot(contains('src=watchdog')));
+    expect(text, isNot(contains('callnative=')));
+    expect(text, isNot(contains('coordinate=gaode')));
   });
 
   test('天气响应防御性解析高德坐标字段', () {

@@ -65,13 +65,15 @@ class LocationShareDraft {
     return '现场位置';
   }
 
-  Uri get markerUri => Uri.https('uri.amap.com', '/marker', {
-    'position': '${lon.toStringAsFixed(6)},${lat.toStringAsFixed(6)}',
-    'name': displayName,
-    'coordinate': 'wgs84',
-    'src': 'watchdog',
-    'callnative': '0',
-  });
+  Uri get markerUri {
+    final location = _validAmapLocation;
+    return Uri.https('uri.amap.com', '/marker', {
+      'position': location != null
+          ? '${location.lon.toStringAsFixed(6)},${location.lat.toStringAsFixed(6)}'
+          : '${lon.toStringAsFixed(6)},${lat.toStringAsFixed(6)}',
+      if (location == null) 'coordinate': 'wgs84',
+    });
+  }
 
   AmapLocation? get _validAmapLocation {
     final location = amapLocation;
@@ -90,11 +92,6 @@ class LocationShareDraft {
     return Uri.https('uri.amap.com', '/navigation', {
       'to':
           '${location.lon.toStringAsFixed(6)},${location.lat.toStringAsFixed(6)}',
-      'coordinate': 'gaode',
-      'mode': 'car',
-      'policy': '0',
-      'src': 'watchdog',
-      'callnative': '0',
     });
   }
 

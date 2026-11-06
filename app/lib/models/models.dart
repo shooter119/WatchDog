@@ -1168,11 +1168,6 @@ class RouteTrafficInfo {
     }
     return Uri.https('uri.amap.com', '/navigation', {
       'to': '${loc.lon.toStringAsFixed(6)},${loc.lat.toStringAsFixed(6)}',
-      'coordinate': 'gaode',
-      'mode': 'car',
-      'policy': '0',
-      'src': 'watchdog',
-      'callnative': '0',
     });
   }
 
