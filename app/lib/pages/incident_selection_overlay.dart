@@ -15,10 +15,14 @@ import '../theme/app_widgets.dart';
 class IncidentSelectionOverlay extends StatefulWidget {
   final bool authenticationRequired;
   final List<Incident> activeIncidents;
+  final List<ExternalIncident> externalIncidents;
   final bool loading;
+  final bool externalLoading;
   final VoidCallback? onEnterWithoutIncident;
   final Future<void> Function(Incident incident) onSelect;
   final Future<void> Function() onCreate;
+  final Future<void> Function(ExternalIncident incident)? onClaimExternal;
+  final Future<void> Function({bool forceRefresh})? onRefreshExternal;
   final Future<void> Function(
     String unitName,
     String realName,
@@ -40,9 +44,13 @@ class IncidentSelectionOverlay extends StatefulWidget {
     super.key,
     this.authenticationRequired = false,
     required this.activeIncidents,
+    this.externalIncidents = const [],
     required this.loading,
+    this.externalLoading = false,
     required this.onSelect,
     required this.onCreate,
+    this.onClaimExternal,
+    this.onRefreshExternal,
     this.onAuthenticate,
     this.onEnterGuestMode,
     this.onApply,
@@ -62,6 +70,8 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
   final TextEditingController _unitName = TextEditingController();
   final TextEditingController _realName = TextEditingController();
   final TextEditingController _unitCode = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  String _searchKeyword = '';
 
   @override
   void initState() {
@@ -69,6 +79,25 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     WidgetsBinding.instance.addObserver(this);
     _restoreIdentityDefaults();
     _checkLocalPending();
+    if (!widget.authenticationRequired) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.onRefreshExternal?.call(forceRefresh: false);
+        }
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(IncidentSelectionOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.authenticationRequired && !widget.authenticationRequired) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          widget.onRefreshExternal?.call(forceRefresh: false);
+        }
+      });
+    }
   }
 
   @override
@@ -103,6 +132,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     _unitName.dispose();
     _realName.dispose();
     _unitCode.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -118,6 +148,32 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
       if (mounted) setState(() => _error = '$error');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _claim(ExternalIncident incident) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      if (widget.onClaimExternal != null) {
+        await widget.onClaimExternal!(incident);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _refreshExternal() async {
+    if (_busy) return;
+    try {
+      await widget.onRefreshExternal?.call(forceRefresh: true);
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
     }
   }
 
@@ -778,6 +834,86 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     );
   }
 
+  List<_UnifiedIncidentItem> _buildUnifiedIncidentItems() {
+    final customItems = <_UnifiedIncidentItem>[];
+    for (final inc in widget.activeIncidents) {
+      final hasExternal = inc.info['external_id'] != null ||
+          widget.externalIncidents.any((e) =>
+              e.incidentNumber == inc.number || e.claimedIncidentId == inc.id);
+      if (!hasExternal) {
+        customItems.add(_UnifiedIncidentItem(
+          key: 'custom_${inc.id}',
+          title: inc.displayName,
+          subtitle: inc.unresolvedActiveCount > 0
+              ? '${inc.unresolvedActiveCount}人处置中'
+              : '内部自建警情',
+          badgeText: '自建',
+          badgeBg: const Color(0xFFF39C12).withValues(alpha: 0.15),
+          badgeFg: const Color(0xFFD35400),
+          actionText: '加入',
+          isClaimed: true,
+          isCustom: true,
+          onTap: () => _select(inc),
+        ));
+      }
+    }
+
+    final externalItems = <_UnifiedIncidentItem>[];
+    for (final ext in widget.externalIncidents) {
+      Incident? matched;
+      for (final local in widget.activeIncidents) {
+        if (local.id == ext.claimedIncidentId ||
+            local.number == ext.incidentNumber ||
+            local.info['external_id'] == ext.externalId) {
+          matched = local;
+          break;
+        }
+      }
+      final isClaimed = ext.claimed || matched != null;
+      final timeStr = _formatIncidentTime(ext.registerTime);
+      final subtitleParts = <String>[
+        if (ext.districtName.isNotEmpty) ext.districtName,
+        if (ext.incidentType.isNotEmpty) ext.incidentType,
+        if (timeStr.isNotEmpty) timeStr,
+      ];
+
+      externalItems.add(_UnifiedIncidentItem(
+        key: 'ext_${ext.externalId}',
+        title: ext.crimeAddress.isNotEmpty ? ext.crimeAddress : ext.incidentNumber,
+        subtitle: subtitleParts.join(' · '),
+        badgeText: isClaimed ? '处置中' : '待认领',
+        badgeBg: isClaimed
+            ? AppColors.actionPrimary.withValues(alpha: 0.12)
+            : const Color(0xFF27AE60).withValues(alpha: 0.14),
+        badgeFg: isClaimed ? AppColors.actionPrimary : const Color(0xFF1E8449),
+        actionText: isClaimed ? '加入' : '认领建档',
+        isClaimed: isClaimed,
+        isCustom: false,
+        onTap: () {
+          if (isClaimed) {
+            if (matched != null) {
+              _select(matched);
+            } else {
+              _claim(ext);
+            }
+          } else {
+            _claim(ext);
+          }
+        },
+      ));
+    }
+
+    final allItems = [...customItems, ...externalItems];
+    final query = _searchKeyword.trim().toLowerCase();
+    if (query.isEmpty) return allItems;
+
+    return allItems.where((item) {
+      return item.title.toLowerCase().contains(query) ||
+          item.subtitle.toLowerCase().contains(query) ||
+          item.badgeText.toLowerCase().contains(query);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final incidents = widget.activeIncidents;
@@ -950,29 +1086,101 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                                           text: _error!,
                                         ),
                                       ],
-                                      const SizedBox(height: 16),
-                                      Expanded(
-                                        child: incidents.isEmpty
-                                            ? const _EmptyIncidentState()
-                                            : ListView.separated(
-                                                key: const Key(
-                                                  'incident-selection-list',
-                                                ),
-                                                padding: EdgeInsets.zero,
-                                                itemCount: incidents.length,
-                                                separatorBuilder: (_, __) =>
-                                                    const Divider(height: 1),
-                                                itemBuilder: (context, index) {
-                                                  final incident =
-                                                      incidents[index];
-                                                  return _IncidentOption(
-                                                    incident: incident,
-                                                    enabled: !_busy,
-                                                    onTap: () =>
-                                                        _select(incident),
-                                                  );
-                                                },
+                                      if (widget.externalLoading) ...[
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          children: [
+                                            const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              '正在获取衢州官方派警…',
+                                              style: TextStyle(
+                                                color: AppColors.textSecondary,
+                                                fontSize: 12,
                                               ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                      const SizedBox(height: 14),
+                                      // 搜索与手动刷新栏
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: SizedBox(
+                                              height: 38,
+                                              child: TextField(
+                                                controller: _searchController,
+                                                onChanged: (v) => setState(() => _searchKeyword = v),
+                                                style: const TextStyle(fontSize: 13),
+                                                decoration: InputDecoration(
+                                                  hintText: '搜索地址、类型或编号…',
+                                                  hintStyle: TextStyle(
+                                                    fontSize: 13,
+                                                    color: AppColors.textTertiary,
+                                                  ),
+                                                  prefixIcon: const Icon(Icons.search, size: 18),
+                                                  suffixIcon: _searchKeyword.isNotEmpty
+                                                      ? IconButton(
+                                                          icon: const Icon(Icons.clear, size: 16),
+                                                          onPressed: () {
+                                                            _searchController.clear();
+                                                            setState(() => _searchKeyword = '');
+                                                          },
+                                                        )
+                                                      : null,
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                                                  filled: true,
+                                                  fillColor: AppColors.surfaceSubtle,
+                                                  border: OutlineInputBorder(
+                                                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                                                    borderSide: BorderSide.none,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            tooltip: '刷新派警列表',
+                                            icon: widget.externalLoading
+                                                ? const SizedBox(
+                                                    width: 18,
+                                                    height: 18,
+                                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                                  )
+                                                : const Icon(Icons.refresh, size: 20),
+                                            onPressed: (_busy || widget.externalLoading) ? null : _refreshExternal,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Expanded(
+                                        child: Builder(
+                                          builder: (context) {
+                                            final items = _buildUnifiedIncidentItems();
+                                            if (items.isEmpty) {
+                                              return const _EmptyIncidentState();
+                                            }
+                                            return ListView.separated(
+                                              key: const Key('incident-selection-list'),
+                                              padding: EdgeInsets.zero,
+                                              itemCount: items.length,
+                                              separatorBuilder: (_, __) => const Divider(height: 1),
+                                              itemBuilder: (context, index) {
+                                                final item = items[index];
+                                                return _UnifiedIncidentOption(
+                                                  item: item,
+                                                  enabled: !_busy,
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
                                       ),
                                       const SizedBox(height: 14),
                                       FilledButton.icon(
@@ -1069,15 +1277,40 @@ class _EmptyIncidentState extends StatelessWidget {
   }
 }
 
-class _IncidentOption extends StatelessWidget {
-  final Incident incident;
-  final bool enabled;
+
+class _UnifiedIncidentItem {
+  final String key;
+  final String title;
+  final String subtitle;
+  final String badgeText;
+  final Color badgeBg;
+  final Color badgeFg;
+  final String actionText;
+  final bool isClaimed;
+  final bool isCustom;
   final VoidCallback onTap;
 
-  const _IncidentOption({
-    required this.incident,
-    required this.enabled,
+  _UnifiedIncidentItem({
+    required this.key,
+    required this.title,
+    required this.subtitle,
+    required this.badgeText,
+    required this.badgeBg,
+    required this.badgeFg,
+    required this.actionText,
+    required this.isClaimed,
+    required this.isCustom,
     required this.onTap,
+  });
+}
+
+class _UnifiedIncidentOption extends StatelessWidget {
+  final _UnifiedIncidentItem item;
+  final bool enabled;
+
+  const _UnifiedIncidentOption({
+    required this.item,
+    required this.enabled,
   });
 
   @override
@@ -1086,7 +1319,7 @@ class _IncidentOption extends StatelessWidget {
       color: AppColors.surface,
       child: InkWell(
         excludeFromSemantics: true,
-        onTap: enabled ? onTap : null,
+        onTap: enabled ? item.onTap : null,
         borderRadius: BorderRadius.circular(AppRadius.md),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
@@ -1097,12 +1330,14 @@ class _IncidentOption extends StatelessWidget {
                 height: 38,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: AppColors.actionPrimary.withValues(alpha: 0.1),
+                  color: item.badgeBg,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  Icons.local_fire_department_outlined,
-                  color: AppColors.actionPrimary,
+                  item.isCustom
+                      ? Icons.flag_outlined
+                      : Icons.local_fire_department_outlined,
+                  color: item.badgeFg,
                   size: 22,
                 ),
               ),
@@ -1111,42 +1346,89 @@ class _IncidentOption extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      incident.displayName,
-                      // 警情名称可能来自现场自动建议或人工补充，不能用单行省略号
-                      // 截断关键信息；列表本身可滚动，名称按实际长度自然换行。
-                      softWrap: true,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1.5,
+                          ),
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: BoxDecoration(
+                            color: item.badgeBg,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.badgeText,
+                            style: TextStyle(
+                              color: item.badgeFg,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            item.title,
+                            softWrap: true,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '处置中',
+                      item.subtitle,
                       style: TextStyle(
-                        color: AppColors.actionPrimary,
+                        color: AppColors.textSecondary,
                         fontSize: 12,
-                        fontWeight: FontWeight.w700,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
-              TextButton.icon(
-                onPressed: enabled ? onTap : null,
-                icon: const Icon(Icons.arrow_forward, size: 17),
-                label: const Text('加入'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.actionPrimary,
-                  minimumSize: const Size(72, 48),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
+              const SizedBox(width: 6),
+              item.isClaimed
+                  ? TextButton.icon(
+                      onPressed: enabled ? item.onTap : null,
+                      icon: const Icon(Icons.arrow_forward, size: 16),
+                      label: Text(item.actionText),
+                      style: TextButton.styleFrom(
+                        foregroundColor: item.badgeFg,
+                        minimumSize: const Size(64, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                      ),
+                    )
+                  : FilledButton.tonal(
+                      onPressed: enabled ? item.onTap : null,
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                      ),
+                      child: Text(
+                        item.actionText,
+                        style: const TextStyle(fontSize: 12.5),
+                      ),
+                    ),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+String _formatIncidentTime(int timestampMs) {
+  if (timestampMs <= 0) return '';
+  final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs);
+  final m = dt.month.toString().padLeft(2, '0');
+  final d = dt.day.toString().padLeft(2, '0');
+  final h = dt.hour.toString().padLeft(2, '0');
+  final min = dt.minute.toString().padLeft(2, '0');
+  return '$m-$d $h:$min';
 }

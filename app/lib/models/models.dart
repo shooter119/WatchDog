@@ -171,9 +171,93 @@ class Incident {
         (json['unknown_vehicle_station_count'] as num?)?.toInt() ?? 0,
     unknownPersonnelStationCount:
         (json['unknown_personnel_station_count'] as num?)?.toInt() ?? 0,
-    vehicleCount: (json['vehicle_count'] as num?)?.toInt() ?? 0,
-    personnelCount: (json['personnel_count'] as num?)?.toInt() ?? 0,
+    vehicleCount: json['vehicle_count'] as int? ?? 0,
+    personnelCount: json['personnel_count'] as int? ?? 0,
   );
+}
+
+class ExternalIncident {
+  final String externalId;
+  final String incidentNumber;
+  final String detachmentName;
+  final String brigadeName;
+  final String squadronName;
+  final String districtName;
+  final String incidentType;
+  final String incidentLevel;
+  final String incidentStatus;
+  final String crimeAddress;
+  final String incidentDescribe;
+  final int registerTime;
+  final String? latitude;
+  final String? longitude;
+  final bool claimed;
+  final String? claimedIncidentId;
+  final String? claimedIncidentNumber;
+  final String? claimedIncidentTitle;
+
+  const ExternalIncident({
+    required this.externalId,
+    required this.incidentNumber,
+    this.detachmentName = '',
+    this.brigadeName = '',
+    this.squadronName = '',
+    this.districtName = '',
+    this.incidentType = '其他',
+    this.incidentLevel = '',
+    this.incidentStatus = '',
+    required this.crimeAddress,
+    this.incidentDescribe = '',
+    required this.registerTime,
+    this.latitude,
+    this.longitude,
+    this.claimed = false,
+    this.claimedIncidentId,
+    this.claimedIncidentNumber,
+    this.claimedIncidentTitle,
+  });
+
+  factory ExternalIncident.fromJson(Map<String, dynamic> json) => ExternalIncident(
+    externalId: json['external_id']?.toString() ?? '',
+    incidentNumber: json['incident_number']?.toString() ?? '',
+    detachmentName: json['detachment_name']?.toString() ?? '',
+    brigadeName: json['brigade_name']?.toString() ?? '',
+    squadronName: json['squadron_name']?.toString() ?? '',
+    districtName: json['district_name']?.toString() ?? '',
+    incidentType: json['incident_type']?.toString() ?? '其他',
+    incidentLevel: json['incident_level']?.toString() ?? '',
+    incidentStatus: json['incident_status']?.toString() ?? '',
+    crimeAddress: json['crime_address']?.toString() ?? '',
+    incidentDescribe: json['incident_describe']?.toString() ?? '',
+    registerTime: (json['register_time'] as num?)?.toInt() ?? 0,
+    latitude: json['latitude']?.toString(),
+    longitude: json['longitude']?.toString(),
+    claimed: json['claimed'] == true,
+    claimedIncidentId: json['claimed_incident_id']?.toString(),
+    claimedIncidentNumber: json['claimed_incident_number']?.toString(),
+    claimedIncidentTitle: json['claimed_incident_title']?.toString(),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'external_id': externalId,
+    'incident_number': incidentNumber,
+    'detachment_name': detachmentName,
+    'brigade_name': brigadeName,
+    'squadron_name': squadronName,
+    'district_name': districtName,
+    'incident_type': incidentType,
+    'incident_level': incidentLevel,
+    'incident_status': incidentStatus,
+    'crime_address': crimeAddress,
+    'incident_describe': incidentDescribe,
+    'register_time': registerTime,
+    if (latitude != null) 'latitude': latitude,
+    if (longitude != null) 'longitude': longitude,
+    'claimed': claimed,
+    if (claimedIncidentId != null) 'claimed_incident_id': claimedIncidentId,
+    if (claimedIncidentNumber != null) 'claimed_incident_number': claimedIncidentNumber,
+    if (claimedIncidentTitle != null) 'claimed_incident_title': claimedIncidentTitle,
+  };
 }
 
 class IncidentForce {

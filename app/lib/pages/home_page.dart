@@ -1487,6 +1487,22 @@ class HomePageState extends State<HomePage> {
   /// 启动警情选择浮层复用首页已有的新建流程。
   Future<void> createIncidentFromGate() => _createIncident(bubbleError: true);
 
+  /// 启动警情选择浮层复用认领官方警情建档流程。
+  Future<void> claimExternalIncidentFromGate(
+    ExternalIncident externalIncident,
+  ) async {
+    try {
+      await widget.controller.claimExternalIncident(externalIncident);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('认领建档失败：$e')));
+      }
+      rethrow;
+    }
+  }
+
   Future<void> _renameIncident() async {
     final target = widget.controller.currentIncident;
     if (target == null) return;

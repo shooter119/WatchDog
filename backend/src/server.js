@@ -17,6 +17,7 @@ const { MinuteRateLimiter } = require('./rate-limiter');
 const { nameSuggestions } = require('./name-match');
 const { GENERIC_ASR_TERMS } = require('./org-seed');
 const weather = require('./weather');
+const policeApiService = require('./police-api-service');
 
 // PostgreSQL 初始化是网络依赖，不能阻塞端口监听等待完成；探活在初始化期间
 // 仍可返回数据库状态，便于任意支持长连接的平台进行编排。
@@ -1739,6 +1740,179 @@ app.get('/api/incidents', async (req, res, next) => {
     }))));
   } catch (e) {
     next(e);
+  }
+});
+
+// 获取衢州市最近三天的官方派警列表，并标记当前单位下的认领/建档状态
+app.get('/api/external-incidents', async (req, res, next) => {
+  try {
+    const forceRefresh = req.query.refresh === 'true' || req.query.refresh === '1';
+    const upstreamResult = await policeApiService.getQuzhouIncidents({ forceRefresh });
+
+    // 查询当前单位已有的 active 警情
+    const activeIncidents = await db.listIncidents('active', { unitId: req.unit?.id || null, limit: 100, offset: 0 });
+    const claimedMap = new Map();
+
+    for (const incident of activeIncidents) {
+      if (incident.number) claimedMap.set(String(incident.number), incident);
+      if (syncSupported() && incident.unit_id) {
+        try {
+          const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
+          if (detail?.data?.external_id) {
+            claimedMap.set(String(detail.data.external_id), incident);
+          }
+          if (detail?.data?.external_incident_number) {
+            claimedMap.set(String(detail.data.external_incident_number), incident);
+          }
+        } catch (_) {}
+      }
+    }
+
+    const listWithClaimStatus = upstreamResult.list.map((item) => {
+      const matched = claimedMap.get(item.external_id) || claimedMap.get(item.incident_number);
+      return {
+        ...item,
+        claimed: Boolean(matched),
+        claimed_incident_id: matched ? matched.id : null,
+        claimed_incident_number: matched ? matched.number : null,
+        claimed_incident_title: matched ? (matched.title || matched.number) : null,
+      };
+    });
+
+    res.json({
+      list: listWithClaimStatus,
+      fetched_at: upstreamResult.fetchedAt,
+      cache_hit: upstreamResult.cacheHit,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.post('/api/incidents/claim-external', async (req, res, next) => {
+  let releaseCreation;
+  let tracked = null;
+  try {
+    const previousCreation = incidentCreationQueue;
+    incidentCreationQueue = new Promise((resolve) => {
+      releaseCreation = resolve;
+    });
+    await previousCreation;
+
+    const device = deviceKey(req);
+    const name = await actorName(req);
+    if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再认领建档', code: 'REAL_NAME_REQUIRED' });
+    const opId = opKey(req);
+
+    const ext = req.body?.external_incident || req.body;
+    if (!ext || (!ext.external_id && !ext.incident_number)) {
+      return res.status(400).json({ error: '缺少有效的官方警情数据', code: 'EXTERNAL_INCIDENT_INVALID' });
+    }
+
+    const unitId = req.unit?.id || null;
+    const extId = String(ext.external_id || '').trim();
+    const extNumber = String(ext.incident_number || '').trim();
+
+    // 1. 幂等性与防重检查：先查当前单位是否已有人认领建档
+    const activeIncidents = await db.listIncidents('active', { unitId, limit: 100, offset: 0 });
+    let existingIncident = null;
+
+    for (const incident of activeIncidents) {
+      if (extNumber && incident.number === extNumber) {
+        existingIncident = incident;
+        break;
+      }
+      if (syncSupported() && incident.unit_id) {
+        try {
+          const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
+          if ((extId && detail?.data?.external_id === extId) || (extNumber && detail?.data?.external_incident_number === extNumber)) {
+            existingIncident = incident;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (existingIncident) {
+      // 已有队友认领，直接返回该警情供用户进入，并返回 200
+      return res.status(200).json(await incidentView(existingIncident));
+    }
+
+    // 2. 登记操作幂等跟踪
+    tracked = await beginTrackedOperation(req, null, 'incident_claim_external');
+    if (tracked?.conflict) return res.status(409).json({ error: '同一操作 ID 的请求内容不一致，请重新提交', code: tracked.code });
+    if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
+    if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
+
+    // 3. 建档：自动填入官方编号与地址/分类
+    const now = Date.now();
+    const title = ext.crime_address || (ext.district_name ? `${ext.district_name} ${ext.incident_type || ''}` : ext.incident_type) || null;
+    const candidateNumber = extNumber || null;
+
+    const created = await db.createIncident({
+      unitId,
+      createdBy: device,
+      number: candidateNumber,
+      title,
+      createdAt: now,
+    });
+
+    const event = await db.appendIncidentEvent({
+      incidentId: created.id,
+      type: 'incident_created',
+      actorDeviceId: device,
+      actorName: name,
+      clientOpId: opId,
+      payload: { number: created.number, external_id: extId, external_number: extNumber },
+    });
+
+    // 4. 写入 incident_details
+    if (syncSupported() && unitId) {
+      try {
+        const detailData = {
+          external_id: extId || undefined,
+          external_incident_number: extNumber || undefined,
+          external_source: 'police_api_quzhou',
+          original_category: ext.incident_type || undefined,
+          location: ext.crime_address || undefined,
+          administrative_area: ext.district_name || undefined,
+          situation: ext.incident_describe || undefined,
+          received_at: ext.register_time || undefined,
+          specific_type: ext.incident_type || undefined,
+        };
+        const cleanData = {};
+        for (const [k, v] of Object.entries(detailData)) {
+          if (v !== undefined) cleanData[k] = v;
+        }
+
+        const store = require('./postgres-store');
+        await store.query(
+          `INSERT INTO incident_details(incident_id, unit_id, data, version, updated_at, updated_by)
+           VALUES($1, $2, $3, 1, $4, $5)
+           ON CONFLICT(incident_id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
+          [created.id, unitId, JSON.stringify(cleanData), now, device]
+        );
+        if (typeof db.appendSyncEvent === 'function') {
+          await db.appendSyncEvent({
+            unitId,
+            incidentId: created.id,
+            eventType: 'details.updated',
+            payload: { incident_id: created.id, unit_id: unitId, data: cleanData, version: 1, updated_at: now },
+          });
+        }
+      } catch (err) {
+        logger.error(`Failed to auto-populate incident details from external incident: ${err.message}`);
+      }
+    }
+
+    const view = await incidentView(created);
+    await completeTrackedOperation(tracked, view, 201, event?.id);
+    res.status(201).json(withWriteMetadata(view, event));
+  } catch (e) {
+    await releaseTrackedOperation(tracked).catch(() => {});
+    next(e);
+  } finally {
+    releaseCreation?.();
   }
 });
 
