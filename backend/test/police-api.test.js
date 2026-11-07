@@ -27,6 +27,17 @@ test('衢州警情过滤逻辑', () => {
   assert.equal(policeApiService.isQuzhouIncident({ districtName: '开化县' }), true);
   assert.equal(policeApiService.isQuzhouIncident({ brigadeOrganizationName: '柯城大队' }), true);
 
+  // 虽属衢州支队但异地跨市演练/拉动必须排除
+  assert.equal(policeApiService.isQuzhouIncident({
+    detachmentOrgName: '衢州支队',
+    brigadeOrganizationName: '衢州智慧新城大队',
+    crimeAddress: '（拉动）绍兴市越城区马山街道',
+  }), false);
+  assert.equal(policeApiService.isQuzhouIncident({
+    detachmentOrgName: '衢州支队',
+    crimeAddress: '杭州市滨江区江南大道',
+  }), false);
+
   // 非衢州单位排除
   assert.equal(policeApiService.isQuzhouIncident({ detachmentOrgName: '嘉兴支队', brigadeOrganizationName: '南湖大队' }), false);
   assert.equal(policeApiService.isQuzhouIncident({ detachmentOrgName: '杭州支队' }), false);
@@ -166,4 +177,35 @@ test('POST /api/incidents/claim-external 认领建档与幂等防重', async () 
     console.error('TEST ERROR:', e);
     throw e;
   }
+});
+
+test('buildSituationDescription 与 detailPatch 后到智能覆盖', () => {
+  const { buildSituationDescription, normalizeExternalIncident } = require('../src/police-api-service');
+  const { detailPatch } = require('../src/incident-import-repository');
+
+  // 1. buildSituationDescription
+  assert.equal(buildSituationDescription({ incident_type: '抢险救援', disposal_object_name: '公路' }), '抢险救援（公路）');
+  assert.equal(buildSituationDescription({ incident_type: '抢险救援', disposal_object_name: '其他' }), '抢险救援');
+  assert.equal(buildSituationDescription({ incident_type: '火灾扑救', incident_describe: '油锅起火' }), '油锅起火');
+
+  // 2. detailPatch 智能非空覆盖
+  const currentData = {
+    location: '莲湖雅苑2栋3单元',
+    administrative_area: '龙游县',
+    situation: '抢险救援',
+    received_at: '2026-11-06T06:13:46.000Z',
+  };
+  const newData = {
+    location: '龙游县莲湖雅苑2栋3单元502室',
+    situation: '502厨房起火，烟雾较大，无人员被困',
+    trapped: '无人员被困',
+    // 未提及的字段为空字符串
+    hazardous_materials: '',
+  };
+  const merged = detailPatch(newData, currentData);
+  assert.equal(merged.location, '龙游县莲湖雅苑2栋3单元502室', '详细地址应覆盖旧简略地址');
+  assert.equal(merged.situation, '502厨房起火，烟雾较大，无人员被困', '详尽灾情应覆盖旧概要');
+  assert.equal(merged.trapped, '无人员被困');
+  assert.equal(merged.administrative_area, '龙游县', '未提及字段应保留已有值');
+  assert.equal(merged.received_at, '2026-11-06T06:13:46.000Z', '未提及字段应保留已有时间');
 });

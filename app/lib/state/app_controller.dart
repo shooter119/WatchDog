@@ -2200,6 +2200,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> fetchExternalIncidents({bool forceRefresh = false}) async {
     if (needsAuthentication) return;
+    await _ensureApiReady();
     final a = api;
     if (a == null) return;
     externalIncidentsLoading = true;

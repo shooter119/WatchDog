@@ -3778,7 +3778,12 @@ class _TaskBarState extends State<_TaskBar> {
                           const SizedBox(height: AppSpacing.s1),
                           Text(
                             [
-                              if ((widget.incident.info['original_category']
+                              if ((widget.incident.info['situation']
+                                          as String?)
+                                      ?.isNotEmpty ==
+                                  true)
+                                widget.incident.info['situation'] as String
+                              else if ((widget.incident.info['original_category']
                                           as String?)
                                       ?.isNotEmpty ==
                                   true)

@@ -55,7 +55,10 @@ class IncidentSelectionOverlay extends StatefulWidget {
     this.onEnterGuestMode,
     this.onApply,
     this.onEnterWithoutIncident,
+    this.userUnitName,
   });
+
+  final String? userUnitName;
 
   @override
   State<IncidentSelectionOverlay> createState() =>
@@ -72,6 +75,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
   final TextEditingController _unitCode = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   String _searchKeyword = '';
+  String? _currentUserUnitName;
 
   @override
   void initState() {
@@ -79,12 +83,20 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     WidgetsBinding.instance.addObserver(this);
     _restoreIdentityDefaults();
     _checkLocalPending();
+    _loadUserUnitName();
     if (!widget.authenticationRequired) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           widget.onRefreshExternal?.call(forceRefresh: false);
         }
       });
+    }
+  }
+
+  Future<void> _loadUserUnitName() async {
+    final name = await Settings.unitName;
+    if (mounted && name.isNotEmpty) {
+      setState(() => _currentUserUnitName = name);
     }
   }
 
@@ -834,6 +846,56 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     );
   }
 
+  static String _resolveDistrict(ExternalIncident ext) {
+    final addr = ext.crimeAddress;
+    final brigade = ext.brigadeName;
+    final squadron = ext.squadronName;
+    final rawDist = ext.districtName;
+
+    const districts = [
+      ('智慧新城', ['智慧新城', '新城']),
+      ('柯城区', ['柯城']),
+      ('衢江区', ['衢江']),
+      ('江山市', ['江山']),
+      ('龙游县', ['龙游']),
+      ('常山县', ['常山']),
+      ('开化县', ['开化']),
+    ];
+
+    for (final pair in districts) {
+      if (addr.contains(pair.$1) || pair.$2.any((k) => addr.contains(k))) return pair.$1;
+    }
+    for (final pair in districts) {
+      if (pair.$2.any((k) => brigade.contains(k))) return pair.$1;
+    }
+    for (final pair in districts) {
+      if (pair.$2.any((k) => squadron.contains(k))) return pair.$1;
+    }
+    if (rawDist.isNotEmpty && rawDist != '市辖区') return rawDist;
+    return '衢州市';
+  }
+
+  static bool _matchesUnit(ExternalIncident ext, String? userUnitName) {
+    if (userUnitName == null || userUnitName.trim().isEmpty) return true;
+    final unit = userUnitName.trim();
+    const keywords = ['龙游', '江山', '柯城', '衢江', '常山', '开化', '智慧新城', '新城'];
+    String? matchedKeyword;
+    for (final kw in keywords) {
+      if (unit.contains(kw)) {
+        matchedKeyword = kw;
+        break;
+      }
+    }
+    if (matchedKeyword == null) return true; // 支队或非县区大队查看全量
+
+    final district = _resolveDistrict(ext);
+    return district.contains(matchedKeyword) ||
+        ext.brigadeName.contains(matchedKeyword) ||
+        ext.squadronName.contains(matchedKeyword) ||
+        ext.districtName.contains(matchedKeyword) ||
+        ext.crimeAddress.contains(matchedKeyword);
+  }
+
   List<_UnifiedIncidentItem> _buildUnifiedIncidentItems() {
     final customItems = <_UnifiedIncidentItem>[];
     for (final inc in widget.activeIncidents) {
@@ -844,10 +906,11 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         customItems.add(_UnifiedIncidentItem(
           key: 'custom_${inc.id}',
           title: inc.displayName,
+          districtTag: '自建',
           subtitle: inc.unresolvedActiveCount > 0
               ? '${inc.unresolvedActiveCount}人处置中'
-              : '内部自建警情',
-          badgeText: '自建',
+              : '内部自建现场',
+          badgeText: '加入',
           badgeBg: const Color(0xFFF39C12).withValues(alpha: 0.15),
           badgeFg: const Color(0xFFD35400),
           actionText: '加入',
@@ -858,8 +921,12 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
       }
     }
 
+    final effectiveUnit = widget.userUnitName ?? _currentUserUnitName;
     final externalItems = <_UnifiedIncidentItem>[];
     for (final ext in widget.externalIncidents) {
+      if (!_matchesUnit(ext, effectiveUnit)) {
+        continue;
+      }
       Incident? matched;
       for (final local in widget.activeIncidents) {
         if (local.id == ext.claimedIncidentId ||
@@ -871,22 +938,29 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
       }
       final isClaimed = ext.claimed || matched != null;
       final timeStr = _formatIncidentTime(ext.registerTime);
+      final district = _resolveDistrict(ext);
+      final station = ext.squadronName.isNotEmpty
+          ? ext.squadronName
+          : ext.brigadeName;
+      final situation = ext.situationSummary;
       final subtitleParts = <String>[
-        if (ext.districtName.isNotEmpty) ext.districtName,
-        if (ext.incidentType.isNotEmpty) ext.incidentType,
+        if (station.isNotEmpty) station,
+        if (situation.isNotEmpty) situation,
         if (timeStr.isNotEmpty) timeStr,
       ];
 
       externalItems.add(_UnifiedIncidentItem(
         key: 'ext_${ext.externalId}',
         title: ext.crimeAddress.isNotEmpty ? ext.crimeAddress : ext.incidentNumber,
+        districtTag: district,
         subtitle: subtitleParts.join(' · '),
         badgeText: isClaimed ? '处置中' : '待认领',
         badgeBg: isClaimed
             ? AppColors.actionPrimary.withValues(alpha: 0.12)
             : const Color(0xFF27AE60).withValues(alpha: 0.14),
         badgeFg: isClaimed ? AppColors.actionPrimary : const Color(0xFF1E8449),
-        actionText: isClaimed ? '加入' : '认领建档',
+        actionText: isClaimed ? '处置中' : '待认领',
+        describe: ext.incidentDescribe.trim().isNotEmpty ? ext.incidentDescribe.trim() : null,
         isClaimed: isClaimed,
         isCustom: false,
         onTap: () {
@@ -909,338 +983,379 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
 
     return allItems.where((item) {
       return item.title.toLowerCase().contains(query) ||
+          item.districtTag.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
           item.badgeText.toLowerCase().contains(query);
     }).toList();
   }
 
+  Widget _buildFullScreenHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s3, AppSpacing.s4, AppSpacing.s2),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.actionPrimary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(
+              Icons.local_fire_department_outlined,
+              color: AppColors.actionPrimary,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '选择警情或直接进入',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 42,
+            child: TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _searchKeyword = v),
+              style: const TextStyle(fontSize: 14),
+              decoration: InputDecoration(
+                hintText: '搜索地址、类型或编号…',
+                hintStyle: TextStyle(
+                  fontSize: 13.5,
+                  color: AppColors.textTertiary,
+                ),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _searchKeyword.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchKeyword = '');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                filled: true,
+                fillColor: AppColors.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  borderSide: BorderSide(color: AppColors.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  borderSide: BorderSide(color: AppColors.border),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton.filledTonal(
+          tooltip: '刷新派警列表',
+          icon: widget.externalLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh, size: 20),
+          onPressed: (_busy || widget.externalLoading) ? null : _refreshExternal,
+          style: IconButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            minimumSize: const Size(42, 42),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFullScreenBottomActions(List<Incident> incidents) {
+    final hasKeyboard = MediaQuery.viewInsetsOf(context).bottom > 80;
+    if (hasKeyboard) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.s4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FilledButton.icon(
+            onPressed: _busy ? null : _create,
+            icon: const Icon(Icons.add),
+            label: const Text('新建警情'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+            ),
+          ),
+          if (widget.onEnterWithoutIncident != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : widget.onEnterWithoutIncident,
+                icon: const Icon(Icons.arrow_forward_outlined),
+                label: const Text('直接进入 App'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(46),
+                ),
+              ),
+            ),
+          const SizedBox(height: 6),
+          Text(
+            incidents.isEmpty
+                ? '当前没有进行中的警情。新建警情会自动使用时间戳名称。'
+                : '如果列表中没有目标警情，可新建；系统会自动使用时间戳名称。',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.textTertiary,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final incidents = widget.activeIncidents;
+
+    if (widget.authenticationRequired) {
+      return Semantics(
+        container: true,
+        scopesRoute: true,
+        explicitChildNodes: true,
+        namesRoute: true,
+        label: '用户认证',
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRect(
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                child: ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
+              ),
+            ),
+            const ModalBarrier(dismissible: false, color: Colors.transparent),
+            SafeArea(
+              child: AnimatedPadding(
+                padding: MediaQuery.viewInsetsOf(context),
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final hasKeyboard =
+                        MediaQuery.viewInsetsOf(context).bottom > 80;
+                    final width = math.max(
+                      1.0,
+                      math.min(constraints.maxWidth - 32, 560.0),
+                    );
+                    final height = math.max(
+                      1.0,
+                      math.min(
+                        constraints.maxHeight - (hasKeyboard ? 16 : 20),
+                        640.0,
+                      ),
+                    );
+                    final keyboardWidth = math.max(
+                      1.0,
+                      math.min(constraints.maxWidth, 560.0),
+                    );
+                    return Align(
+                      alignment: hasKeyboard
+                          ? Alignment.bottomCenter
+                          : Alignment.center,
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: hasKeyboard ? 8 : 0),
+                        child: ConstrainedBox(
+                          constraints: hasKeyboard
+                              ? BoxConstraints(
+                                  minWidth: keyboardWidth,
+                                  maxWidth: keyboardWidth,
+                                  maxHeight: height,
+                                )
+                              : BoxConstraints.tightFor(
+                                  width: width,
+                                  height: height,
+                                ),
+                          child: Material(
+                            key: const Key('incident-selection-overlay'),
+                            color: AppColors.surface,
+                            elevation: hasKeyboard ? 16 : 12,
+                            shadowColor: Colors.black.withValues(alpha: 0.3),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: hasKeyboard
+                                  ? const BorderRadius.vertical(
+                                      top: Radius.circular(AppRadius.xl),
+                                    )
+                                  : BorderRadius.circular(AppRadius.xl),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                20,
+                                hasKeyboard ? 10 : 22,
+                                20,
+                                hasKeyboard ? 12 : 18,
+                              ),
+                              child: _pendingApp != null
+                                  ? _buildPendingApprovalView()
+                                  : _buildAuthentication(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            if (_busy)
+              const Positioned.fill(
+                child: IgnorePointer(
+                  child: ColoredBox(color: Colors.transparent),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
     return Semantics(
       container: true,
       scopesRoute: true,
       explicitChildNodes: true,
       namesRoute: true,
-      label: widget.authenticationRequired ? '用户认证' : '选择警情或直接进入',
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ClipRect(
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-              child: ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
-            ),
-          ),
-          const ModalBarrier(dismissible: false, color: Colors.transparent),
-          SafeArea(
-            child: AnimatedPadding(
-              padding: MediaQuery.viewInsetsOf(context),
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOutCubic,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final hasKeyboard =
-                      MediaQuery.viewInsetsOf(context).bottom > 80;
-                  // 首帧或键盘切换时约束可能暂时小于边距，不能把负值传给
-                  // SizedBox，否则会触发红屏：BoxConstraints(-32, -32)。
-                  final width = math.max(
-                    1.0,
-                    math.min(constraints.maxWidth - 32, 560.0),
-                  );
-                  final height = math.max(
-                    1.0,
-                    math.min(
-                      constraints.maxHeight - (hasKeyboard ? 16 : 20),
-                      640.0,
-                    ),
-                  );
-                  final keyboardAuth =
-                      widget.authenticationRequired && hasKeyboard;
-                  final keyboardWidth = math.max(
-                    1.0,
-                    math.min(constraints.maxWidth, 560.0),
-                  );
-                  return Align(
-                    alignment: keyboardAuth
-                        ? Alignment.bottomCenter
-                        : Alignment.center,
-                    child: Padding(
-                      padding: EdgeInsets.only(bottom: keyboardAuth ? 8 : 0),
-                      child: ConstrainedBox(
-                        constraints: keyboardAuth
-                            ? BoxConstraints(
-                                minWidth: keyboardWidth,
-                                maxWidth: keyboardWidth,
-                                maxHeight: height,
-                              )
-                            : BoxConstraints.tightFor(
-                                width: width,
-                                height: height,
-                              ),
-                        child: Material(
-                          key: const Key('incident-selection-overlay'),
-                          color: AppColors.surface,
-                          elevation: keyboardAuth ? 16 : 12,
-                          shadowColor: Colors.black.withValues(alpha: 0.3),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: keyboardAuth
-                                ? const BorderRadius.vertical(
-                                    top: Radius.circular(AppRadius.xl),
-                                  )
-                                : BorderRadius.circular(AppRadius.xl),
+      label: '选择警情或直接进入',
+      child: Material(
+        key: const Key('incident-selection-overlay'),
+        color: AppColors.background,
+        child: SafeArea(
+          child: Stack(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildFullScreenHeader(context),
+                  if (widget.loading) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Padding(
-                            padding: EdgeInsets.fromLTRB(
-                              20,
-                              keyboardAuth ? 10 : (hasKeyboard ? 14 : 22),
-                              20,
-                              hasKeyboard ? 12 : 18,
+                          const SizedBox(width: 8),
+                          Text(
+                            '正在同步现有警情…',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
                             ),
-                            child: widget.authenticationRequired
-                                ? (_pendingApp != null
-                                      ? _buildPendingApprovalView()
-                                      : _buildAuthentication())
-                                : Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Container(
-                                            width: 44,
-                                            height: 44,
-                                            decoration: BoxDecoration(
-                                              color: AppColors.actionPrimary
-                                                  .withValues(alpha: 0.13),
-                                              borderRadius:
-                                                  BorderRadius.circular(AppRadius.md),
-                                            ),
-                                            child: Icon(
-                                              Icons
-                                                  .local_fire_department_outlined,
-                                              color: AppColors.actionPrimary,
-                                              size: 26,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  '选择警情或直接进入',
-                                                  style: TextStyle(
-                                                    fontSize: 21,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                                SizedBox(height: 4),
-                                                Text(
-                                                  '需要处置时再选择或新建警情；也可以先进入 App 使用其他功能。',
-                                                  style: TextStyle(
-                                                    color:
-                                                        AppColors.textSecondary,
-                                                    fontSize: 13,
-                                                    height: 1.35,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (widget.loading) ...[
-                                        const SizedBox(height: 14),
-                                        Row(
-                                          children: [
-                                            SizedBox(
-                                              width: 14,
-                                              height: 14,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            ),
-                                            SizedBox(width: 8),
-                                            Text(
-                                              '正在同步现有警情…',
-                                              style: TextStyle(
-                                                color: AppColors.textSecondary,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                      if (_error != null) ...[
-                                        const SizedBox(height: 12),
-                                        AppNotice(
-                                          key: const Key(
-                                            'incident-selection-error',
-                                          ),
-                                          kind: AppNoticeKind.error,
-                                          text: _error!,
-                                        ),
-                                      ],
-                                      if (widget.externalLoading) ...[
-                                        const SizedBox(height: 10),
-                                        Row(
-                                          children: [
-                                            const SizedBox(
-                                              width: 14,
-                                              height: 14,
-                                              child: CircularProgressIndicator(strokeWidth: 2),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '正在获取衢州官方派警…',
-                                              style: TextStyle(
-                                                color: AppColors.textSecondary,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                      const SizedBox(height: 14),
-                                      // 搜索与手动刷新栏
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: SizedBox(
-                                              height: 38,
-                                              child: TextField(
-                                                controller: _searchController,
-                                                onChanged: (v) => setState(() => _searchKeyword = v),
-                                                style: const TextStyle(fontSize: 13),
-                                                decoration: InputDecoration(
-                                                  hintText: '搜索地址、类型或编号…',
-                                                  hintStyle: TextStyle(
-                                                    fontSize: 13,
-                                                    color: AppColors.textTertiary,
-                                                  ),
-                                                  prefixIcon: const Icon(Icons.search, size: 18),
-                                                  suffixIcon: _searchKeyword.isNotEmpty
-                                                      ? IconButton(
-                                                          icon: const Icon(Icons.clear, size: 16),
-                                                          onPressed: () {
-                                                            _searchController.clear();
-                                                            setState(() => _searchKeyword = '');
-                                                          },
-                                                        )
-                                                      : null,
-                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-                                                  filled: true,
-                                                  fillColor: AppColors.surfaceSubtle,
-                                                  border: OutlineInputBorder(
-                                                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                                                    borderSide: BorderSide.none,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          IconButton(
-                                            tooltip: '刷新派警列表',
-                                            icon: widget.externalLoading
-                                                ? const SizedBox(
-                                                    width: 18,
-                                                    height: 18,
-                                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                                  )
-                                                : const Icon(Icons.refresh, size: 20),
-                                            onPressed: (_busy || widget.externalLoading) ? null : _refreshExternal,
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Expanded(
-                                        child: Builder(
-                                          builder: (context) {
-                                            final items = _buildUnifiedIncidentItems();
-                                            if (items.isEmpty) {
-                                              return const _EmptyIncidentState();
-                                            }
-                                            return ListView.separated(
-                                              key: const Key('incident-selection-list'),
-                                              padding: EdgeInsets.zero,
-                                              itemCount: items.length,
-                                              separatorBuilder: (_, __) => const Divider(height: 1),
-                                              itemBuilder: (context, index) {
-                                                final item = items[index];
-                                                return _UnifiedIncidentOption(
-                                                  item: item,
-                                                  enabled: !_busy,
-                                                );
-                                              },
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(height: 14),
-                                      FilledButton.icon(
-                                        onPressed: _busy ? null : _create,
-                                        icon: const Icon(Icons.add),
-                                        label: const Text('新建警情'),
-                                        style: FilledButton.styleFrom(
-                                          minimumSize: const Size.fromHeight(
-                                            52,
-                                          ),
-                                        ),
-                                      ),
-                                      if (widget.onEnterWithoutIncident != null)
-                                        Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 8,
-                                          ),
-                                          child: OutlinedButton.icon(
-                                            onPressed: _busy
-                                                ? null
-                                                : widget.onEnterWithoutIncident,
-                                            icon: const Icon(
-                                              Icons.arrow_forward_outlined,
-                                            ),
-                                            label: const Text('直接进入 App'),
-                                            style: OutlinedButton.styleFrom(
-                                              minimumSize:
-                                                  const Size.fromHeight(52),
-                                            ),
-                                          ),
-                                        ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        incidents.isEmpty
-                                            ? '当前没有进行中的警情。新建警情会自动使用时间戳名称。'
-                                            : '如果列表中没有目标警情，可新建；系统会自动使用时间戳名称。',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: AppColors.textTertiary,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
-                  );
-                },
+                  ],
+                  if (_error != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
+                      child: AppNotice(
+                        key: const Key('incident-selection-error'),
+                        kind: AppNoticeKind.error,
+                        text: _error!,
+                      ),
+                    ),
+                  ],
+                  if (widget.externalLoading) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
+                      child: Row(
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '正在获取衢州官方派警…',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s3, AppSpacing.s4, AppSpacing.s2),
+                    child: _buildSearchBar(),
+                  ),
+                  Expanded(
+                    child: Builder(
+                      builder: (context) {
+                        final items = _buildUnifiedIncidentItems();
+                        if (items.isEmpty) {
+                          return const _EmptyIncidentState();
+                        }
+                        return ListView.separated(
+                          key: const Key('incident-selection-list'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.s4,
+                            vertical: AppSpacing.s2,
+                          ),
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final item = items[index];
+                            return _UnifiedIncidentOption(
+                              item: item,
+                              enabled: !_busy,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  _buildFullScreenBottomActions(incidents),
+                ],
               ),
-            ),
+              if (_busy)
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(color: Colors.transparent),
+                  ),
+                ),
+            ],
           ),
-          if (_busy)
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: ColoredBox(color: Colors.transparent),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -1252,26 +1367,31 @@ class _EmptyIncidentState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.folder_copy_outlined,
-            size: 72,
-            color: AppColors.textTertiary.withValues(alpha: 0.9),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            '当前没有进行中的警情',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '如果你是第一位到达的用户，可以新建警情；也可以直接进入 App。',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-          ),
-        ],
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.folder_copy_outlined,
+              size: 64,
+              color: AppColors.textTertiary.withValues(alpha: 0.9),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '当前没有进行中的警情',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '如果你是第一位到达的用户，可以新建警情；也可以直接进入 App。',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1281,7 +1401,9 @@ class _EmptyIncidentState extends StatelessWidget {
 class _UnifiedIncidentItem {
   final String key;
   final String title;
+  final String districtTag;
   final String subtitle;
+  final String? describe;
   final String badgeText;
   final Color badgeBg;
   final Color badgeFg;
@@ -1293,7 +1415,9 @@ class _UnifiedIncidentItem {
   _UnifiedIncidentItem({
     required this.key,
     required this.title,
+    required this.districtTag,
     required this.subtitle,
+    this.describe,
     required this.badgeText,
     required this.badgeBg,
     required this.badgeFg,
@@ -1316,105 +1440,121 @@ class _UnifiedIncidentOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: Colors.transparent,
       child: InkWell(
         excludeFromSemantics: true,
         onTap: enabled ? item.onTap : null,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-          child: Row(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(
+              color: AppColors.border,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: item.badgeBg,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  item.isCustom
-                      ? Icons.flag_outlined
-                      : Icons.local_fire_department_outlined,
-                  color: item.badgeFg,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.title,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: item.badgeBg,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1.5,
-                          ),
-                          margin: const EdgeInsets.only(right: 6),
-                          decoration: BoxDecoration(
-                            color: item.badgeBg,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            item.badgeText,
-                            style: TextStyle(
-                              color: item.badgeFg,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        Text(
+                          item.badgeText,
+                          style: TextStyle(
+                            color: item.badgeFg,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        Expanded(
-                          child: Text(
-                            item.title,
-                            softWrap: true,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                        const SizedBox(width: 2),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 15,
+                          color: item.badgeFg,
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  if (item.districtTag.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5.5,
+                        vertical: 1.5,
+                      ),
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        color: item.badgeBg,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        item.districtTag,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: item.badgeFg,
+                        ),
+                      ),
+                    ),
+                  ],
+                  Expanded(
+                    child: Text(
                       item.subtitle,
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
+                        height: 1.3,
                       ),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 6),
-              item.isClaimed
-                  ? TextButton.icon(
-                      onPressed: enabled ? item.onTap : null,
-                      icon: const Icon(Icons.arrow_forward, size: 16),
-                      label: Text(item.actionText),
-                      style: TextButton.styleFrom(
-                        foregroundColor: item.badgeFg,
-                        minimumSize: const Size(64, 44),
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                      ),
-                    )
-                  : FilledButton.tonal(
-                      onPressed: enabled ? item.onTap : null,
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                      ),
-                      child: Text(
-                        item.actionText,
-                        style: const TextStyle(fontSize: 12.5),
-                      ),
-                    ),
+              if (item.describe != null && item.describe!.trim().isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Text(
+                  item.describe!.trim(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.textTertiary,
+                    fontSize: 11.5,
+                    height: 1.3,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1426,9 +1566,21 @@ class _UnifiedIncidentOption extends StatelessWidget {
 String _formatIncidentTime(int timestampMs) {
   if (timestampMs <= 0) return '';
   final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs);
-  final m = dt.month.toString().padLeft(2, '0');
-  final d = dt.day.toString().padLeft(2, '0');
+  final now = DateTime.now();
+  final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+  final yesterday = now.subtract(const Duration(days: 1));
+  final isYesterday = dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day;
+
   final h = dt.hour.toString().padLeft(2, '0');
   final min = dt.minute.toString().padLeft(2, '0');
-  return '$m-$d $h:$min';
+
+  if (isToday) {
+    return '今日 $h:$min';
+  } else if (isYesterday) {
+    return '昨日 $h:$min';
+  } else {
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$m-$d';
+  }
 }

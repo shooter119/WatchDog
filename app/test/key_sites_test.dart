@@ -522,7 +522,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('搜索并关联'));
+    await tester.tap(find.byKey(const Key('key-site-search')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('合成单位'));
     await tester.pumpAndSettle();
@@ -534,7 +534,7 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(controller.changes, 0);
-    await tester.tap(find.text('搜索并关联'));
+    await tester.tap(find.byKey(const Key('key-site-search')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('合成单位'));
     await tester.pumpAndSettle();
@@ -696,7 +696,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('搜索并关联'));
+    await tester.tap(find.byKey(const Key('key-site-search')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('合成单位'));
     await tester.pumpAndSettle();

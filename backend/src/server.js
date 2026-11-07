@@ -1846,7 +1846,12 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
 
     // 3. 建档：自动填入官方编号与地址/分类
     const now = Date.now();
-    const title = ext.crime_address || (ext.district_name ? `${ext.district_name} ${ext.incident_type || ''}` : ext.incident_type) || null;
+    const resolvedDistrict = require('./police-api-service').resolveDistrict(ext);
+    let fullLocation = String(ext.crime_address || '').trim();
+    if (fullLocation && resolvedDistrict && resolvedDistrict !== '衢州市' && !fullLocation.includes(resolvedDistrict)) {
+      fullLocation = `${resolvedDistrict}${fullLocation}`;
+    }
+    const title = ext.crime_address || (resolvedDistrict ? `${resolvedDistrict} ${ext.incident_type || ''}` : ext.incident_type) || null;
     const candidateNumber = extNumber || null;
 
     const created = await db.createIncident({
@@ -1869,16 +1874,22 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     // 4. 写入 incident_details
     if (syncSupported() && unitId) {
       try {
+        const { buildSituationDescription } = require('./police-api-service');
+        const situation = ext.incident_describe || buildSituationDescription({
+          incident_type: ext.incident_type,
+          disposal_object_name: ext.disposal_object_name,
+        });
         const detailData = {
           external_id: extId || undefined,
           external_incident_number: extNumber || undefined,
           external_source: 'police_api_quzhou',
           original_category: ext.incident_type || undefined,
-          location: ext.crime_address || undefined,
-          administrative_area: ext.district_name || undefined,
-          situation: ext.incident_describe || undefined,
-          received_at: ext.register_time || undefined,
-          specific_type: ext.incident_type || undefined,
+          location: fullLocation || ext.crime_address || undefined,
+          administrative_area: resolvedDistrict || ext.district_name || undefined,
+          situation: situation || undefined,
+          received_at: ext.register_time ? new Date(ext.register_time).toISOString() : undefined,
+          specific_type: (ext.disposal_object_name && ext.disposal_object_name !== '其他') ? ext.disposal_object_name : (ext.incident_type || undefined),
+          level: ext.incident_level || undefined,
         };
         const cleanData = {};
         for (const [k, v] of Object.entries(detailData)) {

@@ -217,10 +217,29 @@ class _IncidentLinkState extends State<_IncidentLink> {
     return Padding(
       padding: const EdgeInsets.only(top: AppSpacing.s1, bottom: AppSpacing.s3),
       child: AppCard(
+        onTap: (link == null && widget.incident.isActive)
+            ? (_busy || _state == null ? null : _change)
+            : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SectionTitle(text: '关联重点单位'),
+            SectionTitle(
+              text: '关联重点单位',
+              trailing: (link == null && widget.incident.isActive)
+                  ? IconButton(
+                      key: const Key('key-site-search'),
+                      onPressed: _busy || _state == null ? null : _change,
+                      icon: const Icon(Icons.search, size: 20),
+                      tooltip: '搜索关联重点单位',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                    )
+                  : null,
+            ),
             if (link != null) ...[
               Text(
                 link.name,
@@ -287,27 +306,13 @@ class _IncidentLinkState extends State<_IncidentLink> {
                   ),
                 ],
               )
-            else
-              Wrap(
-                spacing: AppSpacing.s2,
-                runSpacing: AppSpacing.s1,
-                children: [
-                  if (link != null)
-                    OutlinedButton.icon(
-                      key: const Key('key-site-open'),
-                      onPressed: () => _open(link.siteId, link.version),
-                      style: compactOutlined,
-                      icon: const Icon(Icons.folder_open, size: 18),
-                      label: const Text('单位资料'),
-                    ),
-                  if (widget.incident.isActive)
-                    TextButton(
-                      key: const Key('key-site-search'),
-                      onPressed: _busy || _state == null ? null : _change,
-                      style: compactAction,
-                      child: const Text('搜索并关联'),
-                    ),
-                ],
+            else if (link != null)
+              OutlinedButton.icon(
+                key: const Key('key-site-open'),
+                onPressed: () => _open(link.siteId, link.version),
+                style: compactOutlined,
+                icon: const Icon(Icons.folder_open, size: 18),
+                label: const Text('单位资料'),
               ),
             if (link != null &&
                 widget.incident.isActive &&

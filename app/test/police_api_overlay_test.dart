@@ -72,16 +72,17 @@ void main() {
 
     // 验证自建警情及 Badge
     expect(find.text('自建'), findsOneWidget);
+    expect(find.text('加入'), findsOneWidget);
     expect(find.text('南区综合演练现场'), findsOneWidget);
 
     // 验证官方已认领警情及 Badge
     expect(find.text('处置中'), findsOneWidget);
     expect(find.text('柯城区新桥街88号'), findsOneWidget);
 
-    // 验证官方未认领警情及 Badge
+    // 验证官方未认领警情及 Badge与属地
     expect(find.text('待认领'), findsOneWidget);
     expect(find.text('龙游县荣昌广场'), findsOneWidget);
-    expect(find.text('认领建档'), findsOneWidget);
+    expect(find.text('龙游县'), findsOneWidget);
 
     // 验证底部新建警情按钮
     expect(find.text('新建警情'), findsOneWidget);
@@ -144,5 +145,30 @@ void main() {
     expect(find.text('南区综合演练现场'), findsOneWidget);
     expect(find.text('柯城区新桥街88号'), findsOneWidget);
     expect(find.text('龙游县荣昌广场'), findsOneWidget);
+  });
+
+  testWidgets('按用户大队（如龙游县消防救援大队）强隔离展示警情列表', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: IncidentSelectionOverlay(
+            userUnitName: '龙游县消防救援大队',
+            activeIncidents: [customIncident],
+            externalIncidents: [claimedExternal, unclaimedExternal],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 自建警情属于当前单位，显示
+    expect(find.text('南区综合演练现场'), findsOneWidget);
+    // 龙游警情属于本大队，显示
+    expect(find.text('龙游县荣昌广场'), findsOneWidget);
+    // 柯城区警情非本大队，强隔离过滤不展示
+    expect(find.text('柯城区新桥街88号'), findsNothing);
   });
 }

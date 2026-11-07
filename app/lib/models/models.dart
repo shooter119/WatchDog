@@ -184,6 +184,7 @@ class ExternalIncident {
   final String squadronName;
   final String districtName;
   final String incidentType;
+  final String disposalObjectName;
   final String incidentLevel;
   final String incidentStatus;
   final String crimeAddress;
@@ -204,6 +205,7 @@ class ExternalIncident {
     this.squadronName = '',
     this.districtName = '',
     this.incidentType = '其他',
+    this.disposalObjectName = '',
     this.incidentLevel = '',
     this.incidentStatus = '',
     required this.crimeAddress,
@@ -217,6 +219,14 @@ class ExternalIncident {
     this.claimedIncidentTitle,
   });
 
+  String get situationSummary {
+    if (incidentDescribe.trim().isNotEmpty) return incidentDescribe.trim();
+    if (disposalObjectName.isNotEmpty && disposalObjectName != '其他') {
+      return '$incidentType($disposalObjectName)';
+    }
+    return incidentType;
+  }
+
   factory ExternalIncident.fromJson(Map<String, dynamic> json) => ExternalIncident(
     externalId: json['external_id']?.toString() ?? '',
     incidentNumber: json['incident_number']?.toString() ?? '',
@@ -225,6 +235,7 @@ class ExternalIncident {
     squadronName: json['squadron_name']?.toString() ?? '',
     districtName: json['district_name']?.toString() ?? '',
     incidentType: json['incident_type']?.toString() ?? '其他',
+    disposalObjectName: json['disposal_object_name']?.toString() ?? '',
     incidentLevel: json['incident_level']?.toString() ?? '',
     incidentStatus: json['incident_status']?.toString() ?? '',
     crimeAddress: json['crime_address']?.toString() ?? '',
@@ -246,6 +257,7 @@ class ExternalIncident {
     'squadron_name': squadronName,
     'district_name': districtName,
     'incident_type': incidentType,
+    'disposal_object_name': disposalObjectName,
     'incident_level': incidentLevel,
     'incident_status': incidentStatus,
     'crime_address': crimeAddress,
