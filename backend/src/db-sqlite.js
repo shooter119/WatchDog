@@ -548,7 +548,9 @@ if (resolvedSeed) {
   }
 }
 
-function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}) {
+function listEntries(options = {}) {
+  const opts = typeof options === 'string' ? { scene: options } : (options || {});
+  const { activeOnly = false, limit = 500, scene = 'default' } = opts;
   let sql = 'SELECT * FROM entries WHERE scene = ?';
   if (activeOnly) sql += ' AND exited_at IS NULL';
   sql += ' ORDER BY entry_at DESC LIMIT ?';
@@ -1046,7 +1048,9 @@ function purgeOldLogs(days = 30) {
 }
 
 /** 火场随手记列表（按场景隔离，新→旧） */
-function listNotes({ scene = 'default', limit = 500 } = {}) {
+function listNotes(options = {}) {
+  const opts = typeof options === 'string' ? { scene: options } : (options || {});
+  const { scene = 'default', limit = 500 } = opts;
   return db
     .prepare('SELECT * FROM notes WHERE scene = ? ORDER BY created_at DESC LIMIT ?')
     .all(scene, limitOf(limit, 500, 2000));

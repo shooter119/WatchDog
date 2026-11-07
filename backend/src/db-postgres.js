@@ -86,7 +86,9 @@ async function initialize() {
 
 const ready = db.ready.then(initialize);
 
-async function listEntries({ activeOnly = false, limit = 500, scene = 'default' } = {}) {
+async function listEntries(options = {}) {
+  const opts = typeof options === 'string' ? { scene: options } : (options || {});
+  const { activeOnly = false, limit = 500, scene = 'default' } = opts;
   const filters = { scene };
   if (activeOnly) filters.exited_at = { op: 'is', value: 'null' };
   return db.select('entries', { filters, order: 'entry_at.desc', limit: limitOf(limit, 500, 2000) });
@@ -777,7 +779,9 @@ async function purgeOldSyncEvents(days = 7) {
   })).changes;
 }
 
-async function listNotes({ scene = 'default', limit = 500 } = {}) {
+async function listNotes(options = {}) {
+  const opts = typeof options === 'string' ? { scene: options } : (options || {});
+  const { scene = 'default', limit = 500 } = opts;
   return db.select('notes', { filters: { scene }, order: 'created_at.desc', limit: limitOf(limit, 500, 2000) });
 }
 

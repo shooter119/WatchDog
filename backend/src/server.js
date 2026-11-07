@@ -9,7 +9,7 @@ const { parseTextWithDeepSeek, chatWithDeepSeek, chatWithWebSearch, analyzeVisio
 const { durationMinutes, exitAtMs, measuredConsumptionLpm } = require('./calc');
 const db = require('./db');
 const { forceFields, forceQuantityLabel } = require('./force-fields');
-const { loadContext, contextInstruction, safeSearchQuery } = require('./incident-chat-context');
+const { loadContext, contextInstruction, safeSearchQuery, isIncidentInternalQuery } = require('./incident-chat-context');
 const logger = require('./logger');
 const { createDatabaseReadiness } = require('./database-readiness');
 const { parseAllowedHosts, isHostAllowed } = require('./network-policy');
@@ -2927,7 +2927,8 @@ app.post('/api/chat', async (req, res, next) => {
       return;
     }
     let reply;
-    if (CFG.llm.chatSearch) {
+    const shouldSearch = Boolean(CFG.llm.chatSearch && !isIncidentInternalQuery(clean, context));
+    if (shouldSearch) {
       try {
         const searchReply = await chatWithWebSearch({
           apiKey: CFG.llm.apiKey,
@@ -2950,12 +2951,12 @@ app.post('/api/chat', async (req, res, next) => {
       reply = await chatWithDeepSeek({
         apiKey: CFG.llm.apiKey,
         baseUrl: CFG.llm.baseUrl,
-        model: CFG.llm.model,
+        model: CFG.llm.chatModel || CFG.llm.model,
         messages,
       });
     }
-    await logOp(req, 'info', 'chat_done', '问答完成', { ms: Date.now() - t0, replyLen: reply.length });
-    res.json({ reply, created_at: Date.now(), search_used: CFG.llm.chatSearch, context_used: Boolean(context), context_version: context?.version || null });
+    await logOp(req, 'info', 'chat_done', '问答完成', { ms: Date.now() - t0, replyLen: reply.length, search_used: shouldSearch });
+    res.json({ reply, created_at: Date.now(), search_used: shouldSearch, context_used: Boolean(context), context_version: context?.version || null });
   } catch (e) {
     await logOp(req, 'error', 'chat_err', `问答失败: ${errorSummary(e)}`);
     next(e);
