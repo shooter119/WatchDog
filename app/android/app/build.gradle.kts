@@ -46,10 +46,12 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appName"] = "火场智控"
     }
 
     buildTypes {
         release {
+            manifestPlaceholders["appName"] = "火场智控"
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.create("release") {
                     keyAlias = requiredSigningProperty("keyAlias")
@@ -64,6 +66,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appName"] = "火场智控·测试"
         }
     }
 }

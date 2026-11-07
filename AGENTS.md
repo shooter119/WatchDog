@@ -2,24 +2,29 @@
 
 ## 工作流
 
-本项目研发协作全面遵循 **「Day Day Up」 标准闭环研发规范**。无论用户是否显式提及该 Skill，当遇到需求变更、功能新增、缺陷排查或架构优化时，智能体均应主动按以下六步标准化流程推进：
+本项目研发协作全面遵循 **「Day Day Up」 标准闭环研发规范**。无论用户是否显式提及该 Skill，当遇到需求变更、功能新增、缺陷排查或架构优化时，智能体均应主动按以下七步标准化流程推进：
 
-1. **需求接收与代码库深度探查（Explore First）**：
+1. **需求接收、代码勘查与调研分级（Explore & Research Triaging）**：
    - 充分倾听并理解用户需求与痛点；
-   - 凡能通过阅读代码、追溯历史（`git log` / `git diff`）或运行测试获知的信息，必须先自主探查代码库，严禁不做调查就盲目发问；深挖底层技术根因。
-2. **交互式深度盘问对齐（Interactive Grill-Me）**：
+   - 凡能通过阅读代码、追溯历史（`git log` / `git diff`）或运行测试获知的信息，必须先自主探查代码库，严禁不做调查就盲目发问；深挖底层技术根因；
+   - **技术调研智能分级机制**：本地已知问题与局部修复判定为「免调研」（0 额外 Token 消耗）；涉及第三方技术选型、重大架构演进、疑难底层报错或行业前沿范式借鉴时，智能体判定为「需调研」，提炼调研方向并在第 2 步征询用户授权。
+2. **交互式深度盘问与调研征询（Interactive Grill-Me & Consent）**：
+   - 若第 1 步触发「需调研」，在盘问首题或决策分支中明确呈现调研方向并征求用户意见；
    - 使用 `ask_question` 工具逐一向用户澄清关键需求与决策分支，单次只问一个问题，避免连续轰炸；
    - 必须提供清晰选项并将推荐方案置顶（标注 `(Recommended)`），层层推进，与用户建立 100% 认知共识。
-3. **制定详尽施工方案（Implementation Plan）**：
-   - 在正式动工编码前，必须通过 Artifact 编写并呈现结构化施工方案，明确现状根因、改造范围、防御性设计、测试及部署验证计划。
-4. **严谨施工与全套门禁验证（Coding & Verification）**：
+3. **Issue 规格锚定（Spec-as-Issue）**：
+   - 盘问对齐达成共识后，在正式写施工方案前，智能体自动通过 `gh issue create`（或 GitHub API）在仓库创建标准 GitHub Issue（包含需求背景、改造方案与验收条件 Acceptance Criteria）；
+   - 提取生成的 `Issue #<id>`，作为后续施工方案、提交信息和审计跟踪的唯一上下文锚点。
+4. **制定详尽施工方案（Implementation Plan）**：
+   - 在正式动工编码前，必须通过 Artifact 编写并呈现结构化施工方案，头部标明关联的 `Issue #<id>`，明确现状根因、改造范围、防御性设计、测试及部署验证计划。
+5. **严谨施工与全套门禁验证（Coding & Verification）**：
    - 最小必要改动，保持代码内聚并维护防御性兼容；
    - 编码完成后必须本地全套门禁通过（后端 `npm test` 322+、App `flutter analyze` 0 警告、App `flutter test` 471+），保持 0 报警 0 失败，测试用例只增不减。
-5. **交付前代码审查与呈现（Pre-Commit Audit）**：
+6. **交付前代码审查与呈现（Pre-Commit Audit）**：
    - **绝对红线：严禁在未经用户审核前擅自执行 `git commit`！**
-   - 编码与验证全绿后，必须向用户清晰呈现本次改动清单、核心 diff 差异与全量测试通过报告，明确请求用户进行代码审核。
-6. **用户确认后自动提交与部署（Confirm -> Commit -> Deploy）**：
-   - **commit / push 在用户确认后自动执行**：经用户审核确认后，自动执行 `git add` + `commit` + `push`，只提交本次相关的改动，提交信息简洁中文、符合仓库风格；
+   - 编码与验证全绿后，必须向用户清晰呈现本次改动清单、核心 diff 差异、全量测试通过报告及拟提交的 commit message（必须含 `(closes #<id>)`），明确请求用户进行代码审核。
+7. **用户确认后自动提交、关闭与部署（Confirm -> Commit -> Auto-Close -> Deploy）**：
+   - **commit / push 在用户确认后自动执行**：经用户审核确认后，自动执行 `git add` + `git commit -m "... (closes #<id>)"` + `git push origin main`，GitHub 收到 push 后自动关闭对应的 Issue；
    - **后端与部署联动**：后端代码（`backend/src/`、`deploy/`）有修改时，在本地测试全绿且用户确认后执行 VPS Docker Compose 部署与数据库迁移，部署完成后必须完成公网健康检查与路由验收；
    - **发版严格由用户决定**：版本号与构建号、`git tag`、正式 APK 构建、VPS OTA 清单更新、GitHub Release 等全部环节，必须等用户明确指令后才执行。
 
@@ -59,6 +64,11 @@
   1. 依托 Android 实体机调试，拒绝使用或启动重型 QEMU / AVD 虚拟机；
   2. 使用 `scrcpy` 实现低延迟、高帧率桌面投屏，直接在 Mac 窗口中查看真机 UI、字体、圆角与交互效果；
   3. 配合 `flutter run -d <device_id>`（或直接推送构建包）实现毫秒级热重载调试。
+- **正式版与测试版双轨隔离规范（避免签名冲突与混淆）**：
+  1. **正式发布版（Release）**：桌面显示名称为「火场智控」，应用 ID 为 `com.firewatch.watchdog`，使用生产密钥库 `watchdog-release.keystore` 签名，支持通过 VPS OTA 检查与在线无缝覆盖升级；
+  2. **本地测试版（Debug / Profile）**：桌面显示名称为「火场智控·测试」，应用 ID 自动追加后缀为 `com.firewatch.watchdog.debug`，使用开发机本地 debug 签名；
+  3. **实体机并排共存**：两版本完全物理隔离，支持在同一台实体机上同时安装共存，两者的本地数据库（SQLite）、配置缓存（SharedPreferences）及 FileProvider 互不串扰；
+  4. **彻底杜绝签名冲突**：正式版的 OTA 在线更新专属于 `com.firewatch.watchdog`，不会受测试版干扰，从根本上杜绝 Android 系统底层签名不兼容拦截（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`）；测试版在设置中明确提示测试版环境，不触发生产 OTA 覆盖。
 - **免虚拟机原则**：保持本地环境轻量，不创建和常驻几 GB 至十几 GB 的本地 AVD/QEMU 镜像。
 
 ## 协作与脱敏安全规范
@@ -84,7 +94,7 @@ backend/                 Node.js 后端（Express + ws + pg PostgreSQL 17，端�
   src/calc.js            可用时间 = 容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)
   src/logger.js          统一日志
   test/                  node:test 单测（302 个用例，CI 门禁基线 300）
-app/                     Flutter 客户端（org com.firewatch.watchdog，版本 1.13.1+96）
+app/                     Flutter 客户端（正式版 com.firewatch.watchdog「火场智控」，测试版 com.firewatch.watchdog.debug「火场智控·测试」）
   lib/pages/             home(语音处置) / board(看板) / notes(火场日志) / chat(辅助问答/视觉) / roster(名单热词) / settings / archived_incidents / entry_detail / op_log / stats
   lib/api/api_client.dart 全部接口调用（X-Incident-Id / X-Device-Id / X-Op-Id / 短期会话 Token）
   lib/state/app_controller.dart 实时同步、当前警情、现场数据、每秒阈值检查、TTS/通知调度、离线队列调度

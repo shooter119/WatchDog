@@ -190,6 +190,13 @@ class _SettingsPageState extends State<SettingsPage> {
   /// 检查更新：ALI OTA 最新版 → 提示/下载/安装
   Future<void> _checkUpdate() async {
     if (_checkingUpdate) return;
+    if (kDebugMode) {
+      _showUpdateResult(
+        '测试版环境',
+        '当前运行的是测试版（火场智控·测试），已与正式版独立隔离。在线更新仅适用于正式版，请使用正式版体验在线升级。',
+      );
+      return;
+    }
     setState(() => _checkingUpdate = true);
     String? error;
     UpdateInfo? info;
@@ -872,7 +879,9 @@ class _SettingsPageState extends State<SettingsPage> {
           Column(
             children: [
               Text(
-                '火场智控 v$_displayVersion',
+                kDebugMode
+                    ? '火场智控·测试 v$_displayVersion (Debug)'
+                    : '火场智控 v$_displayVersion',
                 style: AppTextStyles.caption.copyWith(
                   color: AppColors.textSecondary,
                   fontWeight: FontWeight.w600,

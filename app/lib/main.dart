@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -317,7 +318,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 
   Widget _buildScaffold(BuildContext context) {
     return MaterialApp(
-      title: '火场智控',
+      title: kDebugMode ? '火场智控·测试' : '火场智控',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       // 默认 200ms 的 Theme 渐变会与瞬切的 AppColors 并存，出现两套配色。
