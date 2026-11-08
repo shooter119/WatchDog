@@ -20,6 +20,8 @@ class CommanderGlanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final summary = TacticalBriefEngine.extractAirSafetySummary(activeEntries);
+    final intel = TacticalBriefEngine.extractIntelligence(notes);
+    final hasHazard = intel.hasCriticalHazards;
     final tacticalProgress = TacticalBriefEngine.extractTacticalProgress(notes);
 
     final Color cardBorder;
@@ -193,9 +195,13 @@ class CommanderGlanceCard extends StatelessWidget {
                   Row(
                     children: [
                       Icon(
-                        Icons.timeline_rounded,
+                        hasHazard
+                            ? Icons.warning_amber_rounded
+                            : Icons.timeline_rounded,
                         size: 13,
-                        color: AppColors.textTertiary,
+                        color: hasHazard
+                            ? AppColors.alarm
+                            : AppColors.textTertiary,
                       ),
                       const SizedBox(width: 4),
                       Expanded(
@@ -203,7 +209,11 @@ class CommanderGlanceCard extends StatelessWidget {
                           tacticalProgress,
                           style: AppTextStyles.caption.copyWith(
                             fontSize: 12,
-                            color: AppColors.textSecondary,
+                            color: hasHazard
+                                ? AppColors.alarmText
+                                : AppColors.textSecondary,
+                            fontWeight:
+                                hasHazard ? FontWeight.w700 : FontWeight.normal,
                             height: 1.2,
                           ),
                           maxLines: 1,
