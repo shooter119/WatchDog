@@ -922,10 +922,19 @@ async function uniqueIncidentNumber(timestamp) {
   throw new Error('无法生成唯一警情编号');
 }
 
-async function createIncident({ id = randomUUID(), unitId = null, createdAt = Date.now(), createdBy = null } = {}) {
+async function createIncident({ id = randomUUID(), unitId = null, createdAt = Date.now(), createdBy = null, number = null, title = null } = {}) {
   const created = Number(createdAt) || Date.now();
+  let assignedNumber = number;
+  if (!assignedNumber) {
+    assignedNumber = await uniqueIncidentNumber(created);
+  } else {
+    const exists = await db.select('incidents', { filters: { number: assignedNumber }, select: 'id', single: true });
+    if (exists) {
+      assignedNumber = `${assignedNumber}-${Math.random().toString(36).slice(2, 6)}`;
+    }
+  }
   return insertOne('incidents', {
-    id, unit_id: unitId, number: await uniqueIncidentNumber(created), status: 'active', created_at: created,
+    id, unit_id: unitId, number: assignedNumber, title: title || null, status: 'active', created_at: created,
     last_activity_at: created, created_by: createdBy,
   });
 }

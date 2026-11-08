@@ -641,20 +641,37 @@ async function lookupRouteTraffic({
       cache: unitStore,
     });
     const cleanCity = strOrEmpty(city).slice(0, 80);
-    const effectiveCity = cleanCity || unitJurisdiction?.city || '';
+    let effectiveCity = cleanCity || unitJurisdiction?.city || '';
     const unitDistrict = unitJurisdiction?.district || '';
+    // 若 cleanCity 是区县名（如「龙游县」），而 unitJurisdiction 具备地级市（如「衢州市」），规范化为地级市供高德匹配
+    if (unitJurisdiction?.city && cleanCity && (cleanCity.endsWith('县') || cleanCity.endsWith('区'))) {
+      effectiveCity = unitJurisdiction.city;
+    }
 
     const prefixWord = extractPrefixWord(cleanAddress);
     const normalizedAddress = normalizeNaturalVillage(cleanAddress);
+    const targetDistrict = (cleanCity && (cleanCity.endsWith('县') || cleanCity.endsWith('区')) ? cleanCity : '') || unitDistrict || '';
+    const needsPrefix = Boolean(targetDistrict && !cleanAddress.includes(targetDistrict));
 
     // 2. 尝试常规地理编码查询
     const geocodeKey = `${effectiveCity}::${cleanAddress}`;
     let primaryGeocode = geoStore.get(geocodeKey, now);
     if (!primaryGeocode) {
       const cityParam = effectiveCity ? `&city=${encodeURIComponent(effectiveCity)}` : '';
-      const url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(cleanAddress)}` +
+      // 优先尝试带属地前缀检索（如「龙游县莲湖雅苑2栋3单元」），强效防止同名小区漂移至外省
+      let searchAddress = cleanAddress;
+      if (needsPrefix) {
+        searchAddress = `${targetDistrict}${cleanAddress}`;
+      }
+      let url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(searchAddress)}` +
         `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
       primaryGeocode = parseGeocode(await fetchJson(url, fetchImpl));
+
+      if (!primaryGeocode && searchAddress !== cleanAddress) {
+        url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(cleanAddress)}` +
+          `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
+        primaryGeocode = parseGeocode(await fetchJson(url, fetchImpl));
+      }
       if (!primaryGeocode && normalizedAddress !== cleanAddress) {
         const urlNorm = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(normalizedAddress)}` +
           `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
@@ -748,7 +765,7 @@ async function lookupRouteTraffic({
         adcode: best.adcode || '',
         location: best.location,
       };
-    } else if (primaryGeocode) {
+    } else if (primaryGeocode && isPrimaryValid) {
       geocode = {
         ...primaryGeocode,
         formattedAddress: completeFormattedAddress(primaryGeocode.formattedAddress, cleanAddress),

@@ -1390,6 +1390,52 @@ class ApiClient {
     return Incident.fromJson(body as Map<String, dynamic>);
   }
 
+  Future<List<ExternalIncident>> fetchExternalIncidents({
+    bool refresh = false,
+  }) async {
+    final query = refresh ? '?refresh=true' : '';
+    final res = await _client
+        .get(_uri('/api/external-incidents$query'), headers: _headers)
+        .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(res, fallback: '获取官方警情失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取官方警情失败');
+    }
+    if (body is Map && body['list'] is List) {
+      final list = body['list'] as List;
+      return list
+          .whereType<Map>()
+          .map((item) => ExternalIncident.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+    return const [];
+  }
+
+  Future<Incident> claimExternalIncident(
+    ExternalIncident incident, {
+    required String realName,
+    String? opId,
+  }) async {
+    final res = await _client
+        .post(
+          _uri('/api/incidents/claim-external'),
+          headers: _opHeaders(opId),
+          body: jsonEncode({
+            'external_incident': incident.toJson(),
+            'actor_name': realName,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = _decodeJson(res, fallback: '认领警情失败');
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw _apiException(res, body: body, fallback: '认领警情失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '认领警情响应格式异常');
+    }
+    return Incident.fromJson(body as Map<String, dynamic>);
+  }
+
   /// 首次启动认证：校验单位验证码并登记本机实名。
   /// 认证请求不把验证码放入请求头，避免失败前被当成已认证业务请求。
   Future<Map<String, dynamic>> verifyUnit({

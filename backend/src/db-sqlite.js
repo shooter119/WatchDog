@@ -1215,11 +1215,20 @@ function getIncident(id, { unitId = null } = {}) {
   return db.prepare('SELECT * FROM incidents WHERE id = ?').get(String(id || ''));
 }
 
-function createIncident({ id = randomUUID(), unitId = null, createdAt = Date.now(), createdBy = null } = {}) {
+function createIncident({ id = randomUUID(), unitId = null, createdAt = Date.now(), createdBy = null, number = null, title = null } = {}) {
   const created = Number(createdAt) || Date.now();
+  let assignedNumber = number;
+  if (!assignedNumber) {
+    assignedNumber = uniqueIncidentNumber(created);
+  } else {
+    const exists = db.prepare('SELECT id FROM incidents WHERE number = ?').get(assignedNumber);
+    if (exists) {
+      assignedNumber = `${assignedNumber}-${Math.random().toString(36).slice(2, 6)}`;
+    }
+  }
   db.prepare(
-    'INSERT INTO incidents (id, unit_id, number, status, created_at, last_activity_at, created_by) VALUES (?, ?, ?, \'active\', ?, ?, ?)'
-  ).run(id, unitId, uniqueIncidentNumber(created), created, created, createdBy);
+    'INSERT INTO incidents (id, unit_id, number, title, status, created_at, last_activity_at, created_by) VALUES (?, ?, ?, ?, \'active\', ?, ?, ?)'
+  ).run(id, unitId, assignedNumber, title || null, created, created, createdBy);
   return getIncident(id);
 }
 

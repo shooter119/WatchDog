@@ -115,7 +115,28 @@ function publicImport(row) {
 function detailPatch(raw, current = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw forceError('警情资料格式无效');
   const validated = validateDetails(raw);
-  const patch = Object.fromEntries(Object.keys(raw).filter((key) => Object.hasOwn(validated, key)).map((key) => [key, validated[key]]));
+  const patch = {};
+  for (const key of Object.keys(raw)) {
+    if (Object.hasOwn(validated, key)) {
+      const val = validated[key];
+      // 智能非空覆盖：新导入提供的非空值覆盖已有值；空值不冲掉旧有效值
+      if (typeof val === 'string') {
+        if (val.trim() !== '') {
+          patch[key] = val.trim();
+        } else if (current[key] !== undefined) {
+          patch[key] = current[key];
+        }
+      } else if (Array.isArray(val)) {
+        if (val.length > 0) {
+          patch[key] = val;
+        } else if (Array.isArray(current[key])) {
+          patch[key] = current[key];
+        }
+      } else if (val != null) {
+        patch[key] = val;
+      }
+    }
+  }
   return { ...current, ...patch };
 }
 async function applyImport({ unitId, incidentId, actorId, actorName, importId, opId, body }) {

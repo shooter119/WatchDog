@@ -724,3 +724,72 @@ test('lookupRouteTraffic：参数校验与地址无法解析错误码', async ()
     (error) => error.code === 'ADDRESS_NOT_RESOLVED',
   );
 });
+
+test('lookupRouteTraffic：拦截跨省同名小区漂移，优先结合单位属地前缀检索', async () => {
+  clearCaches();
+  const fetchImpl = (url) => {
+    const u = new URL(url);
+    if (u.pathname === '/v3/geocode/geo') {
+      const addr = u.searchParams.get('address') || '';
+      // 若带了龙游县前缀，精准返回浙江龙游本地
+      if (addr.includes('龙游县')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            status: '1',
+            geocodes: [{
+              formatted_address: '浙江省衢州市龙游县莲湖雅苑',
+              province: '浙江省',
+              city: '衢州市',
+              district: '龙游县',
+              adcode: '330825',
+              location: '119.163908,29.024354',
+            }],
+          }),
+        });
+      }
+      // 裸地址（模拟高德全国错误匹配到广东省东莞市）
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: '1',
+          geocodes: [{
+            formatted_address: '广东省东莞市莲湖雅苑2栋',
+            province: '广东省',
+            city: '东莞市',
+            district: '桥头镇',
+            adcode: '441900',
+            location: '114.10,22.90',
+          }],
+        }),
+      });
+    }
+    if (u.pathname === '/v3/weather/weatherInfo') {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: '1',
+          lives: [{ weather: '多云', temperature: '22', winddirection: '东', windpower: '≤3', humidity: '60', reporttime: '2026-11-07 12:00:00' }],
+        }),
+      });
+    }
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ status: '1' }) });
+  };
+
+  const res = await lookupRouteTraffic({
+    address: '莲湖雅苑2栋3单元',
+    unitName: '龙游县消防救援大队',
+    key: 'test-key',
+    fetchImpl,
+  });
+
+  assert.equal(res.destination.province, '浙江省');
+  assert.equal(res.destination.city, '衢州市');
+  assert.equal(res.destination.district, '龙游县');
+  assert.equal(res.destination.formattedAddress.includes('龙游县'), true);
+  assert.equal(res.destination.location.lat, 29.024354);
+  assert.equal(res.destination.location.lon, 119.163908);
+});

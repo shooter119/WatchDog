@@ -129,6 +129,8 @@ class AppController extends ChangeNotifier {
 
   Incident? currentIncident;
   List<Incident> activeIncidents = [];
+  List<ExternalIncident> externalIncidents = [];
+  bool externalIncidentsLoading = false;
   List<IncidentForce> forces = [];
   bool _authenticated = false;
   AdminCapability? adminCapability;
@@ -171,6 +173,7 @@ class AppController extends ChangeNotifier {
   void _revokeProtectedData() {
     offlineReviewCount = 0;
     adminCapability = null;
+    externalIncidents = [];
     _clearMemberReview();
     _adminCapabilityTimer?.cancel();
     _protectedDataRevoked = true;
@@ -2173,6 +2176,77 @@ class AppController extends ChangeNotifier {
         opId,
         'incident_create_fail',
         '新建警情失败: $error',
+        level: 'error',
+        data: {
+          if (requestId != null && requestId.isNotEmpty)
+            'request_id': requestId,
+        },
+      );
+      if (ApiClient.isAuthenticationFailure(error)) {
+        await _invalidateAuthenticationOnce();
+      }
+      rethrow;
+    }
+    await Settings.setCurrentIncidentId(incident.id);
+    _enteredWithoutIncident = false;
+    _sessionGeneration++;
+    _syncFuture = null;
+    _keepAliveFuture = null;
+    await refreshConfig();
+    unawaited(syncKeepAlive());
+    await sync();
+    return incident;
+  }
+
+  Future<void> fetchExternalIncidents({bool forceRefresh = false}) async {
+    if (needsAuthentication) return;
+    await _ensureApiReady();
+    final a = api;
+    if (a == null) return;
+    externalIncidentsLoading = true;
+    _notify();
+    try {
+      final list = await a.fetchExternalIncidents(refresh: forceRefresh);
+      externalIncidents = list;
+    } catch (error) {
+      debugPrint('WatchDog fetchExternalIncidents failed: $error');
+    } finally {
+      externalIncidentsLoading = false;
+      _notify();
+    }
+  }
+
+  Future<Incident> claimExternalIncident(ExternalIncident externalIncident) async {
+    final name = await Settings.realName;
+    if (name.isEmpty) throw StateError('请先在设置中填写真实姓名');
+    await _ensureApiReady();
+    await _refreshSession();
+    if (needsAuthentication) throw StateError('认证会话已过期，请重新认证');
+    final a = api ??= ApiClient(
+      baseUrl: await Settings.serverUrl,
+      incidentId: await Settings.currentIncidentId,
+      sessionToken: await Settings.sessionToken,
+      deviceId: await OpLogService.instance.deviceId,
+      actorName: name,
+      unitId: await Settings.unitId,
+      unitCode: await Settings.unitCode,
+      onAuthenticationFailure: _handleAuthenticationFailure,
+    );
+    final opId = 'incident-claim-${DateTime.now().microsecondsSinceEpoch}';
+    debugPrint('WatchDog claimExternalIncident: op_id=$opId external_id=${externalIncident.externalId}');
+    late final Incident incident;
+    try {
+      incident = await a.claimExternalIncident(
+        externalIncident,
+        realName: name,
+        opId: opId,
+      );
+    } catch (error) {
+      final requestId = error is ApiException ? error.requestId : null;
+      OpLogService.instance.record(
+        opId,
+        'incident_claim_fail',
+        '认领警情失败: $error',
         level: 'error',
         data: {
           if (requestId != null && requestId.isNotEmpty)
