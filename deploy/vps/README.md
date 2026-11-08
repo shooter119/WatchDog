@@ -1,4 +1,34 @@
-# VPS 部署补充说明
+# VPS 部署与环境规范 (`deploy/vps`)
+
+## Overview
+生产环境 VPS Docker Compose 拓扑配置、Caddy 反向代理网关、持久化卷规划与重点单位后台无停机发布流程。
+
+## Interface
+- **编排配置文件**:
+  - `docker-compose.yml`: 生产服务编排（PostgreSQL 17、Node.js 后端容器、Caddy 反代网关）
+  - `Caddyfile`: 路由分发、TLS 证书自动申请、HTTPS 终止与静态资源防盗链
+  - `website.Dockerfile`: 官网展示容器构建说明（依赖本地私有 `website/` 目录）
+- **发布与回滚接口**:
+  - `ADMIN.md`: 资料后台使用与配置规范
+  - `KEY-SITE-STANDARD.md`: 重点单位九大分项字段标准定义
+  - `rollback.sh`: 生产失败时一键回切旧后端镜像与恢复 Caddyfile
+
+## Invariants
+- `[vps:zero-downtime]`：Caddy 原地更新路由与配置，数据库与 Caddy 容器不随后端发版重建。
+- `[vps:data-volume-isolation]`：`/app/data` 挂载为独立数据卷，临时图片仅保留最长 24 小时，正式数据全量入库 PostgreSQL。
+- `[vps:pre-deploy-gate]`：生产部署前工作区必须干净，并全量通过本地门禁（后端 322+、App 471+、analyze 0 警告）。
+
+## Side Effects
+- 在 VPS 上拉取/构建 Docker 镜像并启动容器。
+- 触发 PostgreSQL 数据备份至 `/opt/watchdog/backups/`。
+- 修改 Caddy 监听与代理路由。
+
+## Verification
+- Run: `scripts/deploy-key-sites.sh --dry-run`
+
+---
+
+### VPS 部署补充说明（保留原有业务说明）
 
 ## 警情导入临时存储
 

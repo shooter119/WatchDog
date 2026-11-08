@@ -74,3 +74,50 @@
 本项目以 **MIT 许可证**开源，详见 [LICENSE](LICENSE)。你可以自由使用、修改、分发本项目的代码，包括商业用途，只需保留版权声明与许可声明。
 
 第三方组件（Flutter、sherpa-onnx、PostgreSQL、Caddy 及各 Dart/Node 依赖）遵循各自的原始许可证，完整清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。新增依赖需确认与本项目 MIT 许可证兼容；引入 GPL/AGPL 等强著佐权组件会改变分发条款，需显式评审。
+
+---
+
+# WatchDog 架构契约与系统蓝图 (Architecture Blueprint)
+
+本项目遵循 Google Elephant-Goldfish Model (EGM) 架构上下文契约规范，自底向上建立高内聚、接地气的模块级架构索引：
+
+## 子系统边界与模块契约 (Subdirectories & Boundaries)
+
+- [**app/**](./app/README.md)：Android 移动端客户端子系统蓝图（Flutter 3.x）
+  - [`app/lib/`](./app/lib/README.md)：客户端架构总览与分层契约
+  - [`app/lib/api/`](./app/lib/api/README.md)：REST API 网络客户端与会话令牌管理
+  - [`app/lib/models/`](./app/lib/models/README.md)：不可变领域实体模型与 JSON 序列化
+  - [`app/lib/services/`](./app/lib/services/README.md)：实时同步协调器、离线队列、本地 sherpa-onnx 语音引擎、TTS 与系统保活
+  - [`app/lib/state/`](./app/lib/state/README.md)：单例响应式状态控制器 `AppController` 与空呼秒级轮询
+  - [`app/lib/theme/`](./app/lib/theme/README.md)：UI Spec v2.0 规范组件、调色板与圆角系统
+  - [`app/lib/widgets/`](./app/lib/widgets/README.md)：公共复杂组件与系统画中画外壳
+  - [`app/lib/pages/`](./app/lib/pages/README.md)：五大主入口视图与二级详情业务页面
+- [**backend/**](./backend/README.md)：Node.js 后端服务子系统蓝图（Express + PostgreSQL 17 + WebSocket）
+  - [`backend/src/`](./backend/src/README.md)：核心业务服务、REST API、Seed-ASR 客户端、DeepSeek 意图解析、气瓶测算公式与事务仓储
+  - [`backend/migrations/`](./backend/migrations/README.md)：PostgreSQL 架构版本递增迁移与 Advisory Lock 机制
+  - [`backend/admin/`](./backend/admin/README.md)：重点单位管理后台 SPA 与 360° 全景漫游
+  - [`backend/seeds/`](./backend/seeds/README.md)：组织架构脱敏种子与配置加载规范
+- [**deploy/**](./deploy/README.md)：生产环境与容器编排子系统蓝图
+  - [`deploy/vps/`](./deploy/vps/README.md)：VPS Docker Compose 拓扑配置、Caddyfile 路由与热部署流程
+  - [`deploy/maps/`](./deploy/maps/README.md)：重点单位高精度正射影像切片与瓦片服务
+  - [`deploy/models/`](./deploy/models/README.md)：端侧离线语音模型清单与 SHA-256 完整性分发
+- [**scripts/**](./scripts/README.md)：自动化工程与运维套件（一键严格发版、异地灾备同步与公网健康验收）
+
+## 全局不变量 (Global Invariants)
+
+1. `[safety:air-first]`：空呼可用时间倒计时与现场监控具有最高实时性优先级，严禁因网络同步阻塞或 ASR 异常影响本地秒级告警。
+2. `[safety:dual-mode-resilience]`：全系统严格遵循「云端增强、断网可用」设计。在完全无网络环境下，端侧离线 ASR、本地规则解析与 SQLite 队列保障核心进退场与空呼测算完全自治。
+3. `[security:data-anonymization]`：源码库、测试用例与公开说明严格脱敏，严禁出现真实消防队伍名称、人名、真实地址或生产凭证。
+4. `[quality:strict-gates]`：全工程坚守「绿色交接」原则，发版执行严格 fail 0 门禁（后端 322/322 单测全过，App 471/471 测试全过 + analyze 0 警告）。
+
+## 全局副作用 (Global Side Effects)
+
+- 后端维护 PostgreSQL 17 物理持久化与长连接 WebSocket 广播。
+- 移动端申请系统音频焦点、前台常驻服务、锁屏通知与硬件常亮。
+- 生产环境自动化脚本向异地灾备拉取增量快照并执行哈希双向校验。
+
+## 系统级验证 (System Verification)
+
+- 后端验证：`cd backend && npm test`
+- 移动端静态分析：`cd app && flutter analyze`
+- 移动端单元测试：`cd app && flutter test`

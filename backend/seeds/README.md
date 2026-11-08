@@ -1,6 +1,32 @@
-# 组织种子
+# 组织种子 (`backend/seeds`)
 
-公开仓库不包含真实人员、消防站、单位名称或验证码。`org.example.json` 只用于开发、测试和 CI。
+## Overview
+公开仓库不包含真实人员、消防站、单位名称或验证码。`org.example.json` 只用于开发、测试和 CI。生产部署使用私有种子文件或环境变量动态注入组织结构。
+
+## Interface
+- **配置模板文件**:
+  - `org.example.json`: 结构规范模板，包含 `organization.id`、`name`、`verificationCode`、`firefighters`、`stations`、`hotwords`、`members`。
+- **关联后端加载器**:
+  - [`backend/src/org-seed.js`](../src/org-seed.js): 种子解析与入库同步模块。
+- **相关子模块**:
+  - [后端核心接口](../src/README.md)
+
+## Invariants
+- `[seed:data-safety]`：公开仓库严禁提交包含真实消防单位、真实指战员人名或真实验证码的种子文件。
+- `[seed:idempotency]`：系统启动时的种子导入采用幂等补齐策略（`INSERT ON CONFLICT DO NOTHING` 或安全更新），绝不删除既有人员、消防站或历史警情归属。
+- `[seed:override-precedence]`：若同时设置种子文件与环境变量，环境变量（如 `WATCHDOG_SEED_UNIT_NAME`）优先级高于文件内容。
+- `[seed:opt-out]`：配置 `WATCHDOG_SKIP_SEED=1` 时，完全跳过种子导入流程。
+
+## Side Effects
+- 在 PostgreSQL 启动阶段向 `units`、`users`、`stations` 等表写入预设组织基线数据。
+- 注入热词至单位专属 ASR 词库。
+
+## Verification
+- Run: `node --test test/org-seed.test.js`（在 `backend/` 目录下执行种子测试）
+
+---
+
+### 生产部署配置指南（保留业务说明）
 
 生产部署准备一份私有 JSON（不要提交），结构与示例相同：
 

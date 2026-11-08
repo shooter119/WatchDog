@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../state/app_controller.dart';
 import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
+import 'tactical_brief_sheet.dart';
 
 /// 火场日志页：单列时间线瀑布流，展示消防员用语音/手动记录的火场随手记，
 /// 每条自动带时间戳与分类色条，可筛选分类、编辑、删除，供事后复盘。
@@ -47,7 +48,7 @@ class _NotesPageState extends State<NotesPage> {
                           const SizedBox(height: AppSpacing.s2),
                           Align(
                             alignment: Alignment.centerRight,
-                            child: _buildConnectionStatus(),
+                            child: _buildHeaderActions(),
                           ),
                         ],
                       )
@@ -56,7 +57,7 @@ class _NotesPageState extends State<NotesPage> {
                         children: [
                           const Text('火场日志', style: AppTextStyles.h1),
                           const Spacer(),
-                          _buildConnectionStatus(),
+                          _buildHeaderActions(),
                         ],
                       ),
               ),
@@ -114,6 +115,25 @@ class _NotesPageState extends State<NotesPage> {
         ),
         child: const Icon(Icons.add_rounded, size: 30),
       ),
+    );
+  }
+
+  Widget _buildHeaderActions() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        IconButton(
+          tooltip: '战况速报',
+          icon: const Icon(Icons.description_outlined, size: 22),
+          onPressed: () => showTacticalBriefSheet(
+            context,
+            controller: widget.controller,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s1),
+        _buildConnectionStatus(),
+      ],
     );
   }
 

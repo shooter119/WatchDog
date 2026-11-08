@@ -1,4 +1,33 @@
-# 单位正射影像地图
+# 单位正射影像地图 (`deploy/maps`)
+
+## Overview
+管理重点单位正射航拍影像瓦片与演示地图的切片处理与部署服务。支持在移动客户端进行离线/在线瓦片浏览、多级缩放与拖拽。
+
+## Interface
+- **切片与预处理工具**: [`prepare.py`](./prepare.py)
+  - 核心接口：
+    - `python3 prepare.py <output_dir> --demo`：生成脱敏合成演示瓦片
+    - `python3 prepare.py <output_dir> --image <path> --name <name>`：对真实航拍大图进行 256px 瓦片切片
+- **相关后端端点**:
+  - `GET /api/maps`：获取当前单位可用地图列表
+  - `GET /api/maps/:unitId/:mapId/:z/:x/:y.jpg`：瓦片读取接口（强制会话鉴权）
+- **相关契约**:
+  - [后端核心接口](../../backend/src/README.md)
+
+## Invariants
+- `[maps:auth-guard]`：严禁在 Caddy 反向代理层开放绕过鉴权的静态瓦片映射，列表与每张瓦片均必须经由后端校验租户身份。
+- `[maps:data-isolation]`：普通单位仅能访问本单位目录瓦片，`demo` 是唯一共享的合成演示数据。
+- `[maps:coordinate-system]`：正射瓦片采用图片像素坐标系，严禁直接作为经纬度 GPS 坐标用于导航。
+
+## Side Effects
+- 在服务器挂载卷 `/app/data/orthomaps` 读取或生成切片文件。
+
+## Verification
+- Run: `python3 deploy/maps/prepare.py /tmp/test-map --demo`
+
+---
+
+### 地图部署说明（保留原有业务说明）
 
 App 入口：设置 → 现场地图。首版仅在线查看、拖动、缩放及恢复全图；没有定位、标注或离线下载。坐标为图片像素，不可当作经纬度或导航使用。
 

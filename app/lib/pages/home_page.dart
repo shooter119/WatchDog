@@ -15,6 +15,7 @@ import 'location_share_sheet.dart';
 import '../models/models.dart';
 import '../pages/same_name_dialog.dart';
 import 'route_traffic_page.dart';
+import 'tactical_brief_sheet.dart';
 import 'video_resources_page.dart';
 import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
@@ -23,6 +24,7 @@ import '../services/screen_on.dart';
 import '../services/video_playback_session.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+import '../widgets/commander_glance_card.dart';
 
 /// 警情主页面（核心 hub）：语音录入 + 当前警情 + 现场状态。
 /// 识别结果按 AI 意图分流：进出场本页确认；日志/提问/环境音交 main 统一路由。
@@ -2816,152 +2818,16 @@ class HomePageState extends State<HomePage> {
     BuildContext context,
     List<Entry> activeEntries,
   ) {
-    final cfg = widget.controller.calcConfig;
-    final timeoutEntries = activeEntries.where((e) {
-      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
-      return s == 'timeout';
-    }).toList();
-    final alarmEntries = activeEntries.where((e) {
-      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
-      return s == 'alarm';
-    }).toList();
-    final warnEntries = activeEntries.where((e) {
-      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
-      return s == 'warn';
-    }).toList();
-
-    final bool hasTimeout = timeoutEntries.isNotEmpty;
-    final bool hasAlarm = alarmEntries.isNotEmpty;
-    final bool hasWarn = warnEntries.isNotEmpty;
-
-    final String overallStatus;
-    final Color cardBorder;
-    final Color statusSurfaceBg;
-    final Color statusBorderColor;
-
-    if (hasTimeout) {
-      overallStatus = 'timeout';
-      cardBorder = AppColors.timeout;
-      statusSurfaceBg = AppColors.timeoutSurface;
-      statusBorderColor = AppColors.timeout;
-    } else if (hasAlarm) {
-      overallStatus = 'alarm';
-      cardBorder = AppColors.alarm;
-      statusSurfaceBg = AppColors.alarmSurface;
-      statusBorderColor = AppColors.alarm;
-    } else if (hasWarn) {
-      overallStatus = 'warn';
-      cardBorder = AppColors.caution;
-      statusSurfaceBg = AppColors.cautionSurface;
-      statusBorderColor = AppColors.caution;
-    } else {
-      overallStatus = 'normal';
-      cardBorder = AppColors.border.withValues(alpha: 0.85);
-      statusSurfaceBg = AppColors.surfaceSubtle;
-      statusBorderColor = AppColors.border.withValues(alpha: 0.85);
-    }
-
     return SingleChildScrollView(
       key: const Key('active-combat-scroll'),
       padding: const EdgeInsets.only(bottom: AppSpacing.s6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AppCard(
-            radius: AppRadius.lg,
-            padding: const EdgeInsets.all(AppSpacing.cardInner),
-            side: BorderSide(color: cardBorder, width: 1.0),
+          CommanderGlanceCard(
+            activeEntries: activeEntries,
+            notes: widget.controller.notes,
             onTap: widget.onEntryConfirmed,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.voice,
-                      ),
-                      child: Icon(
-                        Icons.mic_rounded,
-                        size: 18,
-                        color: AppColors.onPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.s2),
-                    Expanded(
-                      child: Text(
-                        '现场监控',
-                        style: AppTextStyles.bodyLg.copyWith(
-                          color: AppColors.textPrimary,
-                          fontSize: 16,
-                          height: 1.25,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.s3),
-                Container(
-                  constraints: const BoxConstraints(minHeight: 60),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.s4,
-                    vertical: AppSpacing.s3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusSurfaceBg,
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(
-                      color: statusBorderColor,
-                      width: 1.0,
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                '${activeEntries.length} 人进入火场',
-                                style: AppTextStyles.h2.copyWith(
-                                  fontSize: 22,
-                                  height: 1.25,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textPrimary,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.s3),
-                            StatusBadge(
-                              status: overallStatus,
-                              onColorCard: false,
-                              fontSize: 12,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.s2),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        size: 22,
-                        color: AppColors.textTertiary,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
           const SizedBox(height: AppSpacing.s4),
           _buildFieldTools(context),
@@ -3387,7 +3253,17 @@ class HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(width: AppSpacing.s2),
-            const Expanded(child: SizedBox.shrink()),
+            Expanded(
+              child: _fieldTool(
+                '战况速报',
+                '一键生成纯客观事实公文简报',
+                Icons.description_outlined,
+                () => showTacticalBriefSheet(
+                  context,
+                  controller: widget.controller,
+                ),
+              ),
+            ),
           ],
         ),
       ],
