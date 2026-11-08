@@ -62,18 +62,94 @@ function normalizeExternalIncident(item) {
     register_time: Number(item.registerIncidentTime) || 0,
     latitude: item.latitude != null ? String(item.latitude) : null,
     longitude: item.longitude != null ? String(item.longitude) : null,
+    alarm_phone: item.alarmPhone != null ? String(item.alarmPhone).trim() : '',
+    alarm_person_phone: item.alarmPersonPhone != null ? String(item.alarmPersonPhone).trim() : '',
+    alarm_person_name: item.alarmPersonName != null ? String(item.alarmPersonName).trim() : '',
+    alarm_mode_name: item.alarmModeName != null ? String(item.alarmModeName).trim() : '',
+    incident_nature_name: item.incidentNatureName != null ? String(item.incidentNatureName).trim() : '',
+    dispatch_vehicle: item.dispatchVehicle != null ? String(item.dispatchVehicle).trim() : '',
+    dispatch_organization: item.dispatchOrganization != null ? String(item.dispatchOrganization).trim() : '',
   };
 }
 
-function buildSituationDescription({ incident_type = '', disposal_object_name = '', incident_describe = '' } = {}) {
+function sanitizeCoordinates(lat, lon) {
+  const latitude = parseFloat(lat);
+  const longitude = parseFloat(lon);
+  if (Number.isFinite(latitude) && Number.isFinite(longitude) &&
+      latitude >= 27.5 && latitude <= 31.0 &&
+      longitude >= 118.0 && longitude <= 121.0) {
+    return {
+      latitude: String(lat),
+      longitude: String(lon),
+    };
+  }
+  return { latitude: null, longitude: null };
+}
+
+function extractContacts(ext = {}) {
+  const contacts = [];
+  const clean = (p) => String(p || '').trim().replace(/[^\d+ -]/g, '');
+  const isInvalid = (p) => !p || /^(?:0?110|119|120|122)$/.test(p.replace(/\D/g, '')) || p.replace(/\D/g, '').length < 7;
+
+  const personPhone = clean(ext.alarm_person_phone);
+  const alarmPhone = clean(ext.alarm_phone);
+
+  let chosen = '';
+  if (personPhone && !isInvalid(personPhone)) {
+    chosen = personPhone;
+  } else if (alarmPhone && !isInvalid(alarmPhone)) {
+    chosen = alarmPhone;
+  }
+
+  if (chosen) {
+    contacts.push({
+      role: '报警人',
+      name: String(ext.alarm_person_name || '').trim() || '报警人',
+      phone: chosen,
+    });
+  }
+  return contacts;
+}
+
+function buildDispatchSummary({ dispatch_vehicle = '', dispatch_organization = '', squadron_name = '' } = {}) {
+  const parts = [];
+  const v = String(dispatch_vehicle || '').trim();
+  const o = String(dispatch_organization || '').trim();
+  const s = String(squadron_name || '').trim();
+  if (v && v !== '0') parts.push(`${v}车`);
+  if (o && o !== '0') parts.push(`${o}站`);
+  const prefix = parts.join(' ');
+  if (prefix && s) {
+    return `${prefix} (主调: ${s})`;
+  }
+  if (prefix) return prefix;
+  if (s) return `主调: ${s}`;
+  return '';
+}
+
+function buildSituationDescription({
+  incident_type = '',
+  disposal_object_name = '',
+  incident_describe = '',
+  alarm_mode_name = '',
+  incident_status = '',
+} = {}) {
   const desc = String(incident_describe || '').trim();
   if (desc) return desc;
   const type = String(incident_type || '').trim() || '警情';
   const obj = String(disposal_object_name || '').trim();
-  if (obj && obj !== '其他') {
-    return `${type}（${obj}）`;
+  let base = (obj && obj !== '其他') ? `${type}（${obj}）` : type;
+
+  const extras = [];
+  const mode = String(alarm_mode_name || '').trim();
+  if (mode && mode !== '其他') extras.push(mode);
+  const status = String(incident_status || '').trim();
+  if (status && status !== '其他' && status !== '真警') extras.push(`官方状态: ${status}`);
+
+  if (extras.length > 0) {
+    return `${base} · ${extras.join(' · ')}`;
   }
-  return type;
+  return base;
 }
 
 async function fetchFromUpstream(url = DEFAULT_UPSTREAM_URL) {
@@ -228,6 +304,9 @@ module.exports = {
   normalizeExternalIncident,
   resolveDistrict,
   buildSituationDescription,
+  extractContacts,
+  buildDispatchSummary,
+  sanitizeCoordinates,
   _resetCacheForTest,
   DEFAULT_UPSTREAM_URL,
 };

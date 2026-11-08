@@ -715,5 +715,61 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('事发地气象与火场风向'), findsOneWidget);
     });
+
+    testWidgets('官方高精度坐标直传 fetchRouteTraffic，跳过逆地理编码', (tester) async {
+      double? capturedDestLat;
+      double? capturedDestLon;
+
+      final controller = AppController();
+      controller.currentIncident = Incident(
+        id: 'inc-official-coords',
+        number: '20261108001',
+        title: '大洲镇郑家加油站附近',
+        status: 'active',
+        createdAt: 1000,
+        lastActivityAt: 2000,
+        info: {
+          'location': '大洲镇郑家加油站附近',
+          'administrative_area': '衢江区',
+          'latitude': '28.869366',
+          'longitude': '118.980502',
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RouteTrafficPage(
+            controller: controller,
+            gateway: RouteTrafficGateway(
+              requestPermission: () async => true,
+              locationServiceEnabled: () async => true,
+              currentLocation: () async => null,
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async {
+                capturedDestLat = destLat;
+                capturedDestLon = destLon;
+                return mockRouteInfo;
+              },
+              openAppSettings: () async {},
+              openLocationSettings: () async {},
+              copyText: (_) async {},
+              launchNavigation: (_) async => true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(capturedDestLat, 28.869366);
+      expect(capturedDestLon, 118.980502);
+    });
   });
 }

@@ -4,6 +4,7 @@ import '../models/models.dart';
 import '../state/app_controller.dart';
 import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
+import '../widgets/phone_text.dart';
 
 /// 火场日志页：单列时间线瀑布流，展示消防员用语音/手动记录的火场随手记，
 /// 每条自动带时间戳与分类色条，可筛选分类、编辑、删除，供事后复盘。
@@ -533,7 +534,7 @@ class _TimelineNoteCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: AppSpacing.s2),
-                    Text(
+                    PhoneText(
                       note.text,
                       style: AppTextStyles.bodyMd.copyWith(
                         color: AppColors.textPrimary,

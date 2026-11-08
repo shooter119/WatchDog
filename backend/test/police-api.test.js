@@ -147,7 +147,20 @@ test('POST /api/incidents/claim-external 认领建档与幂等防重', async () 
         'X-Unit-Code': '1001',
         'X-Op-Id': `claim-op-${Date.now()}`,
       },
-      body: JSON.stringify({ external_incident: extIncident, actor_name: '张建国' }),
+      body: JSON.stringify({
+        external_incident: {
+          ...extIncident,
+          alarm_person_phone: '13812345678',
+          alarm_phone: '0110',
+          alarm_person_name: '李四',
+          dispatch_vehicle: '4',
+          dispatch_organization: '2',
+          squadron_name: '双塔站',
+          latitude: '28.8693',
+          longitude: '118.9805',
+        },
+        actor_name: '张建国',
+      }),
     });
 
     const body1 = await res1.json();
@@ -155,6 +168,9 @@ test('POST /api/incidents/claim-external 认领建档与幂等防重', async () 
     assert.ok(body1.id);
     assert.equal(body1.number, extIncident.incident_number);
     assert.equal(body1.title, extIncident.crime_address);
+    assert.equal(body1.info.latitude, '28.8693');
+    assert.equal(body1.info.longitude, '118.9805');
+    assert.equal(body1.info.dispatch_summary, '4车 2站 (主调: 双塔站)');
 
     // 2. 第二位队员点击同一官方警情，幂等返回已有警情 (状态码 200)
     const res2 = await fetch(`${base}/api/incidents/claim-external`, {
@@ -208,4 +224,45 @@ test('buildSituationDescription 与 detailPatch 后到智能覆盖', () => {
   assert.equal(merged.trapped, '无人员被困');
   assert.equal(merged.administrative_area, '龙游县', '未提及字段应保留已有值');
   assert.equal(merged.received_at, '2026-11-06T06:13:46.000Z', '未提及字段应保留已有时间');
+});
+
+test('extractContacts、buildDispatchSummary 与 sanitizeCoordinates 容错逻辑', () => {
+  const { extractContacts, buildDispatchSummary, sanitizeCoordinates } = require('../src/police-api-service');
+
+  // 1. extractContacts: 优先 alarm_person_phone，排除 0110
+  const c1 = extractContacts({
+    alarm_person_phone: '17613141617',
+    alarm_phone: '0110',
+    alarm_person_name: '王五',
+  });
+  assert.equal(c1.length, 1);
+  assert.equal(c1[0].phone, '17613141617');
+  assert.equal(c1[0].name, '王五');
+
+  // 2. alarm_person_phone 为空，回退有效 alarm_phone，姓名缺省回退“报警人”
+  const c2 = extractContacts({
+    alarm_person_phone: '',
+    alarm_phone: '0570-8888999',
+    alarm_person_name: '',
+  });
+  assert.equal(c2.length, 1);
+  assert.equal(c2[0].phone, '0570-8888999');
+  assert.equal(c2[0].name, '报警人');
+
+  // 3. 两个号码均为 110 转警或无效，返回空数组
+  const c3 = extractContacts({
+    alarm_person_phone: '110',
+    alarm_phone: '0110',
+  });
+  assert.equal(c3.length, 0);
+
+  // 4. buildDispatchSummary
+  assert.equal(buildDispatchSummary({ dispatch_vehicle: '4', dispatch_organization: '2', squadron_name: '双塔站' }), '4车 2站 (主调: 双塔站)');
+  assert.equal(buildDispatchSummary({ dispatch_vehicle: '2', dispatch_organization: '0' }), '2车');
+  assert.equal(buildDispatchSummary({}), '');
+
+  // 5. sanitizeCoordinates
+  assert.deepEqual(sanitizeCoordinates('28.8693', '118.9805'), { latitude: '28.8693', longitude: '118.9805' });
+  assert.deepEqual(sanitizeCoordinates('0.0', '0.0'), { latitude: null, longitude: null });
+  assert.deepEqual(sanitizeCoordinates('99.99', '199.99'), { latitude: null, longitude: null });
 });

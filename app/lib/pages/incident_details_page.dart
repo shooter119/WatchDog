@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_client.dart';
 import '../models/models.dart';
+import '../services/phone_caller.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
+import '../widgets/phone_text.dart';
 import 'incident_import_page.dart';
 import 'incident_key_site_section.dart';
-
-typedef PhoneLauncher = Future<bool> Function(Uri uri);
 
 class IncidentDetailsPage extends StatefulWidget {
   final AppController? controller;
@@ -58,22 +57,11 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
   }
 
   Future<void> _dialPhone(String rawPhone) async {
-    final phone = rawPhone.trim();
-    if (phone.isEmpty) return;
-    final uri = Uri(scheme: 'tel', path: phone);
-    final launcher =
-        widget.phoneLauncher ??
-        (value) => launchUrl(value, mode: LaunchMode.externalApplication);
-    try {
-      if (await launcher(uri)) return;
-    } catch (_) {
-      // Fall through to the same user-visible error for unsupported devices.
-    }
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('无法打开拨号界面')));
-    }
+    await PhoneCaller.dial(
+      context,
+      rawPhone,
+      launcher: widget.phoneLauncher,
+    );
   }
 
   Future<void> _edit() async {
@@ -231,6 +219,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
                         _DetailField(
                           label: basicFields[i].value,
                           value: data[basicFields[i].key].toString(),
+                          phoneLauncher: widget.phoneLauncher,
                         ),
                       ],
                     ],
@@ -412,8 +401,13 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
 class _DetailField extends StatelessWidget {
   final String label;
   final String value;
+  final PhoneLauncher? phoneLauncher;
 
-  const _DetailField({required this.label, required this.value});
+  const _DetailField({
+    required this.label,
+    required this.value,
+    this.phoneLauncher,
+  });
 
   @override
   Widget build(BuildContext context) => Column(
@@ -424,12 +418,13 @@ class _DetailField extends StatelessWidget {
         style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary),
       ),
       const SizedBox(height: 2),
-      SelectableText(
+      PhoneText(
         value,
         style: AppTextStyles.bodyMd.copyWith(
           color: AppColors.textPrimary,
           fontWeight: FontWeight.w600,
         ),
+        phoneLauncher: phoneLauncher,
       ),
     ],
   );

@@ -1547,7 +1547,17 @@ async function incidentView(incident, { forces = null, generateSuggestedTitle = 
   let info = {};
   if (syncSupported() && incident.unit_id) {
     const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
-    for (const key of ['original_category','specific_type','location','administrative_area','received_at','situation']) {
+    for (const key of [
+      'original_category',
+      'specific_type',
+      'location',
+      'administrative_area',
+      'received_at',
+      'situation',
+      'latitude',
+      'longitude',
+      'dispatch_summary',
+    ]) {
       if (detail.data[key]) info[key] = detail.data[key];
     }
   }
@@ -1846,13 +1856,34 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
 
     // 3. 建档：自动填入官方编号与地址/分类
     const now = Date.now();
-    const resolvedDistrict = require('./police-api-service').resolveDistrict(ext);
+    const {
+      buildSituationDescription,
+      extractContacts,
+      buildDispatchSummary,
+      sanitizeCoordinates,
+      resolveDistrict,
+    } = require('./police-api-service');
+    const resolvedDistrict = resolveDistrict(ext);
     let fullLocation = String(ext.crime_address || '').trim();
     if (fullLocation && resolvedDistrict && resolvedDistrict !== '衢州市' && !fullLocation.includes(resolvedDistrict)) {
       fullLocation = `${resolvedDistrict}${fullLocation}`;
     }
     const title = ext.crime_address || (resolvedDistrict ? `${resolvedDistrict} ${ext.incident_type || ''}` : ext.incident_type) || null;
     const candidateNumber = extNumber || null;
+
+    const situation = ext.incident_describe || buildSituationDescription({
+      incident_type: ext.incident_type,
+      disposal_object_name: ext.disposal_object_name,
+      alarm_mode_name: ext.alarm_mode_name,
+      incident_status: ext.incident_status,
+    });
+    const coords = sanitizeCoordinates(ext.latitude, ext.longitude);
+    const contacts = extractContacts(ext);
+    const dispatchSummary = buildDispatchSummary({
+      dispatch_vehicle: ext.dispatch_vehicle,
+      dispatch_organization: ext.dispatch_organization,
+      squadron_name: ext.squadron_name,
+    });
 
     const created = await db.createIncident({
       unitId,
@@ -1874,11 +1905,6 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     // 4. 写入 incident_details
     if (syncSupported() && unitId) {
       try {
-        const { buildSituationDescription } = require('./police-api-service');
-        const situation = ext.incident_describe || buildSituationDescription({
-          incident_type: ext.incident_type,
-          disposal_object_name: ext.disposal_object_name,
-        });
         const detailData = {
           external_id: extId || undefined,
           external_incident_number: extNumber || undefined,
@@ -1890,6 +1916,13 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
           received_at: ext.register_time ? new Date(ext.register_time).toISOString() : undefined,
           specific_type: (ext.disposal_object_name && ext.disposal_object_name !== '其他') ? ext.disposal_object_name : (ext.incident_type || undefined),
           level: ext.incident_level || undefined,
+          latitude: coords.latitude || undefined,
+          longitude: coords.longitude || undefined,
+          contacts: contacts.length > 0 ? contacts : undefined,
+          dispatch_summary: dispatchSummary || undefined,
+          dispatch_vehicles: ext.dispatch_vehicle || undefined,
+          dispatch_stations: ext.dispatch_organization || undefined,
+          main_station: ext.squadron_name || undefined,
         };
         const cleanData = {};
         for (const [k, v] of Object.entries(detailData)) {
@@ -1917,6 +1950,21 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     }
 
     const view = await incidentView(created);
+    if (view) {
+      view.info = {
+        ...view.info,
+        original_category: view.info?.original_category || ext.incident_type || undefined,
+        location: view.info?.location || fullLocation || ext.crime_address || undefined,
+        administrative_area: view.info?.administrative_area || resolvedDistrict || ext.district_name || undefined,
+        situation: view.info?.situation || situation || undefined,
+        received_at: view.info?.received_at || (ext.register_time ? new Date(ext.register_time).toISOString() : undefined),
+        specific_type: view.info?.specific_type || ((ext.disposal_object_name && ext.disposal_object_name !== '其他') ? ext.disposal_object_name : (ext.incident_type || undefined)),
+        level: view.info?.level || ext.incident_level || undefined,
+        latitude: view.info?.latitude || coords.latitude || undefined,
+        longitude: view.info?.longitude || coords.longitude || undefined,
+        dispatch_summary: view.info?.dispatch_summary || dispatchSummary || undefined,
+      };
+    }
     await completeTrackedOperation(tracked, view, 201, event?.id);
     res.status(201).json(withWriteMetadata(view, event));
   } catch (e) {

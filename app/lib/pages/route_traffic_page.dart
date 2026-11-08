@@ -149,9 +149,16 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
     String location = (incident.info['location']?.toString() ?? '').trim();
     String city =
         (incident.info['administrative_area']?.toString() ?? '').trim();
+    double? officialLat =
+        double.tryParse(incident.info['latitude']?.toString() ?? '');
+    double? officialLon =
+        double.tryParse(incident.info['longitude']?.toString() ?? '');
 
     // 若警情 info 中缺少位置或行政区，尝试从警情详情接口补拉一次
-    if ((location.isEmpty || city.isEmpty) &&
+    if ((location.isEmpty ||
+            city.isEmpty ||
+            officialLat == null ||
+            officialLon == null) &&
         _gateway.fetchIncidentDetails != null) {
       try {
         final details = await _gateway.fetchIncidentDetails!(incident.id);
@@ -163,6 +170,8 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
           if (city.isEmpty) {
             city = (data['administrative_area']?.toString() ?? '').trim();
           }
+          officialLat ??= double.tryParse(data['latitude']?.toString() ?? '');
+          officialLon ??= double.tryParse(data['longitude']?.toString() ?? '');
         }
       } catch (_) {
         // 网络失败时沿用当前已知状态
@@ -216,8 +225,8 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
         city: _targetCity.isNotEmpty ? _targetCity : null,
         originLat: fix?.lat,
         originLon: fix?.lon,
-        destLat: _selectedCandidate?.location?.lat,
-        destLon: _selectedCandidate?.location?.lon,
+        destLat: _selectedCandidate?.location?.lat ?? officialLat,
+        destLon: _selectedCandidate?.location?.lon ?? officialLon,
         destName: _selectedCandidate?.name,
         destAdcode: _selectedCandidate?.adcode,
       );

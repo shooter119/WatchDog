@@ -17,6 +17,7 @@ const incidentFieldLabels = <String, String>{
   'received_at': '接警时间',
   'location': '事发地点',
   'administrative_area': '行政区',
+  'dispatch_summary': '出动力量',
   'place_type': '场所类型',
   'situation': '现场情况',
   'trapped': '人员被困',
