@@ -727,4 +727,81 @@ void main() {
     expect(current.keySiteLink!.version, 2);
     expect(current.keySiteLinkRevision, 3);
   });
+
+  testWidgets('绑定重点单位未绑定态为紧凑单行，已绑定态展示辖区与类型标签', (tester) async {
+    final api = FakeApi();
+    final controller = FakeController(api);
+    const incident = Incident(
+      id: 'i-compact',
+      number: '合成警情',
+      status: 'active',
+      createdAt: 1,
+      lastActivityAt: 1,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: IncidentKeySiteSection(
+            controller: controller,
+            incident: incident,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('绑定重点单位'), findsOneWidget);
+    expect(find.text('点击绑定'), findsOneWidget);
+    final unlinkedSize = tester.getSize(find.byType(IncidentKeySiteSection));
+    expect(unlinkedSize.height, inInclusiveRange(48, 60));
+
+    api.linkState = {
+      'link': {
+        'siteId': 'one',
+        'name': '合成单位',
+        'address': '合成地址',
+        'version': 1,
+        'linkedBy': 'm',
+        'linkedByName': '合成成员',
+        'linkedAt': 1,
+      },
+      'revision': 1,
+      'history': [
+        {
+          'site_id': 'one',
+          'version': 1,
+          'profile': {
+            'name': '合成单位',
+            'address': '合成地址',
+            'district': '示例区',
+            'site_type': '化工企业',
+          },
+        },
+      ],
+      'newVersionAvailable': false,
+      'active': true,
+    };
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: IncidentKeySiteSection(
+            controller: controller,
+            incident: incident,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('合成单位'), findsOneWidget);
+    expect(find.text('示例区'), findsOneWidget);
+    expect(find.text('化工企业'), findsOneWidget);
+    expect(find.textContaining('合成地址'), findsNothing);
+    expect(find.text('切换'), findsOneWidget);
+    expect(find.text('解除'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    api.dispose();
+  });
 }

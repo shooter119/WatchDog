@@ -342,7 +342,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('现场工具'), findsOneWidget);
     expect(find.text('单机模式'), findsOneWidget);
-    expect(find.text('重点单位'), findsOneWidget);
+    expect(find.text('重点单位库'), findsOneWidget);
     expect(find.text('水印相机'), findsOneWidget);
     expect(find.text('定位分享'), findsOneWidget);
     expect(find.text('视频资源'), findsOneWidget);

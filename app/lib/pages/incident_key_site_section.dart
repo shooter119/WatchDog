@@ -200,145 +200,295 @@ class _IncidentLinkState extends State<_IncidentLink> {
     ),
   );
 
+  List<String> _linkedProfileTags(IncidentKeySiteLink link) {
+    final history = _state?['history'];
+    if (history is! List) return const [];
+    Map? matchedProfile;
+    for (final raw in history) {
+      if (raw is! Map) continue;
+      if (raw['site_id']?.toString() != link.siteId) continue;
+      final profile = raw['profile'];
+      if (profile is! Map) continue;
+      if ((raw['version'] as num?)?.toInt() == link.version) {
+        matchedProfile = profile;
+        break;
+      }
+      matchedProfile ??= profile;
+    }
+    if (matchedProfile == null) return const [];
+    final tags = <String>[];
+    for (final key in const ['district', 'site_type']) {
+      final value = matchedProfile[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty && !tags.contains(value)) {
+        tags.add(value);
+      }
+    }
+    return tags;
+  }
+
   @override
   Widget build(BuildContext context) {
     final raw = _state?['link'];
     final link = raw is Map
         ? IncidentKeySiteLink.fromJson(Map<String, dynamic>.from(raw))
         : (_state == null ? widget.incident.keySiteLink : null);
+    if (link == null && !widget.incident.isActive && _error == null) {
+      return const SizedBox.shrink();
+    }
+    final canSearch = !_busy && _state != null;
     final compactAction = TextButton.styleFrom(
       minimumSize: const Size(48, 48),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+      foregroundColor: AppColors.actionPrimary,
+    );
+    final compactRemoveAction = TextButton.styleFrom(
+      minimumSize: const Size(48, 48),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+      foregroundColor: AppColors.textSecondary,
     );
     final compactOutlined = OutlinedButton.styleFrom(
       minimumSize: const Size(48, 48),
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s3),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+      foregroundColor: AppColors.textPrimary,
+      backgroundColor: AppColors.surface,
+      side: BorderSide(color: AppColors.border),
     );
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.s1, bottom: AppSpacing.s3),
-      child: AppCard(
-        onTap: (link == null && widget.incident.isActive)
-            ? (_busy || _state == null ? null : _change)
-            : null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionTitle(
-              text: '关联重点单位',
-              trailing: (link == null && widget.incident.isActive)
-                  ? IconButton(
-                      key: const Key('key-site-search'),
-                      onPressed: _busy || _state == null ? null : _change,
-                      icon: const Icon(Icons.search, size: 20),
-                      tooltip: '搜索关联重点单位',
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
-                      ),
-                    )
-                  : null,
+    final profileTags = link == null
+        ? const <String>[]
+        : _linkedProfileTags(link);
+
+    return AppCard(
+      color: AppColors.surfaceSubtle,
+      radius: AppRadius.md,
+      side: BorderSide(color: AppColors.border),
+      padding: link == null
+          ? const EdgeInsets.symmetric(horizontal: AppSpacing.s3)
+          : const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s3,
+              vertical: AppSpacing.s2,
             ),
-            if (link != null) ...[
-              Text(
-                link.name,
-                softWrap: true,
-                style: AppTextStyles.bodyMd.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              if (_state?['newVersionAvailable'] == true) ...[
-                const SizedBox(height: AppSpacing.s1),
-                Text(
-                  '已有新版资料，请人工核对后更新',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.noticeWarningFg,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-              if (_state?['active'] == false) ...[
-                const SizedBox(height: AppSpacing.s1),
-                Text(
-                  '重点单位已停用，保留历史引用',
-                  style: AppTextStyles.caption.copyWith(
+      onTap: (link == null && widget.incident.isActive)
+          ? (canSearch ? _change : null)
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (link == null)
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.domain_add_outlined,
+                    size: 18,
                     color: AppColors.textSecondary,
                   ),
-                ),
-              ],
-              const SizedBox(height: AppSpacing.s2),
-            ],
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.s2),
-                child: AppNotice(
-                  kind: AppNoticeKind.error,
-                  text: keySiteError(_error!),
-                ),
-              ),
-            if (link != null && widget.incident.isActive)
-              Row(
-                children: [
-                  Flexible(
-                    child: OutlinedButton.icon(
-                      key: const Key('key-site-open'),
-                      onPressed: () => _open(link.siteId, link.version),
-                      style: compactOutlined,
-                      icon: const Icon(Icons.folder_open, size: 18),
-                      label: const Text('单位资料'),
+                  const SizedBox(width: AppSpacing.s2),
+                  Expanded(
+                    child: Text(
+                      '绑定重点单位',
+                      style: AppTextStyles.label.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.s1),
-                  TextButton(
-                    key: const Key('key-site-change'),
-                    onPressed: _busy || _state == null ? null : _change,
-                    style: compactAction,
-                    child: const Text('更换'),
-                  ),
-                  const SizedBox(width: AppSpacing.s3),
-                  TextButton(
-                    key: const Key('key-site-remove'),
-                    onPressed: _busy ? null : () => _change(remove: true),
-                    style: compactAction,
-                    child: const Text('解除'),
-                  ),
+                  if (widget.incident.isActive)
+                    Semantics(
+                      button: true,
+                      enabled: canSearch,
+                      label: '搜索绑定重点单位',
+                      child: InkWell(
+                        key: const Key('key-site-search'),
+                        onTap: canSearch ? _change : null,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            minWidth: 48,
+                            minHeight: 48,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: AppSpacing.s2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '点击绑定',
+                                  style: AppTextStyles.label.copyWith(
+                                    color: canSearch
+                                        ? AppColors.actionPrimary
+                                        : AppColors.textTertiary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 18,
+                                  color: canSearch
+                                      ? AppColors.actionPrimary
+                                      : AppColors.textTertiary,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
-              )
-            else if (link != null)
-              OutlinedButton.icon(
-                key: const Key('key-site-open'),
-                onPressed: () => _open(link.siteId, link.version),
-                style: compactOutlined,
-                icon: const Icon(Icons.folder_open, size: 18),
-                label: const Text('单位资料'),
               ),
-            if (link != null &&
-                widget.incident.isActive &&
-                _state?['newVersionAvailable'] == true &&
-                _state?['active'] == true)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  key: const Key('key-site-update'),
-                  onPressed: _busy ? null : () => _change(update: true),
-                  style: compactAction,
-                  child: const Text('核对新版'),
+            )
+          else ...[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.domain_verification_outlined,
+                  size: 16,
+                  color: AppColors.actionPrimary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    link.name,
+                    softWrap: true,
+                    style: AppTextStyles.bodyMd.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (profileTags.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final tag in profileTags)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Text(
+                        tag,
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            if (_state?['newVersionAvailable'] == true) ...[
+              const SizedBox(height: AppSpacing.s1),
+              Text(
+                '已有新版资料，请人工核对后更新',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.noticeWarningFg,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            if (_error != null)
-              Align(
-                alignment: Alignment.centerLeft,
+            ],
+            if (_state?['active'] == false) ...[
+              const SizedBox(height: AppSpacing.s1),
+              Text(
+                '重点单位已停用，保留历史引用',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.s2),
+          ],
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(
+                top: AppSpacing.s1,
+                bottom: AppSpacing.s2,
+              ),
+              child: AppNotice(
+                kind: AppNoticeKind.error,
+                text: keySiteError(_error!),
+              ),
+            ),
+          if (link != null && widget.incident.isActive)
+            Row(
+              children: [
+                Flexible(
+                  child: OutlinedButton.icon(
+                    key: const Key('key-site-open'),
+                    onPressed: () => _open(link.siteId, link.version),
+                    style: compactOutlined,
+                    icon: const Icon(Icons.folder_open, size: 18),
+                    label: const Text(
+                      '单位资料',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.s1),
+                TextButton(
+                  key: const Key('key-site-change'),
+                  onPressed: canSearch ? _change : null,
+                  style: compactAction,
+                  child: const Text('切换'),
+                ),
+                const SizedBox(width: AppSpacing.s1),
+                TextButton(
+                  key: const Key('key-site-remove'),
+                  onPressed: _busy ? null : () => _change(remove: true),
+                  style: compactRemoveAction,
+                  child: const Text('解除'),
+                ),
+              ],
+            )
+          else if (link != null)
+            OutlinedButton.icon(
+              key: const Key('key-site-open'),
+              onPressed: () => _open(link.siteId, link.version),
+              style: compactOutlined,
+              icon: const Icon(Icons.folder_open, size: 18),
+              label: const Text('单位资料'),
+            ),
+          if (link != null &&
+              widget.incident.isActive &&
+              _state?['newVersionAvailable'] == true &&
+              _state?['active'] == true)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: const Key('key-site-update'),
+                onPressed: _busy ? null : () => _change(update: true),
+                style: compactAction,
+                child: const Text('核对新版'),
+              ),
+            ),
+          if (_error != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.s1),
                 child: OutlinedButton(
                   onPressed: _busy ? null : _load,
                   style: compactOutlined,
                   child: const Text('重试'),
                 ),
               ),
-            if (_saving) const LinearProgressIndicator(),
-          ],
-        ),
+            ),
+          if (_saving) const LinearProgressIndicator(),
+        ],
       ),
     );
   }

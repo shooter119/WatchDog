@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -92,6 +94,7 @@ class Settings {
   static const _kPendingAppPhone = 'pending_app_phone';
   static const _kPendingAppSubmittedAt = 'pending_app_submitted_at';
   static const _kAppTheme = 'app_theme';
+  static const _kIncidentCardExpandedMap = 'incident_card_expanded_v1';
 
   static bool _isLocalHost(String host) => const {
     'localhost',
@@ -618,5 +621,56 @@ class Settings {
   static Future<void> setKeepAliveEnabled(bool v) async {
     final sp = await SharedPreferences.getInstance();
     await sp.setBool(_kKeepAlive, v);
+  }
+
+  /// 读取按警情记忆的首页主卡片展开状态（未记录时返回 null，由调用方默认折叠）。
+  static Future<bool?> incidentCardExpanded(String incidentId) async {
+    final id = incidentId.trim();
+    if (id.isEmpty) return null;
+    final raw = (await SharedPreferences.getInstance()).getString(
+      _kIncidentCardExpandedMap,
+    );
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map && decoded[id] is bool) {
+        return decoded[id] as bool;
+      }
+    } catch (_) {
+      // 忽略损坏的本地缓存，按默认折叠兜底。
+    }
+    return null;
+  }
+
+  /// 持久化按警情记忆的首页主卡片展开状态（仅保留最近 30 条警情记录）。
+  static Future<void> setIncidentCardExpanded(
+    String incidentId,
+    bool expanded,
+  ) async {
+    final id = incidentId.trim();
+    if (id.isEmpty) return;
+    final sp = await SharedPreferences.getInstance();
+    final map = <String, bool>{};
+    final raw = sp.getString(_kIncidentCardExpandedMap);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          for (final entry in decoded.entries) {
+            if (entry.value is bool) {
+              map[entry.key.toString()] = entry.value as bool;
+            }
+          }
+        }
+      } catch (_) {
+        // 覆盖损坏数据
+      }
+    }
+    map.remove(id);
+    map[id] = expanded;
+    while (map.length > 30) {
+      map.remove(map.keys.first);
+    }
+    await sp.setString(_kIncidentCardExpandedMap, jsonEncode(map));
   }
 }

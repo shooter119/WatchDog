@@ -3780,6 +3780,10 @@ void main() {
   });
 
   group('警情卡与选择流程', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+    });
+
     Future<void> pumpTask(
       WidgetTester tester,
       _FakeController c, {
@@ -3927,13 +3931,17 @@ void main() {
           )
           .first;
       await tester.scrollUntilVisible(
-        find.text('归档警情'),
+        find.byKey(const Key('collapse-incident-card-bottom')),
         220,
         scrollable: pageScrollable,
       );
-      expect(find.text('归档警情'), findsOneWidget);
       expect(find.text('第8消防救援站 8车40人'), findsOneWidget);
+      expect(find.text('警情详情'), findsOneWidget);
+      expect(find.text('收起详情'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      await tester.tap(find.byKey(const Key('collapse-incident-card-bottom')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('incident-card-details')), findsNothing);
       await tester.pumpWidget(const SizedBox());
       api.dispose();
     });
@@ -4052,7 +4060,7 @@ void main() {
       expect(forceRow, findsOneWidget);
     });
 
-    testWidgets('活动警情提供修改名称入口', (tester) async {
+    testWidgets('活动警情通过更多菜单提供修改名称入口', (tester) async {
       final c = _FakeController()
         ..currentIncident = const Incident(
           id: 'i1',
@@ -4062,16 +4070,15 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
-      if (find.byKey(const Key('toggle-incident-card')).evaluate().isNotEmpty) {
-        await tester.tap(find.byKey(const Key('toggle-incident-card')));
-        await tester.pumpAndSettle();
-      }
+      expect(find.byKey(const Key('incident-more-menu')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('incident-more-menu')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('rename-incident')), findsOneWidget);
-      expect(find.text('修改名称'), findsNothing);
+      expect(find.text('修改警情名称'), findsOneWidget);
 
       // 弹窗关闭后 controller 延迟释放，避免 InputDecorator 仍在卸载时触发红屏。
       await tester.tap(find.byKey(const Key('rename-incident')));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.text('修改警情名称'), findsOneWidget);
       await tester.tap(find.text('稍后'));
       await tester.pumpAndSettle();
@@ -4103,7 +4110,7 @@ void main() {
       }
       expect(
         tester.getTopLeft(find.text('登记力量')).dy,
-        lessThan(tester.getTopLeft(find.text('关联重点单位')).dy),
+        lessThan(tester.getTopLeft(find.text('绑定重点单位')).dy),
       );
       expect(find.text('图片导入'), findsNothing);
       expect(find.text('文字导入'), findsNothing);
@@ -4213,7 +4220,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('活动警情提供手动归档入口并二次确认', (tester) async {
+    testWidgets('活动警情取消卡片底部归档并改由更多菜单二次确认', (tester) async {
       final c = _FakeController()
         ..currentIncident = const Incident(
           id: 'i1',
@@ -4227,7 +4234,12 @@ void main() {
         await tester.tap(find.byKey(const Key('toggle-incident-card')));
         await tester.pumpAndSettle();
       }
-      await tester.tap(find.byIcon(Icons.archive_outlined));
+      expect(find.text('归档警情'), findsNothing);
+      expect(find.text('退出当前警情'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('incident-more-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('archive-incident-menu-item')));
       await tester.pumpAndSettle();
       expect(
         find.descendant(
@@ -4255,6 +4267,98 @@ void main() {
       }
       expect(find.text('现场工具'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('底部导航处于处置页时高亮处置标签且从其他页面可点击返回', (tester) async {
+      await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
+      await tester.pump();
+      expect(find.text('处置'), findsOneWidget);
+      expect(find.byKey(const Key('nav-indicator-处置')), findsOneWidget);
+      expect(find.byKey(const Key('nav-indicator-日志')), findsNothing);
+
+      await tester.tap(find.text('日志'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('nav-indicator-日志')), findsOneWidget);
+      expect(find.byKey(const Key('nav-indicator-处置')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('nav-dispose-tab')));
+      await tester.pumpAndSettle();
+      expect(find.text('警情处置'), findsOneWidget);
+      expect(find.byKey(const Key('nav-indicator-处置')), findsOneWidget);
+    });
+
+    testWidgets('首页主卡片合并重复地址、完整显示状态胶囊且无力量时不占冗余空态', (tester) async {
+      final c = _FakeController()
+        ..currentIncident = const Incident(
+          id: 'dedupe-inc',
+          number: '2026-11-13-01',
+          title: '示例镇示例村',
+          info: {
+            'location': '示例县示例镇示例村',
+            'original_category': '火灾扑救',
+            'situation': '火灾扑救 · 官方状态: 归队',
+          },
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        );
+      await pumpTask(tester, c);
+      expect(find.text('示例县示例镇示例村'), findsOneWidget);
+      expect(find.text('示例镇示例村'), findsNothing);
+      expect(find.text('火灾扑救'), findsOneWidget);
+      expect(find.text('官方状态: 归队'), findsOneWidget);
+      expect(find.text('力量待登记'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
+      // 展开后不再重复输出已包含在标题内的地址，也不展示无力量的冗长空态
+      expect(find.text('示例县示例镇示例村'), findsOneWidget);
+      expect(find.text('尚未登记参战力量'), findsNothing);
+      expect(find.text('0支队伍'), findsNothing);
+    });
+
+    testWidgets('首页主卡片按警情记忆展开状态并在新增在场人员时自动收起', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      const incA = Incident(
+        id: 'mem-a',
+        number: 'A1',
+        title: '警情甲',
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+      const incB = Incident(
+        id: 'mem-b',
+        number: 'B1',
+        title: '警情乙',
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+      final c = _FakeController(currentIncident: incA);
+      await pumpTask(tester, c);
+      expect(find.byKey(const Key('incident-card-details')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('incident-card-details')), findsOneWidget);
+      expect(await Settings.incidentCardExpanded('mem-a'), isTrue);
+
+      c.currentIncident = incB;
+      c.notifyListeners();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('incident-card-details')), findsNothing);
+
+      c.currentIncident = incA;
+      c.notifyListeners();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('incident-card-details')), findsOneWidget);
+
+      c.entries = [_entry(name: '张三', remainingMin: 25)];
+      c.notifyListeners();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('incident-card-details')), findsNothing);
+      expect(await Settings.incidentCardExpanded('mem-a'), isFalse);
     });
 
     group('游客模式与申请审批流程', () {

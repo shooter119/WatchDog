@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/phone_caller.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 import '../widgets/phone_text.dart';
 import 'incident_import_page.dart';
@@ -11,13 +12,13 @@ import 'incident_key_site_section.dart';
 
 class IncidentDetailsPage extends StatefulWidget {
   final AppController? controller;
-  final ApiClient api;
+  final ApiClient? api;
   final Incident incident;
   final PhoneLauncher? phoneLauncher;
   const IncidentDetailsPage({
     super.key,
     this.controller,
-    required this.api,
+    this.api,
     required this.incident,
     this.phoneLauncher,
   });
@@ -26,7 +27,7 @@ class IncidentDetailsPage extends StatefulWidget {
 }
 
 class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
-  late final ApiClient _api = widget.api.forIncident(widget.incident.id);
+  late final ApiClient? _api = widget.api?.forIncident(widget.incident.id);
   Map<String, dynamic>? _detail;
   String? _error;
   bool _busy = false;
@@ -38,13 +39,26 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
 
   @override
   void dispose() {
-    _api.dispose();
+    _api?.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final api = _api;
+    if (api == null) {
+      setState(() {
+        _detail = {
+          'data': Map<String, dynamic>.from(widget.incident.info),
+          'version': 0,
+          'imports': const [],
+          'observations': const [],
+        };
+        _error = null;
+      });
+      return;
+    }
     try {
-      final value = await _api.fetchIncidentDetails();
+      final value = await api.fetchIncidentDetails();
       if (mounted) {
         setState(() {
           _detail = value;
@@ -113,7 +127,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
         ],
       ),
     );
-    if (save == true && mounted) {
+    if (save == true && mounted && _api != null) {
       setState(() => _busy = true);
       try {
         await _api.updateIncidentDetails(
@@ -133,6 +147,57 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
         c.dispose();
       }
     });
+  }
+
+  Future<void> _confirmExitIncident() async {
+    final controller = widget.controller;
+    if (controller == null || _busy) return;
+    final ok = await showAppConfirmDialog(
+      context,
+      title: '退出当前警情',
+      message: '退出后不会归档警情，仍可从正在处置的警情列表重新加入。',
+      confirmLabel: '确认退出',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await controller.exitCurrentIncident();
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('退出警情失败：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _confirmArchiveIncident() async {
+    final controller = widget.controller;
+    if (controller == null || _busy) return;
+    final ok = await showAppConfirmDialog(
+      context,
+      title: '归档警情',
+      message: '归档后现场数据只读，名称仍可在归档警情列表中修改。请确认处置已经结束。',
+      confirmLabel: '确认归档',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await controller.archiveCurrent();
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('归档失败：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   String _formatObsTime(dynamic raw) {
@@ -157,7 +222,7 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
       appBar: AppBar(
         title: const Text('警情详情'),
         actions: [
-          if (widget.incident.isActive)
+          if (widget.incident.isActive && _api != null)
             IconButton(
               tooltip: '编辑警情资料',
               onPressed: _busy || _detail == null ? null : _edit,
@@ -206,7 +271,9 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
             if (_detail != null) ...[
               if (data.isEmpty && observations.isEmpty)
                 Text(
-                  '尚未补充警情资料，可从首页导入图片或文字。',
+                  widget.api == null
+                      ? '当前处于单机模式，暂未连接云端详情接口。'
+                      : '尚未补充警情资料，可从首页导入图片或文字。',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
               if (basicFields.isNotEmpty)
@@ -390,6 +457,43 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
                     ),
                   ),
                 ),
+            ],
+            if (widget.incident.isActive && widget.controller != null) ...[
+              const SizedBox(height: AppSpacing.s5),
+              const SectionTitle(text: '警情操作'),
+              AppCard(
+                padding: const EdgeInsets.all(AppSpacing.s3),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    OutlinedButton.icon(
+                      key: const Key('details-exit-incident'),
+                      onPressed: _busy ? null : _confirmExitIncident,
+                      icon: const Icon(Icons.logout_outlined, size: 18),
+                      label: const Text('退出当前警情'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        foregroundColor: AppColors.textPrimary,
+                        side: BorderSide(color: AppColors.border),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.s2),
+                    OutlinedButton.icon(
+                      key: const Key('details-archive-incident'),
+                      onPressed: _busy ? null : _confirmArchiveIncident,
+                      icon: const Icon(Icons.archive_outlined, size: 18),
+                      label: const Text('归档警情'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        foregroundColor: AppColors.alarm,
+                        side: BorderSide(
+                          color: AppColors.alarm.withValues(alpha: 0.45),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ],
         ),

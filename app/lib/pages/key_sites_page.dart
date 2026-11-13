@@ -410,7 +410,7 @@ class _SiteListState extends State<_SiteList> {
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: AppColors.background,
-    appBar: AppBar(title: Text(widget.selecting ? '关联重点单位' : '重点单位')),
+    appBar: AppBar(title: Text(widget.selecting ? '绑定重点单位' : '重点单位库')),
     body: RefreshIndicator(
       onRefresh: _load,
       child: ListView(

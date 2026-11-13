@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -787,16 +788,16 @@ class _BottomNav extends StatelessWidget {
         ),
       );
     }
+    final labelScaleHeight = (MediaQuery.textScalerOf(context).scale(12) * 1.2)
+        .ceilToDouble();
+    final barHeight = math.max(72.0, 58.0 + labelScaleHeight);
     return Container(
       key: const Key('bottom-nav-surface'),
-      height: 68 + safeBottom,
+      height: barHeight + safeBottom,
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(
-          top: BorderSide(
-            color: AppColors.border.withValues(alpha: 0.8),
-            width: 1,
-          ),
+          top: BorderSide(color: AppColors.border, width: 1),
         ),
         boxShadow: AppShadow.float,
       ),
@@ -806,16 +807,55 @@ class _BottomNav extends StatelessWidget {
           Positioned(
             left: 0,
             right: 0,
-            top: -2,
-            child: Center(
-              child: VoiceButton(
-                recording: recording,
-                processing: processing,
-                enabled: true,
-                onTap: onVoiceTap,
-                onLongPressStart: onVoiceLongPressStart,
-                onLongPressEnd: onVoiceLongPressEnd,
-              ),
+            top: 0,
+            bottom: safeBottom,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _NavItem(
+                    glyph: NavGlyph.log,
+                    label: '日志',
+                    selected: index == 0,
+                    onTap: () => onSelect(0),
+                  ),
+                ),
+                Expanded(
+                  child: _NavItem(
+                    glyph: NavGlyph.board,
+                    label: '看板',
+                    selected: index == 1,
+                    hasAlert: boardAlert,
+                    onTap: () => onSelect(1),
+                  ),
+                ),
+                Expanded(
+                  child: _CenterDisposeNavSlot(
+                    selected: index == 2,
+                    recording: recording,
+                    processing: processing,
+                    onTap: onVoiceTap,
+                    onLongPressStart: onVoiceLongPressStart,
+                    onLongPressEnd: onVoiceLongPressEnd,
+                  ),
+                ),
+                Expanded(
+                  child: _NavItem(
+                    glyph: NavGlyph.assist,
+                    label: '辅助',
+                    selected: index == 3,
+                    onTap: () => onSelect(3),
+                  ),
+                ),
+                Expanded(
+                  child: _NavItem(
+                    glyph: NavGlyph.settings,
+                    label: '设置',
+                    selected: index == 4,
+                    hasBadge: pendingCount > 0,
+                    onTap: () => onSelect(4),
+                  ),
+                ),
+              ],
             ),
           ),
           if (recording)
@@ -845,53 +885,6 @@ class _BottomNav extends StatelessWidget {
                 ),
               ),
             ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: safeBottom,
-            child: SizedBox(
-              height: 56,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _NavItem(
-                      glyph: NavGlyph.log,
-                      label: '日志',
-                      selected: index == 0,
-                      onTap: () => onSelect(0),
-                    ),
-                  ),
-                  Expanded(
-                    child: _NavItem(
-                      glyph: NavGlyph.board,
-                      label: '看板',
-                      selected: index == 1,
-                      hasAlert: boardAlert,
-                      onTap: () => onSelect(1),
-                    ),
-                  ),
-                  const Expanded(child: SizedBox()),
-                  Expanded(
-                    child: _NavItem(
-                      glyph: NavGlyph.assist,
-                      label: '辅助',
-                      selected: index == 3,
-                      onTap: () => onSelect(3),
-                    ),
-                  ),
-                  Expanded(
-                    child: _NavItem(
-                      glyph: NavGlyph.settings,
-                      label: '设置',
-                      selected: index == 4,
-                      hasBadge: pendingCount > 0,
-                      onTap: () => onSelect(4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1022,6 +1015,92 @@ class _TextInputToggle extends StatelessWidget {
   }
 }
 
+class _CenterDisposeNavSlot extends StatelessWidget {
+  final bool selected;
+  final bool recording;
+  final bool processing;
+  final VoidCallback onTap;
+  final GestureLongPressStartCallback onLongPressStart;
+  final GestureLongPressEndCallback onLongPressEnd;
+
+  const _CenterDisposeNavSlot({
+    required this.selected,
+    required this.recording,
+    required this.processing,
+    required this.onTap,
+    required this.onLongPressStart,
+    required this.onLongPressEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? AppColors.textPrimary : AppColors.textTertiary;
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        VoiceButton(
+          size: 40,
+          recording: recording,
+          processing: processing,
+          enabled: true,
+          onTap: onTap,
+          onLongPressStart: onLongPressStart,
+          onLongPressEnd: onLongPressEnd,
+        ),
+        Semantics(
+          label: '处置',
+          selected: selected,
+          button: true,
+          container: true,
+          excludeSemantics: true,
+          onTap: onTap,
+          child: InkWell(
+            key: const Key('nav-dispose-tab'),
+            onTap: onTap,
+            child: SizedBox(
+              width: double.infinity,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '处置',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.1,
+                        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    AnimatedContainer(
+                      key: selected ? const Key('nav-indicator-处置') : null,
+                      duration: disableAnimations
+                          ? Duration.zero
+                          : const Duration(milliseconds: 160),
+                      curve: Curves.easeOut,
+                      width: 18,
+                      height: 2.5,
+                      decoration: BoxDecoration(
+                        color: selected ? AppColors.voice : Colors.transparent,
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _NavItem extends StatelessWidget {
   final NavGlyph glyph;
   final String label;
@@ -1053,70 +1132,79 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       child: InkWell(
         onTap: onTap,
-        child: Center(
-          child: AnimatedContainer(
-            duration: disableAnimations
-                ? Duration.zero
-                : const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            margin: const EdgeInsets.symmetric(vertical: 2),
-            constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Transform.translate(
-                      offset: const Offset(0, -1),
-                      child: NavIcon(glyph: glyph, color: color, size: 28),
-                    ),
-                    if (hasAlert)
-                      Positioned(
-                        right: -3,
-                        top: -3,
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: AppColors.alarm,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: AppColors.surface,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                      )
-                    else if (hasBadge)
-                      Positioned(
-                        right: -2,
-                        top: -2,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFF59E0B),
-                            shape: BoxShape.circle,
+        child: AnimatedContainer(
+          duration: disableAnimations
+              ? Duration.zero
+              : const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
+          padding: const EdgeInsets.fromLTRB(6, 4, 6, 5),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  NavIcon(glyph: glyph, color: color, size: 28),
+                  if (hasAlert)
+                    Positioned(
+                      right: -3,
+                      top: -3,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: AppColors.alarm,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: AppColors.surface,
+                            width: 2,
                           ),
                         ),
                       ),
-                  ],
+                    )
+                  else if (hasBadge)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF59E0B),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.1,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: color,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.1,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                    color: color,
-                  ),
+              ),
+              const SizedBox(height: 3),
+              AnimatedContainer(
+                key: selected ? Key('nav-indicator-$label') : null,
+                duration: disableAnimations
+                    ? Duration.zero
+                    : const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                width: 18,
+                height: 2.5,
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.actionPrimary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

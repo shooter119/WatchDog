@@ -22,8 +22,10 @@ import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
+import '../services/settings.dart';
 import '../services/video_playback_session.dart';
 import '../state/app_controller.dart';
+import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 import '../widgets/commander_glance_card.dart';
 
@@ -102,6 +104,26 @@ class HomePageState extends State<HomePage> {
 
   bool _incidentCardExpanded = false;
   String? _incidentCardId;
+  bool _hadActiveEntries = false;
+  int _incidentCardEpoch = 0;
+
+  Future<void> _restoreIncidentCardExpanded(
+    String incidentId,
+    int epoch,
+  ) async {
+    final saved = await Settings.incidentCardExpanded(incidentId);
+    if (!mounted ||
+        _incidentCardId != incidentId ||
+        _incidentCardEpoch != epoch ||
+        saved == null) {
+      return;
+    }
+    final hasActiveEntries = widget.controller.entries.any((e) => e.isActive);
+    if (hasActiveEntries && saved) return;
+    if (_incidentCardExpanded != saved) {
+      setState(() => _incidentCardExpanded = saved);
+    }
+  }
 
   @override
   void initState() {
@@ -1300,9 +1322,29 @@ class HomePageState extends State<HomePage> {
   Widget _buildContent(BuildContext context) {
     final cfg = widget.controller.calcConfig;
     final incident = widget.controller.currentIncident;
+    final activeEntries = widget.controller.entries
+        .where((e) => e.isActive)
+        .toList();
+    final hasActiveEntries = activeEntries.isNotEmpty;
     if (_incidentCardId != incident?.id) {
       _incidentCardId = incident?.id;
       _incidentCardExpanded = false;
+      _hadActiveEntries = hasActiveEntries;
+      final epoch = ++_incidentCardEpoch;
+      if (incident != null) {
+        unawaited(_restoreIncidentCardExpanded(incident.id, epoch));
+      }
+    } else if (!_hadActiveEntries && hasActiveEntries) {
+      _hadActiveEntries = true;
+      if (_incidentCardExpanded) {
+        _incidentCardExpanded = false;
+        _incidentCardEpoch++;
+        if (incident != null) {
+          unawaited(Settings.setIncidentCardExpanded(incident.id, false));
+        }
+      }
+    } else if (!hasActiveEntries) {
+      _hadActiveEntries = false;
     }
     // 录入确认时把警情卡收起，确认区只保留人员和压力信息，避免重复占用屏幕。
     final compactEntryFlow =
@@ -1310,6 +1352,7 @@ class HomePageState extends State<HomePage> {
         _processing ||
         _peopleEditors.isNotEmpty ||
         (_transcript != null && _parsed != null);
+    final isOverviewMode = !compactEntryFlow && _error == null;
     return SafeArea(
       child: LayoutBuilder(
         builder: (context, viewport) {
@@ -1359,9 +1402,13 @@ class HomePageState extends State<HomePage> {
                   forces: widget.controller.forces,
                   expanded: taskBarExpanded,
                   onExpandedChanged: (expanded) {
+                    _incidentCardEpoch++;
                     if (mounted) {
                       setState(() => _incidentCardExpanded = expanded);
                     }
+                    unawaited(
+                      Settings.setIncidentCardExpanded(incident.id, expanded),
+                    );
                   },
                   onRename: _renameIncident,
                   onAddForce: () => _editForce(),
@@ -1374,8 +1421,49 @@ class HomePageState extends State<HomePage> {
                   onExit: _confirmExitIncident,
                 );
 
+          // 待命/作战总览统一由单一垂直滚动容器承载，避免嵌套滚动和高度固定导致工具卡片被裁切。
+          if (isOverviewMode) {
+            return SingleChildScrollView(
+              key: const Key('home-page-scroll'),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.s4,
+                AppSpacing.s3,
+                AppSpacing.s4,
+                AppSpacing.s6,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  pageHeader,
+                  const SizedBox(height: AppSpacing.s2),
+                  if (taskBar != null) ...[
+                    taskBar,
+                    const SizedBox(height: AppSpacing.s3),
+                  ],
+                  if (activeEntries.isNotEmpty) ...[
+                    CommanderGlanceCard(
+                      activeEntries: activeEntries,
+                      notes: widget.controller.notes,
+                      onTap: widget.onEntryConfirmed,
+                    ),
+                    const SizedBox(height: AppSpacing.s3),
+                  ],
+                  _buildFieldTools(context),
+                  if (_peopleEditors.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.s4),
+                      child: FilledButton.icon(
+                        onPressed: _showPendingConfirm,
+                        icon: const Icon(Icons.fact_check_outlined),
+                        label: Text('继续确认已录入的 ${_peopleEditors.length} 人'),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }
+
           // 横屏可用高度通常不足以同时放下警情卡、结果区和底部导航。
-          // 警情卡展开后也改为整页滚动，让卡片按内容自然增高并把现场工具下推。
           if (viewport.maxHeight < 520 || taskBarExpanded) {
             return SingleChildScrollView(
               key: const Key('home-page-scroll'),
@@ -1546,25 +1634,14 @@ class HomePageState extends State<HomePage> {
   }
 
   Future<void> _confirmArchive() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('归档警情'),
-        content: const Text('归档后现场数据只读，名称仍可在归档警情列表中修改。请确认处置已经结束。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.alarm),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认归档'),
-          ),
-        ],
-      ),
+    final ok = await showAppConfirmDialog(
+      context,
+      title: '归档警情',
+      message: '归档后现场数据只读，名称仍可在归档警情列表中修改。请确认处置已经结束。',
+      confirmLabel: '确认归档',
+      destructive: true,
     );
-    if (ok != true) return;
+    if (!ok) return;
     try {
       await widget.controller.archiveCurrent();
     } catch (e) {
@@ -1577,24 +1654,13 @@ class HomePageState extends State<HomePage> {
   }
 
   Future<void> _confirmExitIncident() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('退出当前警情'),
-        content: const Text('退出后不会归档警情，仍可从正在处置的警情列表重新加入。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认退出'),
-          ),
-        ],
-      ),
+    final ok = await showAppConfirmDialog(
+      context,
+      title: '退出当前警情',
+      message: '退出后不会归档警情，仍可从正在处置的警情列表重新加入。',
+      confirmLabel: '确认退出',
     );
-    if (ok != true) return;
+    if (!ok) return;
     try {
       await widget.controller.exitCurrentIncident();
     } catch (e) {
@@ -1795,7 +1861,7 @@ class HomePageState extends State<HomePage> {
   Future<void> _openDetails() async {
     final api = widget.controller.api;
     final incident = widget.controller.currentIncident;
-    if (api == null || incident == null) return;
+    if (incident == null) return;
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
@@ -1806,7 +1872,9 @@ class HomePageState extends State<HomePage> {
         ),
       ),
     );
-    await widget.controller.refreshIncidentData(incident.id);
+    if (api != null) {
+      await widget.controller.refreshIncidentData(incident.id);
+    }
   }
 
   Future<void> _editForce([IncidentForce? force]) async {
@@ -3190,7 +3258,7 @@ class HomePageState extends State<HomePage> {
           children: [
             Expanded(
               child: _fieldTool(
-                '重点单位',
+                '重点单位库',
                 '地图、预案与作战资料',
                 Icons.domain_outlined,
                 () => Navigator.push<void>(
@@ -3200,6 +3268,7 @@ class HomePageState extends State<HomePage> {
                         KeySitesPage(controller: widget.controller),
                   ),
                 ),
+                keyId: '重点单位',
               ),
             ),
             const SizedBox(width: AppSpacing.s2),
@@ -3311,36 +3380,34 @@ class HomePageState extends State<HomePage> {
     String title,
     String subtitle,
     IconData icon,
-    VoidCallback open,
-  ) => Tooltip(
+    VoidCallback open, {
+    String? keyId,
+  }) => Tooltip(
     message: subtitle,
     child: AppCard(
-      key: ValueKey('tool-$title'),
+      key: ValueKey('tool-${keyId ?? title}'),
       radius: AppRadius.lg,
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s3,
-        vertical: AppSpacing.s3,
+        vertical: AppSpacing.s2,
       ),
-      side: BorderSide(
-        color: AppColors.border.withValues(alpha: 0.85),
-        width: 1.0,
-      ),
+      side: BorderSide(color: AppColors.border, width: 1.0),
       onTap: open,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 64),
+        constraints: const BoxConstraints(minHeight: 54),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
-                color: AppColors.voice.withValues(alpha: 0.1),
+                color: AppColors.voice.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 20, color: AppColors.voice),
+              child: Icon(icon, size: 19, color: AppColors.voice),
             ),
-            const SizedBox(height: AppSpacing.s2),
+            const SizedBox(height: AppSpacing.s1 + 2),
             Text(
               title,
               maxLines: 1,
@@ -3629,6 +3696,104 @@ class _TaskBarState extends State<_TaskBar> {
   String get _location =>
       (widget.incident.info['location']?.toString() ?? '').trim();
 
+  static String _normalizeSpace(String value) =>
+      value.replaceAll(RegExp(r'\s+'), '');
+
+  /// 标题与地址若存在包含关系（例如“某镇某村”与“某县某镇某村”），
+  /// 合并为一个最完整的头部标题，避免在展开区重复显示同一地点。
+  String get _headerTitle {
+    final display = widget.incident.displayName.trim();
+    final rawTitle = (widget.incident.title ?? '').trim();
+    final loc = _location;
+    if (loc.isNotEmpty &&
+        rawTitle.isNotEmpty &&
+        _normalizeSpace(loc).contains(_normalizeSpace(rawTitle))) {
+      return loc;
+    }
+    return display;
+  }
+
+  String get _distinctLocation {
+    final loc = _location;
+    if (loc.isEmpty) return '';
+    if (_normalizeSpace(_headerTitle).contains(_normalizeSpace(loc))) {
+      return '';
+    }
+    return loc;
+  }
+
+  ({
+    String category,
+    String officialStatus,
+    List<String> extraTags,
+    List<String> extraNotes,
+  })
+  _parseStatusMetadata() {
+    final info = widget.incident.info;
+    var category =
+        (info['original_category']?.toString() ??
+                info['level']?.toString() ??
+                '')
+            .trim();
+    var officialStatus = (info['incident_status']?.toString() ?? '').trim();
+    final situation = (info['situation']?.toString() ?? '').trim();
+    final extraTags = <String>[];
+    final extraNotes = <String>[];
+
+    final officialStatusReg = RegExp(r'^官方状态[:：]\s*(.+)$');
+    if (situation.isNotEmpty) {
+      for (final rawPart in situation.split('·')) {
+        final part = rawPart.trim();
+        if (part.isEmpty) continue;
+        final match = officialStatusReg.firstMatch(part);
+        if (match != null) {
+          if (officialStatus.isEmpty) {
+            officialStatus = match.group(1)!.trim();
+          }
+          continue;
+        }
+        if (part == category) continue;
+        if (category.isEmpty && part.length <= 16) {
+          category = part;
+        } else if (part.length <= 16) {
+          extraTags.add(part);
+        } else {
+          extraNotes.add(part);
+        }
+      }
+    }
+    return (
+      category: category,
+      officialStatus: officialStatus,
+      extraTags: extraTags,
+      extraNotes: extraNotes,
+    );
+  }
+
+  Widget _statusPill({
+    required String text,
+    required Color background,
+    required Color borderColor,
+    required Color foreground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: borderColor),
+      ),
+      child: Text(
+        text,
+        style: AppTextStyles.caption.copyWith(
+          color: foreground,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+        ),
+      ),
+    );
+  }
+
   void _toggleExpanded() {
     final expanded = !_expanded;
     setState(() => _expanded = expanded);
@@ -3636,196 +3801,331 @@ class _TaskBarState extends State<_TaskBar> {
   }
 
   @override
-  Widget build(BuildContext context) => AppCard(
-    key: const Key('incident-card'),
-    padding: const EdgeInsets.symmetric(
-      horizontal: AppSpacing.s4,
-      vertical: AppSpacing.s2,
-    ),
-    radius: AppRadius.lg,
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            key: const Key('toggle-incident-card'),
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            onTap: _toggleExpanded,
-            child: Semantics(
-              button: true,
-              expanded: _expanded,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.s1),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.incident.displayName,
-                            softWrap: true,
-                            style: AppTextStyles.bodyLg.copyWith(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.s1),
-                          Text(
-                            [
-                              if ((widget.incident.info['situation']
-                                          as String?)
-                                      ?.isNotEmpty ==
-                                  true)
-                                widget.incident.info['situation'] as String
-                              else if ((widget.incident.info['original_category']
-                                          as String?)
-                                      ?.isNotEmpty ==
-                                  true)
-                                widget.incident.info['original_category']
-                                    as String,
-                              widget.forces.isEmpty
-                                  ? '力量待登记'
-                                  : '${widget.forces.length}支队伍',
-                            ].join(' · '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.s2),
-                    Text(
-                      _expanded ? '收起' : '展开',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    Icon(
-                      _expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 20,
-                      color: AppColors.textSecondary,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (_expanded)
-          Column(
-            key: const Key('incident-card-details'),
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget build(BuildContext context) {
+    final meta = _parseStatusMetadata();
+    final distinctLocation = _distinctLocation;
+    return AppCard(
+      key: const Key('incident-card'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s2,
+      ),
+      radius: AppRadius.lg,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Divider(height: AppSpacing.s2),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (_location.isNotEmpty)
-                    Expanded(
-                      child: Text(
-                        _location,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textSecondary,
+              Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    key: const Key('toggle-incident-card'),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    onTap: _toggleExpanded,
+                    child: Semantics(
+                      button: true,
+                      expanded: _expanded,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.s1,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _headerTitle,
+                                    softWrap: true,
+                                    style: AppTextStyles.bodyLg.copyWith(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: [
+                                      if (meta.category.isNotEmpty)
+                                        _statusPill(
+                                          text: meta.category,
+                                          background: AppColors.actionPrimary
+                                              .withValues(alpha: 0.10),
+                                          borderColor: AppColors.actionPrimary
+                                              .withValues(alpha: 0.32),
+                                          foreground: AppColors.actionPrimary,
+                                        ),
+                                      if (meta.officialStatus.isNotEmpty)
+                                        _statusPill(
+                                          text: '官方状态: ${meta.officialStatus}',
+                                          background: AppColors.surfaceSubtle,
+                                          borderColor: AppColors.border,
+                                          foreground: AppColors.textPrimary,
+                                        ),
+                                      for (final tag in meta.extraTags)
+                                        _statusPill(
+                                          text: tag,
+                                          background: AppColors.surfaceSubtle,
+                                          borderColor: AppColors.border,
+                                          foreground: AppColors.textPrimary,
+                                        ),
+                                      _statusPill(
+                                        text: widget.forces.isEmpty
+                                            ? '力量待登记'
+                                            : '${widget.forces.length}支队伍',
+                                        background: widget.forces.isEmpty
+                                            ? AppColors.noticeWarningBg
+                                            : AppColors.surfaceSubtle,
+                                        borderColor: widget.forces.isEmpty
+                                            ? AppColors.caution.withValues(
+                                                alpha: 0.45,
+                                              )
+                                            : AppColors.border,
+                                        foreground: widget.forces.isEmpty
+                                            ? AppColors.noticeWarningFg
+                                            : AppColors.textPrimary,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.s2),
+                            Container(
+                              key: const Key('incident-collapse-pill'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceSubtle,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.pill,
+                                ),
+                                border: Border.all(color: AppColors.border),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _expanded ? '收起' : '展开',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      height: 1.1,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Icon(
+                                    _expanded
+                                        ? Icons.keyboard_arrow_up_rounded
+                                        : Icons.keyboard_arrow_down_rounded,
+                                    size: 16,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    )
-                  else
-                    const Spacer(),
-                  IconButton(
+                    ),
+                  ),
+                ),
+              ),
+              PopupMenuButton<String>(
+                key: const Key('incident-more-menu'),
+                tooltip: '更多警情操作',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 48),
+                icon: Icon(
+                  Icons.more_horiz_rounded,
+                  size: 22,
+                  color: AppColors.textPrimary,
+                ),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'rename':
+                      widget.onRename();
+                    case 'exit':
+                      widget.onExit();
+                    case 'archive':
+                      widget.onArchive();
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem<String>(
                     key: const Key('rename-incident'),
-                    onPressed: widget.onRename,
-                    icon: const Icon(Icons.edit_outlined, size: 24),
-                    tooltip: '修改名称',
-                    padding: EdgeInsets.zero,
-                    alignment: Alignment.centerRight,
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
+                    value: 'rename',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.edit_outlined,
+                          size: 18,
+                          color: AppColors.textPrimary,
+                        ),
+                        const SizedBox(width: 10),
+                        const Text('修改警情名称'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    key: const Key('exit-incident-menu-item'),
+                    value: 'exit',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.logout_outlined,
+                          size: 18,
+                          color: AppColors.textPrimary,
+                        ),
+                        const SizedBox(width: 10),
+                        const Text('退出当前警情'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem<String>(
+                    key: const Key('archive-incident-menu-item'),
+                    value: 'archive',
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.archive_outlined,
+                          size: 18,
+                          color: AppColors.alarm,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          '归档警情',
+                          style: TextStyle(
+                            color: AppColors.alarm,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceSubtle.withValues(alpha: .5),
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                ),
-                child: Row(
-                  children: [
-                    _IncidentAction(
-                      label: '登记力量',
-                      icon: Icons.group_add_outlined,
-                      onTap: widget.onAddForce,
-                    ),
-                    const SizedBox(
-                      height: 20,
-                      child: VerticalDivider(width: 1),
-                    ),
-                    _IncidentAction(
-                      label: '信息导入',
-                      icon: Icons.upload_file_outlined,
-                      onTap: widget.onImportInfo,
-                    ),
-                    const SizedBox(
-                      height: 20,
-                      child: VerticalDivider(width: 1),
-                    ),
-                    _IncidentAction(
-                      label: '警情调整',
-                      icon: Icons.tune,
-                      onTap: widget.onAdjustIncident,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.s2),
-              IncidentKeySiteSection(
-                controller: widget.controller,
-                incident: widget.incident,
-              ),
-              const SizedBox(height: AppSpacing.s2),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Text(
-                      '参战力量',
-                      style: AppTextStyles.label.copyWith(
+            ],
+          ),
+          if (_expanded)
+            Column(
+              key: const Key('incident-card-details'),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Divider(height: AppSpacing.s3, color: AppColors.border),
+                if (distinctLocation.isNotEmpty) ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.place_outlined,
+                        size: 16,
                         color: AppColors.textSecondary,
-                        fontWeight: FontWeight.w700,
                       ),
-                    ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          distinctLocation,
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    '${widget.forces.length}支队伍',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textTertiary,
-                    ),
-                  ),
+                  const SizedBox(height: AppSpacing.s2),
                 ],
-              ),
-              if (widget.forces.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.s1),
-                  child: Text(
-                    '尚未登记参战力量',
+                if (meta.extraNotes.isNotEmpty) ...[
+                  Text(
+                    meta.extraNotes.join(' · '),
                     style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textTertiary,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.s2),
-                  child: Column(
+                  const SizedBox(height: AppSpacing.s2),
+                ],
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      _IncidentAction(
+                        label: '登记力量',
+                        icon: Icons.group_add_outlined,
+                        onTap: widget.onAddForce,
+                      ),
+                      SizedBox(
+                        height: 22,
+                        child: VerticalDivider(
+                          width: 1,
+                          color: AppColors.border,
+                        ),
+                      ),
+                      _IncidentAction(
+                        label: '信息导入',
+                        icon: Icons.upload_file_outlined,
+                        onTap: widget.onImportInfo,
+                      ),
+                      SizedBox(
+                        height: 22,
+                        child: VerticalDivider(
+                          width: 1,
+                          color: AppColors.border,
+                        ),
+                      ),
+                      _IncidentAction(
+                        label: '警情调整',
+                        icon: Icons.tune,
+                        onTap: widget.onAdjustIncident,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s2),
+                IncidentKeySiteSection(
+                  controller: widget.controller,
+                  incident: widget.incident,
+                ),
+                if (widget.forces.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.s3),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '参战力量',
+                          style: AppTextStyles.label.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${widget.forces.length}支队伍',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.s2),
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       for (var i = 0; i < widget.forces.length; i++) ...[
@@ -3840,67 +4140,79 @@ class _TaskBarState extends State<_TaskBar> {
                       ],
                     ],
                   ),
-                ),
-              TextButton(
-                onPressed: widget.onDetails,
-                style: TextButton.styleFrom(
-                  minimumSize: const Size.fromHeight(48),
-                  padding: EdgeInsets.zero,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '警情详情',
-                        style: AppTextStyles.label.copyWith(
+                ],
+                const SizedBox(height: AppSpacing.s1),
+                TextButton(
+                  key: const Key('open-incident-details'),
+                  onPressed: widget.onDetails,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    foregroundColor: AppColors.actionPrimary,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '警情详情',
+                          style: AppTextStyles.label.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '查看档案',
+                        style: AppTextStyles.caption.copyWith(
                           color: AppColors.actionPrimary,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
-                    const Icon(Icons.chevron_right, size: 18),
-                  ],
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: AppColors.actionPrimary,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const Divider(height: AppSpacing.s2),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: widget.onExit,
-                      icon: const Icon(Icons.logout_outlined, size: 18),
-                      label: const Text('退出当前警情'),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.s1,
-                        ),
-                        minimumSize: const Size.fromHeight(48),
+                Divider(height: AppSpacing.s1, color: AppColors.border),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    key: const Key('collapse-incident-card-bottom'),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    onTap: _toggleExpanded,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 40),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.keyboard_arrow_up_rounded,
+                            size: 18,
+                            color: AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '收起详情',
+                            style: AppTextStyles.label.copyWith(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: widget.onArchive,
-                      icon: const Icon(Icons.archive_outlined, size: 18),
-                      label: const Text('归档警情'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.alarm,
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.s1,
-                        ),
-                        minimumSize: const Size.fromHeight(48),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-      ],
-    ),
-  );
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _IncidentAction extends StatelessWidget {
@@ -3917,6 +4229,7 @@ class _IncidentAction extends StatelessWidget {
     child: TextButton(
       onPressed: onTap,
       style: TextButton.styleFrom(
+        foregroundColor: AppColors.textPrimary,
         minimumSize: const Size(0, 48),
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s1),
         shape: RoundedRectangleBorder(
@@ -3926,13 +4239,14 @@ class _IncidentAction extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 16),
+          Icon(icon, size: 16, color: AppColors.textPrimary),
           const SizedBox(width: AppSpacing.s1),
           Flexible(
             child: Text(
               label,
               style: AppTextStyles.label.copyWith(
-                color: AppColors.actionPrimary,
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -3958,10 +4272,11 @@ class _ForceRow extends StatelessWidget {
     final label = '${force.stationName} ${force.quantityLabel}';
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AppRadius.sm),
+      side: BorderSide(color: AppColors.border),
     );
 
     return Material(
-      color: AppColors.surfaceSubtle.withValues(alpha: 0.6),
+      color: AppColors.surfaceSubtle,
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -3987,7 +4302,7 @@ class _ForceRow extends StatelessWidget {
                 child: Icon(
                   Icons.local_shipping_outlined,
                   size: 18,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textPrimary,
                 ),
               ),
               const SizedBox(width: AppSpacing.s2),
@@ -4011,8 +4326,8 @@ class _ForceRow extends StatelessWidget {
               IconButton(
                 onPressed: onEdit,
                 tooltip: '编辑参战力量',
-                icon: const Icon(Icons.edit_outlined, size: 24),
-                color: AppColors.textTertiary,
+                icon: const Icon(Icons.edit_outlined, size: 22),
+                color: AppColors.textSecondary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
@@ -4020,8 +4335,8 @@ class _ForceRow extends StatelessWidget {
               IconButton(
                 onPressed: onRemove,
                 tooltip: '删除参战力量',
-                icon: const Icon(Icons.close, size: 24),
-                color: AppColors.textTertiary,
+                icon: const Icon(Icons.close, size: 22),
+                color: AppColors.textSecondary,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
