@@ -45,6 +45,24 @@ info() { printf '    %s\n' "$*"; }
 warn() { printf '\033[1;33m    ! %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m错误：%s\033[0m\n' "$*" >&2; exit 1; }
 
+WORK_DIR="$(mktemp -d -t watchdog-release.XXXXXX)"
+SSH_OPTS=(
+  -o ControlMaster=auto
+  -o "ControlPath=${WORK_DIR}/ssh-%C"
+  -o ControlPersist=300
+)
+RSYNC_RSH="ssh -o ControlMaster=auto -o ControlPath=${WORK_DIR}/ssh-%C -o ControlPersist=300"
+
+cleanup() {
+  if [[ -n "${WORK_DIR:-}" && -d "${WORK_DIR}" ]]; then
+    if (( ${SKIP_UPLOAD:-0} == 0 && ${DRY_RUN:-0} == 0 )); then
+      ssh -o "ControlPath=${WORK_DIR}/ssh-%C" -O exit "$OTA_HOST" >/dev/null 2>&1 || true
+    fi
+    rm -rf "$WORK_DIR"
+  fi
+}
+trap cleanup EXIT
+
 # 本机没有 soffice（LibreOffice）时，key-sites 的文档转换用例会整组失败：
 # 转换组件缺失（KEY_SITE_CONVERTER_UNAVAILABLE）使「转换 → 分页 → AI 草稿」
 # 整条链路拿不到输入。这里把这 14 条列为「已知环境失败」，只在同时满足
@@ -90,8 +108,9 @@ failed_test_files() {
 }
 
 run_backend_gate() {
-  ( cd backend && npm test 2>&1 | tee /tmp/release-backend.log | tail -6 )
-  backend_gate_verdict /tmp/release-backend.log
+  local logfile="${WORK_DIR}/backend.log"
+  ( cd backend && npm test 2>&1 | tee "$logfile" | tail -6 )
+  backend_gate_verdict "$logfile"
 }
 
 # 纯判定逻辑：只看日志与 PATH，不跑测试（便于单独验证放行规则）。
@@ -211,7 +230,7 @@ info "tag ${TAG} 可用"
 if (( DRY_RUN )); then
   step "dry-run 结束"
   info "将更新 app/pubspec.yaml 与 app/lib/pages/settings_page.dart 的版本号为 ${VERSION}+${BUILD}"
-  info "将提交并推送 main，创建并推送 tag ${TAG}"
+  info "将提交并推送 main 与 tag ${TAG}"
   info "将构建 ${APK_NAME} 并上传到 ${OTA_HOST}:${OTA_DIR}/versions/"
   info "将更新 ${PUBLIC_BASE}/ota/latest.json 并做公网校验"
   info "将同步官网 ${WEBSITE_DIR} → ${OTA_HOST}:${WEBSITE_REMOTE_DIR} 并重建 website 容器"
@@ -219,41 +238,63 @@ if (( DRY_RUN )); then
   exit 0
 fi
 
-if (( SKIP_GATES == 0 )); then
-  step "并行跑门禁：App（analyze + test）与 后端（npm test）"
-  rm -f /tmp/release-analyze.log /tmp/release-test.log /tmp/release-backend.log
+step "前置预检（工具链与远端连通性）"
+AAPT2="$(ls "$HOME"/Library/Android/sdk/build-tools/*/aapt2 2>/dev/null | tail -1 || true)"
+APKSIGNER="$(ls "$HOME"/Library/Android/sdk/build-tools/*/apksigner 2>/dev/null | tail -1 || true)"
+[[ -n "$AAPT2" ]] || die "找不到 aapt2，无法校验 versionCode"
+[[ -f app/android/key.properties ]] || die "缺少 app/android/key.properties，无法进行 release 签名构建"
+if (( DO_GH )); then
+  command -v gh >/dev/null 2>&1 || die "找不到 gh CLI，无法创建 GitHub Release"
+  gh auth status >/dev/null 2>&1 || die "gh 未登录，请先执行 gh auth login"
+fi
+if (( SKIP_UPLOAD == 0 )); then
+  ssh "${SSH_OPTS[@]}" -o ConnectTimeout=10 -o BatchMode=yes "$OTA_HOST" "true" \
+    || die "无法 SSH 连接到 ${OTA_HOST}，请检查网络或 SSH 配置"
+  info "SSH 长连接复用已就绪（${OTA_HOST}）"
+fi
+info "构建与校验工具链就绪"
 
-  (
-    cd app && env -u GIT_CONFIG_COUNT flutter analyze > /tmp/release-analyze.log 2>&1 &&
-      env -u GIT_CONFIG_COUNT flutter test > /tmp/release-test.log 2>&1
-  ) &
-  APP_GATE_PID=$!
+if (( SKIP_GATES == 0 )); then
+  step "三路并行跑门禁：flutter analyze / flutter test / 后端 npm test"
+  ( cd app && env -u GIT_CONFIG_COUNT flutter pub get > "${WORK_DIR}/pub.log" 2>&1 ) || {
+    tail -n 20 "${WORK_DIR}/pub.log" 2>/dev/null || true
+    die "flutter pub get 失败"
+  }
+  CPU_COUNT="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
+
+  ( cd app && env -u GIT_CONFIG_COUNT flutter analyze --no-pub > "${WORK_DIR}/analyze.log" 2>&1 ) &
+  ANALYZE_PID=$!
+
+  ( cd app && env -u GIT_CONFIG_COUNT flutter test --no-pub --concurrency="${CPU_COUNT}" > "${WORK_DIR}/test.log" 2>&1 ) &
+  TEST_PID=$!
 
   BACKEND_GATE_PID=""
   if [[ -d backend/node_modules ]]; then
-    ( cd backend && npm test > /tmp/release-backend.log 2>&1 ) &
+    ( cd backend && npm test > "${WORK_DIR}/backend.log" 2>&1 ) &
     BACKEND_GATE_PID=$!
   else
     warn "backend/node_modules 不存在，跳过后端测试"
   fi
 
-  APP_GATE_OK=1
-  wait "$APP_GATE_PID" || APP_GATE_OK=0
-  if (( APP_GATE_OK == 0 )) || ! grep -q "No issues found" /tmp/release-analyze.log 2>/dev/null; then
-    tail -n 20 /tmp/release-analyze.log 2>/dev/null || true
-    tail -n 20 /tmp/release-test.log 2>/dev/null || true
-    die "App 门禁（flutter analyze / flutter test）未通过"
+  ANALYZE_OK=1
+  wait "$ANALYZE_PID" || ANALYZE_OK=0
+  if (( ANALYZE_OK == 0 )) || ! grep -q "No issues found" "${WORK_DIR}/analyze.log" 2>/dev/null; then
+    tail -n 20 "${WORK_DIR}/analyze.log" 2>/dev/null || true
+    die "flutter analyze 未通过"
   fi
-  grep -q "All tests passed" /tmp/release-test.log || {
-    tail -n 20 /tmp/release-test.log
+
+  TEST_OK=1
+  wait "$TEST_PID" || TEST_OK=0
+  if (( TEST_OK == 0 )) || ! grep -q "All tests passed" "${WORK_DIR}/test.log" 2>/dev/null; then
+    tail -n 20 "${WORK_DIR}/test.log" 2>/dev/null || true
     die "flutter test 未通过"
-  }
-  info "App 门禁全绿（analyze 0 问题，test 全通过）"
+  fi
+  info "App 门禁全绿（analyze 0 问题，test 全通过，并发 ${CPU_COUNT}）"
 
   if [[ -n "$BACKEND_GATE_PID" ]]; then
     wait "$BACKEND_GATE_PID" || true
-    tail -6 /tmp/release-backend.log
-    backend_gate_verdict /tmp/release-backend.log
+    tail -6 "${WORK_DIR}/backend.log"
+    backend_gate_verdict "${WORK_DIR}/backend.log"
   fi
 else
   warn "已按 --skip-gates 跳过门禁"
@@ -265,32 +306,24 @@ sed -i '' -E "s/^const appVersion = '.*';/const appVersion = '${VERSION}+${BUILD
 grep -n '^version:' app/pubspec.yaml
 grep -n '^const appVersion' app/lib/pages/settings_page.dart
 
-step "提交并推送"
+step "提交、打 tag 并单次推送"
 git add app/pubspec.yaml app/lib/pages/settings_page.dart
 git commit -m "chore: 版本号升至 ${VERSION}+${BUILD}"
-git push origin main
-
-step "打 tag ${TAG}"
 git tag -a "$TAG" -m "$TAG"
-git push origin "$TAG"
+git push origin main "$TAG"
 
 step "构建 release APK（arm64 split）"
 if [[ -d app/build ]]; then
   find app/build -name "* [0-9].*" -delete 2>/dev/null || true
 fi
-( cd app && env -u GIT_CONFIG_COUNT flutter build apk --release \
+( cd app && env -u GIT_CONFIG_COUNT flutter build apk --release --no-pub \
     --target-platform android-arm64 --split-per-abi 2>&1 | tail -3 )
 APK_PATH="${APK_DIR_REL}/app-arm64-v8a-release.apk"
 [[ -f "$APK_PATH" ]] || die "构建产物不存在：$APK_PATH"
 
 step "校验 APK"
-AAPT2="$(ls "$HOME"/Library/Android/sdk/build-tools/*/aapt2 2>/dev/null | tail -1 || true)"
-APKSIGNER="$(ls "$HOME"/Library/Android/sdk/build-tools/*/apksigner 2>/dev/null | tail -1 || true)"
-[[ -n "$AAPT2" ]] || die "找不到 aapt2，无法校验 versionCode"
-BADGING_TMP="$(mktemp -t watchdog-release-badging.XXXXXX.txt)"
-"$AAPT2" dump badging "$APK_PATH" > "$BADGING_TMP" 2>/dev/null
-INFO_OUT="$(awk '/^package/{print; exit}' "$BADGING_TMP")"
-rm -f "$BADGING_TMP"
+"$AAPT2" dump badging "$APK_PATH" > "${WORK_DIR}/badging.txt" 2>/dev/null
+INFO_OUT="$(awk '/^package/{print; exit}' "${WORK_DIR}/badging.txt")"
 echo "$INFO_OUT"
 echo "$INFO_OUT" | grep -q "versionCode='${VERSION_CODE}'" || die "APK versionCode 不是 ${VERSION_CODE}"
 echo "$INFO_OUT" | grep -q "versionName='${VERSION}'" || die "APK versionName 不是 ${VERSION}"
@@ -309,14 +342,11 @@ if (( SKIP_UPLOAD )); then
   exit 0
 fi
 
-step "上传到 OTA（${OTA_HOST}:${OTA_DIR}）"
-scp -q "$APK_PATH" "${OTA_HOST}:${OTA_DIR}/incoming/${APK_NAME}"
-REMOTE_SHA="$(ssh "$OTA_HOST" "sha256sum '${OTA_DIR}/incoming/${APK_NAME}' | awk '{print \$1}'")"
-[[ "$REMOTE_SHA" == "$SHA256" ]] || die "上传后校验失败：远端 ${REMOTE_SHA} != 本地 ${SHA256}"
-info "远端校验一致"
+step "上传 APK 到 OTA（${OTA_HOST}:${OTA_DIR}）"
+scp "${SSH_OPTS[@]}" -q "$APK_PATH" "${OTA_HOST}:${OTA_DIR}/incoming/${APK_NAME}"
 
-step "生成并上传 latest.json"
-MANIFEST_TMP="$(mktemp -t watchdog-ota-manifest.XXXXXX.json)"
+step "生成 latest.json、远端校验 SHA-256 并原子替换"
+MANIFEST_TMP="${WORK_DIR}/latest.json"
 export REL_TAG="$TAG" REL_VERSION_CODE="$VERSION_CODE" REL_APK_URL="$APK_URL" \
        REL_SIZE="$SIZE_BYTES" REL_SHA256="$SHA256" REL_CHANGELOG="$NOTES"
 python3 - "$MANIFEST_TMP" <<'PY'
@@ -332,18 +362,21 @@ data = {
 with open(sys.argv[1], "w", encoding="utf-8") as fh:
     fh.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
 PY
-scp -q "$MANIFEST_TMP" "${OTA_HOST}:${OTA_DIR}/incoming/latest.json"
-
-step "原子替换（先备份旧清单）"
-ssh "$OTA_HOST" "set -e
+ssh "${SSH_OPTS[@]}" "$OTA_HOST" "set -e
   cd '${OTA_DIR}'
+  REMOTE_SHA=\"\$(sha256sum 'incoming/${APK_NAME}' | awk '{print \$1}')\"
+  if [ \"\$REMOTE_SHA\" != '${SHA256}' ]; then
+    echo \"上传后校验失败：远端 \$REMOTE_SHA != 本地 ${SHA256}\" >&2
+    exit 1
+  fi
+  cat > incoming/latest.json
   cp -f latest.json latest.json.bak
   mv -f 'incoming/${APK_NAME}' 'versions/${APK_NAME}'
   mv -f incoming/latest.json latest.json
-  ls -l 'versions/${APK_NAME}' latest.json"
-rm -f "$MANIFEST_TMP"
+  ls -l 'versions/${APK_NAME}' latest.json" < "$MANIFEST_TMP"
+info "远端校验一致并完成原子替换"
 
-step "公网校验"
+step "公网校验（清单与 HEAD）"
 REMOTE_MANIFEST="$(curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --max-time 20 "${PUBLIC_BASE}/ota/latest.json")"
 TAG="$TAG" VERSION_CODE="$VERSION_CODE" SIZE_BYTES="$SIZE_BYTES" SHA256="$SHA256" \
   REMOTE_MANIFEST="$REMOTE_MANIFEST" python3 - <<'PY'
@@ -368,26 +401,38 @@ LEN="$(echo "$HEADERS" | awk 'BEGIN{IGNORECASE=1} /^content-length:/{gsub(/\r/,"
 [[ "$LEN" == "$SIZE_BYTES" ]] || die "公网 Content-Length ${LEN} 与本地 ${SIZE_BYTES} 不一致"
 info "APK 公网 200，长度一致（${SIZE_BYTES} 字节）"
 
+step "并行收尾：下载校验 / GitHub Release / 官网同步"
+VERIFY_DL_PID=""
+GH_PID=""
+WEBSITE_PID=""
+
 if (( VERIFY_DOWNLOAD )); then
-  step "下载比对 SHA-256"
-  DL_TMP="$(mktemp -t watchdog-ota-download.XXXXXX.apk)"
-  curl -fsS --max-time 300 -o "$DL_TMP" "$APK_URL"
-  DL_SHA="$(shasum -a 256 "$DL_TMP" | awk '{print $1}')"
-  rm -f "$DL_TMP"
-  [[ "$DL_SHA" == "$SHA256" ]] || die "下载文件 SHA-256 不一致：${DL_SHA} != ${SHA256}"
-  info "下载文件 SHA-256 一致"
+  (
+    DL_TMP="${WORK_DIR}/download.apk"
+    curl -fsS --max-time 300 -o "$DL_TMP" "$APK_URL"
+    DL_SHA="$(shasum -a 256 "$DL_TMP" | awk '{print $1}')"
+    rm -f "$DL_TMP"
+    if [[ "$DL_SHA" != "$SHA256" ]]; then
+      echo "下载文件 SHA-256 不一致：${DL_SHA} != ${SHA256}" >&2
+      exit 1
+    fi
+    echo "下载文件 SHA-256 一致"
+  ) > "${WORK_DIR}/verify-dl.log" 2>&1 &
+  VERIFY_DL_PID=$!
 fi
 
 if (( DO_GH )); then
-  step "创建 GitHub Release ${TAG}"
-  gh release create "$TAG" --title "$TAG" --notes "$NOTES"
-  info "GitHub Release 已创建"
+  (
+    gh release create "$TAG" --title "$TAG" --notes "$NOTES"
+    echo "GitHub Release ${TAG} 已创建"
+  ) > "${WORK_DIR}/gh.log" 2>&1 &
+  GH_PID=$!
 fi
 
 if (( SKIP_WEBSITE == 0 )); then
   if [[ -d "$WEBSITE_DIR" ]]; then
-    step "同步官网"
-    python3 - "$WEBSITE_DIR/index.html" "${VERSION}+${BUILD}" "$APK_URL" <<'PY'
+    (
+      python3 - "$WEBSITE_DIR/index.html" "${VERSION}+${BUILD}" "$APK_URL" <<'PY'
 import re, sys
 path, version, apk_url = sys.argv[1], sys.argv[2], sys.argv[3]
 html = open(path, encoding="utf-8").read()
@@ -397,19 +442,45 @@ html = re.sub(r'https://[^"\s]+/ota/versions/watchdog-[^"\s]+\.apk', apk_url, ht
 open(path, "w", encoding="utf-8").write(html)
 print(f"index.html 已更新为 {version} / {apk_url}")
 PY
-    rsync -az --delete "$WEBSITE_DIR/" "${OTA_HOST}:${WEBSITE_REMOTE_DIR}/"
-    ssh "$OTA_HOST" "cd '$(dirname "$COMPOSE_FILE")/../..' && docker compose -f '${COMPOSE_FILE}' build website >/dev/null && docker compose -f '${COMPOSE_FILE}' up -d website >/dev/null && echo website_rebuilt"
-    PAGE="$(curl -fsS --retry 8 --retry-delay 2 --retry-all-errors --max-time 20 "${PUBLIC_BASE}/")"
-    echo "$PAGE" | grep -q "id=\"site-version\">${VERSION}+${BUILD}<" \
-      || die "官网版本未更新（OTA 已发布，仅官网未同步）：请检查 ${OTA_HOST} 上的 website 容器"
-    echo "$PAGE" | grep -q "${APK_NAME}" \
-      || die "官网下载链接未指向 ${APK_NAME}（OTA 已发布，仅官网未同步）"
-    info "官网已更新并重建容器，页面版本 ${VERSION}+${BUILD}"
+      rsync -az --delete -e "$RSYNC_RSH" "$WEBSITE_DIR/" "${OTA_HOST}:${WEBSITE_REMOTE_DIR}/"
+      ssh "${SSH_OPTS[@]}" "$OTA_HOST" "cd '$(dirname "$COMPOSE_FILE")/../..' && docker compose -f '${COMPOSE_FILE}' build website >/dev/null && docker compose -f '${COMPOSE_FILE}' up -d website >/dev/null && echo website_rebuilt"
+      PAGE="$(curl -fsS --retry 8 --retry-delay 2 --retry-all-errors --max-time 20 "${PUBLIC_BASE}/")"
+      echo "$PAGE" | grep -q "id=\"site-version\">${VERSION}+${BUILD}<" \
+        || { echo "官网版本未更新（OTA 已发布，仅官网未同步）：请检查 ${OTA_HOST} 上的 website 容器" >&2; exit 1; }
+      echo "$PAGE" | grep -q "${APK_NAME}" \
+        || { echo "官网下载链接未指向 ${APK_NAME}（OTA 已发布，仅官网未同步）" >&2; exit 1; }
+      echo "官网已更新并重建容器，页面版本 ${VERSION}+${BUILD}"
+    ) > "${WORK_DIR}/website.log" 2>&1 &
+    WEBSITE_PID=$!
   else
     warn "本地 website/ 目录不存在，跳过官网同步"
   fi
 else
   warn "已按 --skip-website 跳过官网同步"
+fi
+
+if [[ -n "$VERIFY_DL_PID" ]]; then
+  if ! wait "$VERIFY_DL_PID"; then
+    cat "${WORK_DIR}/verify-dl.log" >&2 || true
+    die "公网下载 SHA-256 校验失败"
+  fi
+  info "$(cat "${WORK_DIR}/verify-dl.log")"
+fi
+
+if [[ -n "$GH_PID" ]]; then
+  if ! wait "$GH_PID"; then
+    cat "${WORK_DIR}/gh.log" >&2 || true
+    die "创建 GitHub Release 失败（OTA 已发布）"
+  fi
+  info "GitHub Release 已创建"
+fi
+
+if [[ -n "$WEBSITE_PID" ]]; then
+  if ! wait "$WEBSITE_PID"; then
+    cat "${WORK_DIR}/website.log" >&2 || true
+    die "官网同步失败（OTA 已发布）"
+  fi
+  tail -n 1 "${WORK_DIR}/website.log" | while IFS= read -r line; do info "$line"; done
 fi
 
 step "发版完成"
