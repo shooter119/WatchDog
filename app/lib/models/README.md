@@ -17,6 +17,8 @@ Flutter 移动客户端的强类型领域模型与不可变数据实体集合，
     - `VideoResource`：监控流地址与探针状态
   - [`admin_login.dart`](./admin_login.dart):
     - 扫码登录挑战与状态模型
+  - [`hazmat.dart`](./hazmat.dart):
+    - `HazmatItem`、`HazmatSyncResult`、`HazmatAiResult`：危化品战术避险复诵卡模型、蒸气密度提示与纯文本导出
 
 ## Invariants
 - `[model:immutability]`：所有模型类均为不可变设计（推荐使用 `copyWith` 进行状态演进）。

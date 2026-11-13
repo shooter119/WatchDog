@@ -17,6 +17,7 @@ import '../pages/same_name_dialog.dart';
 import 'route_traffic_page.dart';
 import 'tactical_brief_sheet.dart';
 import 'video_resources_page.dart';
+import 'hazmat_page.dart';
 import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
@@ -3280,6 +3281,26 @@ class HomePageState extends State<HomePage> {
                 ),
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.s2),
+        Row(
+          children: [
+            Expanded(
+              child: _fieldTool(
+                '危化速查',
+                'UN 编号离线核查与电台复诵卡',
+                Icons.science_outlined,
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => HazmatPage(controller: widget.controller),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s2),
+            const Expanded(child: SizedBox.shrink()),
           ],
         ),
       ],

@@ -11,6 +11,7 @@ import '../models/models.dart';
 import '../models/key_sites.dart';
 import '../models/admin_login.dart';
 import '../models/video_resources.dart';
+import '../models/hazmat.dart';
 import '../services/settings.dart';
 import '../services/scoped_json_cache.dart';
 
@@ -2186,6 +2187,49 @@ class ApiClient {
       throw _responseShapeException(res, '实名信息响应格式异常');
     }
     return Map<String, dynamic>.from(body);
+  }
+
+  /// 增量同步危化品标准库与软删除记录
+  Future<HazmatSyncResult> syncHazmats({
+    int since = 0,
+    int limit = 500,
+  }) async {
+    final uri = _uri('/api/hazmats/sync').replace(
+      queryParameters: {
+        'since': '$since',
+        'limit': '$limit',
+      },
+    );
+    final res = await _client
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 20));
+    final body = _decodeJson(res, fallback: '危化品知识库同步失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '危化品知识库同步失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '危化品同步响应格式异常');
+    }
+    return HazmatSyncResult.fromJson(Map<String, dynamic>.from(body));
+  }
+
+  /// 本地未命中时显式请求云端（服务端精确库优先 -> AI 应急提炼）
+  Future<HazmatAiResult> generateHazmatAiCard(String query) async {
+    final res = await _client
+        .post(
+          _uri('/api/hazmats/ai-card'),
+          headers: _headers,
+          body: jsonEncode({'query': query.trim()}),
+        )
+        .timeout(const Duration(seconds: 35));
+    final body = _decodeJson(res, fallback: '危化品 AI 提炼失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '危化品 AI 提炼失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '危化品 AI 响应格式异常');
+    }
+    return HazmatAiResult.fromJson(Map<String, dynamic>.from(body));
   }
 }
 

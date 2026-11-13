@@ -25,7 +25,8 @@
   - 公式：`可用时间(min) = 容量(L) × 压力(MPa) × 10 ÷ 消耗率(L/min)`
 - **实时语音识别客户端**: [`asr.js`](./asr.js)
   - 核心接口：`createDoubaoAsrClient({ appId, token, cluster })`，支持热词动态注入
-- **重点单位与危化品检索**: [`key-sites.js`](./key-sites.js), [`hazardous-chemicals.js`](./hazardous-chemicals.js)
+- **重点单位与危化品检索**: [`key-sites.js`](./key-sites.js), [`hazardous-chemicals.js`](./hazardous-chemicals.js), [`hazmat-routes.js`](./hazmat-routes.js), [`hazmat-ai.js`](./hazmat-ai.js)
+  - 危化品客户端新增 `GET /api/hazmats/sync` 增量同步（含软删除 ID）与 `POST /api/hazmats/ai-card` 应急战术卡提炼（精确库优先 + AI 防编造兜底）
 - **子目录契约**:
   - [数据库迁移契约](../migrations/README.md)
   - [管理后台契约](../admin/README.md)

@@ -462,12 +462,68 @@ function createHazardousChemicals(store) {
       } else {
         return xlsx.write(wb, { type: 'buffer', bookType: 'csv' });
       }
+    },
+
+    async listChanges({ since = 0, limit = 500 } = {}) {
+      const sinceMs = Math.max(0, Math.floor(Number(since) || 0));
+      const safeLimit = Math.min(Math.max(1, Math.floor(Number(limit) || 500)), 1000);
+      const itemsRes = await query(
+        `SELECT * FROM hazardous_chemicals
+         WHERE active = true AND updated_at > $1
+         ORDER BY updated_at ASC
+         LIMIT $2`,
+        [sinceMs, safeLimit]
+      );
+      let deletedIds = [];
+      if (sinceMs > 0) {
+        const delRes = await query(
+          `SELECT id FROM hazardous_chemicals
+           WHERE active = false AND updated_at > $1
+           ORDER BY updated_at ASC
+           LIMIT 1000`,
+          [sinceMs]
+        );
+        deletedIds = delRes.rows.map((row) => row.id);
+      }
+      return {
+        items: itemsRes.rows,
+        deleted_ids: deletedIds,
+        server_time: Date.now()
+      };
+    },
+
+    async findExact(rawQuery) {
+      const q = cleanString(rawQuery);
+      if (!q) return null;
+      const unMatch = q.match(/^(?:un[\s-]*)?(\d{4})$/i);
+      if (unMatch) {
+        const res = await query(
+          `SELECT * FROM hazardous_chemicals
+           WHERE active = true AND un_number = $1
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [unMatch[1]]
+        );
+        return res.rows[0] || null;
+      }
+      const res = await query(
+        `SELECT * FROM hazardous_chemicals
+         WHERE active = true AND (
+           LOWER(name_cn) = LOWER($1) OR
+           EXISTS (SELECT 1 FROM unnest(aliases) a WHERE LOWER(a) = LOWER($1))
+         )
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [q]
+      );
+      return res.rows[0] || null;
     }
   };
 }
 
 module.exports = {
   createHazardousChemicals,
+  cleanString,
   cleanAliases,
   normalizeWaterReactivity,
   normalizeSignColor

@@ -15,6 +15,7 @@ Flutter 移动客户端的视图层，承载五大底部常驻导航入口（日
   - [`incident_import_page.dart`](./incident_import_page.dart): 警情信息多图 OCR 导入与通报文字合并提取。
   - [`camera_page.dart`](./camera_page.dart), [`media_review_page.dart`](./media_review_page.dart): 现场水印相机拍摄与双轨成对存盘核对。
   - [`route_traffic_page.dart`](./route_traffic_page.dart): 赶赴现场路径规划与天气路况多路线切换。
+  - [`hazmat_page.dart`](./hazmat_page.dart): 危化品 UN 码离线速查、电台战术复诵卡展示与 AI 应急提炼页。
   - [`video_resources_page.dart`](./video_resources_page.dart), [`video_playback_surface.dart`](./video_playback_surface.dart): 现场监控流播放与画中画切换。
   - [`member_review_page.dart`](./member_review_page.dart): 入队申请多管理员协同在线审批。
   - [`offline_review_page.dart`](./offline_review_page.dart): 离线补传记录版本冲突人工比对与确认。

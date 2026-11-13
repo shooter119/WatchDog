@@ -1,5 +1,7 @@
 const express = require('express');
 const multer = require('multer');
+const { MinuteRateLimiter } = require('./rate-limiter');
+const { generateHazmatTacticalCard } = require('./hazmat-ai');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -96,8 +98,12 @@ function createHazmatAdminRouter(hazmats, auth = null) {
   return router;
 }
 
-function createHazmatAppRouter(hazmats) {
+function createHazmatAppRouter(hazmats, options = {}) {
   const router = express.Router();
+  const rateLimiter = options.rateLimiter || new MinuteRateLimiter({ maxEntries: 10000 });
+  const rateLimitPerMin = Number.isFinite(Number(options.rateLimitPerMin))
+    ? Math.max(1, Math.floor(Number(options.rateLimitPerMin)))
+    : 10;
 
   // 移动端/现场检索
   router.get('/', wrap(async (req, res) => {
@@ -110,6 +116,52 @@ function createHazmatAppRouter(hazmats) {
       limit,
       offset,
       activeOnly: true
+    });
+    res.json(result);
+  }));
+
+  // 增量同步（必须位于 /:id 之前，避免被 :id 捕获）
+  router.get('/sync', wrap(async (req, res) => {
+    const since = Math.max(0, parseInt(req.query.since || '0', 10) || 0);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit || '500', 10) || 500), 1000);
+    const result = await hazmats.listChanges({ since, limit });
+    res.json(result);
+  }));
+
+  // AI 应急提炼战术复诵卡（优先精确命中服务端正式库，未命中再调用 AI）
+  router.post('/ai-card', wrap(async (req, res) => {
+    const queryText = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
+    if (!queryText || queryText.length > 80) {
+      return res.status(400).json({
+        code: 'HAZMAT_QUERY_INVALID',
+        error: '请输入有效的 UN 编号或危化品名称（最多 80 字）',
+      });
+    }
+
+    const clientKey = `${req.ip || 'anonymous'}:${req.unit?.id || 'unauthenticated'}`;
+    if (rateLimiter.isLimited(clientKey, rateLimitPerMin)) {
+      return res.status(429).json({
+        code: 'HAZMAT_AI_RATE_LIMITED',
+        error: '危化品 AI 提炼请求过于频繁，请稍后再试',
+      });
+    }
+
+    if (typeof hazmats.findExact === 'function') {
+      const exact = await hazmats.findExact(queryText);
+      if (exact) {
+        return res.json({
+          found: true,
+          source: 'server',
+          disclaimer: '',
+          item: exact,
+        });
+      }
+    }
+
+    const result = await generateHazmatTacticalCard({
+      query: queryText,
+      llm: options.llm,
+      fetchImpl: options.fetchImpl,
     });
     res.json(result);
   }));

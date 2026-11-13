@@ -249,3 +249,169 @@ test('HTTP 接口测试：管理端 CRUD/模板下载/导入 与 客户端只读
   const clientAfterDelData = await clientAfterDel.json();
   assert.equal(clientAfterDelData.total, 0);
 });
+
+test('增量同步与 AI 战术卡接口：/sync、服务端精确优先、AI 提炼、防幻觉与限流', async () => {
+  // 1. 先插入一条用于验证 /sync 与服务端优先命中的记录
+  const created = await hazmats.create({
+    name_cn: '碳化钙',
+    name_en: 'Calcium carbide',
+    aliases: ['电石'],
+    un_number: '1402',
+    danger_category: '第4.3项 遇水放出易燃气体的物质',
+    water_reactivity: 'forbidden',
+    forbidden_agents: '严禁用水、泡沫、二氧化碳',
+    extinguishing_agents: '干砂、D类干粉',
+    isolation_distance: '初期隔离60米，火灾疏散300米'
+  }, 'admin_1');
+
+  // 2. 初次全量同步 (since=0)
+  const syncFullRes = await fetch(`${base}/api/hazmats/sync?since=0`);
+  assert.equal(syncFullRes.status, 200);
+  const syncFull = await syncFullRes.json();
+  assert.ok(syncFull.items.some((item) => item.id === created.id && item.un_number === '1402'));
+  assert.deepEqual(syncFull.deleted_ids, []);
+  const checkpoint = syncFull.server_time;
+
+  // 3. 软删除后增量同步应包含 deleted_ids
+  await new Promise((r) => setTimeout(r, 15));
+  await hazmats.remove(created.id, 'admin_1');
+  const syncDeltaRes = await fetch(`${base}/api/hazmats/sync?since=${checkpoint}`);
+  assert.equal(syncDeltaRes.status, 200);
+  const syncDelta = await syncDeltaRes.json();
+  assert.ok(syncDelta.deleted_ids.includes(created.id));
+
+  // 4. 构造独立的 AI 路由实例测试各种分支
+  const { MinuteRateLimiter } = require('../src/rate-limiter');
+  let aiCallCount = 0;
+  const mockFetch = async (_url, opts) => {
+    aiCallCount++;
+    const reqBody = JSON.parse(opts.body);
+    const prompt = reqBody.input?.[0]?.content || reqBody.messages?.[1]?.content || '';
+    if (prompt.includes('9999')) {
+      return {
+        ok: true,
+        async json() {
+          return {
+            output_text: JSON.stringify({
+              found: false,
+              reason: '未核实到 UN 9999 对应化学品'
+            })
+          };
+        }
+      };
+    }
+    return {
+      ok: true,
+      async json() {
+        return {
+          output: [{
+            type: 'message',
+            content: [{
+              type: 'output_text',
+              text: JSON.stringify({
+                found: true,
+                name_cn: '三乙基铝',
+                name_en: 'Triethylaluminum',
+                aliases: ['TEA'],
+                un_number: 'UN 3394',
+                cas_number: '97-93-8',
+                danger_category: '第4.2项 易于自燃的物质',
+                water_reactivity: '遇水剧烈反应并爆炸',
+                danger_summary: '空气中自燃，遇水剧烈爆炸并放出乙烷气体',
+                forbidden_agents: '严禁用水、泡沫及卤代烷灭火剂',
+                extinguishing_agents: '干砂、干粉(D类)、石墨粉覆盖窒息',
+                firefighting_tips: '绝对禁水，远离水源，使用干粉覆盖控制',
+                protective_level: '正压空呼 + 隔热阻燃防化服',
+                isolation_distance: '初期隔离100米，下风向疏散500米'
+              })
+            }]
+          }]
+        };
+      }
+    };
+  };
+
+  const aiApp = express();
+  aiApp.use(express.json());
+  aiApp.use('/api/hazmats', createHazmatAppRouter(hazmats, {
+    llm: { apiKey: 'test-key', baseUrl: 'https://api.deepseek.com', chatModel: 'deepseek-flash', chatSearch: true },
+    fetchImpl: mockFetch,
+    rateLimiter: new MinuteRateLimiter({ maxEntries: 100 }),
+    rateLimitPerMin: 4,
+  }));
+  const aiServer = aiApp.listen(0, '127.0.0.1');
+  await new Promise((resolve) => aiServer.once('listening', resolve));
+  const aiBase = `http://127.0.0.1:${aiServer.address().port}`;
+
+  try {
+    // 4a. 空查询 400
+    const badRes = await fetch(`${aiBase}/api/hazmats/ai-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '   ' })
+    });
+    assert.equal(badRes.status, 400);
+
+    // 4b. 命中正式库（金属钠 UN 1428 此前已导入）：优先返回 server 且不触发 AI 调用
+    const serverHitRes = await fetch(`${aiBase}/api/hazmats/ai-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: 'UN 1428' })
+    });
+    assert.equal(serverHitRes.status, 200);
+    const serverHit = await serverHitRes.json();
+    assert.equal(serverHit.found, true);
+    assert.equal(serverHit.source, 'server');
+    assert.equal(serverHit.item.name_cn, '金属钠');
+    assert.equal(aiCallCount, 0);
+
+    // 4c. 未命中正式库，调用 AI 提炼并归一化禁水与 UN 号
+    const aiHitRes = await fetch(`${aiBase}/api/hazmats/ai-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '3394' })
+    });
+    assert.equal(aiHitRes.status, 200);
+    const aiHit = await aiHitRes.json();
+    assert.equal(aiHit.found, true);
+    assert.equal(aiHit.source, 'ai');
+    assert.ok(aiHit.disclaimer.includes('核实'));
+    assert.equal(aiHit.item.un_number, '3394');
+    assert.equal(aiHit.item.water_reactivity, 'forbidden');
+    assert.equal(aiCallCount, 1);
+
+    // 4d. 未知编号防幻觉 (found: false)
+    const notFoundRes = await fetch(`${aiBase}/api/hazmats/ai-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '9999' })
+    });
+    assert.equal(notFoundRes.status, 200);
+    const notFoundData = await notFoundRes.json();
+    assert.equal(notFoundData.found, false);
+    assert.ok(notFoundData.reason.includes('9999'));
+
+    // 4e. 触发第 5 次请求应被限流 429
+    await fetch(`${aiBase}/api/hazmats/ai-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '丙酮' })
+    });
+    const limitedRes = await fetch(`${aiBase}/api/hazmats/ai-card`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '乙醚' })
+    });
+    assert.equal(limitedRes.status, 429);
+  } finally {
+    await new Promise((resolve) => aiServer.close(resolve));
+  }
+
+  // 5. 未配置 LLM Key 时未命中本地库返回 503
+  const noLlmRes = await fetch(`${base}/api/hazmats/ai-card`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: '未知溶剂XYZ' })
+  });
+  assert.equal(noLlmRes.status, 503);
+});

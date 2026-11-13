@@ -338,7 +338,7 @@ if (keySites) app.use('/api/key-sites', require('./key-site-routes').createKeySi
 if (keySites) app.use('/api/incidents', require('./incident-key-sites').createIncidentKeySiteRouter(
   require('./incident-key-sites').createIncidentKeySites(require('./postgres-store'), db, keySites),
 ));
-if (hazardousChemicals) app.use('/api/hazmats', require('./hazmat-routes').createHazmatAppRouter(hazardousChemicals));
+if (hazardousChemicals) app.use('/api/hazmats', require('./hazmat-routes').createHazmatAppRouter(hazardousChemicals, { llm: CFG.llm }));
 
 // Maps inherit the same session and unit authentication as business APIs.
 app.use('/api/maps', require('./orthomaps').createOrthomapRouter(

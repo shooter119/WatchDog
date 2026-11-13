@@ -47,6 +47,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/sounds/
+    - assets/data/hazmat_seed.json
     - assets/branding/fire-control-mark.svg
     - assets/branding/fire_rescue_badge.png
     - assets/avatars/water-element-avatar-selected.png

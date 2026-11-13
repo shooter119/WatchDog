@@ -23,6 +23,7 @@
   - [`screen_on.dart`](./screen_on.dart): 火场状态下强制屏幕常亮。
   - [`update_service.dart`](./update_service.dart): VPS OTA 版本检测与 SHA-256 完整性校验下载。
   - [`diagnostic_log_service.dart`](./diagnostic_log_service.dart): 崩溃与脱敏日志本地滚动归档与上报。
+  - [`hazmat_local_store.dart`](./hazmat_local_store.dart): 危化品双层本地 SQLite 存储（内置 65+ 种子词库与云端增量覆盖同步）。
 
 ## Invariants
 - `[services:offline-safety]`：断网期间所有用户操作先写入 SQLite 离线表，必须在网络连通且获取到服务器 ack 后才标记移除。
