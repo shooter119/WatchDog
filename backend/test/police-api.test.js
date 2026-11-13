@@ -266,3 +266,124 @@ test('extractContacts、buildDispatchSummary 与 sanitizeCoordinates 容错逻�
   assert.deepEqual(sanitizeCoordinates('0.0', '0.0'), { latitude: null, longitude: null });
   assert.deepEqual(sanitizeCoordinates('99.99', '199.99'), { latitude: null, longitude: null });
 });
+
+test('官方警情二次清洗：地点去冗余、事件提炼与终态判定', () => {
+  const {
+    cleanIncidentLocation,
+    cleanIncidentEvent,
+    sanitizeOfficialStatus,
+    isTerminalOfficialStatus,
+  } = require('../src/police-api-service');
+
+  // 地点清洗：剥离省前缀与有区县时的冗余市前缀，消除相邻重复区县
+  assert.equal(cleanIncidentLocation('示例省示例市示例县文化路1号', '示例县'), '示例县文化路1号');
+  assert.equal(cleanIncidentLocation('示例县示例县示例镇示例村12号', '示例县'), '示例县示例镇示例村12号');
+  assert.equal(cleanIncidentLocation('新桥街88号', '示例区'), '示例区新桥街88号');
+  assert.equal(cleanIncidentLocation('示例区新桥街88号', '示例区'), '示例区新桥街88号');
+
+  // 事件清洗：去噪提取核心描述，缺省则组合大类与处置对象
+  assert.equal(
+    cleanIncidentEvent({
+      incident_type: '火灾扑救',
+      incident_describe: '商铺电线短路起火，无人员被困，电话报警',
+    }),
+    '商铺电线短路起火',
+  );
+  assert.equal(
+    cleanIncidentEvent({
+      incident_type: '抢险救援',
+      disposal_object_name: '公路',
+      incident_describe: '官方状态: 归队',
+    }),
+    '抢险救援（公路）',
+  );
+  assert.equal(
+    cleanIncidentEvent({
+      incident_type: '社会救助',
+      disposal_object_name: '其他',
+    }),
+    '社会救助',
+  );
+
+  // 官方状态过滤与终态判定
+  assert.equal(sanitizeOfficialStatus('真警'), '');
+  assert.equal(sanitizeOfficialStatus('其他'), '');
+  assert.equal(sanitizeOfficialStatus(' 归队 '), '归队');
+  assert.equal(isTerminalOfficialStatus('归队'), true);
+  assert.equal(isTerminalOfficialStatus('已结案'), true);
+  assert.equal(isTerminalOfficialStatus('填报'), true);
+  assert.equal(isTerminalOfficialStatus('出动'), false);
+  assert.equal(isTerminalOfficialStatus('到场'), false);
+});
+
+test('认领官方警情独立透传 incident_status 且刷新缓存后实时反映最新状态', async (t) => {
+  const extId = `ext-status-${Date.now()}`;
+  const incNumber = `POLICE-ST-${Date.now()}`;
+  const res = await fetch(`${base}/api/incidents/claim-external`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Device-Id': 'device-status-test',
+      'X-Unit-Id': 'example-county-fire-rescue',
+      'X-Unit-Code': '1001',
+      'X-Op-Id': `claim-status-${Date.now()}`,
+    },
+    body: JSON.stringify({
+      external_incident: {
+        external_id: extId,
+        incident_number: incNumber,
+        crime_address: '示例省示例市示例县示例镇示例村8号',
+        district_name: '示例县',
+        incident_type: '火灾扑救',
+        incident_status: '出动',
+        register_time: Date.now() - 60000,
+      },
+      actor_name: '张三',
+    }),
+  });
+  const claimed = await res.json();
+  assert.equal(res.status, 201);
+  assert.equal(claimed.info.incident_status, '出动');
+  assert.equal(claimed.info.location, '示例县示例镇示例村8号');
+
+  // 模拟上游状态变更为“归队”并刷新缓存
+  const mockUpstream = http.createServer((_req, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({
+      errorCode: 0,
+      data: {
+        list: [
+          {
+            id: extId,
+            incidentNumber: incNumber,
+            detachmentOrgName: '衢州支队',
+            brigadeOrganizationName: '龙游大队',
+            crimeAddress: '龙游县示例镇示例村8号',
+            incidentTypeName: '火灾扑救',
+            incidentStatusName: '归队',
+            registerIncidentTime: Date.now() - 30000,
+          },
+        ],
+        pagination: { total: 1 },
+      },
+    }));
+  });
+  await new Promise((resolve) => mockUpstream.listen(0, resolve));
+  const upstreamUrl = `http://127.0.0.1:${mockUpstream.address().port}/orglist`;
+  t.after(() => {
+    mockUpstream.close();
+    policeApiService._resetCacheForTest();
+  });
+
+  await policeApiService.getQuzhouIncidents({ forceRefresh: true, upstreamUrl });
+  const viewRes = await fetch(`${base}/api/incidents/${claimed.id}`, {
+    headers: {
+      'X-Device-Id': 'device-status-test',
+      'X-Unit-Id': 'example-county-fire-rescue',
+      'X-Unit-Code': '1001',
+    },
+  });
+  const viewBody = await viewRes.json();
+  assert.equal(viewRes.status, 200);
+  assert.equal(viewBody.info.incident_status, '归队');
+});

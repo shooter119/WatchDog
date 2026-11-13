@@ -50,6 +50,15 @@ class AppPalette {
     required this.onStatus,
     required this.online,
     required this.noteInfo,
+    required this.incidentFire,
+    required this.incidentFireText,
+    required this.incidentFireSurface,
+    required this.incidentRescue,
+    required this.incidentRescueText,
+    required this.incidentRescueSurface,
+    required this.incidentAid,
+    required this.incidentAidText,
+    required this.incidentAidSurface,
     required this.rankGold,
     required this.rankSilver,
     required this.rankBronze,
@@ -130,6 +139,15 @@ class AppPalette {
 
   // 页面语义色
   final Color noteInfo;
+  final Color incidentFire;
+  final Color incidentFireText;
+  final Color incidentFireSurface;
+  final Color incidentRescue;
+  final Color incidentRescueText;
+  final Color incidentRescueSurface;
+  final Color incidentAid;
+  final Color incidentAidText;
+  final Color incidentAidSurface;
   final Color rankGold;
   final Color rankSilver;
   final Color rankBronze;
@@ -197,6 +215,15 @@ class AppPalette {
     onStatus: Color(0xFFFFFFFF),
     online: Color(0xFF20A83A),
     noteInfo: Color(0xFF2F6FED),
+    incidentFire: Color(0xFFDC2626),
+    incidentFireText: Color(0xFFB91C1C),
+    incidentFireSurface: Color(0xFFFEF2F2),
+    incidentRescue: Color(0xFFD97706),
+    incidentRescueText: Color(0xFFB45309),
+    incidentRescueSurface: Color(0xFFFFFBEB),
+    incidentAid: Color(0xFF0284C7),
+    incidentAidText: Color(0xFF0369A1),
+    incidentAidSurface: Color(0xFFF0F9FF),
     rankGold: Color(0xFFF5B301),
     rankSilver: Color(0xFF9AA5B1),
     rankBronze: Color(0xFFB77B4A),
@@ -260,6 +287,15 @@ class AppPalette {
     onStatus: Color(0xFFFBF9F4),
     online: Color(0xFF3A7A47),
     noteInfo: Color(0xFF3F6E8F),
+    incidentFire: Color(0xFFB0241B),
+    incidentFireText: Color(0xFF991B1B),
+    incidentFireSurface: Color(0xFFFCF1EE),
+    incidentRescue: Color(0xFFB4690E),
+    incidentRescueText: Color(0xFF8A5A0E),
+    incidentRescueSurface: Color(0xFFFAF1D6),
+    incidentAid: Color(0xFF2B6CB0),
+    incidentAidText: Color(0xFF1E4E8C),
+    incidentAidSurface: Color(0xFFEEF4F8),
     rankGold: Color(0xFFB8860B),
     rankSilver: Color(0xFF8C8A82),
     rankBronze: Color(0xFF9A6B45),

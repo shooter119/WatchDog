@@ -127,6 +127,73 @@ function buildDispatchSummary({ dispatch_vehicle = '', dispatch_organization = '
   return '';
 }
 
+function sanitizeOfficialStatus(status = '') {
+  const s = String(status || '').trim();
+  if (!s || s === '其他' || s === '真警') return '';
+  return s;
+}
+
+function isTerminalOfficialStatus(status = '') {
+  const normalized = String(status || '').replace(/\s+/g, '').trim();
+  if (!normalized) return false;
+  return /^(?:归队|已归队|结案|已结案|填报|完成|已完成|结束|注销|作废|虚警|假警)$/.test(normalized) ||
+    normalized.includes('归队') ||
+    normalized.includes('结案') ||
+    normalized.includes('填报');
+}
+
+function cleanIncidentLocation(rawAddress = '', districtName = '') {
+  let addr = String(rawAddress || '').replace(/\s+/g, '').trim();
+  const dist = String(districtName || '').replace(/\s+/g, '').trim();
+  if (!addr) return dist && dist !== '市辖区' && dist !== '衢州市' ? dist : '';
+
+  // 剥离冗余省级/自治区前缀
+  addr = addr.replace(/^[\u4e00-\u9fa5]{2,5}(?:省|自治区)/, '');
+  // 当后续已包含区/县/县级市时，剥离冗余地级市前缀
+  addr = addr.replace(/^[\u4e00-\u9fa5]{2,5}市(?=[\u4e00-\u9fa5]{2,5}(?:区|县|市))/, '');
+  // 消除相邻重复叠加的区县前缀（如“示例县示例县文化路1号”）
+  addr = addr.replace(/^([\u4e00-\u9fa5]{2,5}(?:区|县|市))\1/, '$1');
+
+  if (dist && dist !== '市辖区' && dist !== '衢州市' && !addr.includes(dist)) {
+    const shortDist = dist.replace(/[区县市]$/, '');
+    if (!shortDist || !addr.startsWith(shortDist)) {
+      addr = `${dist}${addr}`;
+    }
+  }
+  return addr;
+}
+
+function cleanIncidentEvent({
+  incident_type = '',
+  disposal_object_name = '',
+  incident_describe = '',
+} = {}) {
+  const type = String(incident_type || '').trim();
+  const obj = String(disposal_object_name || '').trim();
+  let desc = String(incident_describe || '').trim();
+
+  if (desc) {
+    desc = desc
+      .replace(/官方状态[:：][^，。；·\n]+/g, '')
+      .replace(/[，,。；;·\s]*(?:暂)?无人员(?:被困|伤亡|受伤)[，,。；;·\s]*/g, '，')
+      .replace(/[，,。；;·\s]*人员被困情况不明[，,。；;·\s]*/g, '，')
+      .replace(/[，,。；;·\s]*(?:群众|电话)?报警[，,。；;·\s]*/g, '，')
+      .replace(/[，,。；;·\s]*110转警[，,。；;·\s]*/g, '，')
+      .replace(/^[，,。；;·\s]+|[，,。；;·\s]+$/g, '')
+      .replace(/，{2,}/g, '，');
+    if (desc) {
+      if (desc.length <= 26) return desc;
+      const firstClause = desc.split(/[，。；;\n]/).map((s) => s.trim()).find(Boolean) || desc;
+      return firstClause.length > 24 ? `${firstClause.slice(0, 23)}…` : firstClause;
+    }
+  }
+
+  if (type && obj && obj !== '其他' && !type.includes(obj)) {
+    return `${type}（${obj}）`;
+  }
+  return type || (obj && obj !== '其他' ? obj : '') || '警情';
+}
+
 function buildSituationDescription({
   incident_type = '',
   disposal_object_name = '',
@@ -143,13 +210,17 @@ function buildSituationDescription({
   const extras = [];
   const mode = String(alarm_mode_name || '').trim();
   if (mode && mode !== '其他') extras.push(mode);
-  const status = String(incident_status || '').trim();
-  if (status && status !== '其他' && status !== '真警') extras.push(`官方状态: ${status}`);
+  const status = sanitizeOfficialStatus(incident_status);
+  if (status) extras.push(`官方状态: ${status}`);
 
   if (extras.length > 0) {
     return `${base} · ${extras.join(' · ')}`;
   }
   return base;
+}
+
+function peekCachedIncidents() {
+  return Array.isArray(memoryCache.data) ? memoryCache.data.slice() : [];
 }
 
 async function fetchFromUpstream(url = DEFAULT_UPSTREAM_URL) {
@@ -300,9 +371,14 @@ function _resetCacheForTest() {
 
 module.exports = {
   getQuzhouIncidents,
+  peekCachedIncidents,
   isQuzhouIncident,
   normalizeExternalIncident,
   resolveDistrict,
+  sanitizeOfficialStatus,
+  isTerminalOfficialStatus,
+  cleanIncidentLocation,
+  cleanIncidentEvent,
   buildSituationDescription,
   extractContacts,
   buildDispatchSummary,

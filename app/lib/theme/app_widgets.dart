@@ -85,6 +85,15 @@ class AppColors {
 
   // 页面语义色：页面只引用这些 token，不自行散落颜色字面量
   static Color get noteInfo => _palette.noteInfo;
+  static Color get incidentFire => _palette.incidentFire;
+  static Color get incidentFireText => _palette.incidentFireText;
+  static Color get incidentFireSurface => _palette.incidentFireSurface;
+  static Color get incidentRescue => _palette.incidentRescue;
+  static Color get incidentRescueText => _palette.incidentRescueText;
+  static Color get incidentRescueSurface => _palette.incidentRescueSurface;
+  static Color get incidentAid => _palette.incidentAid;
+  static Color get incidentAidText => _palette.incidentAidText;
+  static Color get incidentAidSurface => _palette.incidentAidSurface;
   static Color get noteWater => _palette.caution;
   static Color get noteNeutral => _palette.textTertiary;
   static Color get rankGold => _palette.rankGold;

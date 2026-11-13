@@ -160,5 +160,22 @@ void main() {
         greaterThanOrEqualTo(4.5),
       );
     });
+
+    for (final p in AppPalette.values) {
+      test('${p.id}: 警情三大类语义色对比度（文本 ≥4.5，图形 ≥3.0）', () {
+        final pairs = [
+          (p.incidentFire, p.incidentFireText, p.incidentFireSurface),
+          (p.incidentRescue, p.incidentRescueText, p.incidentRescueSurface),
+          (p.incidentAid, p.incidentAidText, p.incidentAidSurface),
+        ];
+        for (final (iconColor, textColor, surfaceColor) in pairs) {
+          expect(_contrast(iconColor, p.surface), greaterThanOrEqualTo(3.0));
+          expect(_contrast(iconColor, surfaceColor), greaterThanOrEqualTo(3.0));
+          expect(_contrast(textColor, p.surface), greaterThanOrEqualTo(4.5));
+          expect(_contrast(textColor, p.background), greaterThanOrEqualTo(4.5));
+          expect(_contrast(textColor, surfaceColor), greaterThanOrEqualTo(4.5));
+        }
+      });
+    }
   });
 }

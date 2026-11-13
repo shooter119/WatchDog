@@ -28,6 +28,7 @@ import '../state/app_controller.dart';
 import '../theme/app_dialogs.dart';
 import '../theme/app_widgets.dart';
 import '../widgets/commander_glance_card.dart';
+import '../widgets/incident_category_badge.dart';
 
 /// 警情主页面（核心 hub）：语音录入 + 当前警情 + 现场状态。
 /// 识别结果按 AI 意图分流：进出场本页确认；日志/提问/环境音交 main 统一路由。
@@ -1761,83 +1762,136 @@ class HomePageState extends State<HomePage> {
           ? currentCategory!
           : incident.info['level']?.toString().trim() ?? '',
     );
-    final currentText = edit.text.trim();
-    final levelPrefix = RegExp(r'^[一二三四五六七八九十]+级').firstMatch(currentText);
-    final categorySuffix = levelPrefix == null
-        ? currentText
-        : currentText.substring(levelPrefix.end).trim();
-    final levelOptions = categorySuffix.isEmpty
-        ? const ['一级', '二级', '三级', '四级']
-        : [
-            '一级$categorySuffix',
-            '二级$categorySuffix',
-            '三级$categorySuffix',
-            '四级$categorySuffix',
-          ];
+    var selectedCategory = IncidentCategory.classify(
+      category: edit.text.trim(),
+      specificType: incident.info['specific_type']?.toString() ?? '',
+      situation: incident.info['situation']?.toString() ?? '',
+      title: incident.displayName,
+    );
+    List<String> buildLevelOptions(String text) {
+      final trimmed = text.trim();
+      final levelPrefix = RegExp(r'^[一二三四五六七八九十]+级').firstMatch(trimmed);
+      final categorySuffix = levelPrefix == null
+          ? trimmed
+          : trimmed.substring(levelPrefix.end).trim();
+      return categorySuffix.isEmpty
+          ? const ['一级', '二级', '三级', '四级']
+          : [
+              '一级$categorySuffix',
+              '二级$categorySuffix',
+              '三级$categorySuffix',
+              '四级$categorySuffix',
+            ];
+    }
+
     final level = await showDialog<String>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('警情调整'),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    '修改灾情等级',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final option in levelOptions)
-                        ChoiceChip(
-                          label: Text(option),
-                          selected: edit.text.trim() == option,
-                          onSelected: (_) {
-                            edit.text = option;
-                            edit.selection = TextSelection.collapsed(
-                              offset: option.length,
-                            );
-                            setDialogState(() {});
-                          },
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    key: const Key('incident-level-field'),
-                    controller: edit,
-                    maxLength: 80,
-                    onChanged: (_) => setDialogState(() {}),
-                    decoration: const InputDecoration(
-                      labelText: '灾情等级',
-                      hintText: '如：一级火灾扑救',
+        builder: (ctx, setDialogState) {
+          final levelOptions = buildLevelOptions(edit.text);
+          return AlertDialog(
+            title: const Text('警情调整'),
+            content: SizedBox(
+              width: 480,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      '警情大类',
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final cat in IncidentCategory.values)
+                          ChoiceChip(
+                            key: Key('incident-category-chip-${cat.name}'),
+                            label: Text(cat.label),
+                            selected: selectedCategory == cat,
+                            onSelected: (_) {
+                              final currentTrimmed = edit.text.trim();
+                              final prefix = RegExp(
+                                r'^[一二三四五六七八九十]+级',
+                              ).firstMatch(currentTrimmed)?.group(0);
+                              final nextText = prefix != null
+                                  ? '$prefix${cat.defaultCategoryName}'
+                                  : cat.defaultCategoryName;
+                              selectedCategory = cat;
+                              edit.text = nextText;
+                              edit.selection = TextSelection.collapsed(
+                                offset: nextText.length,
+                              );
+                              setDialogState(() {});
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      '修改灾情等级',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final option in levelOptions)
+                          ChoiceChip(
+                            label: Text(option),
+                            selected: edit.text.trim() == option,
+                            onSelected: (_) {
+                              edit.text = option;
+                              edit.selection = TextSelection.collapsed(
+                                offset: option.length,
+                              );
+                              selectedCategory = IncidentCategory.classify(
+                                category: option,
+                              );
+                              setDialogState(() {});
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const Key('incident-level-field'),
+                      controller: edit,
+                      maxLength: 80,
+                      onChanged: (value) {
+                        selectedCategory = IncidentCategory.classify(
+                          category: value.trim(),
+                        );
+                        setDialogState(() {});
+                      },
+                      decoration: const InputDecoration(
+                        labelText: '灾情等级',
+                        hintText: '如：一级火灾扑救',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              key: const Key('incident-level-save'),
-              onPressed: edit.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(ctx, edit.text.trim()),
-              child: const Text('保存'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                key: const Key('incident-level-save'),
+                onPressed: edit.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, edit.text.trim()),
+                child: const Text('保存'),
+              ),
+            ],
+          );
+        },
       ),
     );
     _disposeControllerAfterFrame(edit);
@@ -3693,83 +3747,6 @@ class _TaskBarState extends State<_TaskBar> {
     }
   }
 
-  String get _location =>
-      (widget.incident.info['location']?.toString() ?? '').trim();
-
-  static String _normalizeSpace(String value) =>
-      value.replaceAll(RegExp(r'\s+'), '');
-
-  /// 标题与地址若存在包含关系（例如“某镇某村”与“某县某镇某村”），
-  /// 合并为一个最完整的头部标题，避免在展开区重复显示同一地点。
-  String get _headerTitle {
-    final display = widget.incident.displayName.trim();
-    final rawTitle = (widget.incident.title ?? '').trim();
-    final loc = _location;
-    if (loc.isNotEmpty &&
-        rawTitle.isNotEmpty &&
-        _normalizeSpace(loc).contains(_normalizeSpace(rawTitle))) {
-      return loc;
-    }
-    return display;
-  }
-
-  String get _distinctLocation {
-    final loc = _location;
-    if (loc.isEmpty) return '';
-    if (_normalizeSpace(_headerTitle).contains(_normalizeSpace(loc))) {
-      return '';
-    }
-    return loc;
-  }
-
-  ({
-    String category,
-    String officialStatus,
-    List<String> extraTags,
-    List<String> extraNotes,
-  })
-  _parseStatusMetadata() {
-    final info = widget.incident.info;
-    var category =
-        (info['original_category']?.toString() ??
-                info['level']?.toString() ??
-                '')
-            .trim();
-    var officialStatus = (info['incident_status']?.toString() ?? '').trim();
-    final situation = (info['situation']?.toString() ?? '').trim();
-    final extraTags = <String>[];
-    final extraNotes = <String>[];
-
-    final officialStatusReg = RegExp(r'^官方状态[:：]\s*(.+)$');
-    if (situation.isNotEmpty) {
-      for (final rawPart in situation.split('·')) {
-        final part = rawPart.trim();
-        if (part.isEmpty) continue;
-        final match = officialStatusReg.firstMatch(part);
-        if (match != null) {
-          if (officialStatus.isEmpty) {
-            officialStatus = match.group(1)!.trim();
-          }
-          continue;
-        }
-        if (part == category) continue;
-        if (category.isEmpty && part.length <= 16) {
-          category = part;
-        } else if (part.length <= 16) {
-          extraTags.add(part);
-        } else {
-          extraNotes.add(part);
-        }
-      }
-    }
-    return (
-      category: category,
-      officialStatus: officialStatus,
-      extraTags: extraTags,
-      extraNotes: extraNotes,
-    );
-  }
-
   Widget _statusPill({
     required String text,
     required Color background,
@@ -3800,222 +3777,177 @@ class _TaskBarState extends State<_TaskBar> {
     widget.onExpandedChanged?.call(expanded);
   }
 
+  Widget _buildMoreMenu() {
+    return PopupMenuButton<String>(
+      key: const Key('incident-more-menu'),
+      tooltip: '更多警情操作',
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      icon: Icon(
+        Icons.more_horiz_rounded,
+        size: 20,
+        color: AppColors.textSecondary,
+      ),
+      onSelected: (value) {
+        switch (value) {
+          case 'rename':
+            widget.onRename();
+          case 'exit':
+            widget.onExit();
+          case 'archive':
+            widget.onArchive();
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem<String>(
+          key: const Key('rename-incident'),
+          value: 'rename',
+          child: Row(
+            children: [
+              Icon(
+                Icons.edit_outlined,
+                size: 18,
+                color: AppColors.textPrimary,
+              ),
+              const SizedBox(width: 10),
+              const Text('修改警情名称'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          key: const Key('exit-incident-menu-item'),
+          value: 'exit',
+          child: Row(
+            children: [
+              Icon(
+                Icons.logout_outlined,
+                size: 18,
+                color: AppColors.textPrimary,
+              ),
+              const SizedBox(width: 10),
+              const Text('退出当前警情'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<String>(
+          key: const Key('archive-incident-menu-item'),
+          value: 'archive',
+          child: Row(
+            children: [
+              Icon(
+                Icons.archive_outlined,
+                size: 18,
+                color: AppColors.alarm,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '归档警情',
+                style: TextStyle(
+                  color: AppColors.alarm,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final meta = _parseStatusMetadata();
-    final distinctLocation = _distinctLocation;
+    final data = IncidentCardData.fromIncident(widget.incident);
+    final showPendingForcePill =
+        widget.forces.isEmpty && !data.isTerminalStatus;
+    final hasAnyStatusPill =
+        data.rawCategoryPill.isNotEmpty ||
+        data.officialStatus.isNotEmpty ||
+        data.extraTags.isNotEmpty ||
+        widget.forces.isNotEmpty ||
+        showPendingForcePill;
+
     return AppCard(
       key: const Key('incident-card'),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s4,
-        vertical: AppSpacing.s2,
+        vertical: AppSpacing.s2 + 2,
       ),
       radius: AppRadius.lg,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    key: const Key('toggle-incident-card'),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    onTap: _toggleExpanded,
-                    child: Semantics(
-                      button: true,
-                      expanded: _expanded,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.s1,
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              key: const Key('toggle-incident-card'),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              onTap: _toggleExpanded,
+              child: Semantics(
+                button: true,
+                expanded: _expanded,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 52),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.s1,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        IncidentCategoryBadge(
+                          key: Key('incident-category-badge-${data.category.name}'),
+                          category: data.category,
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _headerTitle,
-                                    softWrap: true,
-                                    style: AppTextStyles.bodyLg.copyWith(
-                                      color: AppColors.textPrimary,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Wrap(
-                                    spacing: 6,
-                                    runSpacing: 6,
-                                    children: [
-                                      if (meta.category.isNotEmpty)
-                                        _statusPill(
-                                          text: meta.category,
-                                          background: AppColors.actionPrimary
-                                              .withValues(alpha: 0.10),
-                                          borderColor: AppColors.actionPrimary
-                                              .withValues(alpha: 0.32),
-                                          foreground: AppColors.actionPrimary,
-                                        ),
-                                      if (meta.officialStatus.isNotEmpty)
-                                        _statusPill(
-                                          text: '官方状态: ${meta.officialStatus}',
-                                          background: AppColors.surfaceSubtle,
-                                          borderColor: AppColors.border,
-                                          foreground: AppColors.textPrimary,
-                                        ),
-                                      for (final tag in meta.extraTags)
-                                        _statusPill(
-                                          text: tag,
-                                          background: AppColors.surfaceSubtle,
-                                          borderColor: AppColors.border,
-                                          foreground: AppColors.textPrimary,
-                                        ),
-                                      _statusPill(
-                                        text: widget.forces.isEmpty
-                                            ? '力量待登记'
-                                            : '${widget.forces.length}支队伍',
-                                        background: widget.forces.isEmpty
-                                            ? AppColors.noticeWarningBg
-                                            : AppColors.surfaceSubtle,
-                                        borderColor: widget.forces.isEmpty
-                                            ? AppColors.caution.withValues(
-                                                alpha: 0.45,
-                                              )
-                                            : AppColors.border,
-                                        foreground: widget.forces.isEmpty
-                                            ? AppColors.noticeWarningFg
-                                            : AppColors.textPrimary,
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.s2),
-                            Container(
-                              key: const Key('incident-collapse-pill'),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceSubtle,
-                                borderRadius: BorderRadius.circular(
-                                  AppRadius.pill,
+                        const SizedBox(width: AppSpacing.s3),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AntiOrphanText(
+                                text: data.eventTitle,
+                                style: AppTextStyles.bodyLg.copyWith(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1.3,
                                 ),
-                                border: Border.all(color: AppColors.border),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    _expanded ? '收起' : '展开',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      height: 1.1,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Icon(
-                                    _expanded
-                                        ? Icons.keyboard_arrow_up_rounded
-                                        : Icons.keyboard_arrow_down_rounded,
-                                    size: 16,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ],
+                              const SizedBox(height: 4),
+                              _LocationTimeLine(
+                                location: data.locationText,
+                                time: data.timeText,
+                                mutedLocation: !data.hasRealLocation,
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              PopupMenuButton<String>(
-                key: const Key('incident-more-menu'),
-                tooltip: '更多警情操作',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 44, minHeight: 48),
-                icon: Icon(
-                  Icons.more_horiz_rounded,
-                  size: 22,
-                  color: AppColors.textPrimary,
-                ),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'rename':
-                      widget.onRename();
-                    case 'exit':
-                      widget.onExit();
-                    case 'archive':
-                      widget.onArchive();
-                  }
-                },
-                itemBuilder: (_) => [
-                  PopupMenuItem<String>(
-                    key: const Key('rename-incident'),
-                    value: 'rename',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.edit_outlined,
-                          size: 18,
-                          color: AppColors.textPrimary,
-                        ),
-                        const SizedBox(width: 10),
-                        const Text('修改警情名称'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem<String>(
-                    key: const Key('exit-incident-menu-item'),
-                    value: 'exit',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.logout_outlined,
-                          size: 18,
-                          color: AppColors.textPrimary,
-                        ),
-                        const SizedBox(width: 10),
-                        const Text('退出当前警情'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem<String>(
-                    key: const Key('archive-incident-menu-item'),
-                    value: 'archive',
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.archive_outlined,
-                          size: 18,
-                          color: AppColors.alarm,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          '归档警情',
-                          style: TextStyle(
-                            color: AppColors.alarm,
-                            fontWeight: FontWeight.w700,
+                        const SizedBox(width: AppSpacing.s2),
+                        Container(
+                          key: const Key('incident-collapse-pill'),
+                          width: 28,
+                          height: 28,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Icon(
+                            _expanded
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            size: 18,
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ],
+            ),
           ),
           if (_expanded)
             Column(
@@ -4023,32 +3955,72 @@ class _TaskBarState extends State<_TaskBar> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Divider(height: AppSpacing.s3, color: AppColors.border),
-                if (distinctLocation.isNotEmpty) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.place_outlined,
-                        size: 16,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          distinctLocation,
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.s2),
-                ],
-                if (meta.extraNotes.isNotEmpty) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: hasAnyStatusPill
+                          ? Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (data.rawCategoryPill.isNotEmpty)
+                                  _statusPill(
+                                    text: data.rawCategoryPill,
+                                    background: data.category.surfaceColor,
+                                    borderColor: data.category.iconColor
+                                        .withValues(alpha: 0.32),
+                                    foreground: data.category.textColor,
+                                  ),
+                                if (data.officialStatus.isNotEmpty)
+                                  _statusPill(
+                                    text: '官方状态: ${data.officialStatus}',
+                                    background: AppColors.surfaceSubtle,
+                                    borderColor: AppColors.border,
+                                    foreground: AppColors.textPrimary,
+                                  ),
+                                for (final tag in data.extraTags)
+                                  _statusPill(
+                                    text: tag,
+                                    background: AppColors.surfaceSubtle,
+                                    borderColor: AppColors.border,
+                                    foreground: AppColors.textPrimary,
+                                  ),
+                                if (widget.forces.isNotEmpty)
+                                  _statusPill(
+                                    text: '${widget.forces.length}支队伍',
+                                    background: AppColors.surfaceSubtle,
+                                    borderColor: AppColors.border,
+                                    foreground: AppColors.textPrimary,
+                                  )
+                                else if (showPendingForcePill)
+                                  _statusPill(
+                                    text: '力量待登记',
+                                    background: AppColors.noticeWarningBg,
+                                    borderColor: AppColors.caution.withValues(
+                                      alpha: 0.45,
+                                    ),
+                                    foreground: AppColors.noticeWarningFg,
+                                  ),
+                              ],
+                            )
+                          : Text(
+                              '警情管理与操作',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: AppSpacing.s1),
+                    _buildMoreMenu(),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.s2),
+                if (data.extraNotes.isNotEmpty) ...[
                   Text(
-                    meta.extraNotes.join(' · '),
+                    data.extraNotes.join(' · '),
                     style: AppTextStyles.caption.copyWith(
                       color: AppColors.textSecondary,
                       fontWeight: FontWeight.w600,
@@ -4211,6 +4183,89 @@ class _TaskBarState extends State<_TaskBar> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _LocationTimeLine extends StatelessWidget {
+  final String location;
+  final String time;
+  final bool mutedLocation;
+
+  const _LocationTimeLine({
+    required this.location,
+    required this.time,
+    this.mutedLocation = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final locStyle = AppTextStyles.caption.copyWith(
+      color: mutedLocation ? AppColors.textTertiary : AppColors.textSecondary,
+      fontWeight: FontWeight.w500,
+      height: 1.35,
+    );
+    final timeStyle = AppTextStyles.caption.copyWith(
+      color: AppColors.textTertiary,
+      fontWeight: FontWeight.w600,
+      fontFeatures: const [FontFeature.tabularFigures()],
+      height: 1.35,
+    );
+
+    if (time.isEmpty) {
+      return AntiOrphanText(
+        text: location,
+        style: locStyle,
+        maxLines: 2,
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final combinedSpan = TextSpan(
+          children: [
+            TextSpan(text: location, style: locStyle),
+            TextSpan(text: ' · ', style: timeStyle),
+            TextSpan(text: time, style: timeStyle),
+          ],
+        );
+        if (maxWidth.isFinite && maxWidth > 0) {
+          final painter = TextPainter(
+            text: combinedSpan,
+            textScaler: MediaQuery.textScalerOf(context),
+            textDirection: Directionality.of(context),
+            maxLines: 1,
+          )..layout(maxWidth: maxWidth);
+          if (!painter.didExceedMaxLines && painter.width <= maxWidth) {
+            return Text.rich(
+              combinedSpan,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            );
+          }
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AntiOrphanText(
+              text: location,
+              style: locStyle,
+              maxLines: 2,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              time,
+              style: timeStyle,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        );
+      },
     );
   }
 }

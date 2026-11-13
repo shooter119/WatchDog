@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/theme_controller.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_widgets.dart';
+import '../widgets/incident_category_badge.dart';
 
 /// 仅调试可见的组件画廊（Design System Gallery）
 ///
@@ -204,7 +205,32 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
           ),
           const SizedBox(height: AppSpacing.sectionGap),
 
-          const SectionTitle(text: '6. 字阶梯度一览 (Typography)'),
+          const SectionTitle(text: '6. 警情三类视觉体系 (灭火 / 抢险 / 救助)'),
+          AppCard(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                for (final category in IncidentCategory.values)
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IncidentCategoryBadge(category: category),
+                      const SizedBox(height: AppSpacing.s1),
+                      Text(
+                        category.label,
+                        style: AppTextStyles.label.copyWith(
+                          color: category.textColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sectionGap),
+
+          const SectionTitle(text: '7. 字阶梯度一览 (Typography)'),
           AppCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

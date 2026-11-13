@@ -3831,8 +3831,10 @@ void main() {
       expect(find.byKey(const Key('incident-card')), findsOneWidget);
       expect(find.text('小区火灾'), findsOneWidget);
       expect(find.text('2026-8-9-8-59'), findsNothing);
-      expect(find.textContaining('力量待登记'), findsOneWidget);
-      expect(find.textContaining('一级火灾扑救'), findsOneWidget);
+      expect(find.textContaining('幸福街道幸福小区地下车库'), findsOneWidget);
+      expect(find.textContaining('力量待登记'), findsNothing);
+      expect(find.textContaining('一级火灾扑救'), findsNothing);
+      expect(find.byKey(const Key('incident-more-menu')), findsNothing);
       expect(find.text('登记力量'), findsNothing);
       final collapsedHeight = tester
           .getSize(find.byKey(const Key('incident-card')))
@@ -3842,11 +3844,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('2026-8-9-8-59'), findsNothing);
       expect(find.textContaining('一级火灾扑救'), findsNWidgets(1));
-      expect(find.text('幸福街道幸福小区地下车库'), findsOneWidget);
+      expect(find.textContaining('力量待登记'), findsOneWidget);
+      expect(find.byKey(const Key('incident-more-menu')), findsOneWidget);
       expect(find.text('登记力量'), findsOneWidget);
       await tester.tap(find.byKey(const Key('toggle-incident-card')));
       await tester.pumpAndSettle();
       expect(find.text('登记力量'), findsNothing);
+      expect(find.textContaining('一级火灾扑救'), findsNothing);
       expect(find.text('在场 2人'), findsNothing);
       expect(find.text('需关注 1'), findsNothing);
       expect(find.text('状态正常'), findsNothing);
@@ -4070,6 +4074,9 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
+      expect(find.byKey(const Key('incident-more-menu')), findsNothing);
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('incident-more-menu')), findsOneWidget);
       await tester.tap(find.byKey(const Key('incident-more-menu')));
       await tester.pumpAndSettle();
@@ -4303,16 +4310,18 @@ void main() {
           lastActivityAt: 1,
         );
       await pumpTask(tester, c);
-      expect(find.text('示例县示例镇示例村'), findsOneWidget);
-      expect(find.text('示例镇示例村'), findsNothing);
       expect(find.text('火灾扑救'), findsOneWidget);
-      expect(find.text('官方状态: 归队'), findsOneWidget);
-      expect(find.text('力量待登记'), findsOneWidget);
+      expect(find.textContaining('示例县示例镇示例村'), findsOneWidget);
+      expect(find.text('示例镇示例村'), findsNothing);
+      expect(find.text('官方状态: 归队'), findsNothing);
+      expect(find.text('力量待登记'), findsNothing);
 
       await tester.tap(find.byKey(const Key('toggle-incident-card')));
       await tester.pumpAndSettle();
-      // 展开后不再重复输出已包含在标题内的地址，也不展示无力量的冗长空态
-      expect(find.text('示例县示例镇示例村'), findsOneWidget);
+      // 展开后展示原始类别与官方状态，并在终态“归队”时隐藏矛盾的“力量待登记”提示
+      expect(find.text('火灾扑救'), findsNWidgets(2));
+      expect(find.text('官方状态: 归队'), findsOneWidget);
+      expect(find.text('力量待登记'), findsNothing);
       expect(find.text('尚未登记参战力量'), findsNothing);
       expect(find.text('0支队伍'), findsNothing);
     });

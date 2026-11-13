@@ -1545,11 +1545,15 @@ async function incidentView(incident, { forces = null, generateSuggestedTitle = 
   }
   const rows = forces || await db.listIncidentForces(incident.id);
   let info = {};
+  let detailData = null;
   if (syncSupported() && incident.unit_id) {
     const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
+    detailData = detail?.data || {};
     for (const key of [
       'original_category',
+      'level',
       'specific_type',
+      'incident_status',
       'location',
       'administrative_area',
       'received_at',
@@ -1558,7 +1562,22 @@ async function incidentView(incident, { forces = null, generateSuggestedTitle = 
       'longitude',
       'dispatch_summary',
     ]) {
-      if (detail.data[key]) info[key] = detail.data[key];
+      if (detailData[key]) info[key] = detailData[key];
+    }
+  }
+  const cachedExtList = policeApiService.peekCachedIncidents();
+  if (cachedExtList.length > 0) {
+    const extId = detailData?.external_id ? String(detailData.external_id) : '';
+    const extNumber = detailData?.external_incident_number ? String(detailData.external_incident_number) : '';
+    const incNumber = incident.number ? String(incident.number) : '';
+    const matchedExt = cachedExtList.find((item) =>
+      (extId && item.external_id === extId) ||
+      (extNumber && item.incident_number === extNumber) ||
+      (incNumber && item.incident_number === incNumber)
+    );
+    const liveStatus = matchedExt ? policeApiService.sanitizeOfficialStatus(matchedExt.incident_status) : '';
+    if (liveStatus) {
+      info.incident_status = liveStatus;
     }
   }
   return {
@@ -1762,12 +1781,14 @@ app.get('/api/external-incidents', async (req, res, next) => {
     // 查询当前单位已有的 active 警情
     const activeIncidents = await db.listIncidents('active', { unitId: req.unit?.id || null, limit: 100, offset: 0 });
     const claimedMap = new Map();
+    const detailByIncidentId = new Map();
 
     for (const incident of activeIncidents) {
       if (incident.number) claimedMap.set(String(incident.number), incident);
       if (syncSupported() && incident.unit_id) {
         try {
           const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
+          detailByIncidentId.set(incident.id, detail);
           if (detail?.data?.external_id) {
             claimedMap.set(String(detail.data.external_id), incident);
           }
@@ -1778,8 +1799,40 @@ app.get('/api/external-incidents', async (req, res, next) => {
       }
     }
 
+    const statusSyncTasks = [];
     const listWithClaimStatus = upstreamResult.list.map((item) => {
       const matched = claimedMap.get(item.external_id) || claimedMap.get(item.incident_number);
+      if (matched && syncSupported() && matched.unit_id) {
+        const nextStatus = policeApiService.sanitizeOfficialStatus(item.incident_status);
+        const existingDetail = detailByIncidentId.get(matched.id);
+        const prevStatus = policeApiService.sanitizeOfficialStatus(existingDetail?.data?.incident_status || '');
+        if (nextStatus && nextStatus !== prevStatus) {
+          statusSyncTasks.push((async () => {
+            try {
+              const store = require('./postgres-store');
+              const now = Date.now();
+              const nextData = { ...(existingDetail?.data || {}), incident_status: nextStatus };
+              const nextVersion = (Number(existingDetail?.version) || 0) + 1;
+              await store.query(
+                `INSERT INTO incident_details(incident_id, unit_id, data, version, updated_at, updated_by)
+                 VALUES($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT(incident_id) DO UPDATE SET data = EXCLUDED.data, version = EXCLUDED.version, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
+                [matched.id, matched.unit_id, JSON.stringify(nextData), nextVersion, now, 'police_api_sync']
+              );
+              if (typeof db.appendSyncEvent === 'function') {
+                await db.appendSyncEvent({
+                  unitId: matched.unit_id,
+                  incidentId: matched.id,
+                  eventType: 'details.updated',
+                  payload: { incident_id: matched.id, unit_id: matched.unit_id, data: nextData, version: nextVersion, updated_at: now },
+                });
+              }
+            } catch (err) {
+              logger.warn(`[PoliceApiService] Failed to sync official status for ${matched.id}: ${err.message}`);
+            }
+          })());
+        }
+      }
       return {
         ...item,
         claimed: Boolean(matched),
@@ -1788,6 +1841,9 @@ app.get('/api/external-incidents', async (req, res, next) => {
         claimed_incident_title: matched ? (matched.title || matched.number) : null,
       };
     });
+    if (statusSyncTasks.length > 0) {
+      Promise.allSettled(statusSyncTasks).catch(() => {});
+    }
 
     res.json({
       list: listWithClaimStatus,
@@ -1862,12 +1918,12 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
       buildDispatchSummary,
       sanitizeCoordinates,
       resolveDistrict,
+      cleanIncidentLocation,
+      sanitizeOfficialStatus,
     } = require('./police-api-service');
     const resolvedDistrict = resolveDistrict(ext);
-    let fullLocation = String(ext.crime_address || '').trim();
-    if (fullLocation && resolvedDistrict && resolvedDistrict !== '衢州市' && !fullLocation.includes(resolvedDistrict)) {
-      fullLocation = `${resolvedDistrict}${fullLocation}`;
-    }
+    const fullLocation = cleanIncidentLocation(ext.crime_address, resolvedDistrict);
+    const normalizedStatus = sanitizeOfficialStatus(ext.incident_status);
     const title = ext.crime_address || (resolvedDistrict ? `${resolvedDistrict} ${ext.incident_type || ''}` : ext.incident_type) || null;
     const candidateNumber = extNumber || null;
 
@@ -1910,6 +1966,7 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
           external_incident_number: extNumber || undefined,
           external_source: 'police_api_quzhou',
           original_category: ext.incident_type || undefined,
+          incident_status: normalizedStatus || undefined,
           location: fullLocation || ext.crime_address || undefined,
           administrative_area: resolvedDistrict || ext.district_name || undefined,
           situation: situation || undefined,
@@ -1954,6 +2011,7 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
       view.info = {
         ...view.info,
         original_category: view.info?.original_category || ext.incident_type || undefined,
+        incident_status: view.info?.incident_status || normalizedStatus || undefined,
         location: view.info?.location || fullLocation || ext.crime_address || undefined,
         administrative_area: view.info?.administrative_area || resolvedDistrict || ext.district_name || undefined,
         situation: view.info?.situation || situation || undefined,
