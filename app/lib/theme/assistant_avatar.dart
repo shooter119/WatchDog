@@ -5,9 +5,9 @@ import 'app_widgets.dart';
 /// ============================================================
 /// 水元素辅助头像
 ///
-/// 使用已选定的第 2 排第 4 个水元素头像：液态侧向护目镜、波刃形水冠、
-/// 深色防护模块与少量 WatchDog 橙色传感器。外层仍由统一的圆形表面、边框
-/// 和阴影承载，确保欢迎态 56dp 与聊天消息 30dp 使用同一套尺寸逻辑。
+/// 暖砂浅米底色 + 消防救援头盔护目镜与几何水滴盾纹 + 救援橙传感器细节，
+/// 统一由单层圆形容器 + 1px 主题边框承载（零重影），适配昼白/暖砂/夜间战术主题，
+/// 确保欢迎态 64dp 与聊天消息 32dp 使用同一套尺寸逻辑。
 /// ============================================================
 
 class AssistantAvatar extends StatelessWidget {
@@ -25,18 +25,13 @@ class AssistantAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.avatarBackdrop,
         shape: BoxShape.circle,
-        border: Border.all(color: AppColors.avatarBackdrop),
-        boxShadow: AppColors.palette.cardShadow,
+        border: Border.all(color: AppColors.border, width: 1),
       ),
-      child: ClipOval(
-        child: ColoredBox(
-          color: AppColors.avatarBackdrop,
-          child: Image.asset(
-            'assets/avatars/water-element-avatar-selected.png',
-            fit: BoxFit.cover,
-            filterQuality: FilterQuality.high,
-          ),
-        ),
+      clipBehavior: Clip.antiAlias,
+      child: Image.asset(
+        'assets/avatars/water-element-avatar-selected.png',
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.medium,
       ),
     );
   }
