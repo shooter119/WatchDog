@@ -78,6 +78,12 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _unitAuthenticated = false;
   String _unitRole = 'member';
   bool _canManageVideoResources = false;
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _serverSectionKey = GlobalKey();
+  bool _calcExpanded = false;
+  bool _voiceExpanded = false;
+  bool _alertExpanded = false;
+  bool _serverExpanded = false;
 
   @override
   void initState() {
@@ -652,6 +658,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
+    _scrollController.dispose();
     _server.dispose();
     _full.dispose();
     _consumption.dispose();
@@ -666,38 +673,115 @@ class _SettingsPageState extends State<SettingsPage> {
     super.dispose();
   }
 
+  void _inspectServerConnection() {
+    if (!_serverExpanded) {
+      setState(() => _serverExpanded = true);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _serverSectionKey.currentContext;
+      if (!mounted || ctx == null) return;
+      final disableAnimations = MediaQuery.of(context).disableAnimations;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.12,
+        duration: disableAnimations
+            ? Duration.zero
+            : const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  String get _calcSummary {
+    final vol = _cylinderVol == 9.0 ? '9' : '6.8';
+    final warn = _warn.text.trim().isEmpty ? '10' : _warn.text.trim();
+    final alarm = _alarm.text.trim().isEmpty ? '5' : _alarm.text.trim();
+    return '${vol}L · $warn/$alarm分';
+  }
+
+  String get _voiceSummary => _asrCloud ? '在线识别' : '离线识别';
+
+  String get _alertSummary {
+    final items = <String>[
+      if (_tts) '播报',
+      if (_sound) '警报',
+      if (_keepAlive) '值守' else if (_keepScreenOn) '常亮',
+    ];
+    return items.isEmpty ? '已关闭' : items.join('·');
+  }
+
+  String get _serverSummary {
+    if (widget.controller.isGuest) return '单机模式';
+    if (widget.controller.syncing) return '同步中';
+    if (widget.controller.syncError != null) return '同步失败';
+    if (widget.controller.connectionLost) return '已中断';
+    return '已连接';
+  }
+
   Widget _buildAppearanceCard() {
     // 选中态直接从 ThemeController 读：不建本地副本，避免两处状态不一致。
     // 只切换配色，不进入自动保存链路，也不写 settings_modified_at。
     final currentId = ThemeController.instance.currentId;
+    final compactStack =
+        MediaQuery.sizeOf(context).width < 360 &&
+        MediaQuery.textScalerOf(context).scale(1.0) > 1.3;
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.s4),
-      child: Row(
-        children: [
-          for (final palette in AppPalette.values) ...[
-            Expanded(
-              child: _ThemeOption(
-                palette: palette,
-                selected: palette.id == currentId,
-                onTap: () {
-                  ThemeController.instance.select(palette);
-                  setState(() {});
-                },
+      child: compactStack
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < AppPalette.values.length; i++) ...[
+                  _ThemeOption(
+                    palette: AppPalette.values[i],
+                    selected: AppPalette.values[i].id == currentId,
+                    onTap: () {
+                      ThemeController.instance.select(AppPalette.values[i]);
+                      setState(() {});
+                    },
+                  ),
+                  if (i < AppPalette.values.length - 1)
+                    const SizedBox(height: AppSpacing.s2),
+                ],
+              ],
+            )
+          : IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final palette in AppPalette.values) ...[
+                    Expanded(
+                      child: _ThemeOption(
+                        palette: palette,
+                        selected: palette.id == currentId,
+                        onTap: () {
+                          ThemeController.instance.select(palette);
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                    if (palette.id != AppPalette.values.last.id)
+                      const SizedBox(width: AppSpacing.s2),
+                  ],
+                ],
               ),
             ),
-            if (palette.id != AppPalette.values.last.id)
-              const SizedBox(width: AppSpacing.s2),
-          ],
-        ],
-      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final pendingUpdate = widget.controller.pendingUpdate;
+    final versionSummary = _checkingUpdate
+        ? '检查中 · v$_displayVersion'
+        : pendingUpdate != null
+        ? '有新版 · v$_displayVersion'
+        : '${kDebugMode ? '测试版 ' : ''}v$_displayVersion';
+
     return SafeArea(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+        controller: _scrollController,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 36),
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -712,188 +796,210 @@ class _SettingsPageState extends State<SettingsPage> {
                 syncing: widget.controller.syncing,
                 syncError: widget.controller.syncError,
                 onRetry: widget.controller.refreshNow,
+                onInspect: _inspectServerConnection,
+                inspectHint: '点击查看服务连接',
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.s3),
           _buildIdentityCard(),
-          const SizedBox(height: 22),
-          const SectionTitle(text: '现场设置'),
-          _SettingsLinkCard(
-            icon: Icons.branding_watermark_outlined,
-            title: '水印设置',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const WatermarkSettingsPage()),
-            ),
+          const SizedBox(height: AppSpacing.s5),
+          const SectionTitle(text: '现场与采集'),
+          _SettingsGroupCard(
+            children: [
+              _SettingsNavRow(
+                icon: Icons.branding_watermark_outlined,
+                title: '水印设置',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const WatermarkSettingsPage(),
+                  ),
+                ),
+              ),
+              if (_canManageVideoResources)
+                _SettingsNavRow(
+                  rowKey: const Key('video-resource-settings'),
+                  icon: Icons.videocam_outlined,
+                  title: '视频资源管理',
+                  enabled: widget.controller.api != null,
+                  onTap: () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          VideoResourceAdminPage(api: widget.controller.api!),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.s2),
-
-          if (widget.controller.canReviewMembers ||
-              widget.controller.memberReviewError != null) ...[
-            _SettingsLinkCard(
-              icon: Icons.how_to_reg_outlined,
-              title: '入队审批',
-              subtitle: widget.controller.memberReviewError != null
-                  ? '审批信息加载失败，点击重试'
-                  : widget.controller.pendingMemberCount > 0
-                  ? '${widget.controller.pendingMemberCount} 条待处理 · 本单位管理员共同审批'
-                  : null,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      MemberReviewPage(controller: widget.controller),
+          const SizedBox(height: AppSpacing.s5),
+          const SectionTitle(text: '队伍管理'),
+          _SettingsGroupCard(
+            children: [
+              if (widget.controller.canReviewMembers ||
+                  widget.controller.memberReviewError != null)
+                _SettingsNavRow(
+                  icon: Icons.how_to_reg_outlined,
+                  title: '入队审批',
+                  badge: widget.controller.pendingMemberCount > 0,
+                  subtitle: widget.controller.memberReviewError != null
+                      ? '审批信息加载失败，点击重试'
+                      : widget.controller.pendingMemberCount > 0
+                      ? '${widget.controller.pendingMemberCount} 条待处理 · 本单位管理员共同审批'
+                      : null,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          MemberReviewPage(controller: widget.controller),
+                    ),
+                  ),
+                ),
+              _SettingsNavRow(
+                icon: Icons.group_outlined,
+                title: '人员与热词',
+                subtitle: widget.controller.pendingMemberCount > 0
+                    ? '${widget.controller.pendingMemberCount} 名队员待审批'
+                    : null,
+                badge: widget.controller.pendingMemberCount > 0,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RosterPage(controller: widget.controller),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.s2),
-          ],
-          _buildFieldGrid([
-            _SettingsShortcut(
-              icon: Icons.group_outlined,
-              title: '人员与热词',
-              subtitle: widget.controller.pendingMemberCount > 0
-                  ? '${widget.controller.pendingMemberCount} 名队员待审批'
-                  : null,
-              badge: widget.controller.pendingMemberCount > 0,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => RosterPage(controller: widget.controller),
+              _SettingsNavRow(
+                icon: Icons.local_fire_department_outlined,
+                title: '单位常用队伍',
+                enabled: widget.controller.api != null,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        UnitStationsPage(api: widget.controller.api!),
+                  ),
                 ),
               ),
-            ),
-            _SettingsShortcut(
-              icon: Icons.archive_outlined,
-              title: '归档警情',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ArchivedIncidentsPage(controller: widget.controller),
-                ),
-              ),
-            ),
-            _SettingsShortcut(
-              icon: Icons.bar_chart_outlined,
-              title: '数据统计',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => StatsPage(controller: widget.controller),
-                ),
-              ),
-            ),
-            _SettingsShortcut(
-              icon: Icons.receipt_long_outlined,
-              title: '操作日志',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => OpLogPage(controller: widget.controller),
-                ),
-              ),
-            ),
-          ]),
-          const SizedBox(height: AppSpacing.s2),
-          _SettingsLinkCard(
-            icon: Icons.local_fire_department_outlined,
-            title: '单位常用队伍',
-            enabled: widget.controller.api != null,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => UnitStationsPage(api: widget.controller.api!),
-              ),
-            ),
+            ],
           ),
-          if (_canManageVideoResources) ...[
-            const SizedBox(height: AppSpacing.s2),
-            _SettingsLinkCard(
-              key: const Key('video-resource-settings'),
-              icon: Icons.videocam_outlined,
-              title: '视频资源管理',
-              enabled: widget.controller.api != null,
-              onTap: () => Navigator.push<void>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      VideoResourceAdminPage(api: widget.controller.api!),
+          const SizedBox(height: AppSpacing.s5),
+          const SectionTitle(text: '数据与记录'),
+          _SettingsGroupCard(
+            children: [
+              _SettingsNavRow(
+                icon: Icons.archive_outlined,
+                title: '归档警情',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        ArchivedIncidentsPage(controller: widget.controller),
+                  ),
                 ),
               ),
-            ),
-          ],
-          const SizedBox(height: 22),
+              _SettingsNavRow(
+                icon: Icons.bar_chart_outlined,
+                title: '数据统计',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StatsPage(controller: widget.controller),
+                  ),
+                ),
+              ),
+              _SettingsNavRow(
+                icon: Icons.history_rounded,
+                title: '操作日志',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => OpLogPage(controller: widget.controller),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s5),
           const SectionTitle(text: '运行策略'),
-          _SettingsAccordion(
-            icon: Icons.calculate_outlined,
-            title: '计算参数',
-            child: _buildCalculationBody(),
+          _SettingsGroupCard(
+            children: [
+              _SettingsExpandRow(
+                icon: Icons.calculate_outlined,
+                title: '计算参数',
+                summary: _calcSummary,
+                expanded: _calcExpanded,
+                onToggle: () => setState(() => _calcExpanded = !_calcExpanded),
+                child: _buildCalculationBody(),
+              ),
+              _SettingsExpandRow(
+                icon: Icons.mic_none_outlined,
+                title: '语音识别',
+                summary: _voiceSummary,
+                expanded: _voiceExpanded,
+                onToggle: () =>
+                    setState(() => _voiceExpanded = !_voiceExpanded),
+                child: _buildVoiceBody(),
+              ),
+              _SettingsExpandRow(
+                icon: Icons.notifications_none_outlined,
+                title: '提醒方式',
+                summary: _alertSummary,
+                expanded: _alertExpanded,
+                onToggle: () =>
+                    setState(() => _alertExpanded = !_alertExpanded),
+                child: _buildAlertBody(),
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.s2),
-          _SettingsAccordion(
-            icon: Icons.mic_none_outlined,
-            title: '语音识别',
-            child: _buildVoiceBody(),
-          ),
-          const SizedBox(height: AppSpacing.s2),
-          _SettingsAccordion(
-            icon: Icons.notifications_none_outlined,
-            title: '提醒方式',
-            child: _buildAlertBody(),
-          ),
-          const SizedBox(height: 22),
+          const SizedBox(height: AppSpacing.s5),
           const SectionTitle(text: '界面外观'),
           _buildAppearanceCard(),
-          const SizedBox(height: 22),
+          const SizedBox(height: AppSpacing.s5),
           const SectionTitle(text: '连接与维护'),
-          _SettingsAccordion(
-            icon: Icons.dns_outlined,
-            title: '服务连接',
-            child: _buildServerBody(),
-          ),
-          const SizedBox(height: AppSpacing.s2),
-          _buildUpdateCard(),
-          const SizedBox(height: AppSpacing.s2),
-          _SettingsLinkCard(
-            icon: Icons.info_outline,
-            title: '关于项目',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AboutPage()),
-            ),
-          ),
-          if (kDebugMode) ...[
-            const SizedBox(height: AppSpacing.s2),
-            _SettingsLinkCard(
-              icon: Icons.palette_outlined,
-              title: 'UI 规范与组件画廊（调试）',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ComponentGalleryPage()),
-              ),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.s6),
-          Column(
+          _SettingsGroupCard(
             children: [
-              Text(
-                kDebugMode
-                    ? '火场智控·测试 v$_displayVersion (Debug)'
-                    : '火场智控 v$_displayVersion',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w600,
+              _SettingsExpandRow(
+                key: _serverSectionKey,
+                icon: Icons.dns_outlined,
+                title: '服务连接',
+                summary: _serverSummary,
+                expanded: _serverExpanded,
+                onToggle: () =>
+                    setState(() => _serverExpanded = !_serverExpanded),
+                child: _buildServerBody(),
+              ),
+              _SettingsNavRow(
+                icon: _checkingUpdate
+                    ? Icons.downloading_outlined
+                    : Icons.system_update_alt_rounded,
+                title: '版本更新',
+                badge: pendingUpdate != null && !_checkingUpdate,
+                trailingText: versionSummary,
+                trailingHighlight: pendingUpdate != null && !_checkingUpdate,
+                enabled: !_checkingUpdate,
+                onTap: _checkUpdate,
+              ),
+              _SettingsNavRow(
+                icon: Icons.info_outline,
+                title: '关于项目',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AboutPage()),
                 ),
               ),
-              const SizedBox(height: AppSpacing.s1),
-              Text(
-                '一线消防员开发 · 开源项目',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textSecondary,
+              if (kDebugMode)
+                _SettingsNavRow(
+                  icon: Icons.palette_outlined,
+                  title: 'UI 规范与组件画廊（调试）',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ComponentGalleryPage(),
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -983,37 +1089,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildFieldGrid(List<Widget> entries) {
-    final compact =
-        MediaQuery.sizeOf(context).width < 400 ||
-        MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
-    final cards = entries;
-    if (compact) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < cards.length; i++) ...[
-            cards[i],
-            if (i < cards.length - 1) const SizedBox(height: AppSpacing.s2),
-          ],
-        ],
-      );
-    }
-    final scale = MediaQuery.textScalerOf(context).scale(1.0);
-    return GridView(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: AppSpacing.s2,
-        mainAxisSpacing: AppSpacing.s2,
-        // 与普通入口卡片保持同一收紧行高（60dp），四块等高；大字号时按比例增高。
-        mainAxisExtent: (60 * scale.clamp(1.0, 1.25)).toDouble(),
-      ),
-      children: cards,
-    );
-  }
-
   Widget _buildCalculationBody() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1051,6 +1126,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 '10 min',
                 keyboard: TextInputType.number,
                 focusNode: _warnFocus,
+                onChanged: (_) => setState(() {}),
               ),
             ),
             const SizedBox(width: AppSpacing.s2),
@@ -1061,6 +1137,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 '5 min',
                 keyboard: TextInputType.number,
                 focusNode: _alarmFocus,
+                onChanged: (_) => setState(() {}),
               ),
             ),
           ],
@@ -1306,43 +1383,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildUpdateCard() {
-    final pending = widget.controller.pendingUpdate;
-    return AppCard(
-      onTap: _checkingUpdate ? null : _checkUpdate,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s4,
-        vertical: AppSpacing.s2,
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48),
-        child: Row(
-          children: [
-            _SettingsIconBox(
-              icon: _checkingUpdate
-                  ? Icons.downloading_outlined
-                  : Icons.system_update_alt_rounded,
-              badge: pending != null && !_checkingUpdate,
-            ),
-            const SizedBox(width: AppSpacing.s3),
-            Expanded(
-              child: Text(
-                '版本更新',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s1),
-            Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _volumeField() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1374,6 +1414,7 @@ class _SettingsPageState extends State<SettingsPage> {
     TextInputType? keyboard,
     bool obscure = false,
     Widget? suffix,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -1382,6 +1423,7 @@ class _SettingsPageState extends State<SettingsPage> {
         focusNode: focusNode,
         keyboardType: keyboard,
         obscureText: obscure,
+        onChanged: onChanged,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -1719,6 +1761,11 @@ class _IdentityHeroCard extends StatelessWidget {
                           key: const Key('user-actions'),
                           tooltip: '用户操作',
                           iconColor: AppColors.textSecondary,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 48,
+                            minHeight: 48,
+                          ),
                           onSelected: (value) {
                             if (value == 'leave') unawaited(onLeave());
                             if (value == 'devices') unawaited(onDevices());
@@ -1739,7 +1786,6 @@ class _IdentityHeroCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                      if (canScan) _HeroScanAction(onTap: onScan),
                     ],
                   ),
                   if (authenticated && reviewCount > 0) ...[
@@ -1759,6 +1805,12 @@ class _IdentityHeroCard extends StatelessWidget {
                         label: Text('$reviewCount 条离线记录待核对'),
                       ),
                     ),
+                  ],
+                  if (canScan) ...[
+                    const SizedBox(height: AppSpacing.s3),
+                    Divider(height: 1, color: AppColors.border),
+                    const SizedBox(height: AppSpacing.s2),
+                    _HeroScanAction(onTap: onScan),
                   ],
                   if (guest) ...[
                     const SizedBox(height: AppSpacing.s4),
@@ -1837,9 +1889,9 @@ class _HeroScanAction extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadius.md),
       onTap: () => unawaited(onTap()),
       child: Container(
-        constraints: const BoxConstraints(minWidth: 56, minHeight: 60),
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
         padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s2,
+          horizontal: AppSpacing.s3,
           vertical: AppSpacing.s2,
         ),
         decoration: BoxDecoration(
@@ -1847,21 +1899,36 @@ class _HeroScanAction extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(color: AppColors.border),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: Row(
           children: [
             Icon(
               Icons.qr_code_scanner_rounded,
-              size: 24,
+              size: 20,
               color: AppColors.textPrimary,
             ),
-            const SizedBox(height: AppSpacing.s1),
+            const SizedBox(width: AppSpacing.s2),
+            Expanded(
+              child: Text(
+                '网页后台扫码登录',
+                style: AppTextStyles.label.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s2),
             Text(
               '扫一扫',
               style: AppTextStyles.caption.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
               ),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: AppColors.textTertiary,
             ),
           ],
         ),
@@ -1913,74 +1980,33 @@ class _SettingsIconBox extends StatelessWidget {
   }
 }
 
-class _SettingsShortcut extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final VoidCallback onTap;
-  final bool badge;
+/// 分组圆角卡片容器：同组条目共用一张白色圆角卡片，组内用细分割线分隔。
+class _SettingsGroupCard extends StatelessWidget {
+  final List<Widget> children;
 
-  const _SettingsShortcut({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    required this.onTap,
-    this.badge = false,
-  });
+  const _SettingsGroupCard({required this.children});
 
   @override
   Widget build(BuildContext context) {
-    final compact =
-        MediaQuery.sizeOf(context).width < 400 ||
-        MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
-    final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
     return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s3,
-        vertical: AppSpacing.s2,
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _SettingsIconBox(icon: icon, badge: badge),
-            const SizedBox(width: AppSpacing.s3),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: compact ? 2 : 1,
-                    overflow: compact
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  if (hasSubtitle) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle!,
-                      maxLines: compact ? 2 : 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textTertiary,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s1),
-            Icon(Icons.chevron_right, size: 20, color: AppColors.textTertiary),
+            for (var i = 0; i < children.length; i++) ...[
+              children[i],
+              if (i < children.length - 1)
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  indent: 64,
+                  endIndent: AppSpacing.s4,
+                  color: AppColors.border,
+                ),
+            ],
           ],
         ),
       ),
@@ -1988,75 +2014,111 @@ class _SettingsShortcut extends StatelessWidget {
   }
 }
 
-class _SettingsLinkCard extends StatelessWidget {
+/// 跳转二级页面的设置条目（右侧为页面推进箭头）。
+class _SettingsNavRow extends StatelessWidget {
+  final Key? rowKey;
   final IconData icon;
   final String title;
   final String? subtitle;
+  final String? trailingText;
+  final bool trailingHighlight;
   final VoidCallback onTap;
   final bool enabled;
+  final bool badge;
 
-  const _SettingsLinkCard({
-    super.key,
+  const _SettingsNavRow({
+    this.rowKey,
     required this.icon,
     required this.title,
     this.subtitle,
+    this.trailingText,
+    this.trailingHighlight = false,
     required this.onTap,
     this.enabled = true,
+    this.badge = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final hasSubtitle = subtitle != null && subtitle!.isNotEmpty;
+    final hasTrailing = trailingText != null && trailingText!.isNotEmpty;
+    final compactScale = MediaQuery.textScalerOf(context).scale(1.0) > 1.35;
+
     return Opacity(
       opacity: enabled ? 1 : 0.45,
-      child: AppCard(
+      child: InkWell(
+        key: rowKey ?? Key('settings-row-$title'),
         onTap: enabled ? onTap : null,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s4,
-          vertical: AppSpacing.s2,
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 48),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              _SettingsIconBox(icon: icon),
-              const SizedBox(width: AppSpacing.s3),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    if (hasSubtitle) ...[
-                      const SizedBox(height: 2),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s4,
+            vertical: 10,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _SettingsIconBox(icon: icon, badge: badge),
+                const SizedBox(width: AppSpacing.s3),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        subtitle!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.textTertiary,
+                        title,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
                         ),
                       ),
+                      if (hasSubtitle) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textTertiary,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.s1),
-              Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: AppColors.textTertiary,
-              ),
-            ],
+                if (hasTrailing) ...[
+                  const SizedBox(width: AppSpacing.s2),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: compactScale ? 110 : 140,
+                    ),
+                    child: Text(
+                      trailingText!,
+                      maxLines: compactScale ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: AppTextStyles.caption.copyWith(
+                        fontSize: 13,
+                        fontWeight: trailingHighlight
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                        color: trailingHighlight
+                            ? AppColors.actionPrimary
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(width: AppSpacing.s1),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: AppColors.textTertiary,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2104,121 +2166,148 @@ class _SyncNotice extends StatelessWidget {
   }
 }
 
-/// 可折叠分区：卡片标题与内容保持同一层级，避免运行策略内部间距失衡。
-class _SettingsAccordion extends StatefulWidget {
+/// 组内可折叠条目：右侧展示当前状态摘要与圆形展开指示器，与跳转行明确区分。
+class _SettingsExpandRow extends StatelessWidget {
   final IconData icon;
   final String title;
+  final String summary;
+  final bool expanded;
+  final VoidCallback onToggle;
   final Widget child;
 
-  const _SettingsAccordion({
+  const _SettingsExpandRow({
+    super.key,
     required this.icon,
     required this.title,
+    required this.summary,
+    required this.expanded,
+    required this.onToggle,
     required this.child,
   });
 
   @override
-  State<_SettingsAccordion> createState() => _SettingsAccordionState();
-}
-
-class _SettingsAccordionState extends State<_SettingsAccordion> {
-  bool _expanded = false;
-
-  @override
   Widget build(BuildContext context) {
     final disableAnimations = MediaQuery.of(context).disableAnimations;
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Semantics(
-            container: true,
-            button: true,
-            excludeSemantics: true,
-            expanded: _expanded,
-            label: '${widget.title}，${_expanded ? '已展开' : '已收起'}',
-            hint: _expanded ? '点击收起设置' : '点击展开设置',
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: InkWell(
-              excludeFromSemantics: true,
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s4,
-                  vertical: AppSpacing.s2,
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 48),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _SettingsIconBox(icon: widget.icon),
-                      const SizedBox(width: AppSpacing.s3),
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    widget.title,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: AppSpacing.s2),
-                                Icon(
-                                  _expanded
-                                      ? Icons.keyboard_arrow_up_rounded
-                                      : Icons.keyboard_arrow_down_rounded,
-                                  size: 20,
-                                  color: AppColors.textTertiary,
-                                ),
-                              ],
-                            ),
-                          ],
+    final compactScale = MediaQuery.textScalerOf(context).scale(1.0) > 1.35;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Semantics(
+          container: true,
+          button: true,
+          excludeSemantics: true,
+          expanded: expanded,
+          label: '$title，$summary，${expanded ? '已展开' : '已收起'}',
+          hint: expanded ? '点击收起设置' : '点击展开设置',
+          onTap: onToggle,
+          child: InkWell(
+            key: Key('settings-row-$title'),
+            excludeFromSemantics: true,
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.s4,
+                vertical: 10,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 36),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _SettingsIconBox(icon: icon),
+                    const SizedBox(width: AppSpacing.s3),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: AppSpacing.s2),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: compactScale ? 110 : 140,
+                      ),
+                      child: Text(
+                        summary,
+                        maxLines: compactScale ? 2 : 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: AppTextStyles.caption.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.s2),
+                    Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: expanded
+                            ? AppColors.actionPrimary.withValues(alpha: 0.12)
+                            : AppColors.surfaceSubtle,
+                      ),
+                      child: Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        size: 18,
+                        color: expanded
+                            ? AppColors.actionPrimary
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          AnimatedCrossFade(
-            duration: disableAnimations
-                ? Duration.zero
-                : const Duration(milliseconds: 220),
-            firstCurve: Curves.easeOut,
-            secondCurve: Curves.easeIn,
-            sizeCurve: Curves.easeOut,
-            crossFadeState: _expanded
-                ? CrossFadeState.showFirst
-                : CrossFadeState.showSecond,
-            firstChild: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.s4,
-                0,
-                AppSpacing.s4,
-                AppSpacing.s4,
+        ),
+        AnimatedCrossFade(
+          duration: disableAnimations
+              ? Duration.zero
+              : const Duration(milliseconds: 220),
+          firstCurve: Curves.easeOut,
+          secondCurve: Curves.easeIn,
+          sizeCurve: Curves.easeOut,
+          crossFadeState: expanded
+              ? CrossFadeState.showFirst
+              : CrossFadeState.showSecond,
+          firstChild: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Divider(
+                height: 1,
+                indent: AppSpacing.s4,
+                endIndent: AppSpacing.s4,
+                color: AppColors.border.withValues(alpha: 0.6),
               ),
-              child: widget.child,
-            ),
-            secondChild: const SizedBox(width: double.infinity),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.s4,
+                  AppSpacing.s3,
+                  AppSpacing.s4,
+                  AppSpacing.s4,
+                ),
+                child: child,
+              ),
+            ],
           ),
-        ],
-      ),
+          secondChild: const SizedBox(width: double.infinity),
+        ),
+      ],
     );
   }
 }
 
 /// 配色选项：四色预览 + 名称 + 选中态。
-/// 预览色来自该 palette 自身（而不是当前主题），方便直接比较两套方案。
+/// 预览色来自该 palette 自身（而不是当前主题），方便直接比较三套方案。
 class _ThemeOption extends StatelessWidget {
   final AppPalette palette;
   final bool selected;
@@ -2259,53 +2348,61 @@ class _ThemeOption extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 用目标配色预览色块，其余界面保持当前主题的视觉语言。
-              Wrap(
-                spacing: AppSpacing.s1,
-                runSpacing: AppSpacing.s1,
-                children: [
-                  for (final color in [
-                    palette.background,
-                    palette.surfaceSubtle,
-                    palette.actionPrimary,
-                    palette.voice,
-                  ])
-                    Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: palette.border),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.s2),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Text(
-                      palette.label,
-                      style: AppTextStyles.label.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
+                    child: Wrap(
+                      spacing: AppSpacing.s1,
+                      runSpacing: AppSpacing.s1,
+                      children: [
+                        for (final color in [
+                          palette.background,
+                          palette.surfaceSubtle,
+                          palette.actionPrimary,
+                          palette.voice,
+                        ])
+                          Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: color,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: palette.border),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  if (selected)
+                  if (selected) ...[
+                    const SizedBox(width: AppSpacing.s1),
                     Icon(
-                      Icons.check_circle_outline,
+                      Icons.check_circle_rounded,
                       size: 16,
                       color: AppColors.actionPrimary,
                     ),
+                  ],
                 ],
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              Text(
+                palette.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.label.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
               ),
               const SizedBox(height: AppSpacing.s1),
               Text(
                 switch (palette.id) {
                   'daylight' => '高可视亮色',
+                  'night-tactical' => '深色护眼',
                   _ => '暖纸陶土',
                 },
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.caption.copyWith(
                   color: AppColors.textSecondary,
                 ),

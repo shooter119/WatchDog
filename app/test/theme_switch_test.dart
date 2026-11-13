@@ -68,6 +68,8 @@ void main() {
       400,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('暖砂'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('暖砂'));
     await tester.pumpAndSettle();
 
@@ -100,12 +102,30 @@ void main() {
 
     expect(sectionBarColor(), AppPalette.warmSand.actionPrimary);
 
+    // 切到夜间战术
+    await tester.scrollUntilVisible(
+      find.text('夜间战术'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.text('夜间战术'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('夜间战术'));
+    await tester.pumpAndSettle();
+    expect(AppColors.palette.id, 'night-tactical');
+    expect(
+      Theme.of(tester.element(find.byType(SettingsPage))).brightness,
+      Brightness.dark,
+    );
+
     // 切回昼白（换 key 会重建页面，滚动位置回到顶部，需要重新滚到该分区）
     await tester.scrollUntilVisible(
       find.text('昼白'),
       400,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('昼白'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('昼白'));
     await tester.pumpAndSettle();
     expect(AppColors.palette.id, 'daylight');

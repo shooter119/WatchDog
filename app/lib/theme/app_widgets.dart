@@ -892,6 +892,8 @@ class ConnectionStatus extends StatelessWidget {
   final bool syncing;
   final String? syncError;
   final VoidCallback? onRetry;
+  final VoidCallback? onInspect;
+  final String? inspectHint;
 
   const ConnectionStatus({
     super.key,
@@ -900,6 +902,8 @@ class ConnectionStatus extends StatelessWidget {
     this.syncing = false,
     this.syncError,
     this.onRetry,
+    this.onInspect,
+    this.inspectHint,
   });
 
   @override
@@ -907,6 +911,8 @@ class ConnectionStatus extends StatelessWidget {
     final isFailed = !localOnly && syncError != null && !syncing;
     final canRetry =
         !localOnly && !syncing && onRetry != null && (!connected || isFailed);
+    final canInspect = onInspect != null;
+    final interactive = canRetry || canInspect;
     final pillHeight = (MediaQuery.textScalerOf(context).scale(11) * 1.4 + 8)
         .clamp(24.0, 64.0)
         .toDouble();
@@ -932,24 +938,51 @@ class ConnectionStatus extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+        if (canInspect) ...[
+          const SizedBox(width: 2),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 13,
+            color: AppColors.textTertiary,
+          ),
+        ],
       ],
     );
+    final hint = canRetry && canInspect
+        ? '点击重试同步并查看服务连接'
+        : canRetry
+        ? '点击重试同步'
+        : canInspect
+        ? (inspectHint ?? '点击查看服务连接')
+        : null;
+    final tooltipMessage = canRetry && canInspect
+        ? '重试并查看连接'
+        : canRetry
+        ? '重试同步'
+        : canInspect
+        ? (inspectHint ?? '查看服务连接')
+        : label;
     return Semantics(
       container: true,
-      button: canRetry,
-      enabled: canRetry,
+      button: interactive,
+      enabled: interactive,
       label: localOnly || syncError == null ? label : '$label：$syncError',
-      hint: canRetry ? '点击重试同步' : null,
+      hint: hint,
       child: Tooltip(
-        message: canRetry ? '重试同步' : label,
+        message: tooltipMessage,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: canRetry ? onRetry : null,
+          onTap: interactive
+              ? () {
+                  if (canRetry) onRetry!();
+                  if (canInspect) onInspect!();
+                }
+              : null,
           child: ConstrainedBox(
-            // 重试按钮保留48dp热区，胶囊固定顶部对齐，避免标题随点击区域错位。
+            // 重试或查看详情时保留48dp热区，胶囊固定顶部对齐，避免标题随点击区域错位。
             constraints: BoxConstraints(
               minWidth: 48,
-              minHeight: canRetry ? 48 : pillHeight,
+              minHeight: interactive ? 48 : pillHeight,
             ),
             child: Align(
               alignment: Alignment.topCenter,

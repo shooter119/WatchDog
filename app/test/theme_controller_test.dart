@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:watchdog/services/settings.dart';
@@ -73,13 +74,14 @@ void main() {
     expect(AppColors.palette.id, 'daylight');
   });
 
-  test('旧夜间主题偏好回落并保存为昼白', () async {
+  test('夜间战术主题偏好加载并生效', () async {
     SharedPreferences.setMockInitialValues({'app_theme': 'night-tactical'});
     await ThemeController.instance.load();
-    expect(ThemeController.instance.currentId, 'daylight');
-    expect(await Settings.appThemeId, 'daylight');
+    expect(ThemeController.instance.currentId, 'night-tactical');
+    expect(AppColors.palette.brightness, Brightness.dark);
+    expect(await Settings.appThemeId, 'night-tactical');
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('app_theme'), 'daylight');
+    expect(prefs.getString('app_theme'), 'night-tactical');
   });
 
   test('主题偏好不进入服务端同步载荷', () async {

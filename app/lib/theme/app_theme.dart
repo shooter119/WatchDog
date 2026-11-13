@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_palette.dart';
 import 'app_widgets.dart';
@@ -55,6 +56,9 @@ ThemeData buildAppTheme([AppPalette? palette]) {
       elevation: 0,
       centerTitle: false,
       surfaceTintColor: Colors.transparent,
+      systemOverlayStyle: p.brightness == Brightness.dark
+          ? SystemUiOverlayStyle.light
+          : SystemUiOverlayStyle.dark,
       titleTextStyle: TextStyle(
         color: p.textPrimary,
         fontSize: 20,

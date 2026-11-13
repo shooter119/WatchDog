@@ -6,9 +6,10 @@ import 'package:flutter/material.dart';
 /// 界面只引用 `AppColors` 门面，不直接引用本文件；`AppPalette` 是
 /// 不可变值对象，切换主题时整个实例替换，避免逐字段修改留下半新半旧。
 ///
-/// 两套方案：
+/// 三套方案：
 /// - `daylight` 昼白：现行高可视亮色，冷灰底 + 高饱和状态色
 /// - `warmSand` 暖砂：暖纸底 + 陶土红，低饱和但保留状态语义
+/// - `nightTactical` 夜间战术：深色底保护暗适应，兼顾暗光高亮警情状态色
 ///
 /// 纪律：
 /// 1. `daylight` 是默认值，色值必须与历史 `AppColors` 常量逐字相等，
@@ -176,7 +177,7 @@ class AppPalette {
     return daylight;
   }
 
-  static const List<AppPalette> values = [daylight, warmSand];
+  static const List<AppPalette> values = [daylight, warmSand, nightTactical];
 
   /// 昼白：现行高可视亮色（默认）
   ///
@@ -262,10 +263,10 @@ class AppPalette {
     label: '暖砂',
     background: Color(0xFFF7F5EF),
     surface: Color(0xFFFFFFFF),
-    surfaceSubtle: Color(0xFFEFECE3),
+    surfaceSubtle: Color(0xFFE2DCD0),
     cautionSurface: Color(0xFFFAF1D6),
     avatarBackdrop: Color(0xFFEDE6DA),
-    border: Color(0xFFDCD6C8),
+    border: Color(0xFFC4BDB0),
     textPrimary: Color(0xFF1F1E1D),
     textSecondary: Color(0xFF57544C),
     textTertiary: Color(0xFF6A665B),
@@ -319,6 +320,75 @@ class AppPalette {
       BoxShadow(
         color: Color(0x1A3D2E24),
         blurRadius: 12,
+        offset: Offset(0, 4),
+      ),
+    ],
+  );
+
+  /// 夜间战术：深色底保护暗适应
+  static const AppPalette nightTactical = AppPalette(
+    brightness: Brightness.dark,
+    id: 'night-tactical',
+    label: '夜间战术',
+    background: Color(0xFF0C0F14),
+    surface: Color(0xFF161B22),
+    surfaceSubtle: Color(0xFF21262D),
+    cautionSurface: Color(0xFF2A2210),
+    avatarBackdrop: Color(0xFF1B2D38),
+    border: Color(0xFF3D444D),
+    textPrimary: Color(0xFFF0F6FC),
+    textSecondary: Color(0xFFC9D1D9),
+    textTertiary: Color(0xFF8B949E),
+    safe: Color(0xFF1A7F37),
+    caution: Color(0xFF8F6100),
+    alarm: Color(0xFFD1242F),
+    timeout: Color(0xFF7A1A1A),
+    safeText: Color(0xFF3FB950),
+    cautionText: Color(0xFFD29922),
+    alarmText: Color(0xFFF85149),
+    timeoutText: Color(0xFFFFA198),
+    destructive: Color(0xFFB91C1C),
+    voice: Color(0xFFE5560A),
+    voicePressed: Color(0xFFC2410C),
+    noticeWarningBg: Color(0xFF2D2408),
+    noticeWarningFg: Color(0xFFE3B341),
+    actionPrimary: Color(0xFFF0F6FC),
+    onPrimary: Color(0xFF0C0F14),
+    onStatus: Color(0xFFFFFFFF),
+    online: Color(0xFF3FB950),
+    noteInfo: Color(0xFF58A6FF),
+    incidentFire: Color(0xFFF85149),
+    incidentFireText: Color(0xFFFF7B72),
+    incidentFireSurface: Color(0xFF2B1418),
+    incidentRescue: Color(0xFFD29922),
+    incidentRescueText: Color(0xFFE3B341),
+    incidentRescueSurface: Color(0xFF2A2210),
+    incidentAid: Color(0xFF58A6FF),
+    incidentAidText: Color(0xFF79C0FF),
+    incidentAidSurface: Color(0xFF122334),
+    rankGold: Color(0xFFE3B341),
+    rankSilver: Color(0xFF8B949E),
+    rankBronze: Color(0xFFD49B6A),
+    heroBackground: Color(0xFF090D12),
+    heroMuted: Color(0xFF8B949E),
+    heroActive: Color(0xFF56D364),
+    heroInactive: Color(0xFF8B949E),
+    heroLabel: Color(0xFF8B949E),
+    heroOnDark: Color(0xFFF0F6FC),
+    heroOnDarkBorder: Color(0x3DF0F6FC),
+    heroOnDarkRing: Color(0x0AF0F6FC),
+    heroOnDarkRingFaint: Color(0x08F0F6FC),
+    cardShadow: [
+      BoxShadow(
+        color: Color(0x80000000),
+        blurRadius: 3,
+        offset: Offset(0, 1),
+      ),
+    ],
+    floatShadow: [
+      BoxShadow(
+        color: Color(0xCC000000),
+        blurRadius: 10,
         offset: Offset(0, 4),
       ),
     ],

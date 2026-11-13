@@ -96,16 +96,10 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
   final VideoPlaybackSession _videoPlayback = VideoPlaybackSession();
-  final TextEditingController _chatInput =
-      TextEditingController(); // 辅助页输入条（全局底部聊天操作条）
-  final FocusNode _chatInputFocus = FocusNode(); // 辅助页文字输入切换按钮聚焦目标
   int _tab = 2; // 警情处置默认进入（tab 顺序：日志0/看板1/警情处置2/辅助3/设置4）
-  int _preChatTab = 2; // 进入辅助页前的 tab（顶部返回/系统返回都回来源页而非固定看板）
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换到警情处置后自动开始录音
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
   bool _processing = false; // 识别/确认中（禁用语音按钮，避免重复触发）
-  bool _chatSending = false; // 问答请求中（底部发送按钮转圈禁用）
-  bool _chatTextMode = false; // 辅助页输入模式：false=悬浮麦克风（默认）；true=文字输入（麦克风隐藏）
 
   @override
   void initState() {
@@ -136,8 +130,6 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _videoPlayback.removeListener(_syncSystemPip);
     SystemPip.isActive.removeListener(_handlePipActiveChanged);
-    _chatInput.dispose();
-    _chatInputFocus.dispose();
     _videoPlayback.dispose();
     controller.dispose();
     super.dispose();
@@ -168,10 +160,11 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     if (controller.needsIncidentSelection) return;
     HapticFeedback.selectionClick();
     DiagnosticLogService.instance.setPage(_pageName(i));
+    if (_tab == 3 && i != 3) {
+      _chatKey.currentState?.dismissKeyboard();
+    }
     setState(() {
-      if (i == 3 && _tab != 3) _preChatTab = _tab; // 记录进入辅助页前的来源页
       _tab = i;
-      if (i != 3) _chatTextMode = false; // 离开辅助页重置为悬浮麦克风态
     });
   }
 
@@ -205,11 +198,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   void _voiceTap() {
     if (controller.needsIncidentSelection) return;
     if (_recording) {
-      if (_tab == 3) {
-        _chatKey.currentState?.finishRecording();
-      } else {
-        _homeKey.currentState?.finishRecording();
-      }
+      _homeKey.currentState?.finishRecording();
     } else {
       _goVoice();
     }
@@ -217,18 +206,16 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 
   void _voiceLongPressStart(LongPressStartDetails _) {
     if (controller.needsIncidentSelection) return;
-    if (_tab != 3 && controller.requiresIncident) {
+    if (controller.requiresIncident) {
       controller.requestIncidentSelection();
       return;
     }
     HapticFeedback.mediumImpact();
     if (_processing) return;
-    // 问答页就地录音：转写文本直接发给辅助 AI
-    if (_tab == 3) {
-      _chatKey.currentState?.beginRecording();
-      return;
-    }
     if (_tab != 2) {
+      if (_tab == 3) {
+        _chatKey.currentState?.dismissKeyboard();
+      }
       setState(() {
         _tab = 2;
         _pendingVoice = true;
@@ -240,17 +227,13 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 
   void _voiceLongPressEnd(LongPressEndDetails _) {
     if (controller.needsIncidentSelection) return;
-    if (_tab != 3 && controller.requiresIncident) return;
+    if (controller.requiresIncident) return;
     if (_pendingVoice) {
       // 切页后的首帧录音尚未启动时松手，取消自动录音请求。
       setState(() => _pendingVoice = false);
       return;
     }
-    if (_tab == 3) {
-      _chatKey.currentState?.finishRecording();
-    } else {
-      _homeKey.currentState?.finishRecording();
-    }
+    _homeKey.currentState?.finishRecording();
   }
 
   /// 语音识别为火场日志：自动记入 + 跳日志页
@@ -292,15 +275,6 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     _chatKey.currentState?.submitQuestion(text);
   }
 
-  /// 辅助页底部操作条发送（文字/语音识别为提问）
-  void _chatSubmit(String text) {
-    if (controller.needsIncidentSelection) return;
-    final clean = text.trim();
-    if (clean.isEmpty) return;
-    _chatInput.clear();
-    _chatKey.currentState?.submitQuestion(clean);
-  }
-
   @override
   Widget build(BuildContext context) {
     // 切换主题 = 换一个 palette 实例 + 重建 MaterialApp，因此监听必须包在
@@ -324,10 +298,16 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
       theme: buildAppTheme(),
       // 默认 200ms 的 Theme 渐变会与瞬切的 AppColors 并存，出现两套配色。
       themeAnimationDuration: Duration.zero,
-      builder: (context, child) => ValueListenableBuilder<bool>(
-        valueListenable: SystemPip.isActive,
-        builder: (context, inPip, _) =>
-            inPip ? PipShell(session: _videoPlayback) : (child ?? const SizedBox.shrink()),
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: AppColors.palette.brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
+        child: ValueListenableBuilder<bool>(
+          valueListenable: SystemPip.isActive,
+          builder: (context, inPip, _) => inPip
+              ? PipShell(session: _videoPlayback)
+              : (child ?? const SizedBox.shrink()),
+        ),
       ),
       // 换主题时按 palette 换 key 强制重建整棵页面树：在 build 里读 AppColors
       // 的 const 组件会被 Flutter 的 identical 短路跳过，留下旧色。
@@ -353,17 +333,9 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                 videoPlayback: _videoPlayback,
                 onVideoFloating: () => _selectTab(2),
               ),
-              ChatPage(
-                key: _chatKey,
-                controller: controller,
-                onBack: () => _selectTab(_preChatTab),
-                onRecordingChanged: (v) => setState(() => _recording = v),
-                onProcessingChanged: (v) => setState(() => _processing = v),
-                onSendingChanged: (v) => setState(() => _chatSending = v),
-              ),
+              ChatPage(key: _chatKey, controller: controller),
               SettingsPage(controller: controller),
             ];
-            // 辅助页系统返回键 = 回来源页（与顶部返回箭头一致）；其它页维持系统默认（退出）
             final startupGateLocked =
                 controller.needsAuthentication ||
                 controller.needsIncidentSelection;
@@ -505,21 +477,6 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                     pendingCount: controller.pendingMemberCount,
                     recording: _recording,
                     processing: _processing,
-                    chatMode: _tab == 3,
-                    chatTextMode: _chatTextMode,
-                    chatController: _chatInput,
-                    chatInputFocus: _chatInputFocus,
-                    chatSending: _chatSending,
-                    onChatSubmit: _chatSubmit,
-                    onChatTextModeChange: (v) {
-                      if (startupGateLocked) return;
-                      setState(() => _chatTextMode = v);
-                      if (v) {
-                        _chatInputFocus.requestFocus();
-                      } else {
-                        _chatInputFocus.unfocus();
-                      }
-                    },
                     onSelect: _selectTab,
                     onVoiceTap: _voiceTap,
                     onVoiceLongPressStart: _voiceLongPressStart,
@@ -529,12 +486,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
               ),
             );
             return PopScope(
-              canPop: !startupGateLocked && _tab != 3,
-              onPopInvokedWithResult: (didPop, _) {
-                if (!didPop && !startupGateLocked && _tab == 3) {
-                  _selectTab(_preChatTab);
-                }
-              },
+              canPop: !startupGateLocked,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -603,7 +555,9 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                       }
                       return Positioned(
                         right: 12,
-                        bottom: 84 + MediaQuery.paddingOf(context).bottom,
+                        bottom:
+                            (_tab == 3 ? 148 : 84) +
+                            MediaQuery.paddingOf(context).bottom,
                         child: FloatingVideoWindow(
                           session: _videoPlayback,
                           onFullscreen: () => _fullscreenFloatingVideo(context),
@@ -621,22 +575,13 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   }
 }
 
-/// 底部导航：日志 / 看板 / 中央凸起语音按钮 / 辅助 / 设置（左右对称）
-/// 辅助页（chatMode）：默认仅悬浮麦克风入口（无导航、无输入框）；
-/// 点「文字」切换为文字输入（麦克风隐藏，输入框+键盘呼出）
+/// 底部导航：日志 / 看板 / 中央凸起「处置」语音按钮 / 辅助 / 设置（全页常驻）
 class _BottomNav extends StatelessWidget {
   final int index;
   final bool boardAlert;
   final int pendingCount;
   final bool recording; // 录音中：按钮变停止图标 + 橙色脉冲 + 上方提示
   final bool processing; // 识别/确认中：禁用语音按钮
-  final bool chatMode; // 辅助页：底部变身聊天操作条（语音+输入+发送）
-  final bool chatTextMode; // 辅助页文字输入模式（true=输入框，麦克风隐藏）
-  final TextEditingController chatController;
-  final FocusNode chatInputFocus; // 文字输入切换按钮的聚焦目标
-  final bool chatSending; // 问答请求中：发送按钮转圈
-  final ValueChanged<String> onChatSubmit;
-  final ValueChanged<bool> onChatTextModeChange; // 切换文字/语音输入模式
   final ValueChanged<int> onSelect;
   final VoidCallback onVoiceTap;
   final GestureLongPressStartCallback onVoiceLongPressStart;
@@ -648,13 +593,6 @@ class _BottomNav extends StatelessWidget {
     this.pendingCount = 0,
     required this.recording,
     required this.processing,
-    required this.chatMode,
-    required this.chatTextMode,
-    required this.chatController,
-    required this.chatInputFocus,
-    required this.chatSending,
-    required this.onChatSubmit,
-    required this.onChatTextModeChange,
     required this.onSelect,
     required this.onVoiceTap,
     required this.onVoiceLongPressStart,
@@ -664,133 +602,9 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
-    // Scaffold 不会把 bottomNavigationBar 顶过键盘（body 才避让），
-    // 这里手动加 viewInsets 底边距，让辅助页输入条悬浮在键盘上方。
-    final keyboardInset = chatMode
-        ? MediaQuery.viewInsetsOf(context).bottom
-        : 0.0;
-    if (chatMode) {
-      if (!chatTextMode) {
-        // 语音态：中央凸起圆形橙色麦克风（与普通页 VoiceButton 一致）+ 左侧「文字」切换，无输入框
-        return Container(
-          key: const Key('bottom-nav-surface'),
-          height: 68 + safeBottom,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border(top: BorderSide(color: AppColors.border)),
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                left: 0,
-                right: 0,
-                top: -2,
-                child: Center(
-                  child: VoiceButton(
-                    recording: recording,
-                    processing: processing,
-                    enabled: true,
-                    onTap: onVoiceTap,
-                    onLongPressStart: onVoiceLongPressStart,
-                    onLongPressEnd: onVoiceLongPressEnd,
-                  ),
-                ),
-              ),
-              if (recording)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: -64,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.voice,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        boxShadow: AppShadow.float,
-                      ),
-                      child: const Text(
-                        '正在聆听，松开结束',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: safeBottom,
-                child: SizedBox(
-                  height: 56,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _TextInputToggle(
-                          textMode: false,
-                          onTap: () => onChatTextModeChange(true),
-                        ),
-                      ),
-                      const Expanded(child: SizedBox()),
-                      const Expanded(child: SizedBox()),
-                      const Expanded(child: SizedBox()),
-                      const Expanded(child: SizedBox()),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-      // 文字态：输入框 + 发送（呼出键盘），麦克风隐藏，底部「语音」切换回语音态
-      return Container(
-        key: const Key('bottom-nav-surface'),
-        padding: EdgeInsets.only(bottom: safeBottom + keyboardInset),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ChatActionBar(
-              controller: chatController,
-              focusNode: chatInputFocus,
-              sending: chatSending,
-              onSend: () => onChatSubmit(chatController.text),
-            ),
-            SizedBox(
-              height: 56,
-              child: Row(
-                children: [
-                  const Expanded(child: SizedBox()),
-                  const Expanded(child: SizedBox()),
-                  Expanded(
-                    child: _TextInputToggle(
-                      textMode: true,
-                      onTap: () => onChatTextModeChange(false),
-                    ),
-                  ),
-                  const Expanded(child: SizedBox()),
-                  const Expanded(child: SizedBox()),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
     final labelScaleHeight = (MediaQuery.textScalerOf(context).scale(12) * 1.2)
         .ceilToDouble();
-    final barHeight = math.max(72.0, 58.0 + labelScaleHeight);
+    final barHeight = math.max(74.0, 60.0 + labelScaleHeight);
     return Container(
       key: const Key('bottom-nav-surface'),
       height: barHeight + safeBottom,
@@ -891,130 +705,6 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-/// 辅助页文字输入操作条：输入框 + 发送（仅文字态显示，无麦克风图标）
-class _ChatActionBar extends StatelessWidget {
-  final TextEditingController controller;
-  final FocusNode? focusNode;
-  final bool sending;
-  final VoidCallback onSend;
-
-  const _ChatActionBar({
-    required this.controller,
-    this.focusNode,
-    required this.sending,
-    required this.onSend,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 104),
-              child: TextField(
-                controller: controller,
-                focusNode: focusNode,
-                minLines: 1,
-                maxLines: 4,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (v) => onSend(),
-                decoration: const InputDecoration(
-                  hintText: '输入你的问题…',
-                  isDense: true,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton(
-            onPressed: sending ? null : onSend,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size(56, 56),
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-              ),
-            ),
-            child: sending
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.send_rounded, size: 20),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 辅助页输入模式切换按钮：语音态显示「文字」，文字态显示「语音」，互斥切换
-class _TextInputToggle extends StatelessWidget {
-  final bool textMode; // true=当前为文字输入模式
-  final VoidCallback onTap;
-
-  const _TextInputToggle({required this.textMode, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final icon = textMode ? Icons.mic_rounded : Icons.keyboard_alt_outlined;
-    final label = textMode ? '语音' : '文字';
-    final disableAnimations = MediaQuery.of(context).disableAnimations;
-    final color = AppColors.textTertiary;
-    return Semantics(
-      label: textMode ? '切换为语音输入' : '切换为文字输入',
-      button: true,
-      excludeSemantics: true,
-      onTap: onTap,
-      child: InkWell(
-        onTap: onTap,
-        child: Center(
-          child: AnimatedContainer(
-            duration: disableAnimations
-                ? Duration.zero
-                : const Duration(milliseconds: 160),
-            curve: Curves.easeOut,
-            margin: const EdgeInsets.symmetric(vertical: 2),
-            constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Transform.translate(
-                  offset: const Offset(0, -1),
-                  child: Icon(icon, size: 28, color: color),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.1,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _CenterDisposeNavSlot extends StatelessWidget {
   final bool selected;
   final bool recording;
@@ -1034,7 +724,7 @@ class _CenterDisposeNavSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.textPrimary : AppColors.textTertiary;
+    final color = selected ? AppColors.actionPrimary : AppColors.textTertiary;
     final disableAnimations = MediaQuery.of(context).disableAnimations;
     return Column(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -1061,7 +751,7 @@ class _CenterDisposeNavSlot extends StatelessWidget {
             child: SizedBox(
               width: double.infinity,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 5),
+                padding: const EdgeInsets.only(bottom: 6),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1083,8 +773,8 @@ class _CenterDisposeNavSlot extends StatelessWidget {
                           ? Duration.zero
                           : const Duration(milliseconds: 160),
                       curve: Curves.easeOut,
-                      width: 18,
-                      height: 2.5,
+                      width: 20,
+                      height: 3,
                       decoration: BoxDecoration(
                         color: selected ? AppColors.voice : Colors.transparent,
                         borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -1120,7 +810,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.textPrimary : AppColors.textTertiary;
+    final color = selected ? AppColors.actionPrimary : AppColors.textTertiary;
     final disableAnimations = MediaQuery.of(context).disableAnimations;
     final semanticsLabel = hasAlert ? '$label，有人员危险' : label;
     return Semantics(
@@ -1138,47 +828,68 @@ class _NavItem extends StatelessWidget {
               : const Duration(milliseconds: 160),
           curve: Curves.easeOut,
           constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
-          padding: const EdgeInsets.fromLTRB(6, 4, 6, 5),
+          padding: const EdgeInsets.fromLTRB(4, 3, 4, 6),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  NavIcon(glyph: glyph, color: color, size: 28),
-                  if (hasAlert)
-                    Positioned(
-                      right: -3,
-                      top: -3,
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: AppColors.alarm,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.surface,
-                            width: 2,
+              AnimatedContainer(
+                duration: disableAnimations
+                    ? Duration.zero
+                    : const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 1,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? AppColors.actionPrimary.withValues(alpha: 0.10)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    NavIcon(
+                      glyph: glyph,
+                      color: color,
+                      size: 28,
+                      selected: selected,
+                    ),
+                    if (hasAlert)
+                      Positioned(
+                        right: -3,
+                        top: -3,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: AppColors.alarm,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.surface,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (hasBadge)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: AppColors.caution,
+                            shape: BoxShape.circle,
                           ),
                         ),
                       ),
-                    )
-                  else if (hasBadge)
-                    Positioned(
-                      right: -2,
-                      top: -2,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFF59E0B),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
               Text(
                 label,
                 maxLines: 1,
@@ -1197,8 +908,8 @@ class _NavItem extends StatelessWidget {
                     ? Duration.zero
                     : const Duration(milliseconds: 160),
                 curve: Curves.easeOut,
-                width: 18,
-                height: 2.5,
+                width: 20,
+                height: 3,
                 decoration: BoxDecoration(
                   color: selected ? AppColors.actionPrimary : Colors.transparent,
                   borderRadius: BorderRadius.circular(AppRadius.pill),

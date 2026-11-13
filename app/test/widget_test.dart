@@ -38,6 +38,7 @@ class _FakeController extends AppController {
     List<Entry> entries = const [],
     List<Firefighter> firefighters = const [],
     List<Note> notes = const [],
+    Future<void> Function()? onRefreshNow,
     Incident? currentIncident = const Incident(
       id: 'test-incident',
       number: '2026-8-9-8-59',
@@ -45,7 +46,8 @@ class _FakeController extends AppController {
       createdAt: 1,
       lastActivityAt: 1,
     ),
-  }) : super() {
+  }) : _onRefreshNow = onRefreshNow,
+       super() {
     this.entries = entries;
     this.firefighters = firefighters;
     this.notes = notes;
@@ -56,11 +58,17 @@ class _FakeController extends AppController {
   }
   final exited = <String>[];
   final reported = <double>[];
+  final Future<void> Function()? _onRefreshNow;
 
   bool fakeNeedsAuthentication = false;
   bool fakeIsGuest = false;
   bool fakeCanReadKeySites = false;
   int createIncidentCalls = 0;
+
+  @override
+  Future<void> refreshNow() async {
+    await _onRefreshNow?.call();
+  }
 
   @override
   bool get canReadKeySites => fakeCanReadKeySites;
@@ -1194,10 +1202,8 @@ void main() {
       const labels = ['水印设置', '人员与热词'];
       double? commonHeight;
       for (final label in labels) {
-        final card = find
-            .ancestor(of: find.text(label), matching: find.byType(AppCard))
-            .first;
-        final height = tester.getSize(card).height;
+        final row = find.byKey(Key('settings-row-$label'));
+        final height = tester.getSize(row).height;
         // 无说明小字时按内容收紧，但必须是同一行高且仍满足点击区要求。
         expect(
           height,
@@ -1210,6 +1216,99 @@ void main() {
         expect(text.style?.fontSize, 14, reason: '$label 的字号应与设置项一致');
         expect(text.style?.fontWeight, FontWeight.w800);
       }
+      // 同组条目合并到同一张 AppCard，内部使用细分割线分隔
+      final rosterCard = tester.widget<AppCard>(
+        find
+            .ancestor(of: find.text('人员与热词'), matching: find.byType(AppCard))
+            .first,
+      );
+      final stationsCard = tester.widget<AppCard>(
+        find
+            .ancestor(of: find.text('单位常用队伍'), matching: find.byType(AppCard))
+            .first,
+      );
+      expect(rosterCard, same(stationsCard));
+    });
+
+    testWidgets('设置页重构分组、操作日志图标区分与状态摘要展示', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final c = _FakeController();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final list = find.byType(ListView).first;
+
+      expect(find.text('现场设置'), findsNothing);
+      for (final section in [
+        '现场与采集',
+        '队伍管理',
+        '数据与记录',
+        '运行策略',
+        '界面外观',
+        '连接与维护',
+      ]) {
+        await _scrollToVisible(tester, list, find.text(section));
+        expect(find.text(section), findsOneWidget);
+      }
+
+      // 操作日志采用 history 图标以区分底部「日志」Tab
+      await _scrollToVisible(tester, list, find.text('操作日志'));
+      expect(find.byIcon(Icons.history_rounded), findsOneWidget);
+
+      // 运行策略右侧状态摘要与实时联动
+      await _scrollToVisible(tester, list, find.text('计算参数'));
+      expect(find.text('6.8L · 10/5分'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('语音识别'));
+      expect(find.text('在线识别'), findsOneWidget);
+      await _scrollToVisible(tester, list, find.text('提醒方式'));
+      expect(find.text('播报·警报·常亮'), findsOneWidget);
+      await tester.tap(find.text('提醒方式'));
+      await tester.pumpAndSettle();
+      await _scrollToVisible(tester, list, find.text('屏幕常亮'));
+      await tester.tap(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('屏幕常亮'),
+            matching: find.byType(SwitchListTile),
+          ),
+          matching: find.byType(Switch),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('播报·警报'), findsOneWidget);
+
+      // 服务连接状态摘要（此时顶部状态胶囊和「服务连接」摘要均显示「已连接」）
+      await _scrollToVisible(tester, list, find.text('服务连接'));
+      final serverRow = find.byKey(const Key('settings-row-服务连接'));
+      expect(
+        find.descendant(of: serverRow, matching: find.text('已连接')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('顶部连接状态胶囊可直达并展开服务连接，失败态同步重试', (tester) async {
+      var retried = 0;
+      final c = _FakeController(onRefreshNow: () async => retried++);
+      c.syncError = '连接超时';
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(body: SettingsPage(controller: c)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('服务器地址'), findsNothing);
+
+      await tester.tap(find.byType(ConnectionStatus));
+      await tester.pumpAndSettle();
+      expect(retried, 1);
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('服务器地址'));
+      expect(find.text('服务器地址'), findsOneWidget);
     });
 
     testWidgets('现场资料卡在 320dp 大字号下纵向展开并保留数量信息', (tester) async {
@@ -2569,7 +2668,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('辅助入口在窄屏大字下等高且使用独立图标', (tester) async {
+    testWidgets('辅助入口在窄屏大字下保持分层且预设提问不截断', (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -2589,23 +2688,29 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final height = tester.getSize(find.byKey(const Key('chat-vision-callout'))).height;
+      final visionSize = tester.getSize(find.byKey(const Key('chat-vision-callout')));
+      expect(visionSize.height, greaterThanOrEqualTo(48));
+      double? sampleHeight;
       for (final question in [
         '气瓶压力下降太快怎么办？',
         '浓烟中看不清路怎么办？',
         '破拆卷帘门有哪些注意事项？',
       ]) {
-        expect(tester.getSize(find.byKey(Key('chat-sample-question-$question'))).height, height);
+        final h = tester.getSize(find.byKey(Key('chat-sample-question-$question'))).height;
+        expect(h, greaterThanOrEqualTo(48));
+        sampleHeight ??= h;
+        expect(h, sampleHeight);
       }
+      expect(find.text('拍照分析现场'), findsOneWidget);
+      expect(find.text('识别危化标牌、装备与环境风险'), findsOneWidget);
       expect(find.byIcon(Icons.gas_meter_outlined), findsOneWidget);
       expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
       expect(find.byIcon(Icons.blinds_closed_outlined), findsOneWidget);
-      expect(find.text('识别装备、环境和潜在安全风险'), findsNothing);
-      expect(find.text('图片仅临时处理，不保存原图'), findsNothing);
+      expect(find.byIcon(Icons.north_east_rounded), findsNWidgets(3));
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('无历史时点示例问题直接发送', (tester) async {
+    testWidgets('无历史时隐藏清空按钮，点示例问题发送后显示清空且欢迎区带轻量脚注', (tester) async {
       final api = _FakeApi();
       final c = _FakeController()..api = api;
       await tester.pumpWidget(
@@ -2618,9 +2723,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('你好，我是水元素'), findsOneWidget);
+      expect(find.byKey(const Key('chat-disclaimer-footnote')), findsOneWidget);
+      expect(find.byTooltip('清空问答记录'), findsNothing);
       expect(
         tester.getSize(find.byType(AssistantAvatar)),
-        const Size(72, 72),
+        const Size(64, 64),
       );
       final sampleKey = const Key('chat-sample-question-气瓶压力下降太快怎么办？');
       expect(
@@ -2632,6 +2739,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 5));
       await tester.pump(const Duration(milliseconds: 20));
       await tester.pump();
+      expect(find.byTooltip('清空问答记录'), findsOneWidget);
       expect(find.text('气瓶压力下降太快怎么办？'), findsOneWidget);
       expect(find.text('回答：气瓶压力下降太快怎么办？'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -3305,9 +3413,11 @@ void main() {
       expect(find.byType(VoiceButton), findsOneWidget);
       final navIcons = tester
           .widgetList<NavIcon>(find.byType(NavIcon))
-          .where((icon) => icon.glyph != NavGlyph.voice);
+          .where((icon) => icon.glyph != NavGlyph.voice)
+          .toList();
       expect(navIcons, hasLength(4));
       expect(navIcons.every((icon) => icon.size == 28), isTrue);
+      expect(navIcons.every((icon) => !icon.selected), isTrue);
       expect(
         tester.widget<Text>(find.text('日志')).style?.fontWeight,
         // 精修 Q4：未选中页签文字统一 12sp/w600（选中 w800），强光下更易读。
@@ -3315,16 +3425,32 @@ void main() {
       );
     });
 
-    testWidgets('点击日志/辅助/设置可切换页面', (tester) async {
+    testWidgets('点击日志/辅助/设置可切换页面，辅助页保留底部五栏导航', (tester) async {
       await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
       await tester.tap(find.text('日志'));
       await tester.pumpAndSettle();
       expect(find.text('火场日志'), findsOneWidget);
+      final afterLogTap = tester
+          .widgetList<NavIcon>(find.byType(NavIcon))
+          .where((icon) => icon.glyph != NavGlyph.voice)
+          .toList();
+      expect(
+        afterLogTap.singleWhere((icon) => icon.glyph == NavGlyph.log).selected,
+        isTrue,
+      );
+      expect(
+        afterLogTap
+            .where((icon) => icon.glyph != NavGlyph.log)
+            .every((icon) => !icon.selected),
+        isTrue,
+      );
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
+      expect(find.text('辅助问答'), findsOneWidget);
       expect(find.text('你好，我是水元素'), findsOneWidget);
       expect(find.byType(AssistantAvatar), findsOneWidget);
+      expect(find.byTooltip('返回'), findsNothing);
       final chatHeader = tester.widget<Container>(
         find.byKey(const Key('chat-header')),
       );
@@ -3333,24 +3459,37 @@ void main() {
         isNull,
         reason: '辅助页顶部操作区应直接使用页面背景，不显示横向白条',
       );
-      // 辅助页默认语音态：圆形橙色麦克风（VoiceButton）+ 「文字」切换，无输入框
-      expect(find.byType(TextField), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('chat-header')),
+          matching: find.byIcon(Icons.camera_alt_outlined),
+        ),
+        findsNothing,
+        reason: '顶栏不得重复放置相机图标',
+      );
+      // 底部五栏导航常驻且「辅助」高亮
+      expect(find.text('看板'), findsOneWidget);
+      expect(find.text('设置'), findsOneWidget);
       expect(find.byType(VoiceButton), findsOneWidget);
-      expect(find.text('文字'), findsOneWidget);
-      // 辅助页底部不再有 4 个导航入口，通过顶部返回按钮回来源页
-      expect(find.text('看板'), findsNothing);
-      expect(find.text('设置'), findsNothing);
-      // 点「文字」→ 麦克风隐藏，输入框呼出
-      await tester.tap(find.text('文字'));
+      expect(find.byKey(const Key('nav-indicator-辅助')), findsOneWidget);
+      // 独立轻量 AI 输入条默认语音态（「按住向水元素提问」）+ 右侧拍照入口
+      expect(find.byKey(const Key('chat-input-bar')), findsOneWidget);
+      expect(find.byKey(const Key('chat-hold-to-talk')), findsOneWidget);
+      expect(find.text('按住向水元素提问'), findsOneWidget);
+      expect(find.byKey(const Key('chat-vision-button')), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      // 点左侧键盘按钮切换到文字态，输入框和发送按钮出现，且底栏「处置」红钮依然常驻
+      await tester.tap(find.byKey(const Key('chat-mode-toggle')));
       await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsOneWidget);
-      expect(find.byType(VoiceButton), findsNothing);
-      expect(find.text('语音'), findsOneWidget);
-      expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
-      // 从日志页进入辅助，顶部返回应回到日志页（来源页）而非固定看板
-      await tester.tap(find.byTooltip('返回'));
+      expect(find.byKey(const Key('chat-text-field')), findsOneWidget);
+      expect(find.byKey(const Key('chat-send-button')), findsOneWidget);
+      expect(find.byType(VoiceButton), findsOneWidget);
+      // 从辅助页可直接点击底栏「看板」横向切换
+      await tester.tap(find.text('看板'));
       await tester.pumpAndSettle();
-      expect(find.text('火场日志'), findsOneWidget);
+      expect(find.text('管控看板'), findsOneWidget);
+      await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       final settingsList = find.byType(ListView).first;
@@ -3361,28 +3500,18 @@ void main() {
       expect(find.text('服务连接'), findsOneWidget);
     });
 
-    testWidgets('辅助页系统返回键回到来源页', (tester) async {
+    testWidgets('辅助页底部正中红钮始终归属警情处置页', (tester) async {
       await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
-      // 从日志页进入辅助页
-      await tester.tap(find.text('日志'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
-      expect(find.text('你好，我是水元素'), findsOneWidget);
-      // 模拟 Android 系统返回键
-      await tester.binding.handlePopRoute();
+      expect(find.byKey(const Key('nav-indicator-辅助')), findsOneWidget);
+      expect(find.byKey(const Key('chat-hold-to-talk')), findsOneWidget);
+      // 点击底部正中「处置」红钮直接切回警情处置页
+      await tester.tap(find.byType(VoiceButton));
       await tester.pumpAndSettle();
-      expect(find.text('火场日志'), findsOneWidget);
-      expect(find.text('你好，我是水元素'), findsNothing);
-      // 从看板页进入辅助页，系统返回应回到看板
-      await tester.tap(find.text('看板'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('辅助'));
-      await tester.pumpAndSettle();
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
-      expect(find.text('管控看板'), findsOneWidget);
+      expect(find.text('警情处置'), findsOneWidget);
+      expect(find.byKey(const Key('nav-indicator-处置')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -3397,9 +3526,9 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('文字'));
+      await tester.tap(find.byKey(const Key('chat-mode-toggle')));
       await tester.pumpAndSettle();
-      final field = tester.getRect(find.byType(TextField));
+      final field = tester.getRect(find.byKey(const Key('chat-text-field')));
       // 键盘顶高 300：输入框底边应完全位于键盘上方
       expect(
         field.bottom,
@@ -3415,9 +3544,9 @@ void main() {
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
       // 先切换文字输入模式
-      await tester.tap(find.text('文字'));
+      await tester.tap(find.byKey(const Key('chat-mode-toggle')));
       await tester.pumpAndSettle();
-      final field = find.byType(TextField);
+      final field = find.byKey(const Key('chat-text-field'));
       expect(field, findsOneWidget);
       final singleLineHeight = tester.getSize(field).height;
       await tester.enterText(field, '第一行很长很长的输入内容\n第二行继续输入内容\n第三行收尾');
@@ -3507,7 +3636,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('辅助页语音按钮完整位于底栏背景内', (tester) async {
+    testWidgets('辅助页输入条位于底栏上方且处置按钮完整位于底栏背景内', (tester) async {
       tester.view.physicalSize = const Size(390 * 3, 800 * 3);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
@@ -3522,8 +3651,85 @@ void main() {
       final voiceSurface = tester.getRect(
         find.byKey(const Key('voice-button-surface')),
       );
+      final inputBar = tester.getRect(find.byKey(const Key('chat-input-bar')));
       expect(voiceSurface.top, greaterThanOrEqualTo(navSurface.top));
       expect(voiceSurface.bottom, lessThanOrEqualTo(navSurface.bottom));
+      expect(inputBar.bottom, lessThanOrEqualTo(navSurface.top + 0.5));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页警情背景胶囊显示右箭头，AI 回复附轻量免责脚注', (tester) async {
+      final api = _FakeApi();
+      final c = _FakeController()
+        ..api = api
+        ..currentIncident = const Incident(
+          id: 'inc-ctx',
+          number: '2026-11-14-01',
+          title: '示例化工厂火情',
+          info: {'location': '示例路 100 号'},
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(controller: c, audioService: _FakeAudio()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final pill = find.byKey(const Key('chat-incident-context-pill'));
+      expect(pill, findsOneWidget);
+      expect(
+        find.descendant(
+          of: pill,
+          matching: find.byIcon(Icons.chevron_right_rounded),
+        ),
+        findsOneWidget,
+      );
+
+      final state = tester.state<ChatPageState>(find.byType(ChatPage));
+      unawaited(state.submitQuestion('有化学储罐如何处置？'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 5));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(find.text('仅供参考，以指挥口令和规程为准'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页在 320dp 两倍大字号下语音态与文字态均无溢出', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2.0)),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: ChatPage(
+              controller: _FakeController(),
+              audioService: _FakeAudio(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('辅助问答'), findsOneWidget);
+      expect(find.byKey(const Key('chat-hold-to-talk')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('chat-mode-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-text-field')), findsOneWidget);
+      expect(find.byKey(const Key('chat-send-button')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

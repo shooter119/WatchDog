@@ -27,14 +27,19 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
         actions: [
           TextButton.icon(
             onPressed: () {
-              final isDay = ThemeController.instance.currentId == 'daylight';
-              final next = isDay ? AppPalette.warmSand : AppPalette.daylight;
+              final palettes = AppPalette.values;
+              final idx = palettes.indexWhere(
+                (p) => p.id == ThemeController.instance.currentId,
+              );
+              final next = palettes[(idx + 1) % palettes.length];
               ThemeController.instance.select(next);
             },
             icon: Icon(
-              ThemeController.instance.currentId == 'daylight'
-                  ? Icons.wb_sunny_outlined
-                  : Icons.nights_stay_outlined,
+              switch (ThemeController.instance.currentId) {
+                'daylight' => Icons.wb_sunny_outlined,
+                'warm-sand' => Icons.wb_twilight_outlined,
+                _ => Icons.nights_stay_outlined,
+              },
               size: 18,
             ),
             label: Text(ThemeController.instance.current.label),

@@ -14,9 +14,10 @@ void main() {
   group('调色板结构', () {
     test('id 唯一且 byId 对未知值回落默认', () {
       final ids = AppPalette.values.map((p) => p.id).toSet();
-      expect(ids, {'daylight', 'warm-sand'});
+      expect(ids, {'daylight', 'warm-sand', 'night-tactical'});
       expect(ids.length, AppPalette.values.length);
       expect(AppPalette.byId('warm-sand').id, 'warm-sand');
+      expect(AppPalette.byId('night-tactical').id, 'night-tactical');
       expect(AppPalette.byId(null).id, 'daylight');
       expect(AppPalette.byId('').id, 'daylight');
       expect(AppPalette.byId('dark').id, 'daylight');
@@ -92,6 +93,7 @@ void main() {
         );
       });
     }
+
     for (final p in AppPalette.values) {
       test('${p.id}: 正文与弱信息', () {
         expect(
@@ -107,8 +109,8 @@ void main() {
           _contrast(p.textSecondary, p.surface),
           greaterThanOrEqualTo(4.5),
         );
-        // 昼白是历史配色，textTertiary 4.39 属既有水平；暖砂必须达到 4.5。
-        final tertiaryFloor = p.id == AppPalette.warmSand.id ? 4.5 : 4.3;
+        // 昼白是历史配色，textTertiary 4.39 属既有水平；暖砂与夜间战术必须达到 4.5。
+        final tertiaryFloor = p.id == AppPalette.daylight.id ? 4.3 : 4.5;
         expect(
           _contrast(p.textTertiary, p.background),
           greaterThanOrEqualTo(tertiaryFloor),
@@ -159,6 +161,13 @@ void main() {
         _contrast(p.heroMuted, p.heroBackground),
         greaterThanOrEqualTo(4.5),
       );
+    });
+
+    test('暖砂：强光下图标底框与分割线具备增强表面区分度', () {
+      const p = AppPalette.warmSand;
+      expect(_contrast(p.surface, p.surfaceSubtle), greaterThanOrEqualTo(1.3));
+      expect(_contrast(p.surface, p.border), greaterThanOrEqualTo(1.8));
+      expect(_contrast(p.textPrimary, p.surfaceSubtle), greaterThanOrEqualTo(4.5));
     });
 
     for (final p in AppPalette.values) {
