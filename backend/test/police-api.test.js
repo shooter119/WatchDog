@@ -12,7 +12,7 @@ let server;
 let base;
 
 before(async () => {
-  server = app.listen(0);
+  server = app.listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -105,7 +105,7 @@ test('HTTP GET /api/external-incidents 接口返回与认领状态标记', async
     }));
   });
 
-  await new Promise((resolve) => mockUpstreamServer.listen(0, resolve));
+  await new Promise((resolve) => mockUpstreamServer.listen(0, '127.0.0.1', resolve));
   const port = mockUpstreamServer.address().port;
   const mockUrl = `http://127.0.0.1:${port}/mock-orglist`;
 
@@ -368,7 +368,7 @@ test('认领官方警情独立透传 incident_status 且刷新缓存后实时反
       },
     }));
   });
-  await new Promise((resolve) => mockUpstream.listen(0, resolve));
+  await new Promise((resolve) => mockUpstream.listen(0, '127.0.0.1', resolve));
   const upstreamUrl = `http://127.0.0.1:${mockUpstream.address().port}/orglist`;
   t.after(() => {
     mockUpstream.close();

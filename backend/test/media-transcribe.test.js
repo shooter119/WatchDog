@@ -9,7 +9,7 @@ const app = require('../src/server');
 let server;
 let base;
 before(async () => {
-  server = app.listen(0);
+  server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });

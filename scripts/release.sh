@@ -220,19 +220,40 @@ if (( DRY_RUN )); then
 fi
 
 if (( SKIP_GATES == 0 )); then
-  step "跑门禁：flutter analyze"
-  ( cd app && env -u GIT_CONFIG_COUNT flutter analyze 2>&1 | tee /tmp/release-analyze.log | tail -3 )
-  grep -q "No issues found" /tmp/release-analyze.log || die "flutter analyze 未通过"
+  step "并行跑门禁：App（analyze + test）与 后端（npm test）"
+  rm -f /tmp/release-analyze.log /tmp/release-test.log /tmp/release-backend.log
 
-  step "跑门禁：flutter test"
-  ( cd app && env -u GIT_CONFIG_COUNT flutter test 2>&1 | tee /tmp/release-test.log | tail -2 )
-  grep -q "All tests passed" /tmp/release-test.log || die "flutter test 未通过"
+  (
+    cd app && env -u GIT_CONFIG_COUNT flutter analyze > /tmp/release-analyze.log 2>&1 &&
+      env -u GIT_CONFIG_COUNT flutter test > /tmp/release-test.log 2>&1
+  ) &
+  APP_GATE_PID=$!
 
-  step "跑门禁：后端 npm test"
+  BACKEND_GATE_PID=""
   if [[ -d backend/node_modules ]]; then
-    run_backend_gate
+    ( cd backend && npm test > /tmp/release-backend.log 2>&1 ) &
+    BACKEND_GATE_PID=$!
   else
     warn "backend/node_modules 不存在，跳过后端测试"
+  fi
+
+  APP_GATE_OK=1
+  wait "$APP_GATE_PID" || APP_GATE_OK=0
+  if (( APP_GATE_OK == 0 )) || ! grep -q "No issues found" /tmp/release-analyze.log 2>/dev/null; then
+    tail -n 20 /tmp/release-analyze.log 2>/dev/null || true
+    tail -n 20 /tmp/release-test.log 2>/dev/null || true
+    die "App 门禁（flutter analyze / flutter test）未通过"
+  fi
+  grep -q "All tests passed" /tmp/release-test.log || {
+    tail -n 20 /tmp/release-test.log
+    die "flutter test 未通过"
+  }
+  info "App 门禁全绿（analyze 0 问题，test 全通过）"
+
+  if [[ -n "$BACKEND_GATE_PID" ]]; then
+    wait "$BACKEND_GATE_PID" || true
+    tail -6 /tmp/release-backend.log
+    backend_gate_verdict /tmp/release-backend.log
   fi
 else
   warn "已按 --skip-gates 跳过门禁"
@@ -254,6 +275,9 @@ git tag -a "$TAG" -m "$TAG"
 git push origin "$TAG"
 
 step "构建 release APK（arm64 split）"
+if [[ -d app/build ]]; then
+  find app/build -name "* [0-9].*" -delete 2>/dev/null || true
+fi
 ( cd app && env -u GIT_CONFIG_COUNT flutter build apk --release \
     --target-platform android-arm64 --split-per-abi 2>&1 | tail -3 )
 APK_PATH="${APK_DIR_REL}/app-arm64-v8a-release.apk"
