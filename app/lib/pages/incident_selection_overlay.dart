@@ -7,6 +7,7 @@ import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/settings.dart';
 import '../theme/app_widgets.dart';
+import '../widgets/incident_category_badge.dart';
 
 /// 启动时的认证/警情选择层。
 ///
@@ -18,11 +19,13 @@ class IncidentSelectionOverlay extends StatefulWidget {
   final List<ExternalIncident> externalIncidents;
   final bool loading;
   final bool externalLoading;
+  final bool externalReorganizing;
   final VoidCallback? onEnterWithoutIncident;
   final Future<void> Function(Incident incident) onSelect;
   final Future<void> Function() onCreate;
   final Future<void> Function(ExternalIncident incident)? onClaimExternal;
   final Future<void> Function({bool forceRefresh})? onRefreshExternal;
+  final Future<void> Function()? onReorganizeExternal;
   final Future<void> Function(
     String unitName,
     String realName,
@@ -47,10 +50,12 @@ class IncidentSelectionOverlay extends StatefulWidget {
     this.externalIncidents = const [],
     required this.loading,
     this.externalLoading = false,
+    this.externalReorganizing = false,
     required this.onSelect,
     required this.onCreate,
     this.onClaimExternal,
     this.onRefreshExternal,
+    this.onReorganizeExternal,
     this.onAuthenticate,
     this.onEnterGuestMode,
     this.onApply,
@@ -184,6 +189,15 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     if (_busy) return;
     try {
       await widget.onRefreshExternal?.call(forceRefresh: true);
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    }
+  }
+
+  Future<void> _reorganizeExternal() async {
+    if (_busy) return;
+    try {
+      await widget.onReorganizeExternal?.call();
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     }
@@ -890,6 +904,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
 
     final district = _resolveDistrict(ext);
     return district.contains(matchedKeyword) ||
+        ext.locationDisplay.contains(matchedKeyword) ||
         ext.brigadeName.contains(matchedKeyword) ||
         ext.squadronName.contains(matchedKeyword) ||
         ext.districtName.contains(matchedKeyword) ||
@@ -903,17 +918,30 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           widget.externalIncidents.any((e) =>
               e.incidentNumber == inc.number || e.claimedIncidentId == inc.id);
       if (!hasExternal) {
+        final cardData = IncidentCardData.fromIncident(inc);
+        final rawLoc = inc.info['location']?.toString().trim() ?? '';
+        final cleanedLoc = rawLoc.isNotEmpty
+            ? IncidentCardData.cleanLocation(rawLoc)
+            : '';
+        final fallbackLoc = inc.unresolvedActiveCount > 0
+            ? '${inc.unresolvedActiveCount}人处置中'
+            : '内部自建现场';
+        final locationText = cleanedLoc.isNotEmpty ? cleanedLoc : fallbackLoc;
+        final timeText = IncidentCardData.formatTimestampMs(inc.createdAt);
+
         customItems.add(_UnifiedIncidentItem(
           key: 'custom_${inc.id}',
-          title: inc.displayName,
+          category: cardData.category,
+          eventTitle: inc.displayName,
           districtTag: '自建',
-          subtitle: inc.unresolvedActiveCount > 0
-              ? '${inc.unresolvedActiveCount}人处置中'
-              : '内部自建现场',
+          locationText: locationText,
+          timeText: timeText,
+          forceTags: const [],
+          factHighlights: const [],
+          searchCorpus: '${inc.number} $locationText',
           badgeText: '加入',
           badgeBg: const Color(0xFFF39C12).withValues(alpha: 0.15),
           badgeFg: const Color(0xFFD35400),
-          actionText: '加入',
           isClaimed: true,
           isCustom: true,
           onTap: () => _select(inc),
@@ -937,30 +965,63 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         }
       }
       final isClaimed = ext.claimed || matched != null;
-      final timeStr = _formatIncidentTime(ext.registerTime);
+      final eventTitle = ext.effectiveEventTitle;
       final district = _resolveDistrict(ext);
-      final station = ext.squadronName.isNotEmpty
-          ? ext.squadronName
-          : ext.brigadeName;
-      final situation = ext.situationSummary;
-      final subtitleParts = <String>[
-        if (station.isNotEmpty) station,
-        if (situation.isNotEmpty) situation,
-        if (timeStr.isNotEmpty) timeStr,
-      ];
+      final locationText = ext.effectiveLocation;
+      final timeText = IncidentCardData.formatTimestampMs(ext.registerTime);
+      final category = IncidentCategory.classify(
+        disasterCategory: ext.disasterCategory,
+        category: ext.incidentType,
+        specificType: ext.specificType.isNotEmpty
+            ? ext.specificType
+            : ext.disposalObjectName,
+        situation: ext.situationSummary,
+        title: eventTitle,
+      );
+      final forceTags = ext.compactForceTags;
+      final officialStatus = IncidentCardData.sanitizeOfficialStatus(
+        ext.officialStatus.isNotEmpty ? ext.officialStatus : ext.incidentStatus,
+      );
+      final highlights = <String>[];
+      final candidates = ext.factHighlights.isNotEmpty
+          ? ext.factHighlights
+          : <String>[
+              if (ext.incidentLevel.trim().isNotEmpty) ext.incidentLevel.trim(),
+              if (officialStatus.isNotEmpty) officialStatus,
+            ];
+      for (final raw in candidates) {
+        final item = raw.trim();
+        if (item.isEmpty || item == '其他' || item == '处置中') continue;
+        if (eventTitle.contains(item) || highlights.contains(item)) continue;
+        highlights.add(item);
+        if (highlights.length >= 3) break;
+      }
 
       externalItems.add(_UnifiedIncidentItem(
         key: 'ext_${ext.externalId}',
-        title: ext.crimeAddress.isNotEmpty ? ext.crimeAddress : ext.incidentNumber,
+        category: category,
+        eventTitle: eventTitle,
         districtTag: district,
-        subtitle: subtitleParts.join(' · '),
+        locationText: locationText,
+        timeText: timeText,
+        forceTags: forceTags,
+        factHighlights: highlights,
+        searchCorpus: [
+          ext.incidentNumber,
+          ext.crimeAddress,
+          ext.incidentType,
+          ext.specificType,
+          ext.squadronName,
+          ext.brigadeName,
+          ext.situationSummary,
+          ...forceTags,
+          ...highlights,
+        ].where((e) => e.trim().isNotEmpty).join(' '),
         badgeText: isClaimed ? '处置中' : '待认领',
         badgeBg: isClaimed
             ? AppColors.actionPrimary.withValues(alpha: 0.12)
             : const Color(0xFF27AE60).withValues(alpha: 0.14),
         badgeFg: isClaimed ? AppColors.actionPrimary : const Color(0xFF1E8449),
-        actionText: isClaimed ? '处置中' : '待认领',
-        describe: ext.incidentDescribe.trim().isNotEmpty ? ext.incidentDescribe.trim() : null,
         isClaimed: isClaimed,
         isCustom: false,
         onTap: () {
@@ -982,9 +1043,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     if (query.isEmpty) return allItems;
 
     return allItems.where((item) {
-      return item.title.toLowerCase().contains(query) ||
+      return item.eventTitle.toLowerCase().contains(query) ||
+          item.locationText.toLowerCase().contains(query) ||
           item.districtTag.toLowerCase().contains(query) ||
-          item.subtitle.toLowerCase().contains(query) ||
+          item.searchCorpus.toLowerCase().contains(query) ||
           item.badgeText.toLowerCase().contains(query);
     }).toList();
   }
@@ -1028,6 +1090,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
   }
 
   Widget _buildSearchBar() {
+    final busyOrLoading = _busy || widget.externalLoading || widget.externalReorganizing;
     return Row(
       children: [
         Expanded(
@@ -1038,7 +1101,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
               onChanged: (v) => setState(() => _searchKeyword = v),
               style: const TextStyle(fontSize: 14),
               decoration: InputDecoration(
-                hintText: '搜索地址、类型或编号…',
+                hintText: '搜索灾情事件、地点、出动队站或编号…',
                 hintStyle: TextStyle(
                   fontSize: 13.5,
                   color: AppColors.textTertiary,
@@ -1068,6 +1131,27 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             ),
           ),
         ),
+        if (widget.onReorganizeExternal != null) ...[
+          const SizedBox(width: 8),
+          IconButton.filledTonal(
+            key: const Key('external-reorganize-btn'),
+            tooltip: 'AI重新整理警情',
+            icon: widget.externalReorganizing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome_outlined, size: 20),
+            onPressed: busyOrLoading ? null : _reorganizeExternal,
+            style: IconButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              minimumSize: const Size(42, 42),
+            ),
+          ),
+        ],
         const SizedBox(width: 8),
         IconButton.filledTonal(
           tooltip: '刷新派警列表',
@@ -1078,7 +1162,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.refresh, size: 20),
-          onPressed: (_busy || widget.externalLoading) ? null : _refreshExternal,
+          onPressed: busyOrLoading ? null : _refreshExternal,
           style: IconButton.styleFrom(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppRadius.md),
@@ -1292,7 +1376,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       ),
                     ),
                   ],
-                  if (widget.externalLoading) ...[
+                  if (widget.externalLoading || widget.externalReorganizing) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
                       child: Row(
@@ -1304,7 +1388,9 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '正在获取衢州官方派警…',
+                            widget.externalReorganizing
+                                ? '正在通过 AI 整编警情…'
+                                : '正在获取已调派警情…',
                             style: TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,
@@ -1400,28 +1486,34 @@ class _EmptyIncidentState extends StatelessWidget {
 
 class _UnifiedIncidentItem {
   final String key;
-  final String title;
+  final IncidentCategory category;
+  final String eventTitle;
   final String districtTag;
-  final String subtitle;
-  final String? describe;
+  final String locationText;
+  final String timeText;
+  final List<String> forceTags;
+  final List<String> factHighlights;
+  final String searchCorpus;
   final String badgeText;
   final Color badgeBg;
   final Color badgeFg;
-  final String actionText;
   final bool isClaimed;
   final bool isCustom;
   final VoidCallback onTap;
 
   _UnifiedIncidentItem({
     required this.key,
-    required this.title,
+    required this.category,
+    required this.eventTitle,
     required this.districtTag,
-    required this.subtitle,
-    this.describe,
+    required this.locationText,
+    required this.timeText,
+    required this.forceTags,
+    required this.factHighlights,
+    required this.searchCorpus,
     required this.badgeText,
     required this.badgeBg,
     required this.badgeFg,
-    required this.actionText,
     required this.isClaimed,
     required this.isCustom,
     required this.onTap,
@@ -1437,8 +1529,15 @@ class _UnifiedIncidentOption extends StatelessWidget {
     required this.enabled,
   });
 
+  static final RegExp _warningHighlightPattern = RegExp(
+    r'被困|伤|危|泄漏|燃气|煤气|爆炸',
+  );
+
   @override
   Widget build(BuildContext context) {
+    final hasExtraChips =
+        item.forceTags.isNotEmpty || item.factHighlights.isNotEmpty;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1458,17 +1557,27 @@ class _UnifiedIncidentOption extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 第 1 层（最突出）：事件/灾情核心标题 + 三分类徽标 + 状态操作胶囊
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  IncidentCategoryBadge(
+                    key: Key(
+                      'ext-category-badge-${item.key}-${item.category.name}',
+                    ),
+                    category: item.category,
+                    size: 38,
+                    iconSize: 21,
+                  ),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      item.title,
-                      style: TextStyle(
-                        fontSize: 15.5,
+                    child: AntiOrphanText(
+                      text: item.eventTitle,
+                      style: AppTextStyles.bodyLg.copyWith(
+                        fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
-                        height: 1.35,
+                        height: 1.3,
                       ),
                     ),
                   ),
@@ -1504,7 +1613,8 @@ class _UnifiedIncidentOption extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
+              // 第 2 层（次级）：行政区/自建标记 + 事发地点 + 接警时间
               Row(
                 children: [
                   if (item.districtTag.isNotEmpty) ...[
@@ -1529,30 +1639,118 @@ class _UnifiedIncidentOption extends StatelessWidget {
                     ),
                   ],
                   Expanded(
-                    child: Text(
-                      item.subtitle,
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                        height: 1.3,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            item.locationText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                        if (item.timeText.isNotEmpty)
+                          Text(
+                            ' · ${item.timeText}',
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: AppColors.textTertiary,
+                              fontSize: 12,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                              height: 1.3,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              if (item.describe != null && item.describe!.trim().isNotEmpty) ...[
-                const SizedBox(height: 5),
-                Text(
-                  item.describe!.trim(),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.textTertiary,
-                    fontSize: 11.5,
-                    height: 1.3,
-                  ),
+              // 第 3 层（条件展示）：出动力量与关键事实胶囊，无信息时不占位
+              if (hasExtraChips) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  key: Key('ext-forces-wrap-${item.key}'),
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final forceTag in item.forceTags)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceSubtle,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: AppColors.border,
+                            width: 0.75,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.local_shipping_outlined,
+                              size: 13,
+                              color: AppColors.textSecondary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              forceTag,
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    for (final highlight in item.factHighlights)
+                      Builder(
+                        builder: (_) {
+                          final isWarning = _warningHighlightPattern.hasMatch(
+                            highlight,
+                          );
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isWarning
+                                  ? AppColors.noticeWarningBg
+                                  : AppColors.surfaceSubtle,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: isWarning
+                                    ? AppColors.caution.withValues(alpha: 0.45)
+                                    : AppColors.border,
+                                width: 0.75,
+                              ),
+                            ),
+                            child: Text(
+                              highlight,
+                              style: TextStyle(
+                                color: isWarning
+                                    ? AppColors.noticeWarningFg
+                                    : AppColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: isWarning
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
                 ),
               ],
             ],
@@ -1560,27 +1758,5 @@ class _UnifiedIncidentOption extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-String _formatIncidentTime(int timestampMs) {
-  if (timestampMs <= 0) return '';
-  final dt = DateTime.fromMillisecondsSinceEpoch(timestampMs);
-  final now = DateTime.now();
-  final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
-  final yesterday = now.subtract(const Duration(days: 1));
-  final isYesterday = dt.year == yesterday.year && dt.month == yesterday.month && dt.day == yesterday.day;
-
-  final h = dt.hour.toString().padLeft(2, '0');
-  final min = dt.minute.toString().padLeft(2, '0');
-
-  if (isToday) {
-    return '今日 $h:$min';
-  } else if (isYesterday) {
-    return '昨日 $h:$min';
-  } else {
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    return '$m-$d';
   }
 }

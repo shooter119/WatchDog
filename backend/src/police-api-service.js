@@ -1,4 +1,16 @@
 const logger = require('./logger');
+const {
+  resolveDistrict,
+  sanitizeOfficialStatus,
+  isTerminalOfficialStatus,
+  cleanIncidentLocation,
+  cleanIncidentEvent,
+  buildSituationDescription,
+  extractContacts,
+  buildDispatchSummary,
+  sanitizeCoordinates,
+  buildRuleFallbackStructured,
+} = require('./external-incident-organizer');
 
 const DEFAULT_UPSTREAM_URL = process.env.POLICE_API_ORGLIST_URL || 'http://220.189.211.80:10480/ds-mit-web/rest/mit/fire/v1.0/disater/orglist';
 const CACHE_TTL_MS = 60 * 1000; // 1 分钟短时缓存
@@ -45,8 +57,85 @@ function isQuzhouIncident(item) {
   return true;
 }
 
+/**
+ * 判断上游警情是否已经进入“派警处置”阶段（已调派力量）。
+ *
+ * 接处警工作流按「报警电话 → 受理立案 → 派警处置」推进：
+ * - 刚接警/受理/立案且无实际调派车辆或队站的记录，以及假警/作废记录予以过滤；
+ * - 有明确派车、派站、派员、调派时间或处于调派/出动/到场/归队等作战阶段时放行。
+ */
+function isDispatchedIncident(item) {
+  if (!item || typeof item !== 'object') return false;
+
+  const nature = String(item.incidentNatureName || item.incident_nature_name || '').trim();
+  const status = String(item.incidentStatusName || item.incident_status || '').trim();
+  const dispatchStatus = String(
+    item.dispatchStatusName || item.dispatchStatus || item.dispatch_status || '',
+  ).trim();
+
+  if (/假警|虚警|错位|重复报警|误报|作废|注销|测试警情/.test(`${nature} ${status}`)) {
+    return false;
+  }
+
+  if (/未调派|待调派|未派警|待派警|未下达|待下达/.test(`${status} ${dispatchStatus}`)) {
+    return false;
+  }
+
+  const vehicles = Number(item.dispatchVehicle ?? item.dispatch_vehicle);
+  const hasVehicle = Number.isFinite(vehicles) && vehicles > 0;
+
+  const personnel = Number(
+    item.dispatchPerson ?? item.dispatchPersonnel ?? item.dispatch_person,
+  );
+  const hasPersonnel = Number.isFinite(personnel) && personnel > 0;
+
+  const orgRaw = String(item.dispatchOrganization ?? item.dispatch_organization ?? '').trim();
+  const orgNum = Number(orgRaw);
+  const hasOrg = Boolean(
+    orgRaw &&
+      orgRaw !== '0' &&
+      orgRaw.toLowerCase() !== 'null' &&
+      (!/^\d+(?:\.\d+)?$/.test(orgRaw) || (Number.isFinite(orgNum) && orgNum > 0)),
+  );
+
+  const dispatchTs = Number(
+    item.dispatchTime ?? item.firstDispatchTime ?? item.sendTime,
+  );
+  const hasDispatchTime = Number.isFinite(dispatchTs) && dispatchTs > 0;
+
+  const rawFlag = item.whetherDispatch ?? item.isDispatch;
+  const flagStr = rawFlag != null ? String(rawFlag).trim() : '';
+  const hasExplicitDispatchFlag =
+    rawFlag === true ||
+    /^(?:1|true|是|Y|y)$/i.test(flagStr) ||
+    /已调派|已派警|已下达/.test(dispatchStatus);
+
+  const hasDispatchedForces =
+    hasVehicle || hasPersonnel || hasOrg || hasDispatchTime || hasExplicitDispatchFlag;
+
+  if ((rawFlag === false || /^(?:0|false|否|N|n)$/i.test(flagStr)) && !hasDispatchedForces) {
+    return false;
+  }
+
+  if (hasDispatchedForces) {
+    return true;
+  }
+
+  const normalizedStatus = status.replace(/\s+/g, '');
+  if (/^(?:接警|电话报警|报警|新警情|待接警|受理|受理中|正在受理|预立案|立案|已立案|待立案)$/.test(normalizedStatus)) {
+    return false;
+  }
+
+  if (/(?:通知|下达|调派|派警|增援|出动|途中|到场|展开|出水|控制|熄灭|清理|处置|中返|途返|返程|归队|填报|结案|战评|完成|结束)/.test(normalizedStatus)) {
+    return true;
+  }
+
+  const squadron = String(item.squadronOrganizationName || item.squadron_name || '').trim();
+  return Boolean(squadron);
+}
+
 function normalizeExternalIncident(item) {
-  return {
+  const base = {
     external_id: String(item.id || ''),
     incident_number: String(item.incidentNumber || ''),
     detachment_name: String(item.detachmentOrgName || ''),
@@ -69,154 +158,9 @@ function normalizeExternalIncident(item) {
     incident_nature_name: item.incidentNatureName != null ? String(item.incidentNatureName).trim() : '',
     dispatch_vehicle: item.dispatchVehicle != null ? String(item.dispatchVehicle).trim() : '',
     dispatch_organization: item.dispatchOrganization != null ? String(item.dispatchOrganization).trim() : '',
+    raw_payload: { ...(item && typeof item === 'object' ? item : {}) },
   };
-}
-
-function sanitizeCoordinates(lat, lon) {
-  const latitude = parseFloat(lat);
-  const longitude = parseFloat(lon);
-  if (Number.isFinite(latitude) && Number.isFinite(longitude) &&
-      latitude >= 27.5 && latitude <= 31.0 &&
-      longitude >= 118.0 && longitude <= 121.0) {
-    return {
-      latitude: String(lat),
-      longitude: String(lon),
-    };
-  }
-  return { latitude: null, longitude: null };
-}
-
-function extractContacts(ext = {}) {
-  const contacts = [];
-  const clean = (p) => String(p || '').trim().replace(/[^\d+ -]/g, '');
-  const isInvalid = (p) => !p || /^(?:0?110|119|120|122)$/.test(p.replace(/\D/g, '')) || p.replace(/\D/g, '').length < 7;
-
-  const personPhone = clean(ext.alarm_person_phone);
-  const alarmPhone = clean(ext.alarm_phone);
-
-  let chosen = '';
-  if (personPhone && !isInvalid(personPhone)) {
-    chosen = personPhone;
-  } else if (alarmPhone && !isInvalid(alarmPhone)) {
-    chosen = alarmPhone;
-  }
-
-  if (chosen) {
-    contacts.push({
-      role: '报警人',
-      name: String(ext.alarm_person_name || '').trim() || '报警人',
-      phone: chosen,
-    });
-  }
-  return contacts;
-}
-
-function buildDispatchSummary({ dispatch_vehicle = '', dispatch_organization = '', squadron_name = '' } = {}) {
-  const parts = [];
-  const v = String(dispatch_vehicle || '').trim();
-  const o = String(dispatch_organization || '').trim();
-  const s = String(squadron_name || '').trim();
-  if (v && v !== '0') parts.push(`${v}车`);
-  if (o && o !== '0') parts.push(`${o}站`);
-  const prefix = parts.join(' ');
-  if (prefix && s) {
-    return `${prefix} (主调: ${s})`;
-  }
-  if (prefix) return prefix;
-  if (s) return `主调: ${s}`;
-  return '';
-}
-
-function sanitizeOfficialStatus(status = '') {
-  const s = String(status || '').trim();
-  if (!s || s === '其他' || s === '真警') return '';
-  return s;
-}
-
-function isTerminalOfficialStatus(status = '') {
-  const normalized = String(status || '').replace(/\s+/g, '').trim();
-  if (!normalized) return false;
-  return /^(?:归队|已归队|结案|已结案|填报|完成|已完成|结束|注销|作废|虚警|假警)$/.test(normalized) ||
-    normalized.includes('归队') ||
-    normalized.includes('结案') ||
-    normalized.includes('填报');
-}
-
-function cleanIncidentLocation(rawAddress = '', districtName = '') {
-  let addr = String(rawAddress || '').replace(/\s+/g, '').trim();
-  const dist = String(districtName || '').replace(/\s+/g, '').trim();
-  if (!addr) return dist && dist !== '市辖区' && dist !== '衢州市' ? dist : '';
-
-  // 剥离冗余省级/自治区前缀
-  addr = addr.replace(/^[\u4e00-\u9fa5]{2,5}(?:省|自治区)/, '');
-  // 当后续已包含区/县/县级市时，剥离冗余地级市前缀
-  addr = addr.replace(/^[\u4e00-\u9fa5]{2,5}市(?=[\u4e00-\u9fa5]{2,5}(?:区|县|市))/, '');
-  // 消除相邻重复叠加的区县前缀（如“示例县示例县文化路1号”）
-  addr = addr.replace(/^([\u4e00-\u9fa5]{2,5}(?:区|县|市))\1/, '$1');
-
-  if (dist && dist !== '市辖区' && dist !== '衢州市' && !addr.includes(dist)) {
-    const shortDist = dist.replace(/[区县市]$/, '');
-    if (!shortDist || !addr.startsWith(shortDist)) {
-      addr = `${dist}${addr}`;
-    }
-  }
-  return addr;
-}
-
-function cleanIncidentEvent({
-  incident_type = '',
-  disposal_object_name = '',
-  incident_describe = '',
-} = {}) {
-  const type = String(incident_type || '').trim();
-  const obj = String(disposal_object_name || '').trim();
-  let desc = String(incident_describe || '').trim();
-
-  if (desc) {
-    desc = desc
-      .replace(/官方状态[:：][^，。；·\n]+/g, '')
-      .replace(/[，,。；;·\s]*(?:暂)?无人员(?:被困|伤亡|受伤)[，,。；;·\s]*/g, '，')
-      .replace(/[，,。；;·\s]*人员被困情况不明[，,。；;·\s]*/g, '，')
-      .replace(/[，,。；;·\s]*(?:群众|电话)?报警[，,。；;·\s]*/g, '，')
-      .replace(/[，,。；;·\s]*110转警[，,。；;·\s]*/g, '，')
-      .replace(/^[，,。；;·\s]+|[，,。；;·\s]+$/g, '')
-      .replace(/，{2,}/g, '，');
-    if (desc) {
-      if (desc.length <= 26) return desc;
-      const firstClause = desc.split(/[，。；;\n]/).map((s) => s.trim()).find(Boolean) || desc;
-      return firstClause.length > 24 ? `${firstClause.slice(0, 23)}…` : firstClause;
-    }
-  }
-
-  if (type && obj && obj !== '其他' && !type.includes(obj)) {
-    return `${type}（${obj}）`;
-  }
-  return type || (obj && obj !== '其他' ? obj : '') || '警情';
-}
-
-function buildSituationDescription({
-  incident_type = '',
-  disposal_object_name = '',
-  incident_describe = '',
-  alarm_mode_name = '',
-  incident_status = '',
-} = {}) {
-  const desc = String(incident_describe || '').trim();
-  if (desc) return desc;
-  const type = String(incident_type || '').trim() || '警情';
-  const obj = String(disposal_object_name || '').trim();
-  let base = (obj && obj !== '其他') ? `${type}（${obj}）` : type;
-
-  const extras = [];
-  const mode = String(alarm_mode_name || '').trim();
-  if (mode && mode !== '其他') extras.push(mode);
-  const status = sanitizeOfficialStatus(incident_status);
-  if (status) extras.push(`官方状态: ${status}`);
-
-  if (extras.length > 0) {
-    return `${base} · ${extras.join(' · ')}`;
-  }
-  return base;
+  return buildRuleFallbackStructured(base, item);
 }
 
 function peekCachedIncidents() {
@@ -261,10 +205,12 @@ async function fetchFromUpstream(url = DEFAULT_UPSTREAM_URL) {
     let reachedOlderData = false;
     for (const item of list) {
       const regTime = Number(item.registerIncidentTime) || 0;
-      // 只要保留衢州市且在最近三天内的
+      // 保留衢州市、最近三天内且已调派力量的警情
       if (isQuzhouIncident(item)) {
         if (regTime >= cutoffTime) {
-          allQuzhou.push(normalizeExternalIncident(item));
+          if (isDispatchedIncident(item)) {
+            allQuzhou.push(normalizeExternalIncident(item));
+          }
         } else {
           // 由于上游通常按立案时间倒序排列，若遇到早于3天的衢州警情，可提前结束
           reachedOlderData = true;
@@ -334,36 +280,6 @@ async function getQuzhouIncidents({ forceRefresh = false, upstreamUrl = DEFAULT_
   };
 }
 
-function resolveDistrict(item) {
-  if (!item) return '';
-  const addr = String(item.crime_address || item.crimeAddress || '').trim();
-  const brigade = String(item.brigade_name || item.brigadeOrganizationName || '').trim();
-  const squadron = String(item.squadron_name || item.squadronOrganizationName || '').trim();
-  const rawDist = String(item.district_name || item.districtName || '').trim();
-
-  const qzDistricts = [
-    { name: '智慧新城', keys: ['智慧新城', '新城'] },
-    { name: '柯城区', keys: ['柯城'] },
-    { name: '衢江区', keys: ['衢江'] },
-    { name: '江山市', keys: ['江山'] },
-    { name: '龙游县', keys: ['龙游'] },
-    { name: '常山县', keys: ['常山'] },
-    { name: '开化县', keys: ['开化'] },
-  ];
-
-  for (const d of qzDistricts) {
-    if (addr.includes(d.name) || d.keys.some((k) => addr.includes(k))) return d.name;
-  }
-  for (const d of qzDistricts) {
-    if (d.keys.some((k) => brigade.includes(k))) return d.name;
-  }
-  for (const d of qzDistricts) {
-    if (d.keys.some((k) => squadron.includes(k))) return d.name;
-  }
-  if (rawDist && rawDist !== '市辖区') return rawDist;
-  return '衢州市';
-}
-
 function _resetCacheForTest() {
   memoryCache = { data: [], fetchedAt: 0 };
   inFlightPromise = null;
@@ -373,6 +289,7 @@ module.exports = {
   getQuzhouIncidents,
   peekCachedIncidents,
   isQuzhouIncident,
+  isDispatchedIncident,
   normalizeExternalIncident,
   resolveDistrict,
   sanitizeOfficialStatus,

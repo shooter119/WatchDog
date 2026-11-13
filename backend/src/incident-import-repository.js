@@ -207,7 +207,7 @@ async function applyImport({ unitId, incidentId, actorId, actorName, importId, o
     await db.touchIncidentActivity(incidentId, now);
     const event = await db.appendIncidentEvent({ incidentId, type: 'incident_import_applied', actorDeviceId: actorId, actorName, clientOpId: opId, payload: { import_id: importId, force_count: saved.length, details_version: version } });
     const updatedIncident = { ...await db.getIncident(incidentId, { unitId }),
-      info: Object.fromEntries(['original_category','level','specific_type','incident_status','location','administrative_area','received_at','situation'].filter((key) => data[key]).map((key) => [key,data[key]])) };
+      info: Object.fromEntries(['event_summary','disaster_category','original_category','level','specific_type','incident_status','location','administrative_area','received_at','situation','trapped','injured','hazardous_materials','dispatch_summary'].filter((key) => data[key]).map((key) => [key,data[key]])) };
     const allForces = await db.listIncidentForces(incidentId);
     const sync = await db.appendSyncEvent({ unitId, incidentId, eventType: 'import.applied', aggregateId: importId, payload: { incident: updatedIncident, forces: allForces, details_version: version, details: { incident_id: incidentId, unit_id: unitId, data, version, updated_at: now } } });
     await db.appendSyncEvent({ unitId, eventType: 'incident.updated', aggregateId: incidentId, payload: updatedIncident });

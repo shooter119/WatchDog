@@ -14,6 +14,7 @@
   - `015_multidevice_conflicts.sql`: 多设备登录冲突与版本控制字段
   - `016_org_scoped_stations.sql`: 组织专属消防站分区
   - `017_hazardous_chemicals.sql`: 危化品速查表与 UN 编号索引
+  - `018_external_incidents.sql`: 外部官方派警原始数据融合与 AI 重组结果缓存表 (`external_incidents`)
 - **迁移执行器**:
   - `backend/src/postgres-migrator.js`: 导出的 `runMigrations(pool, migrationsDir)` 函数
 

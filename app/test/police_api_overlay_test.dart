@@ -171,4 +171,106 @@ void main() {
     // 柯城区警情非本大队，强隔离过滤不展示
     expect(find.text('柯城区新桥街88号'), findsNothing);
   });
+
+  testWidgets('重构后优先突出事件主标题、三分类徽标与条件出动力量且支持 AI 一键重整', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    var reorganizeCalled = false;
+    final aiIncident = ExternalIncident(
+      externalId: 'ext-ai-1',
+      incidentNumber: '20261114001',
+      detachmentName: '示例支队',
+      brigadeName: '示例大队',
+      squadronName: '示例路站',
+      districtName: '示例县',
+      incidentType: '抢险救援',
+      eventSummary: '货车追尾驾驶室人员被困',
+      disasterCategory: 'rescue',
+      locationDisplay: '示例县建设大道66号',
+      crimeAddress: '示例省示例市示例县建设大道66号',
+      dispatchedForces: const [
+        ExternalDispatchedForce(
+          stationName: '示例路站',
+          vehicleCount: 2,
+          personnelCount: null,
+        ),
+      ],
+      factHighlights: const ['1人被困', '二级'],
+      registerTime: DateTime.now()
+          .subtract(const Duration(minutes: 15))
+          .millisecondsSinceEpoch,
+      claimed: false,
+    );
+
+    final noForceIncident = ExternalIncident(
+      externalId: 'ext-noforce-2',
+      incidentNumber: '20261114002',
+      detachmentName: '示例支队',
+      brigadeName: '示例大队',
+      districtName: '示例县',
+      incidentType: '社会救助',
+      eventSummary: '小区居民电梯困人救助',
+      disasterCategory: 'aid',
+      locationDisplay: '示例县幸福小区3栋',
+      crimeAddress: '示例县幸福小区3栋',
+      dispatchedForces: const [],
+      factHighlights: const [],
+      registerTime: DateTime.now()
+          .subtract(const Duration(minutes: 5))
+          .millisecondsSinceEpoch,
+      claimed: false,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: IncidentSelectionOverlay(
+            activeIncidents: const [],
+            externalIncidents: [aiIncident, noForceIncident],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onReorganizeExternal: () async {
+              reorganizeCalled = true;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. 最突出的事件主标题与三分类徽标
+    expect(find.text('货车追尾驾驶室人员被困'), findsOneWidget);
+    expect(find.text('小区居民电梯困人救助'), findsOneWidget);
+    expect(
+      find.byKey(const Key('ext-category-badge-ext_ext-ai-1-rescue')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('ext-category-badge-ext_ext-noforce-2-aid')),
+      findsOneWidget,
+    );
+
+    // 2. 规范化地点与出动力量条件展示
+    expect(find.text('示例县建设大道66号'), findsOneWidget);
+    expect(find.text('示例路站 2车'), findsOneWidget);
+    expect(find.text('1人被困'), findsOneWidget);
+    expect(find.byKey(const Key('ext-forces-wrap-ext_ext-ai-1')), findsOneWidget);
+    expect(
+      find.byKey(const Key('ext-forces-wrap-ext_ext-noforce-2')),
+      findsNothing,
+    );
+
+    // 3. 点击 AI 一键重整按钮
+    await tester.tap(find.byKey(const Key('external-reorganize-btn')));
+    await tester.pumpAndSettle();
+    expect(reorganizeCalled, isTrue);
+  });
 }

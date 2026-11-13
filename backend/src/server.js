@@ -18,6 +18,12 @@ const { nameSuggestions } = require('./name-match');
 const { GENERIC_ASR_TERMS } = require('./org-seed');
 const weather = require('./weather');
 const policeApiService = require('./police-api-service');
+const {
+  createExternalIncidentOrganizer,
+  buildRuleFallbackStructured,
+  formatBeijingIso,
+  normalizeStationName,
+} = require('./external-incident-organizer');
 
 // PostgreSQL 初始化是网络依赖，不能阻塞端口监听等待完成；探活在初始化期间
 // 仍可返回数据库状态，便于任意支持长连接的平台进行编排。
@@ -1538,33 +1544,63 @@ app.post('/api/auth/logout', async (req, res, next) => {
   }
 });
 
+const localIncidentDetails = new Map();
+const externalIncidentOrganizer = createExternalIncidentOrganizer({
+  store: {
+    select: (...args) => require('./postgres-store').select(...args),
+    upsert: (...args) => require('./postgres-store').upsert(...args),
+    query: (...args) => require('./postgres-store').query(...args),
+  },
+  syncSupported,
+  getLlmConfig: () => CFG.llm,
+});
+const EXTERNAL_REORGANIZE_LIMIT_PER_MIN = Number(process.env.EXTERNAL_REORGANIZE_LIMIT_PER_MIN || 12);
+const externalReorganizeLimiter = new MinuteRateLimiter({
+  maxEntries: 10000,
+});
+
+const INCIDENT_INFO_KEYS = [
+  'event_summary',
+  'disaster_category',
+  'original_category',
+  'level',
+  'specific_type',
+  'incident_status',
+  'location',
+  'administrative_area',
+  'received_at',
+  'situation',
+  'trapped',
+  'injured',
+  'hazardous_materials',
+  'latitude',
+  'longitude',
+  'dispatch_summary',
+];
+
+function buildIncidentInfoProjection(detailData) {
+  const info = {};
+  if (!detailData || typeof detailData !== 'object') return info;
+  for (const key of INCIDENT_INFO_KEYS) {
+    if (detailData[key]) info[key] = detailData[key];
+  }
+  return info;
+}
+
 async function incidentView(incident, { forces = null, generateSuggestedTitle = true } = {}) {
   if (!incident) return null;
   if (generateSuggestedTitle && incident.status === 'archived' && !incident.title && !incident.suggested_title) {
     incident = await db.setIncidentSuggestedTitle(incident.id, await suggestIncidentTitle(incident.id));
   }
   const rows = forces || await db.listIncidentForces(incident.id);
-  let info = {};
   let detailData = null;
   if (syncSupported() && incident.unit_id) {
     const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
     detailData = detail?.data || {};
-    for (const key of [
-      'original_category',
-      'level',
-      'specific_type',
-      'incident_status',
-      'location',
-      'administrative_area',
-      'received_at',
-      'situation',
-      'latitude',
-      'longitude',
-      'dispatch_summary',
-    ]) {
-      if (detailData[key]) info[key] = detailData[key];
-    }
+  } else if (localIncidentDetails.has(incident.id)) {
+    detailData = localIncidentDetails.get(incident.id);
   }
+  const info = buildIncidentInfoProjection(detailData);
   const cachedExtList = policeApiService.peekCachedIncidents();
   if (cachedExtList.length > 0) {
     const extId = detailData?.external_id ? String(detailData.external_id) : '';
@@ -1772,41 +1808,43 @@ app.get('/api/incidents', async (req, res, next) => {
   }
 });
 
-// 获取衢州市最近三天的官方派警列表，并标记当前单位下的认领/建档状态
-app.get('/api/external-incidents', async (req, res, next) => {
-  try {
-    const forceRefresh = req.query.refresh === 'true' || req.query.refresh === '1';
-    const upstreamResult = await policeApiService.getQuzhouIncidents({ forceRefresh });
+async function enrichAndAttachExternalClaimStatus(list, unitId, { awaitAi = false, maxAwaitMs = 2200, forceReorganizeIds = null } = {}) {
+  const organizedList = await externalIncidentOrganizer.syncIncidents(list, {
+    awaitAi,
+    maxAwaitMs,
+    forceReorganizeIds,
+  });
 
-    // 查询当前单位已有的 active 警情
-    const activeIncidents = await db.listIncidents('active', { unitId: req.unit?.id || null, limit: 100, offset: 0 });
-    const claimedMap = new Map();
-    const detailByIncidentId = new Map();
+  const activeIncidents = await db.listIncidents('active', { unitId: unitId || null, limit: 100, offset: 0 });
+  const claimedMap = new Map();
+  const detailByIncidentId = new Map();
 
-    for (const incident of activeIncidents) {
-      if (incident.number) claimedMap.set(String(incident.number), incident);
-      if (syncSupported() && incident.unit_id) {
-        try {
-          const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
-          detailByIncidentId.set(incident.id, detail);
-          if (detail?.data?.external_id) {
-            claimedMap.set(String(detail.data.external_id), incident);
-          }
-          if (detail?.data?.external_incident_number) {
-            claimedMap.set(String(detail.data.external_incident_number), incident);
-          }
-        } catch (_) {}
-      }
+  for (const incident of activeIncidents) {
+    if (incident.number) claimedMap.set(String(incident.number), incident);
+    if (syncSupported() && incident.unit_id) {
+      try {
+        const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
+        detailByIncidentId.set(incident.id, detail);
+        if (detail?.data?.external_id) claimedMap.set(String(detail.data.external_id), incident);
+        if (detail?.data?.external_incident_number) claimedMap.set(String(detail.data.external_incident_number), incident);
+      } catch (_) {}
+    } else if (localIncidentDetails.has(incident.id)) {
+      const data = localIncidentDetails.get(incident.id);
+      detailByIncidentId.set(incident.id, { data, version: 1 });
+      if (data?.external_id) claimedMap.set(String(data.external_id), incident);
+      if (data?.external_incident_number) claimedMap.set(String(data.external_incident_number), incident);
     }
+  }
 
-    const statusSyncTasks = [];
-    const listWithClaimStatus = upstreamResult.list.map((item) => {
-      const matched = claimedMap.get(item.external_id) || claimedMap.get(item.incident_number);
-      if (matched && syncSupported() && matched.unit_id) {
-        const nextStatus = policeApiService.sanitizeOfficialStatus(item.incident_status);
-        const existingDetail = detailByIncidentId.get(matched.id);
-        const prevStatus = policeApiService.sanitizeOfficialStatus(existingDetail?.data?.incident_status || '');
-        if (nextStatus && nextStatus !== prevStatus) {
+  const statusSyncTasks = [];
+  const listWithClaimStatus = organizedList.map((item) => {
+    const matched = claimedMap.get(item.external_id) || claimedMap.get(item.incident_number);
+    if (matched) {
+      const nextStatus = policeApiService.sanitizeOfficialStatus(item.incident_status);
+      const existingDetail = detailByIncidentId.get(matched.id);
+      const prevStatus = policeApiService.sanitizeOfficialStatus(existingDetail?.data?.incident_status || '');
+      if (nextStatus && nextStatus !== prevStatus) {
+        if (syncSupported() && matched.unit_id) {
           statusSyncTasks.push((async () => {
             try {
               const store = require('./postgres-store');
@@ -1831,19 +1869,35 @@ app.get('/api/external-incidents', async (req, res, next) => {
               logger.warn(`[PoliceApiService] Failed to sync official status for ${matched.id}: ${err.message}`);
             }
           })());
+        } else {
+          localIncidentDetails.set(matched.id, { ...(existingDetail?.data || {}), incident_status: nextStatus });
         }
       }
-      return {
-        ...item,
-        claimed: Boolean(matched),
-        claimed_incident_id: matched ? matched.id : null,
-        claimed_incident_number: matched ? matched.number : null,
-        claimed_incident_title: matched ? (matched.title || matched.number) : null,
-      };
-    });
-    if (statusSyncTasks.length > 0) {
-      Promise.allSettled(statusSyncTasks).catch(() => {});
     }
+    return {
+      ...item,
+      claimed: Boolean(matched),
+      claimed_incident_id: matched ? matched.id : null,
+      claimed_incident_number: matched ? matched.number : null,
+      claimed_incident_title: matched ? (matched.title || matched.number) : null,
+    };
+  });
+
+  if (statusSyncTasks.length > 0) {
+    Promise.allSettled(statusSyncTasks).catch(() => {});
+  }
+  return listWithClaimStatus;
+}
+
+// 获取衢州市最近三天的官方派警列表（原始全量融合 + AI重组缓存），并标记认领状态
+app.get('/api/external-incidents', async (req, res, next) => {
+  try {
+    const forceRefresh = req.query.refresh === 'true' || req.query.refresh === '1';
+    const upstreamResult = await policeApiService.getQuzhouIncidents({ forceRefresh });
+    const listWithClaimStatus = await enrichAndAttachExternalClaimStatus(upstreamResult.list, req.unit?.id || null, {
+      awaitAi: forceRefresh && Boolean(CFG.llm.apiKey),
+      maxAwaitMs: 2200,
+    });
 
     res.json({
       list: listWithClaimStatus,
@@ -1854,6 +1908,113 @@ app.get('/api/external-incidents', async (req, res, next) => {
     next(e);
   }
 });
+
+// 手动触发指定或当前外部派警的 AI 重新结构化整理
+app.post('/api/external-incidents/reorganize', async (req, res, next) => {
+  try {
+    const key = `${req.unit?.id || 'default'}:${deviceKey(req) || req.ip || 'anon'}`;
+    if (externalReorganizeLimiter.isLimited(key, EXTERNAL_REORGANIZE_LIMIT_PER_MIN)) {
+      return res.status(429).json({ error: 'AI 重整请求过于频繁，请稍后再试', code: 'RATE_LIMITED' });
+    }
+    const rawIds = Array.isArray(req.body?.external_ids) ? req.body.external_ids.map(String).filter(Boolean) : null;
+    let sourceList = policeApiService.peekCachedIncidents();
+    if (sourceList.length === 0) {
+      const fetched = await policeApiService.getQuzhouIncidents({ forceRefresh: false });
+      sourceList = fetched.list;
+    }
+    const listWithClaimStatus = await enrichAndAttachExternalClaimStatus(sourceList, req.unit?.id || null, {
+      awaitAi: Boolean(CFG.llm.apiKey),
+      maxAwaitMs: 12000,
+      forceReorganizeIds: rawIds && rawIds.length > 0 ? rawIds : true,
+    });
+    res.json({ list: listWithClaimStatus });
+  } catch (e) {
+    next(e);
+  }
+});
+
+async function registerClaimedDispatchedForces({ incidentId, unitId, forces = [], device, actorName: name, opId, now }) {
+  if (!Array.isArray(forces) || forces.length === 0) return;
+  let matchesByKey = new Map();
+  if (syncSupported() && unitId) {
+    try {
+      const importRepo = require('./incident-import-repository');
+      const matched = await importRepo.matchForces(unitId, incidentId, forces);
+      for (const item of matched) {
+        matchesByKey.set(normalizeStationName(item.station_name), item);
+      }
+    } catch (err) {
+      logger.warn(`[ClaimExternal] matchForces skipped: ${err.message}`);
+    }
+  }
+
+  const seen = new Set();
+  for (let idx = 0; idx < forces.length; idx++) {
+    const item = forces[idx];
+    const stationName = String(item?.station_name || '').trim().slice(0, 80);
+    const stationKey = normalizeStationName(stationName);
+    if (!stationKey || seen.has(stationKey)) continue;
+    seen.add(stationKey);
+
+    const matched = matchesByKey.get(stationKey);
+    const hasVehicle = Number.isInteger(item?.vehicle_count) && item.vehicle_count >= 0;
+    const hasPersonnel = Number.isInteger(item?.personnel_count) && item.personnel_count >= 0;
+    const vehicleCount = hasVehicle ? item.vehicle_count : 0;
+    const personnelCount = hasPersonnel ? item.personnel_count : 0;
+    const forceId = crypto.randomUUID();
+    const forceArgs = {
+      id: forceId,
+      incidentId,
+      stationId: matched?.station_id || null,
+      unitStationId: matched?.unit_station_id || null,
+      stationName: matched?.matched_name || stationName,
+      vehicleCount,
+      personnelCount,
+      vehicleCountKnown: hasVehicle,
+      personnelCountKnown: hasPersonnel,
+    };
+    const eventPayload = {
+      force_id: forceId,
+      station_name: forceArgs.stationName,
+      vehicle_count: vehicleCount,
+      vehicle_count_known: hasVehicle,
+      personnel_count: personnelCount,
+      personnel_count_known: hasPersonnel,
+      before: null,
+    };
+    const forceEventArgs = {
+      incidentId,
+      type: 'force_added',
+      occurredAt: now,
+      recordedAt: now,
+      actorDeviceId: device,
+      actorName: name,
+      source: 'online',
+      clientOpId: opId ? `${opId}:force:${idx}` : null,
+      payload: eventPayload,
+    };
+    try {
+      const saved = typeof db.upsertIncidentForceWithEvent === 'function'
+        ? (await db.upsertIncidentForceWithEvent({ force: forceArgs, event: forceEventArgs, activityAt: now }))?.force
+        : await db.upsertIncidentForce(forceArgs);
+      if (typeof db.upsertIncidentForceWithEvent !== 'function') {
+        await db.appendIncidentEvent(forceEventArgs);
+      }
+      if (syncSupported() && saved?.id) {
+        const store = require('./postgres-store');
+        const deploymentStatus = ['dispatched', 'mobilized', 'unknown'].includes(item?.deployment_status)
+          ? item.deployment_status
+          : 'dispatched';
+        await store.query(
+          'UPDATE incident_forces SET unit_station_id=$2, deployment_status=$3, information_source=$4 WHERE id=$1',
+          [saved.id, forceArgs.unitStationId, deploymentStatus, 'external_sync']
+        );
+      }
+    } catch (err) {
+      logger.warn(`[ClaimExternal] auto-register force "${stationName}" failed: ${err.message}`);
+    }
+  }
+}
 
 app.post('/api/incidents/claim-external', async (req, res, next) => {
   let releaseCreation;
@@ -1896,6 +2057,12 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
             break;
           }
         } catch (_) {}
+      } else if (localIncidentDetails.has(incident.id)) {
+        const localData = localIncidentDetails.get(incident.id);
+        if ((extId && localData?.external_id === extId) || (extNumber && localData?.external_incident_number === extNumber)) {
+          existingIncident = incident;
+          break;
+        }
       }
     }
 
@@ -1910,42 +2077,36 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
     if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
 
-    // 3. 建档：自动填入官方编号与地址/分类
+    // 3. 融合服务端持久化 AI 结果与客户端参数，以“灾情事件”为主标题建档
     const now = Date.now();
-    const {
-      buildSituationDescription,
-      extractContacts,
-      buildDispatchSummary,
-      sanitizeCoordinates,
-      resolveDistrict,
-      cleanIncidentLocation,
-      sanitizeOfficialStatus,
-    } = require('./police-api-service');
-    const resolvedDistrict = resolveDistrict(ext);
-    const fullLocation = cleanIncidentLocation(ext.crime_address, resolvedDistrict);
-    const normalizedStatus = sanitizeOfficialStatus(ext.incident_status);
-    const title = ext.crime_address || (resolvedDistrict ? `${resolvedDistrict} ${ext.incident_type || ''}` : ext.incident_type) || null;
+    const stored = extId ? await externalIncidentOrganizer.getStoredIncident(extId) : null;
+    const mergedRaw = {
+      ...(stored && typeof stored === 'object' ? stored : {}),
+      ...ext,
+      // 若服务端已有 AI 重组结果且客户端未传覆盖值，优先沿用 AI 结构化结论
+      event_summary: ext.event_summary || stored?.event_summary || '',
+      disaster_category: ext.disaster_category || stored?.disaster_category || '',
+      location_display: ext.location_display || stored?.location_display || '',
+      situation_detail: ext.situation_detail || stored?.situation_detail || '',
+      dispatched_forces: Array.isArray(ext.dispatched_forces) && ext.dispatched_forces.length > 0
+        ? ext.dispatched_forces
+        : stored?.dispatched_forces,
+    };
+    const mergedExt = buildRuleFallbackStructured(mergedRaw, mergedRaw.raw_payload);
+    const coords = policeApiService.sanitizeCoordinates(mergedExt.latitude, mergedExt.longitude);
+    const fullLocation = mergedExt.location_display || mergedExt.crime_address || mergedExt.district_name;
     const candidateNumber = extNumber || null;
-
-    const situation = ext.incident_describe || buildSituationDescription({
-      incident_type: ext.incident_type,
-      disposal_object_name: ext.disposal_object_name,
-      alarm_mode_name: ext.alarm_mode_name,
-      incident_status: ext.incident_status,
-    });
-    const coords = sanitizeCoordinates(ext.latitude, ext.longitude);
-    const contacts = extractContacts(ext);
-    const dispatchSummary = buildDispatchSummary({
-      dispatch_vehicle: ext.dispatch_vehicle,
-      dispatch_organization: ext.dispatch_organization,
-      squadron_name: ext.squadron_name,
-    });
+    const eventTitle = String(mergedExt.event_summary || '').trim().slice(0, 120)
+      || (mergedExt.district_name ? `${mergedExt.district_name} ${mergedExt.incident_type || ''}`.trim() : mergedExt.incident_type)
+      || fullLocation
+      || candidateNumber
+      || null;
 
     const created = await db.createIncident({
       unitId,
       createdBy: device,
       number: candidateNumber,
-      title,
+      title: eventTitle,
       createdAt: now,
     });
 
@@ -1958,34 +2119,40 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
       payload: { number: created.number, external_id: extId, external_number: extNumber },
     });
 
-    // 4. 写入 incident_details
+    // 4. 写入完整重构字段到 incident_details（PostgreSQL / SQLite 测试适配）
+    const detailData = {
+      external_id: extId || undefined,
+      external_incident_number: extNumber || undefined,
+      external_source: 'police_api_quzhou',
+      event_summary: mergedExt.event_summary || undefined,
+      disaster_category: mergedExt.disaster_category || undefined,
+      original_category: mergedExt.incident_type || undefined,
+      incident_status: mergedExt.official_status || undefined,
+      location: fullLocation || undefined,
+      administrative_area: mergedExt.district_name || undefined,
+      situation: mergedExt.situation_detail || undefined,
+      received_at: formatBeijingIso(mergedExt.register_time) || undefined,
+      specific_type: mergedExt.specific_type || undefined,
+      level: mergedExt.incident_level || undefined,
+      trapped: mergedExt.trapped || undefined,
+      injured: mergedExt.injured || undefined,
+      hazardous_materials: mergedExt.hazardous_materials || undefined,
+      latitude: coords.latitude || undefined,
+      longitude: coords.longitude || undefined,
+      contacts: mergedExt.contacts?.length > 0 ? mergedExt.contacts : undefined,
+      dispatch_summary: mergedExt.dispatch_summary || undefined,
+      dispatch_vehicles: mergedExt.dispatch_vehicle || undefined,
+      dispatch_stations: mergedExt.dispatch_organization || undefined,
+      main_station: mergedExt.squadron_name || undefined,
+      raw_merged_text: mergedExt.raw_merged_text || undefined,
+    };
+    const cleanData = {};
+    for (const [k, v] of Object.entries(detailData)) {
+      if (v !== undefined) cleanData[k] = v;
+    }
+
     if (syncSupported() && unitId) {
       try {
-        const detailData = {
-          external_id: extId || undefined,
-          external_incident_number: extNumber || undefined,
-          external_source: 'police_api_quzhou',
-          original_category: ext.incident_type || undefined,
-          incident_status: normalizedStatus || undefined,
-          location: fullLocation || ext.crime_address || undefined,
-          administrative_area: resolvedDistrict || ext.district_name || undefined,
-          situation: situation || undefined,
-          received_at: ext.register_time ? new Date(ext.register_time).toISOString() : undefined,
-          specific_type: (ext.disposal_object_name && ext.disposal_object_name !== '其他') ? ext.disposal_object_name : (ext.incident_type || undefined),
-          level: ext.incident_level || undefined,
-          latitude: coords.latitude || undefined,
-          longitude: coords.longitude || undefined,
-          contacts: contacts.length > 0 ? contacts : undefined,
-          dispatch_summary: dispatchSummary || undefined,
-          dispatch_vehicles: ext.dispatch_vehicle || undefined,
-          dispatch_stations: ext.dispatch_organization || undefined,
-          main_station: ext.squadron_name || undefined,
-        };
-        const cleanData = {};
-        for (const [k, v] of Object.entries(detailData)) {
-          if (v !== undefined) cleanData[k] = v;
-        }
-
         const store = require('./postgres-store');
         await store.query(
           `INSERT INTO incident_details(incident_id, unit_id, data, version, updated_at, updated_by)
@@ -2004,23 +2171,26 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
       } catch (err) {
         logger.error(`Failed to auto-populate incident details from external incident: ${err.message}`);
       }
+    } else {
+      localIncidentDetails.set(created.id, cleanData);
     }
+
+    // 5. 自动向 incident_forces 登记出动力量（车/人未知时显式标记为待补充，不编造数字）
+    await registerClaimedDispatchedForces({
+      incidentId: created.id,
+      unitId,
+      forces: mergedExt.dispatched_forces,
+      device,
+      actorName: name,
+      opId,
+      now,
+    });
 
     const view = await incidentView(created);
     if (view) {
       view.info = {
+        ...buildIncidentInfoProjection(cleanData),
         ...view.info,
-        original_category: view.info?.original_category || ext.incident_type || undefined,
-        incident_status: view.info?.incident_status || normalizedStatus || undefined,
-        location: view.info?.location || fullLocation || ext.crime_address || undefined,
-        administrative_area: view.info?.administrative_area || resolvedDistrict || ext.district_name || undefined,
-        situation: view.info?.situation || situation || undefined,
-        received_at: view.info?.received_at || (ext.register_time ? new Date(ext.register_time).toISOString() : undefined),
-        specific_type: view.info?.specific_type || ((ext.disposal_object_name && ext.disposal_object_name !== '其他') ? ext.disposal_object_name : (ext.incident_type || undefined)),
-        level: view.info?.level || ext.incident_level || undefined,
-        latitude: view.info?.latitude || coords.latitude || undefined,
-        longitude: view.info?.longitude || coords.longitude || undefined,
-        dispatch_summary: view.info?.dispatch_summary || dispatchSummary || undefined,
       };
     }
     await completeTrackedOperation(tracked, view, 201, event?.id);
@@ -4329,5 +4499,7 @@ if (require.main === module) {
     setInterval(doPurge, 24 * 3600 * 1000);
   }
 }
+
+app.externalIncidentOrganizer = externalIncidentOrganizer;
 
 module.exports = app;

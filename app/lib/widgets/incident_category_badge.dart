@@ -45,11 +45,17 @@ enum IncidentCategory {
   };
 
   static IncidentCategory classify({
+    String? disasterCategory,
     String category = '',
     String specificType = '',
     String situation = '',
     String title = '',
   }) {
+    final explicit = (disasterCategory ?? '').trim().toLowerCase();
+    if (explicit == 'fire') return IncidentCategory.fire;
+    if (explicit == 'rescue') return IncidentCategory.rescue;
+    if (explicit == 'aid') return IncidentCategory.aid;
+
     final primary = '$category $specificType'.trim();
     if (_containsAny(primary, const ['社会救助', '公务执勤', '安保'])) {
       return IncidentCategory.aid;
@@ -504,6 +510,70 @@ class IncidentCardData {
   static String _compact(String value) =>
       value.replaceAll(RegExp(r'\s+'), '');
 
+  static String formatDateTime(DateTime dt, {DateTime? now}) {
+    final local = dt.toLocal();
+    final ref = (now ?? DateTime.now()).toLocal();
+    final isToday =
+        local.year == ref.year &&
+        local.month == ref.month &&
+        local.day == ref.day;
+    final yesterday = ref.subtract(const Duration(days: 1));
+    final isYesterday =
+        local.year == yesterday.year &&
+        local.month == yesterday.month &&
+        local.day == yesterday.day;
+
+    final h = local.hour.toString().padLeft(2, '0');
+    final min = local.minute.toString().padLeft(2, '0');
+    if (isToday) return '今日 $h:$min';
+    if (isYesterday) return '昨日 $h:$min';
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    if (local.year == ref.year) return '$m-$d $h:$min';
+    return '${local.year}-$m-$d $h:$min';
+  }
+
+  static String formatTimestampMs(int timestampMs, {DateTime? now}) {
+    if (timestampMs <= 0) return '';
+    return formatDateTime(
+      DateTime.fromMillisecondsSinceEpoch(timestampMs),
+      now: now,
+    );
+  }
+
+  static String formatCompactForces(
+    List<IncidentForce> forces, {
+    String? dispatchSummary,
+  }) {
+    if (forces.isNotEmpty) {
+      final parts = <String>[];
+      for (final force in forces.take(2)) {
+        final name = force.stationName.trim();
+        if (name.isEmpty) continue;
+        final counts = StringBuffer();
+        if (force.vehicleCountKnown) {
+          counts.write('${force.vehicleCount}车');
+        }
+        if (force.personnelCountKnown) {
+          counts.write('${force.personnelCount}人');
+        }
+        if (counts.isEmpty) {
+          parts.add('$name 待补充');
+        } else {
+          parts.add('$name $counts');
+        }
+      }
+      if (parts.isNotEmpty) {
+        if (forces.length > 2) {
+          return '${parts.join(' · ')} 等${forces.length}支队';
+        }
+        return parts.join(' · ');
+      }
+    }
+    final fallback = (dispatchSummary ?? '').trim();
+    return fallback;
+  }
+
   static String formatIncidentTime(Incident incident, {DateTime? now}) {
     DateTime? dt;
     final rawReceived = (incident.info['received_at']?.toString() ?? '').trim();
@@ -514,24 +584,7 @@ class IncidentCardData {
       dt = DateTime.fromMillisecondsSinceEpoch(incident.createdAt).toLocal();
     }
     if (dt == null) return '时间待补充';
-
-    final ref = (now ?? DateTime.now()).toLocal();
-    final isToday =
-        dt.year == ref.year && dt.month == ref.month && dt.day == ref.day;
-    final yesterday = ref.subtract(const Duration(days: 1));
-    final isYesterday =
-        dt.year == yesterday.year &&
-        dt.month == yesterday.month &&
-        dt.day == yesterday.day;
-
-    final h = dt.hour.toString().padLeft(2, '0');
-    final min = dt.minute.toString().padLeft(2, '0');
-    if (isToday) return '今日 $h:$min';
-    if (isYesterday) return '昨日 $h:$min';
-    final m = dt.month.toString().padLeft(2, '0');
-    final d = dt.day.toString().padLeft(2, '0');
-    if (dt.year == ref.year) return '$m-$d $h:$min';
-    return '${dt.year}-$m-$d $h:$min';
+    return formatDateTime(dt, now: now);
   }
 
   factory IncidentCardData.fromIncident(Incident incident, {DateTime? now}) {
@@ -541,6 +594,9 @@ class IncidentCardData {
                 info['level']?.toString() ??
                 '')
             .trim();
+    final explicitCategory = (info['disaster_category']?.toString() ?? '')
+        .trim();
+    final rawEventSummary = (info['event_summary']?.toString() ?? '').trim();
     final specificType = (info['specific_type']?.toString() ?? '').trim();
     var officialStatus = sanitizeOfficialStatus(
       info['incident_status']?.toString() ?? '',
@@ -571,6 +627,23 @@ class IncidentCardData {
         } else {
           extraNotes.add(part);
         }
+      }
+    }
+
+    for (final factKey in ['trapped', 'injured', 'hazardous_materials']) {
+      final val = (info[factKey]?.toString() ?? '').trim();
+      if (val.isEmpty ||
+          val == '无人员被困' ||
+          val == '无人员伤亡' ||
+          val == '无人员受伤' ||
+          extraTags.contains(val) ||
+          extraNotes.contains(val)) {
+        continue;
+      }
+      if (val.length <= 16) {
+        extraTags.add(val);
+      } else {
+        extraNotes.add(val);
       }
     }
 
@@ -607,6 +680,9 @@ class IncidentCardData {
     String eventTitle;
     if (rawTitle.isNotEmpty && !titleIsAddress) {
       eventTitle = rawTitle;
+    } else if (rawEventSummary.isNotEmpty &&
+        _compact(rawEventSummary) != _compact(resolvedLocation)) {
+      eventTitle = rawEventSummary;
     } else {
       final candidateFromSit = situationEventParts
           .map(_cleanEventFragment)
@@ -640,6 +716,7 @@ class IncidentCardData {
     extraTags.removeWhere((tag) => _compact(tag) == _compact(eventTitle));
 
     final category = IncidentCategory.classify(
+      disasterCategory: explicitCategory,
       category: rawCategory,
       specificType: specificType,
       situation: situation,

@@ -1897,7 +1897,10 @@ class HomePageState extends State<HomePage> {
     _disposeControllerAfterFrame(edit);
     if (level == null || !mounted) return;
     try {
-      await widget.controller.updateIncidentLevel(level);
+      await widget.controller.updateIncidentLevel(
+        level,
+        disasterCategory: selectedCategory.name,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -3858,6 +3861,10 @@ class _TaskBarState extends State<_TaskBar> {
   @override
   Widget build(BuildContext context) {
     final data = IncidentCardData.fromIncident(widget.incident);
+    final compactForces = IncidentCardData.formatCompactForces(
+      widget.forces,
+      dispatchSummary: widget.incident.info['dispatch_summary']?.toString(),
+    );
     final showPendingForcePill =
         widget.forces.isEmpty && !data.isTerminalStatus;
     final hasAnyStatusPill =
@@ -3920,6 +3927,32 @@ class _TaskBarState extends State<_TaskBar> {
                                 time: data.timeText,
                                 mutedLocation: !data.hasRealLocation,
                               ),
+                              if (!_expanded && compactForces.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  key: const Key('incident-collapsed-forces'),
+                                  children: [
+                                    Icon(
+                                      Icons.local_shipping_outlined,
+                                      size: 13.5,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        compactForces,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTextStyles.caption.copyWith(
+                                          color: AppColors.textSecondary,
+                                          fontWeight: FontWeight.w600,
+                                          height: 1.25,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         ),

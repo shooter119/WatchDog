@@ -176,6 +176,47 @@ class Incident {
   );
 }
 
+class ExternalDispatchedForce {
+  final String stationName;
+  final int? vehicleCount;
+  final int? personnelCount;
+  final String deploymentStatus;
+
+  const ExternalDispatchedForce({
+    required this.stationName,
+    this.vehicleCount,
+    this.personnelCount,
+    this.deploymentStatus = 'dispatched',
+  });
+
+  String get compactLabel {
+    final name = stationName.trim();
+    if (name.isEmpty) return '';
+    final buf = StringBuffer(name);
+    if (vehicleCount != null || personnelCount != null) {
+      buf.write(' ');
+      if (vehicleCount != null) buf.write('$vehicleCount车');
+      if (personnelCount != null) buf.write('$personnelCount人');
+    }
+    return buf.toString();
+  }
+
+  factory ExternalDispatchedForce.fromJson(Map<String, dynamic> json) =>
+      ExternalDispatchedForce(
+        stationName: json['station_name']?.toString().trim() ?? '',
+        vehicleCount: (json['vehicle_count'] as num?)?.toInt(),
+        personnelCount: (json['personnel_count'] as num?)?.toInt(),
+        deploymentStatus: json['deployment_status']?.toString() ?? 'dispatched',
+      );
+
+  Map<String, dynamic> toJson() => {
+    'station_name': stationName,
+    'vehicle_count': vehicleCount,
+    'personnel_count': personnelCount,
+    'deployment_status': deploymentStatus,
+  };
+}
+
 class ExternalIncident {
   final String externalId;
   final String incidentNumber;
@@ -192,6 +233,27 @@ class ExternalIncident {
   final int registerTime;
   final String? latitude;
   final String? longitude;
+  final String alarmPhone;
+  final String alarmPersonPhone;
+  final String alarmPersonName;
+  final String alarmModeName;
+  final String incidentNatureName;
+  final String dispatchVehicle;
+  final String dispatchOrganization;
+  final String eventSummary;
+  final String disasterCategory;
+  final String specificType;
+  final String locationDisplay;
+  final String officialStatus;
+  final String situationDetail;
+  final String trapped;
+  final String injured;
+  final String hazardousMaterials;
+  final String dispatchSummary;
+  final List<ExternalDispatchedForce> dispatchedForces;
+  final List<String> factHighlights;
+  final String aiStatus;
+  final String rawMergedText;
   final bool claimed;
   final String? claimedIncidentId;
   final String? claimedIncidentNumber;
@@ -213,13 +275,70 @@ class ExternalIncident {
     required this.registerTime,
     this.latitude,
     this.longitude,
+    this.alarmPhone = '',
+    this.alarmPersonPhone = '',
+    this.alarmPersonName = '',
+    this.alarmModeName = '',
+    this.incidentNatureName = '',
+    this.dispatchVehicle = '',
+    this.dispatchOrganization = '',
+    this.eventSummary = '',
+    this.disasterCategory = '',
+    this.specificType = '',
+    this.locationDisplay = '',
+    this.officialStatus = '',
+    this.situationDetail = '',
+    this.trapped = '',
+    this.injured = '',
+    this.hazardousMaterials = '',
+    this.dispatchSummary = '',
+    this.dispatchedForces = const [],
+    this.factHighlights = const [],
+    this.aiStatus = '',
+    this.rawMergedText = '',
     this.claimed = false,
     this.claimedIncidentId,
     this.claimedIncidentNumber,
     this.claimedIncidentTitle,
   });
 
+  String get effectiveEventTitle {
+    if (eventSummary.trim().isNotEmpty) return eventSummary.trim();
+    if (incidentDescribe.trim().isNotEmpty) return incidentDescribe.trim();
+    if (disposalObjectName.trim().isNotEmpty && disposalObjectName.trim() != '其他') {
+      return incidentType.trim().isNotEmpty
+          ? '${incidentType.trim()}（${disposalObjectName.trim()}）'
+          : disposalObjectName.trim();
+    }
+    if (incidentType.trim().isNotEmpty && incidentType.trim() != '其他') {
+      return incidentType.trim();
+    }
+    if (crimeAddress.trim().isNotEmpty) return crimeAddress.trim();
+    return incidentNumber;
+  }
+
+  String get effectiveLocation {
+    if (locationDisplay.trim().isNotEmpty) return locationDisplay.trim();
+    if (crimeAddress.trim().isNotEmpty) return crimeAddress.trim();
+    return districtName.trim();
+  }
+
+  List<String> get compactForceTags {
+    final tags = <String>[];
+    for (final f in dispatchedForces) {
+      final label = f.compactLabel;
+      if (label.isNotEmpty) tags.add(label);
+    }
+    if (tags.isEmpty && dispatchSummary.trim().isNotEmpty) {
+      tags.add(dispatchSummary.trim());
+    } else if (tags.isEmpty && squadronName.trim().isNotEmpty) {
+      tags.add(squadronName.trim());
+    }
+    return tags;
+  }
+
   String get situationSummary {
+    if (situationDetail.trim().isNotEmpty) return situationDetail.trim();
     if (incidentDescribe.trim().isNotEmpty) return incidentDescribe.trim();
     if (disposalObjectName.isNotEmpty && disposalObjectName != '其他') {
       return '$incidentType($disposalObjectName)';
@@ -227,27 +346,70 @@ class ExternalIncident {
     return incidentType;
   }
 
-  factory ExternalIncident.fromJson(Map<String, dynamic> json) => ExternalIncident(
-    externalId: json['external_id']?.toString() ?? '',
-    incidentNumber: json['incident_number']?.toString() ?? '',
-    detachmentName: json['detachment_name']?.toString() ?? '',
-    brigadeName: json['brigade_name']?.toString() ?? '',
-    squadronName: json['squadron_name']?.toString() ?? '',
-    districtName: json['district_name']?.toString() ?? '',
-    incidentType: json['incident_type']?.toString() ?? '其他',
-    disposalObjectName: json['disposal_object_name']?.toString() ?? '',
-    incidentLevel: json['incident_level']?.toString() ?? '',
-    incidentStatus: json['incident_status']?.toString() ?? '',
-    crimeAddress: json['crime_address']?.toString() ?? '',
-    incidentDescribe: json['incident_describe']?.toString() ?? '',
-    registerTime: (json['register_time'] as num?)?.toInt() ?? 0,
-    latitude: json['latitude']?.toString(),
-    longitude: json['longitude']?.toString(),
-    claimed: json['claimed'] == true,
-    claimedIncidentId: json['claimed_incident_id']?.toString(),
-    claimedIncidentNumber: json['claimed_incident_number']?.toString(),
-    claimedIncidentTitle: json['claimed_incident_title']?.toString(),
-  );
+  factory ExternalIncident.fromJson(Map<String, dynamic> json) {
+    final rawForces = json['dispatched_forces'];
+    final forces = rawForces is List
+        ? rawForces
+            .whereType<Map>()
+            .map(
+              (item) => ExternalDispatchedForce.fromJson(
+                Map<String, dynamic>.from(item),
+              ),
+            )
+            .where((f) => f.stationName.isNotEmpty)
+            .toList()
+        : const <ExternalDispatchedForce>[];
+    final rawHighlights = json['fact_highlights'];
+    final highlights = rawHighlights is List
+        ? rawHighlights
+            .map((e) => e?.toString().trim() ?? '')
+            .where((e) => e.isNotEmpty)
+            .toList()
+        : const <String>[];
+
+    return ExternalIncident(
+      externalId: json['external_id']?.toString() ?? '',
+      incidentNumber: json['incident_number']?.toString() ?? '',
+      detachmentName: json['detachment_name']?.toString() ?? '',
+      brigadeName: json['brigade_name']?.toString() ?? '',
+      squadronName: json['squadron_name']?.toString() ?? '',
+      districtName: json['district_name']?.toString() ?? '',
+      incidentType: json['incident_type']?.toString() ?? '其他',
+      disposalObjectName: json['disposal_object_name']?.toString() ?? '',
+      incidentLevel: json['incident_level']?.toString() ?? '',
+      incidentStatus: json['incident_status']?.toString() ?? '',
+      crimeAddress: json['crime_address']?.toString() ?? '',
+      incidentDescribe: json['incident_describe']?.toString() ?? '',
+      registerTime: (json['register_time'] as num?)?.toInt() ?? 0,
+      latitude: json['latitude']?.toString(),
+      longitude: json['longitude']?.toString(),
+      alarmPhone: json['alarm_phone']?.toString() ?? '',
+      alarmPersonPhone: json['alarm_person_phone']?.toString() ?? '',
+      alarmPersonName: json['alarm_person_name']?.toString() ?? '',
+      alarmModeName: json['alarm_mode_name']?.toString() ?? '',
+      incidentNatureName: json['incident_nature_name']?.toString() ?? '',
+      dispatchVehicle: json['dispatch_vehicle']?.toString() ?? '',
+      dispatchOrganization: json['dispatch_organization']?.toString() ?? '',
+      eventSummary: json['event_summary']?.toString() ?? '',
+      disasterCategory: json['disaster_category']?.toString() ?? '',
+      specificType: json['specific_type']?.toString() ?? '',
+      locationDisplay: json['location_display']?.toString() ?? '',
+      officialStatus: json['official_status']?.toString() ?? '',
+      situationDetail: json['situation_detail']?.toString() ?? '',
+      trapped: json['trapped']?.toString() ?? '',
+      injured: json['injured']?.toString() ?? '',
+      hazardousMaterials: json['hazardous_materials']?.toString() ?? '',
+      dispatchSummary: json['dispatch_summary']?.toString() ?? '',
+      dispatchedForces: forces,
+      factHighlights: highlights,
+      aiStatus: json['ai_status']?.toString() ?? '',
+      rawMergedText: json['raw_merged_text']?.toString() ?? '',
+      claimed: json['claimed'] == true,
+      claimedIncidentId: json['claimed_incident_id']?.toString(),
+      claimedIncidentNumber: json['claimed_incident_number']?.toString(),
+      claimedIncidentTitle: json['claimed_incident_title']?.toString(),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'external_id': externalId,
@@ -265,6 +427,28 @@ class ExternalIncident {
     'register_time': registerTime,
     if (latitude != null) 'latitude': latitude,
     if (longitude != null) 'longitude': longitude,
+    if (alarmPhone.isNotEmpty) 'alarm_phone': alarmPhone,
+    if (alarmPersonPhone.isNotEmpty) 'alarm_person_phone': alarmPersonPhone,
+    if (alarmPersonName.isNotEmpty) 'alarm_person_name': alarmPersonName,
+    if (alarmModeName.isNotEmpty) 'alarm_mode_name': alarmModeName,
+    if (incidentNatureName.isNotEmpty) 'incident_nature_name': incidentNatureName,
+    if (dispatchVehicle.isNotEmpty) 'dispatch_vehicle': dispatchVehicle,
+    if (dispatchOrganization.isNotEmpty) 'dispatch_organization': dispatchOrganization,
+    if (eventSummary.isNotEmpty) 'event_summary': eventSummary,
+    if (disasterCategory.isNotEmpty) 'disaster_category': disasterCategory,
+    if (specificType.isNotEmpty) 'specific_type': specificType,
+    if (locationDisplay.isNotEmpty) 'location_display': locationDisplay,
+    if (officialStatus.isNotEmpty) 'official_status': officialStatus,
+    if (situationDetail.isNotEmpty) 'situation_detail': situationDetail,
+    if (trapped.isNotEmpty) 'trapped': trapped,
+    if (injured.isNotEmpty) 'injured': injured,
+    if (hazardousMaterials.isNotEmpty) 'hazardous_materials': hazardousMaterials,
+    if (dispatchSummary.isNotEmpty) 'dispatch_summary': dispatchSummary,
+    if (dispatchedForces.isNotEmpty)
+      'dispatched_forces': dispatchedForces.map((e) => e.toJson()).toList(),
+    if (factHighlights.isNotEmpty) 'fact_highlights': factHighlights,
+    if (aiStatus.isNotEmpty) 'ai_status': aiStatus,
+    if (rawMergedText.isNotEmpty) 'raw_merged_text': rawMergedText,
     'claimed': claimed,
     if (claimedIncidentId != null) 'claimed_incident_id': claimedIncidentId,
     if (claimedIncidentNumber != null) 'claimed_incident_number': claimedIncidentNumber,

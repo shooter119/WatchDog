@@ -504,10 +504,13 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                           !controller.needsAuthentication &&
                           (controller.syncing || controller.api == null),
                       externalLoading: controller.externalIncidentsLoading,
+                      externalReorganizing: controller.externalReorganizing,
                       onRefreshExternal: ({bool forceRefresh = false}) =>
                           controller.fetchExternalIncidents(
                             forceRefresh: forceRefresh,
                           ),
+                      onReorganizeExternal: () =>
+                          controller.reorganizeExternalIncidents(),
                       onClaimExternal: (ext) =>
                           _homeKey.currentState?.claimExternalIncidentFromGate(
                             ext,

@@ -1412,6 +1412,35 @@ class ApiClient {
     return const [];
   }
 
+  Future<List<ExternalIncident>> reorganizeExternalIncidents({
+    List<String>? externalIds,
+  }) async {
+    final res = await _client
+        .post(
+          _uri('/api/external-incidents/reorganize'),
+          headers: _headers,
+          body: jsonEncode({
+            if (externalIds != null && externalIds.isNotEmpty)
+              'external_ids': externalIds,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    final body = _decodeJson(res, fallback: 'AI 重新整理警情失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: 'AI 重新整理警情失败');
+    }
+    if (body is Map && body['list'] is List) {
+      final list = body['list'] as List;
+      return list
+          .whereType<Map>()
+          .map(
+            (item) => ExternalIncident.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList();
+    }
+    return const [];
+  }
+
   Future<Incident> claimExternalIncident(
     ExternalIncident incident, {
     required String realName,

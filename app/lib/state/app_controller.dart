@@ -131,6 +131,7 @@ class AppController extends ChangeNotifier {
   List<Incident> activeIncidents = [];
   List<ExternalIncident> externalIncidents = [];
   bool externalIncidentsLoading = false;
+  bool externalReorganizing = false;
   List<IncidentForce> forces = [];
   bool _authenticated = false;
   AdminCapability? adminCapability;
@@ -2216,6 +2217,29 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> reorganizeExternalIncidents() async {
+    if (needsAuthentication || externalReorganizing) return;
+    await _ensureApiReady();
+    final a = api;
+    if (a == null) return;
+    externalReorganizing = true;
+    _notify();
+    try {
+      final ids = externalIncidents
+          .map((e) => e.externalId)
+          .where((id) => id.isNotEmpty)
+          .toList();
+      final list = await a.reorganizeExternalIncidents(externalIds: ids);
+      externalIncidents = list;
+    } catch (error) {
+      debugPrint('WatchDog reorganizeExternalIncidents failed: $error');
+      rethrow;
+    } finally {
+      externalReorganizing = false;
+      _notify();
+    }
+  }
+
   Future<Incident> claimExternalIncident(ExternalIncident externalIncident) async {
     final name = await Settings.realName;
     if (name.isEmpty) throw StateError('请先在设置中填写真实姓名');
@@ -2329,7 +2353,10 @@ class AppController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> updateIncidentLevel(String level) async {
+  Future<void> updateIncidentLevel(
+    String level, {
+    String? disasterCategory,
+  }) async {
     final a = api;
     final incident = currentIncident;
     if (a == null || incident == null) throw StateError('未选择警情');
@@ -2342,8 +2369,17 @@ class AppController extends ChangeNotifier {
       final detail = await scoped.fetchIncidentDetails();
       final data = Map<String, dynamic>.from(detail['data'] as Map? ?? {});
       final version = (detail['version'] as num?)?.toInt() ?? 0;
+      if (disasterCategory != null && disasterCategory.trim().isNotEmpty) {
+        data['disaster_category'] = disasterCategory.trim();
+      } else {
+        data.remove('disaster_category');
+      }
       await scoped.updateIncidentDetails(
-        {...data, 'original_category': value, 'level': value},
+        {
+          ...data,
+          'original_category': value,
+          'level': value,
+        },
         version,
         'incident-level-${DateTime.now().microsecondsSinceEpoch}',
       );

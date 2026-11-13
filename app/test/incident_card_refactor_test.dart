@@ -486,4 +486,131 @@ void main() {
       );
     });
   });
+
+  group('首页与警情获取页全量字段对齐及力量同步展示', () {
+    test('ExternalIncident 全字段 fromJson / toJson 无损往返与 getters', () {
+      const source = ExternalIncident(
+        externalId: 'ext-rt-1',
+        incidentNumber: '20261114099',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '火灾扑救',
+        disposalObjectName: '民房',
+        incidentLevel: '二级',
+        incidentStatus: '出动',
+        crimeAddress: '示例省示例市示例县和平街9号',
+        incidentDescribe: '民房厨房油锅起火',
+        registerTime: 1786177140000,
+        latitude: '29.01',
+        longitude: '119.12',
+        alarmPhone: '0110',
+        alarmPersonPhone: '13800001111',
+        alarmPersonName: '李四',
+        alarmModeName: '电话报警',
+        incidentNatureName: '真警',
+        dispatchVehicle: '3',
+        dispatchOrganization: '1',
+        eventSummary: '和平街民房厨房油锅起火',
+        disasterCategory: 'fire',
+        specificType: '民房火灾',
+        locationDisplay: '示例县和平街9号',
+        officialStatus: '出动',
+        situationDetail: '民房厨房油锅起火，暂无人员被困',
+        trapped: '',
+        injured: '',
+        hazardousMaterials: '液化气',
+        dispatchSummary: '3车 1站 (主调: 示例路站)',
+        dispatchedForces: [
+          ExternalDispatchedForce(
+            stationName: '示例路站',
+            vehicleCount: 3,
+            personnelCount: null,
+          ),
+        ],
+        factHighlights: ['涉液化气', '二级'],
+        aiStatus: 'ready',
+        rawMergedText: '警情编号: 20261114099',
+      );
+
+      final roundTrip = ExternalIncident.fromJson(source.toJson());
+      expect(roundTrip.eventSummary, '和平街民房厨房油锅起火');
+      expect(roundTrip.disasterCategory, 'fire');
+      expect(roundTrip.dispatchVehicle, '3');
+      expect(roundTrip.dispatchOrganization, '1');
+      expect(roundTrip.alarmPersonPhone, '13800001111');
+      expect(roundTrip.alarmPersonName, '李四');
+      expect(roundTrip.dispatchedForces.length, 1);
+      expect(roundTrip.dispatchedForces.first.vehicleCount, 3);
+      expect(roundTrip.dispatchedForces.first.personnelCount, isNull);
+      expect(roundTrip.compactForceTags, ['示例路站 3车']);
+      expect(roundTrip.effectiveEventTitle, '和平街民房厨房油锅起火');
+      expect(roundTrip.effectiveLocation, '示例县和平街9号');
+    });
+
+    testWidgets('首页折叠态在有出动力量时紧凑展示并在无力量时不占位', (tester) async {
+      final emptyController = _TestController(
+        incident: const Incident(
+          id: 'inc-no-force',
+          number: '2026-11-14-01',
+          title: '沿街商铺烟道冒烟',
+          info: {
+            'location': '示例县示范路10号',
+            'original_category': '火灾扑救',
+          },
+          status: 'active',
+          createdAt: 1786177140000,
+          lastActivityAt: 1786177140000,
+        ),
+      );
+      await _pumpHome(tester, emptyController);
+      expect(find.byKey(const Key('incident-collapsed-forces')), findsNothing);
+      final collapsedHeight = tester
+          .getSize(find.byKey(const Key('incident-card')))
+          .height;
+      expect(collapsedHeight, lessThan(120));
+
+      final withForceController = _TestController(
+        incident: const Incident(
+          id: 'inc-with-force',
+          number: '2026-11-14-02',
+          title: '居民楼厨房起火',
+          info: {
+            'location': '示例县示范路20号',
+            'original_category': '火灾扑救',
+          },
+          status: 'active',
+          createdAt: 1786177140000,
+          lastActivityAt: 1786177140000,
+        ),
+        forces: const [
+          IncidentForce(
+            id: 'f-sync-1',
+            incidentId: 'inc-with-force',
+            stationName: '示例路站',
+            vehicleCount: 3,
+            personnelCount: 0,
+            vehicleCountKnown: true,
+            personnelCountKnown: false,
+            createdAt: 1,
+            updatedAt: 1,
+            version: 1,
+          ),
+        ],
+      );
+      await _pumpHome(tester, withForceController);
+      expect(
+        find.byKey(const Key('incident-collapsed-forces')),
+        findsOneWidget,
+      );
+      expect(find.text('示例路站 3车'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('toggle-incident-card')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('incident-collapsed-forces')), findsNothing);
+      expect(find.text('参战力量'), findsOneWidget);
+      expect(find.textContaining('示例路站'), findsOneWidget);
+    });
+  });
 }

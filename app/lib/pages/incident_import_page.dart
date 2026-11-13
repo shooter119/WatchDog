@@ -11,6 +11,7 @@ import '../services/incident_image_draft.dart';
 import '../theme/app_widgets.dart';
 
 const incidentFieldLabels = <String, String>{
+  'event_summary': '事件摘要',
   'original_category': '原始分类',
   'level': '等级',
   'specific_type': '具体类型',

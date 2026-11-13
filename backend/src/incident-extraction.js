@@ -1,11 +1,11 @@
 const { forceError } = require('./force-fields');
 
 const TEXT_FIELDS = {
-  suggested_title: 80, original_category: 80, level: 40, specific_type: 80,
+  suggested_title: 80, event_summary: 120, disaster_category: 20, original_category: 80, level: 40, specific_type: 80,
   received_at: 40, location: 500, administrative_area: 200, place_type: 80,
   situation: 4000, trapped: 300, injured: 300, hazardous_materials: 500,
   latitude: 40, longitude: 40, dispatch_summary: 120, dispatch_vehicles: 20, dispatch_stations: 20, main_station: 80,
-  incident_status: 40,
+  incident_status: 40, raw_merged_text: 8000,
   external_id: 80, external_incident_number: 80, external_source: 40,
 };
 const LIST_FIELDS = { risks: 20, to_confirm: 20, vehicles: 30, equipment: 40, channels: 30 };
