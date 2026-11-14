@@ -21,6 +21,7 @@ const policeApiService = require('./police-api-service');
 const {
   createExternalIncidentOrganizer,
   buildRuleFallbackStructured,
+  mergeHomeInfoIntoIncident,
   formatBeijingIso,
   normalizeStationName,
 } = require('./external-incident-organizer');
@@ -2080,6 +2081,7 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     // 3. 融合服务端持久化 AI 结果与客户端参数，以“灾情事件”为主标题建档
     const now = Date.now();
     const stored = extId ? await externalIncidentOrganizer.getStoredIncident(extId) : null;
+    const storedAiReady = stored?.ai_status === 'ready' && Boolean(stored?.event_summary);
     const mergedRaw = {
       ...(stored && typeof stored === 'object' ? stored : {}),
       ...ext,
@@ -2088,11 +2090,28 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
       disaster_category: ext.disaster_category || stored?.disaster_category || '',
       location_display: ext.location_display || stored?.location_display || '',
       situation_detail: ext.situation_detail || stored?.situation_detail || '',
+      ai_status: ext.event_summary
+        ? (ext.ai_status || (storedAiReady ? 'ready' : 'fallback'))
+        : (stored?.ai_status || ext.ai_status || 'fallback'),
       dispatched_forces: Array.isArray(ext.dispatched_forces) && ext.dispatched_forces.length > 0
         ? ext.dispatched_forces
         : stored?.dispatched_forces,
     };
-    const mergedExt = buildRuleFallbackStructured(mergedRaw, mergedRaw.raw_payload);
+    let mergedExt = buildRuleFallbackStructured(mergedRaw, mergedRaw.raw_payload);
+    const currentForces = Array.isArray(mergedExt.dispatched_forces) ? mergedExt.dispatched_forces : [];
+    const expectedOrgCount = Number(mergedExt.dispatch_organization);
+    const needsForceEnrichment =
+      currentForces.length === 0 ||
+      (Number.isFinite(expectedOrgCount) && expectedOrgCount > currentForces.length) ||
+      currentForces.some((f) => f?.vehicle_count == null || f?.personnel_count == null);
+    const needsDescribeEnrichment = !mergedExt.incident_describe?.trim();
+    if (extId && (needsForceEnrichment || needsDescribeEnrichment)) {
+      const homeInfo = await policeApiService.fetchIncidentHomeInfo(extId);
+      if (homeInfo) {
+        mergedExt = mergeHomeInfoIntoIncident(mergedExt, homeInfo);
+        await externalIncidentOrganizer.saveIncident?.(mergedExt, now);
+      }
+    }
     const coords = policeApiService.sanitizeCoordinates(mergedExt.latitude, mergedExt.longitude);
     const fullLocation = mergedExt.location_display || mergedExt.crime_address || mergedExt.district_name;
     const candidateNumber = extNumber || null;

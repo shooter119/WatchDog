@@ -12,9 +12,14 @@ const {
   buildRuleFallbackStructured,
 } = require('./external-incident-organizer');
 
-const DEFAULT_UPSTREAM_URL = process.env.POLICE_API_ORGLIST_URL || 'http://220.189.211.80:10480/ds-mit-web/rest/mit/fire/v1.0/disater/orglist';
+const DEFAULT_QUERYLIST_URL = 'http://220.189.211.80:10480/ds-mit-web/rest/mit/fire/v1.0/disater/querylist';
+const DEFAULT_HOMEINFO_URL = 'http://220.189.211.80:10480/ds-mit-web/rest/mit/fire/v1.0/home/homeinfo';
+const DEFAULT_UPSTREAM_URL = process.env.POLICE_API_QUERYLIST_URL || process.env.POLICE_API_ORGLIST_URL || DEFAULT_QUERYLIST_URL;
+const DEFAULT_SCOPE_SQUADRON_ID = process.env.POLICE_API_SCOPE_SQUADRON_ID || '1f2ce829f50c446bb8b21e816c3ba7f2';
 const CACHE_TTL_MS = 60 * 1000; // 1 分钟短时缓存
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+let testHomeInfoUrl = null;
 
 // 衢州市行政区与支队匹配关键字
 const QUZHOU_KEYWORDS = ['衢州', '柯城', '衢江', '江山', '龙游', '常山', '开化'];
@@ -61,21 +66,16 @@ function isQuzhouIncident(item) {
  * 判断上游警情是否已经进入“派警处置”阶段（已调派力量）。
  *
  * 接处警工作流按「报警电话 → 受理立案 → 派警处置」推进：
- * - 刚接警/受理/立案且无实际调派车辆或队站的记录，以及假警/作废记录予以过滤；
- * - 有明确派车、派站、派员、调派时间或处于调派/出动/到场/归队等作战阶段时放行。
+ * - 保留全部已调派力量的记录（含内部测试/演练警情，不按性质/作废字样一刀切）；
+ * - 仅过滤显式未调派，或无实际派车/派员/派站/调派时间且处于接警/受理/立案/作废/注销态的记录。
  */
 function isDispatchedIncident(item) {
   if (!item || typeof item !== 'object') return false;
 
-  const nature = String(item.incidentNatureName || item.incident_nature_name || '').trim();
   const status = String(item.incidentStatusName || item.incident_status || '').trim();
   const dispatchStatus = String(
     item.dispatchStatusName || item.dispatchStatus || item.dispatch_status || '',
   ).trim();
-
-  if (/假警|虚警|错位|重复报警|误报|作废|注销|测试警情/.test(`${nature} ${status}`)) {
-    return false;
-  }
 
   if (/未调派|待调派|未派警|待派警|未下达|待下达/.test(`${status} ${dispatchStatus}`)) {
     return false;
@@ -113,16 +113,16 @@ function isDispatchedIncident(item) {
   const hasDispatchedForces =
     hasVehicle || hasPersonnel || hasOrg || hasDispatchTime || hasExplicitDispatchFlag;
 
-  if ((rawFlag === false || /^(?:0|false|否|N|n)$/i.test(flagStr)) && !hasDispatchedForces) {
-    return false;
-  }
-
   if (hasDispatchedForces) {
     return true;
   }
 
+  if (rawFlag === false || /^(?:0|false|否|N|n)$/i.test(flagStr)) {
+    return false;
+  }
+
   const normalizedStatus = status.replace(/\s+/g, '');
-  if (/^(?:接警|电话报警|报警|新警情|待接警|受理|受理中|正在受理|预立案|立案|已立案|待立案)$/.test(normalizedStatus)) {
+  if (/^(?:接警|电话报警|报警|新警情|待接警|受理|受理中|正在受理|预立案|立案|已立案|待立案|作废|注销)$/.test(normalizedStatus)) {
     return false;
   }
 
@@ -139,6 +139,7 @@ function normalizeExternalIncident(item) {
     external_id: String(item.id || ''),
     incident_number: String(item.incidentNumber || ''),
     detachment_name: String(item.detachmentOrgName || ''),
+    detachment_id: item.detachmentOrgId != null ? String(item.detachmentOrgId).trim() : '',
     brigade_name: String(item.brigadeOrganizationName || ''),
     squadron_name: String(item.squadronOrganizationName || ''),
     district_name: String(item.districtName || ''),
@@ -149,6 +150,7 @@ function normalizeExternalIncident(item) {
     crime_address: String(item.crimeAddress || ''),
     incident_describe: String(item.incidentDescribe || ''),
     register_time: Number(item.registerIncidentTime) || 0,
+    dispatch_time: Number(item.dispatchTime ?? item.firstDispatchTime ?? item.sendTime) || 0,
     latitude: item.latitude != null ? String(item.latitude) : null,
     longitude: item.longitude != null ? String(item.longitude) : null,
     alarm_phone: item.alarmPhone != null ? String(item.alarmPhone).trim() : '',
@@ -158,6 +160,9 @@ function normalizeExternalIncident(item) {
     incident_nature_name: item.incidentNatureName != null ? String(item.incidentNatureName).trim() : '',
     dispatch_vehicle: item.dispatchVehicle != null ? String(item.dispatchVehicle).trim() : '',
     dispatch_organization: item.dispatchOrganization != null ? String(item.dispatchOrganization).trim() : '',
+    site_vehicle: item.siteVehicle != null ? String(item.siteVehicle).trim() : '',
+    site_organization: item.siteOrganization != null ? String(item.siteOrganization).trim() : '',
+    whether_test_sign: item.whetherTestSign === 1 || item.whetherTestSign === '1' || item.whetherTestSign === true,
     raw_payload: { ...(item && typeof item === 'object' ? item : {}) },
   };
   return buildRuleFallbackStructured(base, item);
@@ -177,6 +182,11 @@ async function fetchFromUpstream(url = DEFAULT_UPSTREAM_URL) {
   while (page <= 10) { // 上限 10 页，避免极端情况下死循环
     const body = JSON.stringify({
       whetherPage: true,
+      scopeType: 1,
+      scopeSquadronId: DEFAULT_SCOPE_SQUADRON_ID,
+      squadronIds: [],
+      startTime: String(cutoffTime),
+      endTime: String(now),
       pagination: { page, size: pageSize },
     });
 
@@ -280,13 +290,57 @@ async function getQuzhouIncidents({ forceRefresh = false, upstreamUrl = DEFAULT_
   };
 }
 
+async function fetchIncidentHomeInfo(externalId, { homeInfoUrl, timeoutMs = 2500 } = {}) {
+  const id = String(externalId || '').trim();
+  if (!id) return null;
+
+  const configuredUrl = homeInfoUrl || testHomeInfoUrl || process.env.POLICE_API_HOMEINFO_URL || '';
+  // 测试环境未注入 mock URL 时短路返回，避免离线/CI 发起外网请求导致超时
+  if (process.env.NODE_ENV === 'test' && !configuredUrl) {
+    return null;
+  }
+
+  const baseUrl = configuredUrl || DEFAULT_HOMEINFO_URL;
+  const requestUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}incidentID=${encodeURIComponent(id)}`;
+
+  try {
+    const response = await fetch(requestUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      logger.warn(`[PoliceApiService] homeinfo HTTP ${response.status} for ${id}`);
+      return null;
+    }
+    const json = await response.json();
+    if (!json || typeof json !== 'object') {
+      logger.warn(`[PoliceApiService] homeinfo invalid payload for ${id}`);
+      return null;
+    }
+    if (json.errorCode !== 0 && json.code !== 0 && json.errorCode !== undefined) {
+      logger.warn(`[PoliceApiService] homeinfo upstream error for ${id}: ${json.errorMessage || json.message || json.errorCode}`);
+      return null;
+    }
+    return json.data || null;
+  } catch (err) {
+    logger.warn(`[PoliceApiService] homeinfo fetch failed for ${id}: ${err?.message || String(err)}`);
+    return null;
+  }
+}
+
+function _setHomeInfoUrlForTest(url) {
+  testHomeInfoUrl = url || null;
+}
+
 function _resetCacheForTest() {
   memoryCache = { data: [], fetchedAt: 0 };
   inFlightPromise = null;
+  testHomeInfoUrl = null;
 }
 
 module.exports = {
   getQuzhouIncidents,
+  fetchIncidentHomeInfo,
   peekCachedIncidents,
   isQuzhouIncident,
   isDispatchedIncident,
@@ -300,6 +354,9 @@ module.exports = {
   extractContacts,
   buildDispatchSummary,
   sanitizeCoordinates,
+  _setHomeInfoUrlForTest,
   _resetCacheForTest,
+  DEFAULT_QUERYLIST_URL,
+  DEFAULT_HOMEINFO_URL,
   DEFAULT_UPSTREAM_URL,
 };

@@ -172,6 +172,29 @@ function classifyDisasterCategory({
   return 'fire';
 }
 
+function buildAddressStripCandidates(rawAddress = '', addrClean = '') {
+  const candidates = new Set();
+  const add = (val) => {
+    const s = String(val || '').trim();
+    if (s.length >= 4) candidates.add(s);
+  };
+  add(rawAddress);
+  add(addrClean);
+  for (const base of [String(rawAddress || '').trim(), addrClean]) {
+    if (!base) continue;
+    const noProvCity = base
+      .replace(/^[\u4e00-\u9fa5]{2,5}(?:省|自治区)/, '')
+      .replace(/^[\u4e00-\u9fa5]{2,5}市/, '')
+      .trim();
+    add(noProvCity);
+    const noDistrict = noProvCity
+      .replace(/^[\u4e00-\u9fa5]{2,5}(?:区|县|市)/, '')
+      .trim();
+    add(noDistrict);
+  }
+  return [...candidates].sort((a, b) => b.length - a.length);
+}
+
 function cleanIncidentEvent({
   incident_type = '',
   disposal_object_name = '',
@@ -184,12 +207,39 @@ function cleanIncidentEvent({
   const addrClean = cleanIncidentLocation(crime_address);
 
   if (desc) {
-    // 剔除描述开头与事发地址完全重复的路段前缀，突出灾情本身
-    if (addrClean && addrClean.length >= 4 && desc.startsWith(addrClean)) {
-      desc = desc.slice(addrClean.length).replace(/^[，,。；;、\s]+/, '');
-    } else if (crime_address && crime_address.trim().length >= 4 && desc.startsWith(crime_address.trim())) {
-      desc = desc.slice(crime_address.trim().length).replace(/^[，,。；;、\s]+/, '');
+    // 1) 循环（最多2轮）剥离前导日期时间戳、支队/大队/指挥中心接警套话、以及（位于）上述地址/上址前缀
+    const leadingDateTimeRe = /^(?:(?:\d{4}年\s*)?\d{1,2}月\s*\d{1,2}[日号](?:\s*\d{1,2}[时:：]\d{1,2}(?:分(?:\d{1,2}秒)?)?)?|\d{4}年(?:\d{1,2}月(?:\d{1,2}[日号])?)?(?:\s*\d{1,2}[时:：]\d{1,2}(?:分(?:\d{1,2}秒)?)?)?|\d{1,2}\s*[时:：]\s*\d{1,2}(?:\s*分(?:\s*\d{1,2}\s*秒)?)?)(?:\s*[许左右])?[，,。；;：:\s]*/;
+    const leadingBoilerplateRe = /^(?:[\u4e00-\u9fa5A-Za-z0-9]{0,20}(?:消防救援支队|消防救援大队|支队|大队|指挥中心|接警中心|值班室|中队|救援站))?\s*(?:接到?(?:群众|市民|路人|110|119|上级|指挥中心|报警人)?(?:电话|转警|报警|警情|通知|指令)|接到|接警|接报|转警|接群众报警|接110转警|收到警情)\s*(?:称有|称|反映|求助)?\s*[：:，,、\s]*/;
+    const leadingRefAddrRe = /^(?:[（(]?位于[)）]?\s*)?(?:上述地址|上址|该地址)\s*[：:，,、\s]*/;
+
+    for (let round = 0; round < 2; round++) {
+      const before = desc;
+      desc = desc.replace(leadingDateTimeRe, '');
+      desc = desc.replace(leadingBoilerplateRe, '');
+      desc = desc.replace(leadingRefAddrRe, '');
+      if (desc === before) break;
     }
+
+    // 2) 去掉前导“位于”后，若以完整地址或剥离省市区前缀后的街道门牌子串(>=4字)开头且剥离后仍余>=4个有效字，则剥离重复地址
+    const withoutLocated = desc.replace(/^[（(]?位于[)）]?\s*/, '');
+    if (withoutLocated !== desc && withoutLocated.replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '').length >= 4) {
+      desc = withoutLocated;
+    }
+    const addrCandidates = buildAddressStripCandidates(crime_address, addrClean);
+    for (const prefix of addrCandidates) {
+      if (prefix.length >= 4 && desc.startsWith(prefix)) {
+        const rest = desc.slice(prefix.length).replace(/^[，,。；;：:、\s的]+/, '');
+        if (rest.replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '').length >= 4) {
+          desc = rest;
+          break;
+        }
+      }
+    }
+
+    // 3) 剥离尾部派警时间线与队站出动后续文本
+    desc = desc
+      .replace(/[，,。；;\s]*(?:(?:\d{4}年)?(?:\d{1,2}月)?(?:\d{1,2}[日号])?\s*\d{1,2}[时:：]\d{1,2}(?:分)?(?:\s*许)?\s*[，,、\s]*)?(?:支队|大队|指挥中心)?接到?(?:110|119|群众)?(?:报警|转警|警情|指令|通知)后[\s\S]*$/, '')
+      .replace(/[，,。；;\s]*(?:(?:\d{4}年)?(?:\d{1,2}月)?(?:\d{1,2}[日号])?\s*\d{1,2}[时:：]\d{1,2}(?:分)?(?:\s*许)?\s*[，,、\s]*)?(?:(?:调派|派出(?!所)|指令|通知|增派|加派|由)\s*(?:[\u4e00-\u9fa5A-Za-z0-9]{1,20}(?:消防救援站|专职消防队|专职队|特勤站|战保站|中队|大队|支队|站|队|产业园|化工园|集聚区)[、及和\s]*)*)?[\u4e00-\u9fa5A-Za-z0-9]{1,20}(?:消防救援站|专职消防队|专职队|特勤站|战保站|中队|大队|支队|站|队|产业园|化工园|集聚区)\s*出动\s*\d{1,2}\s*车[\s\S]*$/, '');
 
     desc = desc
       .replace(/官方状态[:：][^，。；·\n]+/g, '')
@@ -260,6 +310,15 @@ function parseIntOrNull(val) {
   return n;
 }
 
+function cleanParsedStationName(raw) {
+  let s = String(raw || '').trim();
+  s = s.replace(/^.*?(?:接到?(?:报警|转警|警情|指令|通知)后)/, '');
+  s = s.replace(/^.*?(?:调派|派出(?!所)|指令|通知|增派|加派)/, '');
+  s = s.replace(/^(?:调派|派出(?!所)|指令|通知|增派|加派)+/, '');
+  s = s.replace(/^(?:同时|立即|随后|随即|另外|另|并|再|又|由)+/, '');
+  return s.trim();
+}
+
 function parseStructuredForces({
   squadron_name = '',
   dispatch_organization = '',
@@ -309,11 +368,14 @@ function parseStructuredForces({
     }
   };
 
-  // 1. 解析文本中明确提到的“某站X车Y人”
+  // 1. 解析文本中明确提到的“某站/某队/产业园出动X车（车型）Y人”
   const desc = String(incident_describe || '');
-  const mentionPattern = /([\u4e00-\u9fa5A-Za-z0-9]{2,20}(?:消防救援站|专职消防队|专职队|特勤站|战保站|中队|站))\s*(?:出动\s*)?(\d{1,2})\s*车(?:\s*(\d{1,3})\s*人)?/g;
+  const mentionPattern = /([\u4e00-\u9fa5A-Za-z0-9]{2,24}(?:消防救援站|专职消防队|专职队|特勤站|战保站|中队|站|产业园|化工园|集聚区))\s*(?:出动\s*)?(\d{1,2})\s*车(?:\s*[（(][^）)\n]{1,40}[）)])?(?:\s*(\d{1,3})\s*人(?!被困|受伤|伤亡|死亡))?/g;
   for (const match of desc.matchAll(mentionPattern)) {
-    addStation(match[1], parseIntOrNull(match[2]), parseIntOrNull(match[3]));
+    const stationName = cleanParsedStationName(match[1]);
+    if (stationName) {
+      addStation(stationName, parseIntOrNull(match[2]), parseIntOrNull(match[3]));
+    }
   }
 
   // 2. 解析 dispatch_organization（可能是纯数字站数，也可能是具体站名列表）
@@ -342,6 +404,285 @@ function parseStructuredForces({
   }
 
   return list.slice(0, 20);
+}
+
+function extractForcesFromHomeInfo(homeInfoData, fallbackStatus = 'dispatched') {
+  if (!homeInfoData || typeof homeInfoData !== 'object') return [];
+  const defaultStatus = VALID_DEPLOYMENT_STATUSES.has(fallbackStatus) ? fallbackStatus : 'dispatched';
+  const MOBILIZED_STATUS_RE = /出动|途中|到场|展开|出水|控制|熄灭|归队|中返|途返|处置/;
+
+  const stationMap = new Map();
+  const ensureStation = (rawName) => {
+    const clean = cleanText(rawName, 80);
+    const key = normalizeStationKey(clean);
+    if (!key || clean === '0' || clean.toLowerCase() === 'null') return null;
+    if (!stationMap.has(key)) {
+      stationMap.set(key, {
+        station_name: clean,
+        vehicleKeys: new Map(),
+        vehicle_count: null,
+        personnel_count: null,
+        deployment_status: defaultStatus,
+      });
+    }
+    return stationMap.get(key);
+  };
+
+  // 1. 解析 handleOrganizationVehicleList[]：按 organizationName 归组并按 vehicleId/vehicleNumber/index 去重
+  const vehicleList = Array.isArray(homeInfoData.handleOrganizationVehicleList)
+    ? homeInfoData.handleOrganizationVehicleList
+    : [];
+  const unnamedVehicles = [];
+  vehicleList.forEach((v, idx) => {
+    if (!v || typeof v !== 'object') return;
+    const orgName = cleanText(v.organizationName || v.dispatchOrganizationName || v.stationName, 80);
+    const vKey = (v.vehicleId != null && String(v.vehicleId).trim() !== '')
+      ? `id:${String(v.vehicleId).trim()}`
+      : ((v.vehicleNumber != null && String(v.vehicleNumber).trim() !== '')
+        ? `num:${String(v.vehicleNumber).trim()}`
+        : `idx:${idx}`);
+    const pRaw = parseIntOrNull(v.personNumber);
+    const pVal = pRaw != null && pRaw > 0 ? pRaw : null;
+    const vStatus = [
+      v.vehicleStatusName,
+      v.vehicleStatus,
+      v.statusName,
+      v.status,
+      v.dispatchStatusName,
+      v.carStatusName,
+    ].filter(Boolean).join(' ');
+    const mobilized = MOBILIZED_STATUS_RE.test(vStatus);
+
+    if (!orgName) {
+      unnamedVehicles.push({ vKey, pVal, mobilized });
+      return;
+    }
+    const entry = ensureStation(orgName);
+    if (!entry) return;
+    if (mobilized) entry.deployment_status = 'mobilized';
+    if (!entry.vehicleKeys.has(vKey)) {
+      entry.vehicleKeys.set(vKey, pVal);
+    } else if (entry.vehicleKeys.get(vKey) == null && pVal != null) {
+      entry.vehicleKeys.set(vKey, pVal);
+    }
+  });
+
+  // 仅当该站全部车辆均报告正整数(>0)时才累加人数，存在"0"或空值时保持 null（待补充）
+  for (const entry of stationMap.values()) {
+    if (entry.vehicleKeys.size > 0) {
+      entry.vehicle_count = entry.vehicleKeys.size;
+      const personNums = [...entry.vehicleKeys.values()];
+      if (personNums.every((n) => n != null && n > 0)) {
+        entry.personnel_count = personNums.reduce((sum, n) => sum + n, 0);
+      } else {
+        entry.personnel_count = null;
+      }
+    }
+  }
+
+  // 2. 结合 dpqk[] 与 dcqk[] 的 organizationName 与 handleBean 补缺
+  const dispatchEntries = [
+    ...(Array.isArray(homeInfoData.dpqk) ? homeInfoData.dpqk : []),
+    ...(Array.isArray(homeInfoData.dcqk) ? homeInfoData.dcqk : []),
+  ];
+  for (const item of dispatchEntries) {
+    if (!item || typeof item !== 'object') continue;
+    const entry = ensureStation(item.organizationName);
+    if (!entry) continue;
+    const itemStatus = [
+      item.statusName,
+      item.handleStatusName,
+      item.dispatchStatusName,
+      item.handleBean?.statusName,
+      item.handleBean?.dispatchStatusName,
+    ].filter(Boolean).join(' ');
+    if (MOBILIZED_STATUS_RE.test(itemStatus)) {
+      entry.deployment_status = 'mobilized';
+    }
+    const bean = item.handleBean && typeof item.handleBean === 'object' ? item.handleBean : item;
+    const vNum = parseIntOrNull(bean.dispatchVehicleNum);
+    if (entry.vehicle_count == null && vNum != null && vNum > 0) {
+      entry.vehicle_count = vNum;
+    }
+    const pNum = parseIntOrNull(bean.handlePersonNum);
+    if (entry.personnel_count == null && pNum != null && pNum > 0) {
+      entry.personnel_count = pNum;
+    }
+  }
+
+  // 3. 结合 handleShowBeanList[] 补全未出现队站（仅单站且能确定车辆列表时补车数，多站保持 null）
+  const showBeans = Array.isArray(homeInfoData.handleShowBeanList)
+    ? homeInfoData.handleShowBeanList
+    : [];
+  for (const bean of showBeans) {
+    if (!bean || typeof bean !== 'object') continue;
+    const rawOrg = String(bean.dispatchOrganizationName || '').trim();
+    if (!rawOrg) continue;
+    const parts = rawOrg
+      .split(/[、,，;；/\s]+/)
+      .map((s) => cleanText(s, 80))
+      .filter((s) => s && s !== '0' && s.toLowerCase() !== 'null');
+    if (parts.length === 0) continue;
+
+    const beanVehicles =
+      bean.vehicleList ||
+      bean.dispatchVehicleList ||
+      bean.handleVehicleList ||
+      bean.handleOrganizationVehicleList ||
+      bean.vehicles ||
+      bean.carList;
+
+    for (const part of parts) {
+      const entry = ensureStation(part);
+      if (!entry) continue;
+      if (parts.length === 1 && entry.vehicle_count == null && Array.isArray(beanVehicles) && beanVehicles.length > 0) {
+        const deduped = new Set();
+        beanVehicles.forEach((v, idx) => {
+          const vk = (v && typeof v === 'object')
+            ? ((v.vehicleId != null && String(v.vehicleId).trim() !== '')
+              ? `id:${String(v.vehicleId).trim()}`
+              : ((v.vehicleNumber != null && String(v.vehicleNumber).trim() !== '')
+                ? `num:${String(v.vehicleNumber).trim()}`
+                : `idx:${idx}`))
+            : `raw:${String(v || idx)}`;
+          deduped.add(vk);
+        });
+        if (deduped.size > 0) {
+          entry.vehicle_count = deduped.size;
+        }
+      }
+    }
+  }
+
+  // 若仅有 1 个具名队站且车辆列表存在未标明队站的车辆记录，则归属到该唯一队站
+  if (stationMap.size === 1 && unnamedVehicles.length > 0) {
+    const onlyEntry = [...stationMap.values()][0];
+    if (onlyEntry.vehicle_count == null) {
+      const deduped = new Map();
+      for (const uv of unnamedVehicles) {
+        if (uv.mobilized) onlyEntry.deployment_status = 'mobilized';
+        if (!deduped.has(uv.vKey)) {
+          deduped.set(uv.vKey, uv.pVal);
+        } else if (deduped.get(uv.vKey) == null && uv.pVal != null) {
+          deduped.set(uv.vKey, uv.pVal);
+        }
+      }
+      if (deduped.size > 0) {
+        onlyEntry.vehicle_count = deduped.size;
+        const pVals = [...deduped.values()];
+        if (onlyEntry.personnel_count == null && pVals.every((n) => n != null && n > 0)) {
+          onlyEntry.personnel_count = pVals.reduce((sum, n) => sum + n, 0);
+        }
+      }
+    }
+  }
+
+  return [...stationMap.values()]
+    .slice(0, 20)
+    .map(({ station_name, vehicle_count, personnel_count, deployment_status }) => ({
+      station_name,
+      vehicle_count,
+      personnel_count,
+      deployment_status,
+    }));
+}
+
+function mergeHomeInfoIntoIncident(ext = {}, homeInfoData = null) {
+  const base = ext && typeof ext === 'object' ? { ...ext } : {};
+  if (!homeInfoData || typeof homeInfoData !== 'object') {
+    return base;
+  }
+
+  const existingDesc = String(base.incident_describe || '').trim();
+  const homeDesc = String(homeInfoData.incidentDescribe || '').trim();
+  const descBackfilled = !existingDesc && Boolean(homeDesc);
+  if (descBackfilled) {
+    base.incident_describe = homeDesc;
+  }
+
+  const fallbackStatus = inferDeploymentStatus(
+    sanitizeOfficialStatus(base.incident_status),
+    base.incident_describe,
+  );
+  const homeForces = extractForcesFromHomeInfo(homeInfoData, fallbackStatus);
+  const existingForces = Array.isArray(base.dispatched_forces) && base.dispatched_forces.length > 0
+    ? parseStructuredForces({ ...base, dispatched_forces: base.dispatched_forces })
+    : [];
+  const textForces = parseStructuredForces({ ...base, dispatched_forces: null });
+
+  const pickPositiveInt = (...vals) => {
+    for (const v of vals) {
+      const n = parseIntOrNull(v);
+      if (n != null && n > 0) return n;
+    }
+    return null;
+  };
+
+  const mergedMap = new Map();
+  const upsertMerged = (force, source) => {
+    const cleanName = cleanText(force?.station_name, 80);
+    const key = normalizeStationKey(cleanName);
+    if (!key) return;
+    const prev = mergedMap.get(key) || {
+      station_name: cleanName,
+      deployment_status: fallbackStatus,
+      _home_vehicle: null,
+      _text_vehicle: null,
+      _existing_vehicle: null,
+      _home_person: null,
+      _text_person: null,
+      _existing_person: null,
+    };
+    if (source === 'home') {
+      prev._home_vehicle = force.vehicle_count;
+      prev._home_person = force.personnel_count;
+      if (cleanName) prev.station_name = cleanName;
+    } else if (source === 'text') {
+      prev._text_vehicle = force.vehicle_count;
+      prev._text_person = force.personnel_count;
+    } else {
+      prev._existing_vehicle = force.vehicle_count;
+      prev._existing_person = force.personnel_count;
+    }
+    if (force.deployment_status === 'mobilized') {
+      prev.deployment_status = 'mobilized';
+    } else if (!VALID_DEPLOYMENT_STATUSES.has(prev.deployment_status) && VALID_DEPLOYMENT_STATUSES.has(force.deployment_status)) {
+      prev.deployment_status = force.deployment_status;
+    }
+    mergedMap.set(key, prev);
+  };
+
+  for (const f of existingForces) upsertMerged(f, 'existing');
+  for (const f of textForces) upsertMerged(f, 'text');
+  for (const f of homeForces) upsertMerged(f, 'home');
+
+  const mergedForces = [...mergedMap.values()]
+    .slice(0, 20)
+    .map((item) => ({
+      station_name: item.station_name,
+      vehicle_count: pickPositiveInt(item._home_vehicle, item._text_vehicle, item._existing_vehicle),
+      personnel_count: pickPositiveInt(item._existing_person, item._text_person, item._home_person),
+      deployment_status: item.deployment_status,
+    }));
+
+  const hasValidAiSummary = base.ai_status === 'ready' && Boolean(cleanText(base.event_summary, 60));
+  const nextInput = {
+    ...base,
+    dispatched_forces: mergedForces.length > 0 ? mergedForces : base.dispatched_forces,
+  };
+
+  if (descBackfilled) {
+    if (!hasValidAiSummary) {
+      delete nextInput.event_summary;
+      delete nextInput.situation_detail;
+    } else if (nextInput.situation_detail === buildSituationDescription({ ...base, incident_describe: '' })) {
+      delete nextInput.situation_detail;
+    }
+    delete nextInput.raw_merged_text;
+    delete nextInput.content_hash;
+  }
+
+  return buildRuleFallbackStructured(nextInput, nextInput.raw_payload);
 }
 
 function extractCasualtiesAndHazmat(describe = '') {
@@ -408,7 +749,9 @@ const KNOWN_RAW_KEYS = new Set([
   'incidentNatureName', 'incident_nature_name',
   'dispatchVehicle', 'dispatch_vehicle', 'dispatchOrganization', 'dispatch_organization',
   'dispatchPerson', 'dispatchPersonnel', 'dispatch_person',
-  'dispatchTime', 'firstDispatchTime', 'sendTime',
+  'dispatchTime', 'dispatch_time', 'firstDispatchTime', 'sendTime',
+  'siteVehicle', 'site_vehicle', 'siteOrganization', 'site_organization',
+  'whetherTestSign', 'whether_test_sign', 'detachmentOrgId', 'detachment_id',
   'dispatchStatusName', 'dispatchStatus', 'dispatch_status',
   'whetherDispatch', 'isDispatch',
   'raw_payload', 'raw_merged_text', 'content_hash',
@@ -934,6 +1277,7 @@ function createExternalIncidentOrganizer({
   return {
     syncIncidents,
     getStoredIncident,
+    saveIncident: (item, now = Date.now()) => saveRow(item, now),
     resetForTests,
   };
 }
@@ -950,6 +1294,8 @@ module.exports = {
   resolveDistrict,
   classifyDisasterCategory,
   parseStructuredForces,
+  extractForcesFromHomeInfo,
+  mergeHomeInfoIntoIncident,
   extractCasualtiesAndHazmat,
   extractFactHighlights,
   buildRawMergedText,

@@ -273,4 +273,241 @@ void main() {
     await tester.pumpAndSettle();
     expect(reorganizeCalled, isTrue);
   });
+
+  group('接警描述清洗、全文检索与跨区增援展示', () {
+    test('ExternalIncident.effectiveEventTitle 清洗长段接警通报与超长截断且保留常规短描述', () {
+      const longDispatch = ExternalIncident(
+        externalId: 'ext-clean-1',
+        incidentNumber: '20261114101',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '抢险救援',
+        crimeAddress: '示例省示例市示例县和平街9号',
+        locationDisplay: '示例县和平街9号',
+        incidentDescribe:
+            '2026年11月13日22时45分，示例大队指挥中心接到群众报警称：位于示例省示例市示例县和平街9号发生两车追尾，驾驶员被困，无其他人员伤亡。接到报警后，示例路站出动2车（水罐车、抢险救援车）14人前往处置，官方状态: 出动',
+        registerTime: 1786177140000,
+      );
+      expect(longDispatch.effectiveEventTitle, '发生两车追尾，驾驶员被困');
+
+      const multiRoundAndTruncate = ExternalIncident(
+        externalId: 'ext-clean-2',
+        incidentNumber: '20261114102',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '抢险救援',
+        crimeAddress: '示例县建设大道66号',
+        incidentDescribe:
+            '19:15许，示例支队指挥中心接110转警称，2026年11月13日19时15分，位于上述地址：一大型冷链物流货车在高速匝道发生侧翻并伴随燃油泄漏，示例路站出动1车7人赶赴现场。',
+        registerTime: 1786177140000,
+      );
+      final title2 = multiRoundAndTruncate.effectiveEventTitle;
+      expect(title2.length, 24);
+      expect(title2, '一大型冷链物流货车在高速匝道发生侧翻并伴随燃油…');
+
+      const shortNormal = ExternalIncident(
+        externalId: 'ext-clean-3',
+        incidentNumber: '20261114103',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '火灾扑救',
+        crimeAddress: '示例县幸福小区1栋',
+        incidentDescribe: '民房厨房油锅起火',
+        registerTime: 1786177140000,
+      );
+      expect(shortNormal.effectiveEventTitle, '民房厨房油锅起火');
+
+      const boilerplateOnly = ExternalIncident(
+        externalId: 'ext-clean-4',
+        incidentNumber: '20261114104',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '社会救助',
+        disposalObjectName: '马蜂窝',
+        crimeAddress: '示例县滨河路12号',
+        incidentDescribe: '00时26分，示例大队接警称：暂无人员被困，官方状态: 出动',
+        registerTime: 1786177140000,
+      );
+      expect(boilerplateOnly.effectiveEventTitle, '社会救助（马蜂窝）');
+    });
+
+    testWidgets('搜索框支持按 incidentDescribe 细节与 disposalObjectName 实时过滤命中', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      const trafficIncident = ExternalIncident(
+        externalId: 'ext-search-1',
+        incidentNumber: '20261114201',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '抢险救援',
+        disposalObjectName: '半挂货车',
+        eventSummary: '高速交通事故处置',
+        situationDetail: '道路交通事故现场救援',
+        incidentDescribe: '示例县高速路口两车追尾，驾驶室变形',
+        crimeAddress: '示例县高速路口',
+        registerTime: 1786177140000,
+      );
+
+      const pitIncident = ExternalIncident(
+        externalId: 'ext-search-2',
+        incidentNumber: '20261114202',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '抢险救援',
+        disposalObjectName: '深坑救援',
+        eventSummary: '工地人员坠落救助',
+        situationDetail: '人员坠落待救',
+        incidentDescribe: '一施工人员不慎坠入6米坑内，暂无生命危险',
+        crimeAddress: '示例县工地2号门',
+        registerTime: 1786177200000,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: IncidentSelectionOverlay(
+              activeIncidents: const [],
+              externalIncidents: const [trafficIncident, pitIncident],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('高速交通事故处置'), findsOneWidget);
+      expect(find.text('工地人员坠落救助'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, '两车追尾');
+      await tester.pumpAndSettle();
+      expect(find.text('高速交通事故处置'), findsOneWidget);
+      expect(find.text('工地人员坠落救助'), findsNothing);
+
+      await tester.enterText(find.byType(TextField).first, '6米坑');
+      await tester.pumpAndSettle();
+      expect(find.text('高速交通事故处置'), findsNothing);
+      expect(find.text('工地人员坠落救助'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, '半挂货车');
+      await tester.pumpAndSettle();
+      expect(find.text('高速交通事故处置'), findsOneWidget);
+      expect(find.text('工地人员坠落救助'), findsNothing);
+    });
+
+    testWidgets('跨区增援警情在 dispatchedForces 或 incidentDescribe 含本单位关键词时仍对本单位可见', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      const unrelatedOtherDistrict = ExternalIncident(
+        externalId: 'ext-cross-0',
+        incidentNumber: '20261114300',
+        detachmentName: '示例支队',
+        brigadeName: '示例东区大队',
+        squadronName: '示例东路站',
+        districtName: '示例东区',
+        incidentType: '火灾扑救',
+        eventSummary: '示例东区无关杂草起火',
+        crimeAddress: '示例东区幸福路1号',
+        dispatchedForces: [
+          ExternalDispatchedForce(
+            stationName: '示例东路站',
+            vehicleCount: 1,
+          ),
+        ],
+        incidentDescribe: '示例东区空地杂草起火，示例东路站出动1车扑救',
+        registerTime: 1786177100000,
+      );
+
+      const reinforceViaForces = ExternalIncident(
+        externalId: 'ext-cross-1',
+        incidentNumber: '20261114301',
+        detachmentName: '示例支队',
+        brigadeName: '示例东区大队',
+        squadronName: '示例东路站',
+        districtName: '示例东区',
+        incidentType: '火灾扑救',
+        eventSummary: '跨区联动厂房冒烟',
+        crimeAddress: '示例东区工业大道2号',
+        dispatchedForces: [
+          ExternalDispatchedForce(
+            stationName: '示例东路站',
+            vehicleCount: 2,
+          ),
+          ExternalDispatchedForce(
+            stationName: '示例县示例路站',
+            vehicleCount: 1,
+            personnelCount: 6,
+          ),
+        ],
+        registerTime: 1786177140000,
+      );
+
+      const reinforceViaDescribe = ExternalIncident(
+        externalId: 'ext-cross-2',
+        incidentNumber: '20261114302',
+        detachmentName: '示例支队',
+        brigadeName: '示例东区大队',
+        squadronName: '示例东路站',
+        districtName: '示例东区',
+        incidentType: '抢险救援',
+        eventSummary: '跨区增援危化品槽车处置',
+        crimeAddress: '示例东区物流园3号',
+        incidentDescribe: '示例东区高速口槽车侧翻，支队调派示例县示例路站跨区增援',
+        registerTime: 1786177200000,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: IncidentSelectionOverlay(
+              userUnitName: '示例县消防救援大队',
+              activeIncidents: const [],
+              externalIncidents: const [
+                unrelatedOtherDistrict,
+                reinforceViaForces,
+                reinforceViaDescribe,
+              ],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 非增援的其他示例区警情继续强隔离隐藏
+      expect(find.text('示例东区无关杂草起火'), findsNothing);
+      // 派出本单位力量或描述提及本单位跨区增援时可见
+      expect(find.text('跨区联动厂房冒烟'), findsOneWidget);
+      expect(find.text('跨区增援危化品槽车处置'), findsOneWidget);
+    });
+  });
 }

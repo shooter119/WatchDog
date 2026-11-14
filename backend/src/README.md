@@ -26,7 +26,7 @@
 - **实时语音识别客户端**: [`asr.js`](./asr.js)
   - 核心接口：`createDoubaoAsrClient({ appId, token, cluster })`，支持热词动态注入
 - **官方派警拉取与 AI 结构化重组**: [`police-api-service.js`](./police-api-service.js), [`external-incident-organizer.js`](./external-incident-organizer.js)
-  - 筛选属地及近 3 天已调派力量的警情（`isDispatchedIncident` 排除接警/受理/立案/未调派及假警作废记录），融合全量原始字段为 `raw_merged_text` 并通过 DeepSeek JSON 模式按 `content_hash` 缓存结构化事件/地点/力量与规则兜底，配套 `GET /api/external-incidents`、`POST /api/external-incidents/reorganize` 与 `POST /api/incidents/claim-external`（以事件作主标题建档并自动登记已知或待补充的参战力量）。
+  - 通过 `querylist` 拉取近 3 天属地已调派力量警情（`isDispatchedIncident` 保留全部含内部测试/演练在内的已调派记录，仅排除未调派及无力量的接警/受理/立案/作废/注销记录），融合全量原始字段为 `raw_merged_text` 并通过 DeepSeek JSON 模式按 `content_hash` 缓存结构化事件/地点/力量与规则兜底；配套 `GET /api/external-incidents`、`POST /api/external-incidents/reorganize` 与 `POST /api/incidents/claim-external`（认领建档时按需调用 `fetchIncidentHomeInfo` 拉取 `homeinfo` 自动补全多站联调参战力量与缺失描述，超时或异常时静默降级，未知车数或人数仍标为待补充）。
 - **重点单位与危化品检索**: [`key-sites.js`](./key-sites.js), [`hazardous-chemicals.js`](./hazardous-chemicals.js), [`hazmat-routes.js`](./hazmat-routes.js), [`hazmat-ai.js`](./hazmat-ai.js)
   - 危化品客户端新增 `GET /api/hazmats/sync` 增量同步（含软删除 ID）与 `POST /api/hazmats/ai-card` 应急战术卡提炼（精确库优先 + AI 防编造兜底）
 - **子目录契约**:

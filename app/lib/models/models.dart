@@ -304,7 +304,12 @@ class ExternalIncident {
 
   String get effectiveEventTitle {
     if (eventSummary.trim().isNotEmpty) return eventSummary.trim();
-    if (incidentDescribe.trim().isNotEmpty) return incidentDescribe.trim();
+    final cleanedDescribe = _cleanFallbackDescribeTitle(
+      incidentDescribe,
+      crimeAddress,
+      extraAddress: locationDisplay,
+    );
+    if (cleanedDescribe.isNotEmpty) return cleanedDescribe;
     if (disposalObjectName.trim().isNotEmpty && disposalObjectName.trim() != '其他') {
       return incidentType.trim().isNotEmpty
           ? '${incidentType.trim()}（${disposalObjectName.trim()}）'
@@ -315,6 +320,151 @@ class ExternalIncident {
     }
     if (crimeAddress.trim().isNotEmpty) return crimeAddress.trim();
     return incidentNumber;
+  }
+
+  /// 对未经过服务端重整或缺少 `eventSummary` 的原始接警描述做轻量清洗，
+  /// 剥离时间、接警单位套话、重复地址和尾部出动时间线，避免标题展示超长通报。
+  static String _cleanFallbackDescribeTitle(
+    String rawDesc,
+    String rawAddress, {
+    String extraAddress = '',
+  }) {
+    var desc = rawDesc.replaceAll('\r\n', '\n').trim();
+    if (desc.isEmpty) return '';
+
+    final leadingPunct = RegExp(r'^[\s，,。；;：:、·]+');
+    final leadingTimestamp = RegExp(
+      r'^(?:(?:\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?|\d{1,2}月\d{1,2}日?)\s*(?:\d{1,2}(?:[:：]\d{1,2}(?:[:：]\d{1,2})?|[时点]\d{1,2}分?(?:\d{1,2}秒?)?|时)?(?:\s*(?:许|左右))?)?|\d{1,2}(?:[:：]\d{1,2}(?:[:：]\d{1,2})?|[时点]\d{1,2}分?(?:\d{1,2}秒?)?|时\s*(?:许|左右))(?:\s*(?:许|左右))?)[，,、\s]*',
+    );
+    final leadingDispatchOrg = RegExp(
+      r'^(?:[^\s，,。；;：:\n]{1,20}?(?:支队|大队|中队|救援站|消防站|指挥中心|调度中心|调度室|值班室)\s*)?接(?:到)?[^，,。；;：:\n]{0,16}?(?:报警人?|转警|警情|通知|指令|接警)(?:[^，,。；;：:\n]{0,10}?称[：:，,\s]*|[：:，,]+)',
+    );
+    final leadingDispatchAlt = RegExp(
+      r'^(?:[^\s，,。；;：:\n]{0,20}?(?:支队|大队|中队|救援站|消防站|指挥中心|调度中心|调度室|值班室|119|110|群众|报警人)\s*)(?:(?:报警|转警|警情|通知|指令|接警)(?:称[：:，,\s]*|[：:，,]+)|称[：:，,\s]+)',
+    );
+    final leadingAboveAddr = RegExp(
+      r'^(?:[（(]?位于[）)]?\s*)?(?:上述地址|上址)[：:，,\s]*',
+    );
+
+    // 1) 最多循环 2 轮剥离前导时间戳、接警套话及（位于）上述地址前缀
+    for (var i = 0; i < 2; i++) {
+      final before = desc;
+      desc = desc.replaceFirst(leadingPunct, '');
+      desc = desc.replaceFirst(leadingTimestamp, '');
+      desc = desc.replaceFirst(leadingPunct, '');
+      desc = desc.replaceFirst(leadingDispatchOrg, '');
+      desc = desc.replaceFirst(leadingDispatchAlt, '');
+      desc = desc.replaceFirst(leadingAboveAddr, '');
+      desc = desc.replaceFirst(leadingPunct, '');
+      if (desc == before) break;
+    }
+
+    // 2) 去掉前导“位于”，若以归一化后非空 address（>=4字）开头且余文去标点仍 >=4 字，则剥离重复地址前缀
+    desc = desc.replaceFirst(RegExp(r'^位于[：:\s]*'), '').trim();
+    if (desc.isEmpty) return '';
+
+    final addrCandidates = <String>{};
+    for (final source in [rawAddress, extraAddress]) {
+      final trimmed = source.trim();
+      if (trimmed.isEmpty) continue;
+      void addCandidate(String value) {
+        final v = value.trim();
+        if (v.length >= 4) addrCandidates.add(v);
+      }
+
+      addCandidate(trimmed);
+      final compact = trimmed.replaceAll(RegExp(r'\s+'), '');
+      addCandidate(compact);
+
+      final normalized = compact
+          .replaceFirst(RegExp(r'^[\u4e00-\u9fa5]{2,5}(?:省|自治区)'), '')
+          .replaceFirst(
+            RegExp(r'^[\u4e00-\u9fa5]{2,5}市(?=[\u4e00-\u9fa5]{2,5}(?:区|县|市))'),
+            '',
+          )
+          .replaceFirstMapped(
+            RegExp(r'^([\u4e00-\u9fa5]{2,5}(?:区|县|市))\1'),
+            (m) => m.group(1)!,
+          );
+      addCandidate(normalized);
+
+      final withoutDistrict = normalized.replaceFirst(
+        RegExp(r'^[\u4e00-\u9fa5]{2,5}(?:区|县|市)'),
+        '',
+      );
+      addCandidate(withoutDistrict);
+
+      for (final base in [compact, normalized, withoutDistrict]) {
+        final withoutSuffix = base.replaceFirst(
+          RegExp(r'(?:附近|一带|旁边|对面|路口)$'),
+          '',
+        );
+        addCandidate(withoutSuffix);
+      }
+    }
+
+    final sortedCandidates = addrCandidates.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    for (final addr in sortedCandidates) {
+      if (desc.startsWith(addr)) {
+        final rest = desc
+            .substring(addr.length)
+            .replaceFirst(RegExp(r'^[，,。；;：:、·\s]+'), '');
+        final effectiveLen = rest
+            .replaceAll(RegExp(r'[，,。；;：:、·\s！？!?（）()【】\[\]]'), '')
+            .length;
+        if (effectiveLen >= 4) {
+          desc = rest;
+        }
+        break;
+      }
+    }
+
+    // 3) 截断“接到报警后…”或“某站出动X车…”及之后派警时间线
+    desc = desc.replaceFirst(
+      RegExp(
+        r'(?:[，,。；;、\s]*)(?:接到?(?:报警|转警|警情|指令|通知)后|接警后).*$',
+        dotAll: true,
+      ),
+      '',
+    );
+    desc = desc.replaceFirst(
+      RegExp(
+        r'(?:[，,。；;、\s]+|^)(?:(?:立即|迅速|随即)?(?:调派|派出(?!所)|增派|加派|指令|由)\s*)?[^，,。；;、\s]{1,32}?(?:消防救援站|特勤站|专职消防队|专职队|消防站|救援站|中队|大队|支队|产业园|化工园|集聚区|站|队)\s*(?:立即|迅速|随即)?出动\s*(?:\d+|[一二两三四五六七八九十]+)\s*(?:辆|台|车).*$',
+        dotAll: true,
+      ),
+      '',
+    );
+    desc = desc.replaceFirst(
+      RegExp(
+        r'(?:[，,。；;、\s]+|^)(?:[^，,。；;、\s]{0,16}?(?:支队|大队|指挥中心|调度中心)\s*)?(?:立即|迅速|随即)?(?:调派|派出(?!所)|增派|加派)[^，,。；;、\s]{1,24}(?:站|队|大队|中队|产业园|化工园|集聚区).*$',
+        dotAll: true,
+      ),
+      '',
+    );
+
+    // 4) 去除“官方状态:…”、“（暂）无人员被困/伤亡”及多余标点，取首分句并限制最长 24 字
+    desc = desc
+        .replaceAll(RegExp(r'官方状态[:：][^，。；·\n]+'), '')
+        .replaceAll(
+          RegExp(r'[，,。；;·\s]*(?:目前)?(?:暂)?无(?:其他)?人员(?:被困|伤亡|受伤)[，,。；;·\s]*'),
+          '，',
+        )
+        .replaceAll(RegExp(r'[，,。；;·\s]*人员被困情况不明[，,。；;·\s]*'), '，')
+        .replaceAll(RegExp(r'[，,。；;·\s]*(?:群众|电话)?报警[，,。；;·\s]*'), '，')
+        .replaceAll(RegExp(r'[，,。；;·\s]*110转警[，,。；;·\s]*'), '，')
+        .replaceAll(RegExp(r'^[，,。；;·：:\s]+|[，,。；;·：:\s]+$'), '')
+        .replaceAll(RegExp(r'，{2,}'), '，');
+
+    if (desc.isEmpty) return '';
+    if (desc.length <= 24) return desc;
+    final firstClause = desc
+        .split(RegExp(r'[，。；;\n]'))
+        .map((s) => s.trim())
+        .firstWhere((s) => s.isNotEmpty, orElse: () => desc);
+    return firstClause.length > 24
+        ? '${firstClause.substring(0, 23)}…'
+        : firstClause;
   }
 
   String get effectiveLocation {

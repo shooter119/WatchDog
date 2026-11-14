@@ -900,6 +900,19 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         break;
       }
     }
+    // 兼容通用脱敏或县区大队名（如“示例县消防救援大队”），支队及非县区大队仍查看全量
+    if (matchedKeyword == null && !unit.contains('支队')) {
+      final cleanedUnit = unit
+          .replaceFirst(RegExp(r'^[\u4e00-\u9fa5]{2,5}(?:省|自治区)'), '')
+          .replaceFirst(
+            RegExp(r'^[\u4e00-\u9fa5]{2,5}市(?=[\u4e00-\u9fa5]{1,5}(?:区|县))'),
+            '',
+          );
+      final match = RegExp(
+        r'^([\u4e00-\u9fa5]{1,5}[县区])(?:消防救援)?大队$',
+      ).firstMatch(cleanedUnit);
+      matchedKeyword = match?.group(1);
+    }
     if (matchedKeyword == null) return true; // 支队或非县区大队查看全量
 
     final district = _resolveDistrict(ext);
@@ -908,7 +921,9 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         ext.brigadeName.contains(matchedKeyword) ||
         ext.squadronName.contains(matchedKeyword) ||
         ext.districtName.contains(matchedKeyword) ||
-        ext.crimeAddress.contains(matchedKeyword);
+        ext.crimeAddress.contains(matchedKeyword) ||
+        ext.dispatchedForces.any((f) => f.stationName.contains(matchedKeyword!)) ||
+        ext.incidentDescribe.contains(matchedKeyword);
   }
 
   List<_UnifiedIncidentItem> _buildUnifiedIncidentItems() {
@@ -1011,8 +1026,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           ext.crimeAddress,
           ext.incidentType,
           ext.specificType,
+          ext.disposalObjectName,
           ext.squadronName,
           ext.brigadeName,
+          ext.incidentDescribe,
           ext.situationSummary,
           ...forceTags,
           ...highlights,
