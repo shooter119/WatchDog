@@ -546,6 +546,8 @@ class ChatPageState extends State<ChatPage> {
       return;
     }
     if (!ok) {
+      _recordingRequested = false;
+      _recordingStarting = false;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -611,6 +613,7 @@ class ChatPageState extends State<ChatPage> {
       _startRecordingTimer();
       widget.onRecordingChanged?.call(true);
     } catch (e) {
+      _recordingRequested = false;
       _recordingStarting = false;
       OpLogService.instance.record(
         _opId!,
@@ -635,11 +638,13 @@ class ChatPageState extends State<ChatPage> {
   Future<void> finishRecording() async {
     if (!_recording) {
       _recordingRequested = false;
+      _recordingStarting = false;
       _recordingGeneration++;
       _stopRecordingTimer();
       return;
     }
     _recordingRequested = false;
+    _recordingStarting = false;
     _recordingGeneration++;
     _stopRecordingTimer();
     setState(() {
@@ -1660,8 +1665,8 @@ class _VisionCallout extends StatelessWidget {
     return AppCard(
       key: const Key('chat-vision-callout'),
       onTap: onTap,
-      color: AppColors.voice.withValues(alpha: 0.08),
-      side: BorderSide(color: AppColors.voice.withValues(alpha: 0.35), width: 1),
+      color: AppColors.surfaceSubtle,
+      side: BorderSide(color: AppColors.border, width: 1),
       radius: AppRadius.md,
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s3,
@@ -1675,7 +1680,7 @@ class _VisionCallout extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: AppColors.voice,
+                color: AppColors.actionPrimary,
                 borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
               child: Icon(
@@ -1710,7 +1715,7 @@ class _VisionCallout extends StatelessWidget {
             Icon(
               Icons.chevron_right_rounded,
               size: 20,
-              color: AppColors.voice,
+              color: AppColors.textSecondary,
             ),
           ],
         ),

@@ -612,5 +612,69 @@ void main() {
       expect(find.text('参战力量'), findsOneWidget);
       expect(find.textContaining('示例路站'), findsOneWidget);
     });
+
+    test('4级地址兜底链有效解析 location -> address -> location_display -> crime_address', () {
+      final now = DateTime(2026, 11, 13, 10, 0);
+
+      // 1. location 存在
+      final inc1 = Incident(
+        id: 'inc-1',
+        number: '1',
+        status: 'active',
+        createdAt: 0,
+        lastActivityAt: 0,
+        info: const {'location': '示范路1号'},
+      );
+      expect(inc1.effectiveLocation, '示范路1号');
+      expect(IncidentCardData.fromIncident(inc1, now: now).locationText, '示范路1号');
+
+      // 2. location 缺失，address 生效
+      final inc2 = Incident(
+        id: 'inc-2',
+        number: '2',
+        status: 'active',
+        createdAt: 0,
+        lastActivityAt: 0,
+        info: const {'address': '示范路2号'},
+      );
+      expect(inc2.effectiveLocation, '示范路2号');
+      expect(IncidentCardData.fromIncident(inc2, now: now).locationText, '示范路2号');
+
+      // 3. location 和 address 缺失，location_display 生效
+      final inc3 = Incident(
+        id: 'inc-3',
+        number: '3',
+        status: 'active',
+        createdAt: 0,
+        lastActivityAt: 0,
+        info: const {'location_display': '示范路3号'},
+      );
+      expect(inc3.effectiveLocation, '示范路3号');
+      expect(IncidentCardData.fromIncident(inc3, now: now).locationText, '示范路3号');
+
+      // 4. 前三者缺失，crime_address 生效
+      final inc4 = Incident(
+        id: 'inc-4',
+        number: '4',
+        status: 'active',
+        createdAt: 0,
+        lastActivityAt: 0,
+        info: const {'crime_address': '示范路4号'},
+      );
+      expect(inc4.effectiveLocation, '示范路4号');
+      expect(IncidentCardData.fromIncident(inc4, now: now).locationText, '示范路4号');
+
+      // 5. 全部缺失或为 '地点待补充'/'null'
+      final inc5 = Incident(
+        id: 'inc-5',
+        number: '5',
+        status: 'active',
+        createdAt: 0,
+        lastActivityAt: 0,
+        info: const {'location': '地点待补充', 'address': 'null'},
+      );
+      expect(inc5.effectiveLocation, '');
+      expect(IncidentCardData.fromIncident(inc5, now: now).locationText, '地点待补充');
+    });
   });
 }

@@ -200,7 +200,19 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     if (_recording) {
       _homeKey.currentState?.finishRecording();
     } else {
-      _goVoice();
+      if (_tab == 2) {
+        HapticFeedback.lightImpact();
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('长按说话，松开识别'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        _goVoice();
+      }
     }
   }
 
@@ -351,53 +363,35 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0F172A),
+                            color: AppColors.cautionSurface,
                             borderRadius: BorderRadius.circular(AppRadius.md),
                             border: Border.all(
-                              color: const Color(
-                                0xFFF59E0B,
-                              ).withValues(alpha: 0.75),
-                              width: 1.2,
+                              color: AppColors.caution,
+                              width: 1.0,
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(
-                                  0xFFF59E0B,
-                                ).withValues(alpha: 0.08),
-                                blurRadius: 10,
-                                offset: const Offset(0, 3),
-                              ),
-                              const BoxShadow(
-                                color: Colors.black38,
-                                blurRadius: 6,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
                           ),
                           child: Row(
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(4),
                                 decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFFF59E0B,
-                                  ).withValues(alpha: 0.15),
+                                  color: AppColors.caution.withValues(alpha: 0.15),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.shield_outlined,
                                   size: 15,
-                                  color: Color(0xFFFBBF24),
+                                  color: AppColors.cautionText,
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   '游客模式（数据仅保存在本机）',
-                                  style: TextStyle(
-                                    color: Color(0xFFF1F5F9),
+                                  style: AppTextStyles.label.copyWith(
+                                    color: AppColors.cautionText,
                                     fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w700,
                                     letterSpacing: 0.2,
                                   ),
                                 ),
@@ -419,21 +413,19 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                                       vertical: 4.5,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: const Color(
-                                        0xFFF59E0B,
-                                      ).withValues(alpha: 0.18),
+                                      color: AppColors.caution.withValues(alpha: 0.14),
                                       borderRadius: BorderRadius.circular(
                                         AppRadius.sm,
                                       ),
                                       border: Border.all(
-                                        color: const Color(0xFFF59E0B),
+                                        color: AppColors.caution,
                                         width: 1,
                                       ),
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                       '转为正式队员',
                                       style: TextStyle(
-                                        color: Color(0xFFFBBF24),
+                                        color: AppColors.cautionText,
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -607,7 +599,7 @@ class _BottomNav extends StatelessWidget {
     final safeBottom = MediaQuery.of(context).padding.bottom;
     final labelScaleHeight = (MediaQuery.textScalerOf(context).scale(12) * 1.2)
         .ceilToDouble();
-    final barHeight = math.max(74.0, 60.0 + labelScaleHeight);
+    final barHeight = math.max(78.0, 62.0 + labelScaleHeight);
     return Container(
       key: const Key('bottom-nav-surface'),
       height: barHeight + safeBottom,
@@ -729,32 +721,34 @@ class _CenterDisposeNavSlot extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = selected ? AppColors.actionPrimary : AppColors.textTertiary;
     final disableAnimations = MediaQuery.of(context).disableAnimations;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        VoiceButton(
-          size: 40,
-          recording: recording,
-          processing: processing,
-          enabled: true,
-          onTap: onTap,
-          onLongPressStart: onLongPressStart,
-          onLongPressEnd: onLongPressEnd,
-        ),
-        Semantics(
-          label: '处置',
-          selected: selected,
-          button: true,
-          container: true,
-          excludeSemantics: true,
-          onTap: onTap,
-          child: InkWell(
-            key: const Key('nav-dispose-tab'),
+    return GestureDetector(
+      key: const Key('nav-dispose-tab'),
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      onLongPressStart: onLongPressStart,
+      onLongPressEnd: onLongPressEnd,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          VoiceButton(
+            size: 52,
+            recording: recording,
+            processing: processing,
+            enabled: true,
             onTap: onTap,
+            onLongPressStart: onLongPressStart,
+            onLongPressEnd: onLongPressEnd,
+          ),
+          Semantics(
+            label: '处置',
+            selected: selected,
+            button: true,
+            container: true,
+            excludeSemantics: true,
             child: SizedBox(
               width: double.infinity,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.only(bottom: 4),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -762,6 +756,7 @@ class _CenterDisposeNavSlot extends StatelessWidget {
                       '处置',
                       maxLines: 1,
                       softWrap: false,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.1,
@@ -779,7 +774,7 @@ class _CenterDisposeNavSlot extends StatelessWidget {
                       width: 20,
                       height: 3,
                       decoration: BoxDecoration(
-                        color: selected ? AppColors.voice : Colors.transparent,
+                        color: selected ? AppColors.actionPrimary : Colors.transparent,
                         borderRadius: BorderRadius.circular(AppRadius.pill),
                       ),
                     ),
@@ -788,8 +783,8 @@ class _CenterDisposeNavSlot extends StatelessWidget {
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -830,7 +825,7 @@ class _NavItem extends StatelessWidget {
               ? Duration.zero
               : const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
+          constraints: const BoxConstraints(minHeight: 52),
           padding: const EdgeInsets.fromLTRB(4, 3, 4, 6),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -897,6 +892,7 @@ class _NavItem extends StatelessWidget {
                 label,
                 maxLines: 1,
                 softWrap: false,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.1,

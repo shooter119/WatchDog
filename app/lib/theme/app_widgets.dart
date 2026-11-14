@@ -338,7 +338,15 @@ class AppNotice extends StatelessWidget {
             top: 0,
             bottom: 0,
             width: 4,
-            child: Container(color: borderAndBarColor),
+            child: Container(
+              decoration: BoxDecoration(
+                color: borderAndBarColor,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(AppRadius.sm),
+                  bottomLeft: Radius.circular(AppRadius.sm),
+                ),
+              ),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(AppSpacing.s3),
@@ -379,6 +387,8 @@ class AppBanner extends StatelessWidget {
   final String? actionLabel;
   final VoidCallback? onAction;
   final bool timeout;
+  final Color? accentColorOverride;
+  final Color? backgroundColorOverride;
 
   const AppBanner({
     super.key,
@@ -388,14 +398,16 @@ class AppBanner extends StatelessWidget {
     this.actionLabel,
     this.onAction,
     this.timeout = false,
+    this.accentColorOverride,
+    this.backgroundColorOverride,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Color bg;
-    final Color borderColor;
-    final Color iconColor;
-    final Color textColor;
+    Color bg;
+    Color borderColor;
+    Color iconColor;
+    Color textColor;
     final IconData defaultIcon;
 
     switch (kind) {
@@ -427,56 +439,73 @@ class AppBanner extends StatelessWidget {
         defaultIcon = Icons.warning_rounded;
     }
 
-    return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 52),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: borderColor, width: 1.0),
+    if (backgroundColorOverride != null) {
+      bg = backgroundColorOverride!;
+    }
+    if (accentColorOverride != null) {
+      borderColor = accentColorOverride!;
+      iconColor = accentColorOverride!;
+      textColor = accentColorOverride!;
+    }
+
+    final effectiveRadius = BorderRadius.circular(AppRadius.lg);
+    return Material(
+      color: bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: effectiveRadius,
+        side: BorderSide(color: borderColor, width: 1.0),
       ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s4,
-        vertical: AppSpacing.s3 + 2,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Icon(icon ?? defaultIcon, size: 22, color: iconColor),
-          const SizedBox(width: AppSpacing.s2),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTextStyles.label.copyWith(
-                color: textColor,
-                fontSize: 14,
-                height: 1.35,
-                fontWeight: FontWeight.w800,
-              ),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: double.infinity,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 52),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s4,
+              vertical: AppSpacing.s3 + 2,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(icon ?? defaultIcon, size: 22, color: iconColor),
+                const SizedBox(width: AppSpacing.s2),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: AppTextStyles.label.copyWith(
+                      color: textColor,
+                      fontSize: 14,
+                      height: 1.35,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                if (actionLabel != null) ...[
+                  const SizedBox(width: AppSpacing.s2),
+                  OutlinedButton(
+                    onPressed: onAction,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: textColor,
+                      side: BorderSide(color: borderColor),
+                      minimumSize: const Size(48, 48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.s3,
+                      ),
+                    ),
+                    child: Text(
+                      actionLabel!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-          if (actionLabel != null) ...[
-            const SizedBox(width: AppSpacing.s2),
-            OutlinedButton(
-              onPressed: onAction,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: textColor,
-                side: BorderSide(color: borderColor),
-                minimumSize: const Size(48, 48),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s3,
-                ),
-              ),
-              child: Text(
-                actionLabel!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -506,7 +535,13 @@ class AppCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveRadius = BorderRadius.circular(radius);
-    return Material(
+    final effectiveShadow = side != null
+        ? null
+        : (shadow ??
+            (AppColors.palette.brightness == Brightness.light
+                ? AppColors.palette.cardShadow
+                : null));
+    final cardContent = Material(
       color: color ?? AppColors.surface,
       elevation: 0,
       shadowColor: Colors.transparent,
@@ -524,6 +559,18 @@ class AppCard extends StatelessWidget {
         borderRadius: effectiveRadius,
         child: Padding(padding: padding, child: child),
       ),
+    );
+
+    if (effectiveShadow == null || effectiveShadow.isEmpty) {
+      return cardContent;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: effectiveRadius,
+        boxShadow: effectiveShadow,
+      ),
+      child: cardContent,
     );
   }
 }
@@ -979,28 +1026,24 @@ class ConnectionStatus extends StatelessWidget {
                 }
               : null,
           child: ConstrainedBox(
-            // 重试或查看详情时保留48dp热区，胶囊固定顶部对齐，避免标题随点击区域错位。
-            constraints: BoxConstraints(
+            // 全状态保持恒定 48dp 外部高度，胶囊垂直居中，消除状态切换抖动并与页面标题对齐。
+            constraints: const BoxConstraints(
               minWidth: 48,
-              minHeight: interactive ? 48 : pillHeight,
+              minHeight: 48,
             ),
             child: Align(
-              alignment: Alignment.topCenter,
+              alignment: Alignment.center,
               widthFactor: 1,
               heightFactor: 1,
-              child: Transform.translate(
-                // 标题字面顶部有字体内置留白，视觉胶囊下移后与字面边缘对齐。
-                offset: const Offset(0, 1),
-                child: Container(
-                  height: pillHeight,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Center(child: inner),
+              child: Container(
+                height: pillHeight,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(color: AppColors.border),
                 ),
+                child: Center(child: inner),
               ),
             ),
           ),
@@ -1100,7 +1143,7 @@ class _VoiceButtonState extends State<VoiceButton>
   @override
   Widget build(BuildContext context) {
     final size = widget.size;
-    final hitSize = math.max(size + 8, 44.0);
+    final hitSize = size >= 64 ? size + 8 : math.max(size, 48.0);
     final glowColor = widget.processing
         ? AppColors.textTertiary.withValues(alpha: 0.2)
         : AppColors.voice.withValues(alpha: widget.recording ? 0 : 0.35);

@@ -102,15 +102,15 @@ void main() {
 
     expect(sectionBarColor(), AppPalette.warmSand.actionPrimary);
 
-    // 切到夜间战术
+    // 切到暗曜
     await tester.scrollUntilVisible(
-      find.text('夜间战术'),
+      find.text('暗曜'),
       400,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.ensureVisible(find.text('夜间战术'));
+    await tester.ensureVisible(find.text('暗曜'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('夜间战术'));
+    await tester.tap(find.text('暗曜'));
     await tester.pumpAndSettle();
     expect(AppColors.palette.id, 'night-tactical');
     expect(

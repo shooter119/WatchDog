@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 /// 三套方案：
 /// - `daylight` 昼白：现行高可视亮色，冷灰底 + 高饱和状态色
 /// - `warmSand` 暖砂：暖纸底 + 陶土红，低饱和但保留状态语义
-/// - `nightTactical` 夜间战术：深色底保护暗适应，兼顾暗光高亮警情状态色
+/// - `nightTactical` 暗曜：深色底保护暗适应，兼顾暗光高亮警情状态色
 ///
 /// 纪律：
 /// 1. `daylight` 是默认值，色值必须与历史 `AppColors` 常量逐字相等，
@@ -283,7 +283,7 @@ class AppPalette {
     voicePressed: Color(0xFFA04E33),
     noticeWarningBg: Color(0xFFF5E9CF),
     noticeWarningFg: Color(0xFF7A4708),
-    actionPrimary: Color(0xFFB0543A),
+    actionPrimary: Color(0xFF1F2937),
     onPrimary: Color(0xFFFBF9F4),
     onStatus: Color(0xFFFBF9F4),
     online: Color(0xFF3A7A47),
@@ -325,11 +325,11 @@ class AppPalette {
     ],
   );
 
-  /// 夜间战术：深色底保护暗适应
+  /// 暗曜：深色底保护暗适应
   static const AppPalette nightTactical = AppPalette(
     brightness: Brightness.dark,
     id: 'night-tactical',
-    label: '夜间战术',
+    label: '暗曜',
     background: Color(0xFF0C0F14),
     surface: Color(0xFF161B22),
     surfaceSubtle: Color(0xFF21262D),
@@ -344,7 +344,7 @@ class AppPalette {
     alarm: Color(0xFFD1242F),
     timeout: Color(0xFF7A1A1A),
     safeText: Color(0xFF3FB950),
-    cautionText: Color(0xFFD29922),
+    cautionText: Color(0xFFE3B341),
     alarmText: Color(0xFFF85149),
     timeoutText: Color(0xFFFFA198),
     destructive: Color(0xFFB91C1C),

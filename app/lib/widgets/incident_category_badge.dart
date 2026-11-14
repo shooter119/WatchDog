@@ -648,7 +648,17 @@ class IncidentCardData {
     }
 
     final rawTitle = (incident.title ?? '').trim();
-    final rawLoc = (info['location']?.toString() ?? '').trim();
+    final rawLoc = [
+      info['location'],
+      info['address'],
+      info['location_display'],
+      info['crime_address'],
+    ]
+        .map((v) => (v?.toString() ?? '').trim())
+        .firstWhere(
+          (v) => v.isNotEmpty && v != '地点待补充' && v != 'null',
+          orElse: () => '',
+        );
     final cleanedLoc = cleanLocation(rawLoc);
     final cleanedTitleAsLoc = cleanLocation(rawTitle);
 

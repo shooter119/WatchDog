@@ -26,7 +26,6 @@ class CommanderGlanceCard extends StatelessWidget {
 
     final Color cardBorder;
     final Color statusSurfaceBg;
-    final Color statusBorderColor;
     final String statusBadgeType;
 
     switch (summary.level) {
@@ -34,25 +33,21 @@ class CommanderGlanceCard extends StatelessWidget {
         statusBadgeType = 'alarm';
         cardBorder = AppColors.alarm;
         statusSurfaceBg = AppColors.alarmSurface;
-        statusBorderColor = AppColors.alarm;
         break;
       case AirSafetyLevel.warning:
         statusBadgeType = 'warn';
         cardBorder = AppColors.caution;
         statusSurfaceBg = AppColors.cautionSurface;
-        statusBorderColor = AppColors.caution;
         break;
       case AirSafetyLevel.normal:
         statusBadgeType = 'normal';
         cardBorder = AppColors.border.withValues(alpha: 0.85);
         statusSurfaceBg = AppColors.surfaceSubtle;
-        statusBorderColor = AppColors.border.withValues(alpha: 0.85);
         break;
       case AirSafetyLevel.idle:
         statusBadgeType = 'idle';
         cardBorder = AppColors.border.withValues(alpha: 0.6);
         statusSurfaceBg = AppColors.surfaceSubtle.withValues(alpha: 0.5);
-        statusBorderColor = AppColors.border.withValues(alpha: 0.5);
         break;
     }
 
@@ -72,12 +67,12 @@ class CommanderGlanceCard extends StatelessWidget {
                 height: 34,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: AppColors.voice,
+                  color: AppColors.surfaceSubtle,
                 ),
                 child: Icon(
                   Icons.shield_outlined,
                   size: 18,
-                  color: AppColors.onPrimary,
+                  color: AppColors.textPrimary,
                 ),
               ),
               const SizedBox(width: AppSpacing.s2),
@@ -96,15 +91,16 @@ class CommanderGlanceCard extends StatelessWidget {
               Text(
                 '查看看板',
                 style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textSecondary,
+                  color: AppColors.actionPrimary,
                   fontSize: 12,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(width: 2),
               Icon(
                 Icons.chevron_right_rounded,
                 size: 18,
-                color: AppColors.textTertiary,
+                color: AppColors.actionPrimary,
               ),
             ],
           ),
@@ -112,83 +108,105 @@ class CommanderGlanceCard extends StatelessWidget {
           Container(
             constraints: const BoxConstraints(minHeight: 56),
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s4,
+              horizontal: AppSpacing.s3,
               vertical: AppSpacing.s3,
             ),
             decoration: BoxDecoration(
               color: statusSurfaceBg,
               borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(
-                color: statusBorderColor,
-                width: 1.0,
-              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final countText = Text(
+                      summary.hasActive
+                          ? '${summary.activeCount} 人进入火场'
+                          : '暂无在场人员',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.h2.copyWith(
+                        fontSize: 20,
+                        height: 1.2,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        fontFeatures: const [
+                          FontFeature.tabularFigures(),
+                        ],
+                      ),
+                    );
+                    final remainingLabel =
+                        summary.hasActive && summary.shortestRemainingMin != null
+                            ? Text(
+                                '余${summary.shortestRemainingMin}分钟 (${summary.shortestName})',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                  color: summary.level == AirSafetyLevel.critical
+                                      ? AppColors.alarmText
+                                      : summary.level == AirSafetyLevel.warning
+                                          ? AppColors.cautionText
+                                          : AppColors.textPrimary,
+                                ),
+                              )
+                            : null;
+                    final compact =
+                        constraints.maxWidth < 275 ||
+                        MediaQuery.textScalerOf(context).scale(1.0) > 1.15;
+                    if (compact) {
+                      return Wrap(
+                        spacing: AppSpacing.s2,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Flexible(
-                            child: Text(
-                              summary.hasActive
-                                  ? '${summary.activeCount} 人进入火场'
-                                  : '暂无在场人员',
-                              style: AppTextStyles.h2.copyWith(
-                                fontSize: 18,
-                                height: 1.25,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (summary.hasActive) ...[
-                            const SizedBox(width: AppSpacing.s2),
+                          countText,
+                          if (summary.hasActive)
                             StatusBadge(
                               status: statusBadgeType,
                               onColorCard: false,
                               fontSize: 12,
                             ),
+                          if (remainingLabel != null) remainingLabel,
+                        ],
+                      );
+                    }
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (!summary.hasActive)
+                          Expanded(child: countText)
+                        else ...[
+                          countText,
+                          const SizedBox(width: AppSpacing.s2),
+                          StatusBadge(
+                            status: statusBadgeType,
+                            onColorCard: false,
+                            fontSize: 12,
+                          ),
+                          if (remainingLabel != null) ...[
+                            const SizedBox(width: AppSpacing.s2),
+                            Expanded(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(minHeight: 26),
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: remainingLabel,
+                                ),
+                              ),
+                            ),
                           ],
                         ],
-                      ),
-                    ),
-                    if (summary.hasActive && summary.shortestRemainingMin != null) ...[
-                      const SizedBox(width: AppSpacing.s2),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: cardBorder.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(AppRadius.xs),
-                          border: Border.all(color: cardBorder, width: 0.8),
-                        ),
-                        child: Text(
-                          '余${summary.shortestRemainingMin}m (${summary.shortestName})',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: summary.level == AirSafetyLevel.critical
-                                ? AppColors.alarm
-                                : summary.level == AirSafetyLevel.warning
-                                    ? AppColors.caution
-                                    : AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                      ],
+                    );
+                  },
                 ),
                 if (tacticalProgress != null && tacticalProgress.isNotEmpty) ...[
                   const SizedBox(height: 6),

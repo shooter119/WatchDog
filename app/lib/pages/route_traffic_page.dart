@@ -369,7 +369,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                             ? Icons.check_circle_rounded
                             : Icons.radio_button_unchecked,
                         color:
-                            isSelected ? AppColors.voice : AppColors.textSecondary,
+                            isSelected ? AppColors.actionPrimary : AppColors.textSecondary,
                         size: 20,
                       ),
                       title: Text(
@@ -513,12 +513,12 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: AppColors.voice.withValues(alpha: 0.12),
+                      color: AppColors.cautionSurface,
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
                       Icons.wrong_location_outlined,
-                      color: AppColors.voice,
+                      color: AppColors.cautionText,
                       size: 26,
                     ),
                   ),
@@ -685,7 +685,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                 child: Icon(
                   Icons.my_location_rounded,
                   size: 16,
-                  color: AppColors.voice,
+                  color: AppColors.actionPrimary,
                 ),
               ),
               const SizedBox(width: AppSpacing.s2),
@@ -745,7 +745,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                   child: Text(
                     '修改',
                     style: AppTextStyles.label.copyWith(
-                      color: AppColors.voice,
+                      color: AppColors.actionPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -760,7 +760,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                     child: Text(
                       '切换',
                       style: AppTextStyles.label.copyWith(
-                        color: AppColors.voice,
+                        color: AppColors.actionPrimary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -905,7 +905,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               Text(
                 RouteTrafficInfo.formatDuration(selectedRoute.durationSeconds),
                 style: AppTextStyles.h1.copyWith(
-                  color: AppColors.voice,
+                  color: AppColors.actionPrimary,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -1159,7 +1159,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               Icon(
                 Icons.alt_route_rounded,
                 size: 18,
-                color: AppColors.voice,
+                color: AppColors.actionPrimary,
               ),
               const SizedBox(width: AppSpacing.s2),
               Text(
@@ -1225,7 +1225,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                           ? '收起详细分段'
                           : '查看详细分段路线（${route.steps.length} 段）',
                       style: AppTextStyles.label.copyWith(
-                        color: AppColors.voice,
+                        color: AppColors.actionPrimary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1234,7 +1234,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                       _stepsExpanded
                           ? Icons.expand_less_rounded
                           : Icons.expand_more_rounded,
-                      color: AppColors.voice,
+                      color: AppColors.actionPrimary,
                       size: 20,
                     ),
                   ],
@@ -1304,7 +1304,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               Icon(
                 Icons.wb_sunny_outlined,
                 size: 18,
-                color: AppColors.voice,
+                color: AppColors.actionPrimary,
               ),
               const SizedBox(width: AppSpacing.s2),
               Expanded(

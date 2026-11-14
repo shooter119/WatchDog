@@ -1568,6 +1568,9 @@ const INCIDENT_INFO_KEYS = [
   'specific_type',
   'incident_status',
   'location',
+  'address',
+  'location_display',
+  'crime_address',
   'administrative_area',
   'received_at',
   'situation',
@@ -1584,6 +1587,17 @@ function buildIncidentInfoProjection(detailData) {
   if (!detailData || typeof detailData !== 'object') return info;
   for (const key of INCIDENT_INFO_KEYS) {
     if (detailData[key]) info[key] = detailData[key];
+  }
+  if (!info.location) {
+    const fallbackLocation =
+      detailData.location ||
+      detailData.address ||
+      detailData.location_display ||
+      detailData.crime_address ||
+      '';
+    if (fallbackLocation && typeof fallbackLocation === 'string' && fallbackLocation.trim()) {
+      info.location = fallbackLocation.trim();
+    }
   }
   return info;
 }

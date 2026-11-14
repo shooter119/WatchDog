@@ -343,28 +343,30 @@ void main() {
     expect(find.text('现场工具'), findsOneWidget);
     expect(find.text('单机模式'), findsOneWidget);
     expect(find.text('重点单位库'), findsOneWidget);
+    expect(find.text('危化速查'), findsOneWidget);
     expect(find.text('水印相机'), findsOneWidget);
     expect(find.text('定位分享'), findsOneWidget);
     expect(find.text('视频资源'), findsOneWidget);
     expect(find.text('路况查询'), findsOneWidget);
+    expect(find.text('现场地图'), findsOneWidget);
     expect(find.text('按住下方按钮说话'), findsNothing);
     expect(find.byType(FloatingActionButton), findsNothing);
     Rect toolRect(String title) =>
         tester.getRect(find.byKey(ValueKey('tool-$title')));
     final sites = toolRect('重点单位');
+    final hazmat = toolRect('危化速查');
     final camera = toolRect('水印相机');
     final location = toolRect('定位分享');
-    final video = toolRect('视频资源');
-    for (final rect in [sites, camera, location, video]) {
+    for (final rect in [sites, hazmat, camera, location]) {
       expect(rect.width, greaterThanOrEqualTo(48));
       expect(rect.height, greaterThanOrEqualTo(48));
     }
-    expect(sites.top, camera.top);
-    expect(location.top, video.top);
-    expect(location.top, greaterThan(sites.bottom));
-    expect(sites.left, location.left);
-    expect(camera.left, video.left);
-    expect(camera.left, greaterThan(sites.right));
+    expect(sites.top, hazmat.top);
+    expect(camera.top, location.top);
+    expect(camera.top, greaterThan(sites.bottom));
+    expect(sites.left, camera.left);
+    expect(hazmat.left, location.left);
+    expect(hazmat.left, greaterThan(sites.right));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     controller.dispose();

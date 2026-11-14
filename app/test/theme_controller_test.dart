@@ -74,7 +74,7 @@ void main() {
     expect(AppColors.palette.id, 'daylight');
   });
 
-  test('夜间战术主题偏好加载并生效', () async {
+  test('暗曜主题偏好加载并生效', () async {
     SharedPreferences.setMockInitialValues({'app_theme': 'night-tactical'});
     await ThemeController.instance.load();
     expect(ThemeController.instance.currentId, 'night-tactical');

@@ -66,7 +66,9 @@ void main() {
       );
 
       expect(find.text('2 人进入火场'), findsOneWidget);
-      expect(find.textContaining('张三'), findsOneWidget);
+      expect(find.text('余14分钟 (张三)'), findsOneWidget);
+      final textWidget = tester.widget<Text>(find.text('余14分钟 (张三)'));
+      expect(textWidget.style?.fontFeatures, contains(const FontFeature.tabularFigures()));
       expect(find.text('东门水枪出水内攻推进'), findsOneWidget);
     });
 
@@ -85,6 +87,69 @@ void main() {
 
       await tester.tap(find.byType(CommanderGlanceCard));
       expect(tapped, isTrue);
+    });
+
+    testWidgets('390dp 标准宽度下人数标题完整显示不截断且窄屏大字号不溢出', (tester) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final entries = [
+        Entry(
+          id: '1',
+          name: '张三',
+          durationMin: 40,
+          entryAt: now - 360000,
+          exitAt: now + 34 * 60000 - 10000,
+          source: 'voice',
+        ),
+        Entry(
+          id: '2',
+          name: '李四',
+          durationMin: 25,
+          entryAt: now - 960000,
+          exitAt: now + 9 * 60000 - 10000,
+          source: 'voice',
+        ),
+      ];
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          Center(
+            child: SizedBox(
+              width: 358,
+              child: CommanderGlanceCard(activeEntries: entries),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final countRect = tester.getRect(find.text('2 人进入火场'));
+      final remainingRect = tester.getRect(find.text('余9分钟 (李四)'));
+      expect(countRect.width, greaterThanOrEqualTo(95));
+      expect(countRect.top, lessThan(remainingRect.bottom));
+      expect(remainingRect.top, lessThan(countRect.bottom));
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: const TextScaler.linear(1.3)),
+                child: SizedBox(
+                  width: 240,
+                  child: CommanderGlanceCard(activeEntries: entries),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('2 人进入火场'), findsOneWidget);
+      expect(find.text('余9分钟 (李四)'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }

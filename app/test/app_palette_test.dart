@@ -109,7 +109,7 @@ void main() {
           _contrast(p.textSecondary, p.surface),
           greaterThanOrEqualTo(4.5),
         );
-        // 昼白是历史配色，textTertiary 4.39 属既有水平；暖砂与夜间战术必须达到 4.5。
+        // 昼白是历史配色，textTertiary 4.39 属既有水平；暖砂与暗曜必须达到 4.5。
         final tertiaryFloor = p.id == AppPalette.daylight.id ? 4.3 : 4.5;
         expect(
           _contrast(p.textTertiary, p.background),

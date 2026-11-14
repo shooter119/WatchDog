@@ -18,6 +18,7 @@ import 'route_traffic_page.dart';
 import 'tactical_brief_sheet.dart';
 import 'video_resources_page.dart';
 import 'hazmat_page.dart';
+import 'orthomap_page.dart';
 import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
@@ -280,6 +281,8 @@ class HomePageState extends State<HomePage> {
       return;
     }
     if (!ok) {
+      _recordingRequested = false;
+      _recordingStarting = false;
       OpLogService.instance.record(
         _opId!,
         'record_perm_denied',
@@ -348,6 +351,7 @@ class HomePageState extends State<HomePage> {
             if (mounted) setState(() => _amp = a);
           });
     } catch (e) {
+      _recordingRequested = false;
       _recordingStarting = false;
       OpLogService.instance.record(
         _opId!,
@@ -366,11 +370,13 @@ class HomePageState extends State<HomePage> {
       // 松手可能早于麦克风权限/录音插件返回；撤销尚未真正开始的录音请求，
       // 防止手势结束后异步回调又偷偷启动录音。
       _recordingRequested = false;
+      _recordingStarting = false;
       _recordingGeneration++;
       _stopRecordingTimer();
       return;
     }
     _recordingRequested = false;
+    _recordingStarting = false;
     _recordingGeneration++;
     _stopRecordingTimer();
     setState(() {
@@ -996,6 +1002,8 @@ class HomePageState extends State<HomePage> {
 
   /// 重新语音输入：清除本次转写/解析结果与错误状态
   void _retry() {
+    _recordingRequested = false;
+    _recordingStarting = false;
     final disposedEditors = List<_PersonEdit>.from(_peopleEditors);
     _peopleEditors.clear();
     setState(() {
@@ -1320,6 +1328,94 @@ class HomePageState extends State<HomePage> {
     );
   }
 
+  void _showConnectionDetails(BuildContext context) {
+    final c = widget.controller;
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
+      builder: (ctx) {
+        final serverUrl = c.api?.baseUrl ?? '未配置服务端';
+        final isGuest = c.isGuest;
+        final isConnected = !c.connectionLost;
+        final syncErr = c.syncError;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.pageMargin),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isConnected ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                      color: isConnected ? AppColors.online : AppColors.cautionText,
+                    ),
+                    const SizedBox(width: AppSpacing.s2),
+                    Text(
+                      '连接与同步状态',
+                      style: AppTextStyles.h2.copyWith(color: AppColors.textPrimary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.s3),
+                Text(
+                  isGuest ? '模式：游客模式（单机演练）' : '状态：已联网绑定',
+                  style: AppTextStyles.bodyMd,
+                ),
+                const SizedBox(height: AppSpacing.s1),
+                Text('服务地址：$serverUrl', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                if (syncErr != null) ...[
+                  const SizedBox(height: AppSpacing.s2),
+                  Text('同步异常：$syncErr', style: AppTextStyles.caption.copyWith(color: AppColors.alarmText)),
+                ],
+                const SizedBox(height: AppSpacing.s4),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    c.refreshNow();
+                  },
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.actionPrimary),
+                  child: const Text('立即重试同步'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildIdleVoiceGuidance() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSubtle,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.mic_none_rounded, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              '长按下方麦克风说话，松开自动转写与确认',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildContent(BuildContext context) {
     final cfg = widget.controller.calcConfig;
     final incident = widget.controller.currentIncident;
@@ -1358,20 +1454,26 @@ class HomePageState extends State<HomePage> {
       child: LayoutBuilder(
         builder: (context, viewport) {
           final compactHeader =
-              viewport.maxWidth < 300 ||
-              MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
+              viewport.maxWidth < 320 ||
+              MediaQuery.textScalerOf(context).scale(1.0) >= 1.25;
           final connectionStatus = ConnectionStatus(
             connected: !widget.controller.connectionLost,
             localOnly: widget.controller.isGuest,
             syncing: widget.controller.syncing,
             syncError: widget.controller.syncError,
             onRetry: widget.controller.refreshNow,
+            onInspect: () => _showConnectionDetails(context),
           );
           final pageHeader = compactHeader
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text('警情处置', style: AppTextStyles.h1),
+                    const Text(
+                      '警情处置',
+                      style: AppTextStyles.h1,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     const SizedBox(height: AppSpacing.s2),
                     Align(
                       alignment: Alignment.centerRight,
@@ -1382,10 +1484,17 @@ class HomePageState extends State<HomePage> {
                   ],
                 )
               : Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const Text('警情处置', style: AppTextStyles.h1),
-                    const Spacer(),
+                    const Expanded(
+                      child: Text(
+                        '警情处置',
+                        style: AppTextStyles.h1,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.s2),
                     connectionStatus,
                   ],
                 );
@@ -1436,7 +1545,7 @@ class HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   pageHeader,
-                  const SizedBox(height: AppSpacing.s2),
+                  const SizedBox(height: AppSpacing.s3),
                   if (taskBar != null) ...[
                     taskBar,
                     const SizedBox(height: AppSpacing.s3),
@@ -1450,6 +1559,8 @@ class HomePageState extends State<HomePage> {
                     const SizedBox(height: AppSpacing.s3),
                   ],
                   _buildFieldTools(context),
+                  const SizedBox(height: AppSpacing.s3),
+                  _buildIdleVoiceGuidance(),
                   if (_peopleEditors.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: AppSpacing.s4),
@@ -1478,7 +1589,7 @@ class HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   pageHeader,
-                  const SizedBox(height: AppSpacing.s2),
+                  const SizedBox(height: AppSpacing.s3),
                   if (taskBar != null) taskBar,
                   if (taskBar != null) const SizedBox(height: AppSpacing.s3),
                   SizedBox(
@@ -1500,7 +1611,7 @@ class HomePageState extends State<HomePage> {
             child: Column(
               children: [
                 pageHeader,
-                const SizedBox(height: AppSpacing.s2),
+                const SizedBox(height: AppSpacing.s3),
                 if (taskBar != null) taskBar,
                 if (taskBar != null) const SizedBox(height: AppSpacing.s3),
                 Expanded(child: _buildResultCard(context, cfg)),
@@ -1692,9 +1803,9 @@ class HomePageState extends State<HomePage> {
         builder: (ctx) => AlertDialog(
           title: Row(
             children: [
-              Icon(Icons.lock_outline_rounded, color: AppColors.voice),
-              SizedBox(width: 8),
-              Text('需要转为正式队员'),
+              Icon(Icons.lock_outline_rounded, color: AppColors.textSecondary),
+              const SizedBox(width: 8),
+              const Text('需要转为正式队员'),
             ],
           ),
           content: const Text(
@@ -1709,7 +1820,7 @@ class HomePageState extends State<HomePage> {
               onPressed: () => Navigator.pop(ctx, true),
               icon: const Icon(Icons.verified_user_outlined),
               label: const Text('去完成认证'),
-              style: FilledButton.styleFrom(backgroundColor: AppColors.voice),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.actionPrimary),
             ),
           ],
         ),
@@ -3203,7 +3314,7 @@ class HomePageState extends State<HomePage> {
         color: selected ? AppColors.onPrimary : AppColors.textPrimary,
         fontWeight: FontWeight.w700,
       ),
-      selectedColor: AppColors.voice,
+      selectedColor: AppColors.actionPrimary,
       backgroundColor: AppColors.surface,
       side: BorderSide(color: AppColors.border),
       padding: const EdgeInsets.symmetric(
@@ -3316,7 +3427,7 @@ class HomePageState extends State<HomePage> {
             Expanded(
               child: _fieldTool(
                 '重点单位库',
-                '地图、预案与作战资料',
+                '预案与作战资料',
                 Icons.domain_outlined,
                 () => Navigator.push<void>(
                   context,
@@ -3331,15 +3442,16 @@ class HomePageState extends State<HomePage> {
             const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _fieldTool(
-                '水印相机',
-                '照片与视频水印记录',
-                Icons.photo_camera_outlined,
+                '危化速查',
+                'UN 编号离线速查',
+                Icons.science_outlined,
                 () => Navigator.push<void>(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => CameraPage(controller: widget.controller),
+                    builder: (_) => HazmatPage(controller: widget.controller),
                   ),
                 ),
+                keyId: '危化速查',
               ),
             ),
           ],
@@ -3349,20 +3461,40 @@ class HomePageState extends State<HomePage> {
           children: [
             Expanded(
               child: _fieldTool(
-                '定位分享',
-                '复制位置与高德导航链接',
-                Icons.share_location_outlined,
-                () => showLocationShareSheet(
+                '水印相机',
+                '现场照片视频取证',
+                Icons.photo_camera_outlined,
+                () => Navigator.push<void>(
                   context,
-                  controller: widget.controller,
+                  MaterialPageRoute(
+                    builder: (_) => CameraPage(controller: widget.controller),
+                  ),
                 ),
+                keyId: '水印相机',
               ),
             ),
             const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _fieldTool(
+                '定位分享',
+                '坐标与高德导航',
+                Icons.share_location_outlined,
+                () => showLocationShareSheet(
+                  context,
+                  controller: widget.controller,
+                ),
+                keyId: '定位分享',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.s2),
+        Row(
+          children: [
+            Expanded(
+              child: _fieldTool(
                 '视频资源',
-                '查看本单位授权监控与现场画面',
+                '授权监控与实况',
                 Icons.videocam_outlined,
                 () => Navigator.push<void>(
                   context,
@@ -3374,17 +3506,14 @@ class HomePageState extends State<HomePage> {
                     ),
                   ),
                 ),
+                keyId: '视频资源',
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.s2),
-        Row(
-          children: [
+            const SizedBox(width: AppSpacing.s2),
             Expanded(
               child: _fieldTool(
                 '路况查询',
-                '查询赴现场耗时、途经道路与天气',
+                '路线耗时与天气',
                 Icons.route_outlined,
                 () => Navigator.push<void>(
                   context,
@@ -3393,18 +3522,7 @@ class HomePageState extends State<HomePage> {
                         RouteTrafficPage(controller: widget.controller),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s2),
-            Expanded(
-              child: _fieldTool(
-                '战况速报',
-                '一键生成纯客观事实公文简报',
-                Icons.description_outlined,
-                () => showTacticalBriefSheet(
-                  context,
-                  controller: widget.controller,
-                ),
+                keyId: '路况查询',
               ),
             ),
           ],
@@ -3414,19 +3532,32 @@ class HomePageState extends State<HomePage> {
           children: [
             Expanded(
               child: _fieldTool(
-                '危化速查',
-                'UN 编号离线核查与电台复诵卡',
-                Icons.science_outlined,
-                () => Navigator.push<void>(
+                '战况速报',
+                '一键生成公文简报',
+                Icons.description_outlined,
+                () => showTacticalBriefSheet(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => HazmatPage(controller: widget.controller),
-                  ),
+                  controller: widget.controller,
                 ),
+                keyId: '战况速报',
               ),
             ),
             const SizedBox(width: AppSpacing.s2),
-            const Expanded(child: SizedBox.shrink()),
+            Expanded(
+              child: _fieldTool(
+                '现场地图',
+                '正射影像与标绘',
+                Icons.map_outlined,
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        OrthomapPage(controller: widget.controller),
+                  ),
+                ),
+                keyId: '现场地图',
+              ),
+            ),
           ],
         ),
       ],
@@ -3443,7 +3574,7 @@ class HomePageState extends State<HomePage> {
     message: subtitle,
     child: AppCard(
       key: ValueKey('tool-${keyId ?? title}'),
-      radius: AppRadius.lg,
+      radius: AppRadius.md,
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s3,
         vertical: AppSpacing.s2,
@@ -3451,27 +3582,45 @@ class HomePageState extends State<HomePage> {
       side: BorderSide(color: AppColors.border, width: 1.0),
       onTap: open,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 54),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        constraints: const BoxConstraints(minHeight: 40),
+        child: Row(
           children: [
             Container(
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: AppColors.voice.withValues(alpha: 0.12),
+                color: AppColors.surfaceSubtle,
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 19, color: AppColors.voice),
+              child: Icon(icon, size: 18, color: AppColors.textPrimary),
             ),
-            const SizedBox(height: AppSpacing.s1 + 2),
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.label.copyWith(
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+            const SizedBox(width: AppSpacing.s2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.label.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -3531,7 +3680,7 @@ class _IndexBadge extends StatelessWidget {
       width: 24,
       height: 24,
       alignment: Alignment.center,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.voice),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.actionPrimary),
       child: Text(
         '${index + 1}',
         style: AppTextStyles.caption.copyWith(
@@ -3599,12 +3748,12 @@ class _NoIncidentTaskBar extends StatelessWidget {
           width: AppSpacing.s10,
           height: AppSpacing.s10,
           decoration: BoxDecoration(
-            color: AppColors.voice.withValues(alpha: 0.11),
+            color: AppColors.incidentFireSurface,
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
           child: Icon(
             Icons.local_fire_department_outlined,
-            color: AppColors.voice,
+            color: AppColors.incidentFire,
             size: 24,
           ),
         ),
@@ -3625,7 +3774,7 @@ class _NoIncidentTaskBar extends StatelessWidget {
       icon: const Icon(Icons.add_circle_outline),
       label: const Text(_actionLabel),
       style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.voice,
+        foregroundColor: AppColors.actionPrimary,
         minimumSize: const Size(0, 48),
       ),
     );
@@ -3785,7 +3934,7 @@ class _TaskBarState extends State<_TaskBar> {
       key: const Key('incident-more-menu'),
       tooltip: '更多警情操作',
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
       icon: Icon(
         Icons.more_horiz_rounded,
         size: 20,
@@ -3957,21 +4106,15 @@ class _TaskBarState extends State<_TaskBar> {
                           ),
                         ),
                         const SizedBox(width: AppSpacing.s2),
-                        Container(
+                        SizedBox(
                           key: const Key('incident-collapse-pill'),
                           width: 28,
                           height: 28,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceSubtle,
-                            borderRadius: BorderRadius.circular(AppRadius.sm),
-                            border: Border.all(color: AppColors.border),
-                          ),
                           child: Icon(
                             _expanded
                                 ? Icons.keyboard_arrow_up_rounded
                                 : Icons.keyboard_arrow_down_rounded,
-                            size: 18,
+                            size: 20,
                             color: AppColors.textSecondary,
                           ),
                         ),
@@ -4190,7 +4333,7 @@ class _TaskBarState extends State<_TaskBar> {
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                     onTap: _toggleExpanded,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 40),
+                      constraints: const BoxConstraints(minHeight: 48),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [

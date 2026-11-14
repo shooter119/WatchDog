@@ -143,6 +143,16 @@ class Incident {
       (title ?? '').trim().isEmpty ? number : title!.trim();
   bool get isActive => status == 'active';
 
+  String get effectiveLocation {
+    for (final key in ['location', 'address', 'location_display', 'crime_address']) {
+      final val = (info[key]?.toString() ?? '').trim();
+      if (val.isNotEmpty && val != '地点待补充' && val != 'null') {
+        return val;
+      }
+    }
+    return '';
+  }
+
   factory Incident.fromJson(Map<String, dynamic> json) => Incident(
     keySiteLink: json['key_site_link'] is Map
         ? IncidentKeySiteLink.fromJson(

@@ -136,11 +136,11 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
                 selected: _activeVolumeL == 6,
                 showCheckmark: false,
                 onSelected: (_) => setState(() => _activeVolumeL = 6),
-                selectedColor: AppColors.voice,
+                selectedColor: AppColors.actionPrimary,
                 backgroundColor: AppColors.surface,
                 side: BorderSide(
                   color: _activeVolumeL == 6
-                      ? AppColors.voice
+                      ? AppColors.actionPrimary
                       : AppColors.border,
                 ),
                 labelStyle: AppTextStyles.label.copyWith(
@@ -156,11 +156,11 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
                 selected: _activeVolumeL == 9,
                 showCheckmark: false,
                 onSelected: (_) => setState(() => _activeVolumeL = 9),
-                selectedColor: AppColors.voice,
+                selectedColor: AppColors.actionPrimary,
                 backgroundColor: AppColors.surface,
                 side: BorderSide(
                   color: _activeVolumeL == 9
-                      ? AppColors.voice
+                      ? AppColors.actionPrimary
                       : AppColors.border,
                 ),
                 labelStyle: AppTextStyles.label.copyWith(
