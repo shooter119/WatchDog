@@ -8,6 +8,13 @@ import 'sync_reducer.dart';
 
 enum SyncConnectionState { stopped, bootstrapping, connecting, connected, reconnecting, error }
 
+typedef SyncClientFactory = RealtimeClient Function({
+  required ApiClient api,
+  required void Function(Map<String, dynamic>) onMessage,
+  void Function(Object)? onError,
+  void Function()? onDone,
+});
+
 /// 管理 bootstrap、游标、WebSocket、补拉和 30 秒轻量校准。
 class SyncCoordinator {
   static const connectedCheckpointInterval = Duration(seconds: 120);
@@ -22,7 +29,7 @@ class SyncCoordinator {
   final void Function(SyncEvent event) onEvent;
   final void Function(SyncConnectionState state, Object? error) onState;
   final SyncReducer reducer;
-  final RealtimeClient Function({required ApiClient api, required void Function(Map<String, dynamic>) onMessage, void Function(Object)? onError, void Function()? onDone}) clientFactory;
+  final SyncClientFactory clientFactory;
 
   RealtimeClient? _client;
   Timer? _checkpointTimer;
@@ -30,6 +37,9 @@ class SyncCoordinator {
   int _reconnectAttempt = 0;
   bool _stopped = true;
   bool _busy = false;
+  bool _bootstrapped = false;
+  Future<void>? _inFlightBootstrap;
+  int _bootstrapGeneration = 0;
   String? _incidentId;
   String unitCursor = '0';
   String incidentCursor = '0';
@@ -40,7 +50,7 @@ class SyncCoordinator {
     required this.onEvent,
     required this.onState,
     SyncReducer? reducer,
-    RealtimeClient Function({required ApiClient api, required void Function(Map<String, dynamic>) onMessage, void Function(Object)? onError, void Function()? onDone})? clientFactory,
+    SyncClientFactory? clientFactory,
   }) : reducer = reducer ?? SyncReducer(),
        clientFactory = clientFactory ?? _defaultClientFactory;
 
@@ -62,10 +72,16 @@ class SyncCoordinator {
 
   Future<void> start({String? incidentId}) async {
     _stopped = false;
+    _bootstrapped = false;
+    _bootstrapGeneration++;
+    _inFlightBootstrap = null;
+    _busy = false;
     _incidentId = incidentId?.isNotEmpty == true ? incidentId : null;
     _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _reconnectAttempt = 0;
     await _bootstrapAndConnect();
+    if (_stopped) return;
     // 固定 30 秒节拍：连接期只放行每第 4 拍（等效 120 秒）。
     // 不做"按连接状态重建定时器"，否则连接抖动会不停重建、永远攒不满一拍。
     _checkpointTimer ??= Timer.periodic(
@@ -93,18 +109,71 @@ class SyncCoordinator {
   Future<void> switchIncident(String? incidentId) async {
     if (_stopped) return;
     _incidentId = incidentId?.isNotEmpty == true ? incidentId : null;
-    await _client?.disconnect();
+    _bootstrapped = false;
+    _bootstrapGeneration++;
+    _inFlightBootstrap = null;
+    _busy = false;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _reconnectAttempt = 0;
+    final previousClient = _client;
+    _client = null;
+    await previousClient?.disconnect();
+    if (_stopped) return;
     await _bootstrapAndConnect();
   }
 
-  Future<void> checkpointNow() => _checkpoint();
+  Future<void> checkpointNow() async {
+    if (_stopped) return;
+    _reconnectAttempt = 0;
+    if (!_bootstrapped || _client?.connected != true) {
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      final inFlight = _inFlightBootstrap;
+      if (inFlight != null) {
+        await inFlight;
+      } else {
+        await _bootstrapAndConnect();
+      }
+      return;
+    }
+    await _checkpoint();
+  }
 
-  Future<void> _bootstrapAndConnect() async {
-    if (_stopped || _busy) return;
+  Future<void> _bootstrapAndConnect() {
+    if (_stopped) return Future<void>.value();
+    final inFlight = _inFlightBootstrap;
+    if (inFlight != null) return inFlight;
+    if (_busy) return Future<void>.value();
+    final generation = ++_bootstrapGeneration;
+    var settled = false;
+    final future = _runBootstrap(
+      generation,
+      onSettled: () {
+        settled = true;
+        if (generation == _bootstrapGeneration) {
+          _inFlightBootstrap = null;
+        }
+      },
+    );
+    if (!settled) {
+      _inFlightBootstrap = future;
+    }
+    return future;
+  }
+
+  Future<void> _runBootstrap(
+    int generation, {
+    required VoidCallback onSettled,
+  }) async {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _busy = true;
     onState(SyncConnectionState.bootstrapping, null);
     try {
       final snapshot = await api.fetchSyncBootstrap(forIncidentId: _incidentId);
+      if (_stopped || generation != _bootstrapGeneration) return;
+      _bootstrapped = true;
       final cursors = snapshot['cursors'] is Map
           ? Map<String, dynamic>.from(snapshot['cursors'] as Map)
           : <String, dynamic>{};
@@ -112,34 +181,77 @@ class SyncCoordinator {
       incidentCursor = cursors['incident']?.toString() ?? '0';
       reducer.clear();
       onSnapshot(snapshot);
-      await _connect();
+      await _connect(bootstrapGeneration: generation);
     } catch (error) {
-      onState(SyncConnectionState.error, error);
-      _scheduleReconnect();
+      if (!_stopped && generation == _bootstrapGeneration) {
+        onState(SyncConnectionState.error, error);
+        if (!ApiClient.isAuthenticationFailure(error)) {
+          _scheduleReconnect();
+        }
+      }
     } finally {
-      _busy = false;
+      if (generation == _bootstrapGeneration) {
+        _busy = false;
+      }
+      onSettled();
     }
   }
 
-  Future<void> _connect() async {
+  Future<void> _connect({int? bootstrapGeneration}) async {
     if (_stopped) return;
+    if (bootstrapGeneration != null &&
+        bootstrapGeneration != _bootstrapGeneration) {
+      return;
+    }
     onState(SyncConnectionState.connecting, null);
-    final client = clientFactory(
+    late final RealtimeClient client;
+    client = clientFactory(
       api: api,
       onMessage: _handleMessage,
-      onError: (error) => onState(SyncConnectionState.error, error),
-      onDone: _scheduleReconnect,
+      onError: (error) {
+        if (_stopped || !identical(_client, client)) return;
+        onState(SyncConnectionState.error, error);
+        if (!ApiClient.isAuthenticationFailure(error) && !client.connected) {
+          _scheduleReconnect();
+        }
+      },
+      onDone: () {
+        if (_stopped || !identical(_client, client)) return;
+        _scheduleReconnect();
+      },
     );
+    final previousClient = _client;
     _client = client;
+    if (previousClient != null) {
+      unawaited(previousClient.disconnect());
+    }
     try {
-      await client.connect(unitCursor: unitCursor, incidentCursor: incidentCursor, incidentId: _incidentId);
+      await client.connect(
+        unitCursor: unitCursor,
+        incidentCursor: incidentCursor,
+        incidentId: _incidentId,
+      );
+      if (_stopped ||
+          !identical(_client, client) ||
+          (bootstrapGeneration != null &&
+              bootstrapGeneration != _bootstrapGeneration)) {
+        await client.disconnect();
+        return;
+      }
       _reconnectAttempt = 0;
       onState(SyncConnectionState.connected, null);
     } catch (error) {
       await client.disconnect();
       if (identical(_client, client)) _client = null;
+      if (_stopped) return;
+      if (bootstrapGeneration != null &&
+          bootstrapGeneration != _bootstrapGeneration) {
+        return;
+      }
       onState(SyncConnectionState.error, error);
-      _scheduleReconnect();
+      if (!ApiClient.isAuthenticationFailure(error)) {
+        _scheduleReconnect();
+      }
     }
   }
 
@@ -182,16 +294,32 @@ class SyncCoordinator {
 
   Future<void> _checkpoint() async {
     if (_stopped || _busy) return;
+    if (!_bootstrapped || _client?.connected != true) {
+      await _bootstrapAndConnect();
+      return;
+    }
     try {
       final checkpoint = await api.fetchSyncCheckpoint(forIncidentId: _incidentId);
+      if (_stopped) return;
       final cursors = checkpoint['cursors'] is Map
           ? Map<String, dynamic>.from(checkpoint['cursors'] as Map)
           : <String, dynamic>{};
       final unit = cursors['unit']?.toString() ?? unitCursor;
       final incident = cursors['incident']?.toString() ?? incidentCursor;
-      if (unit != unitCursor || incident != incidentCursor) await _pullEvents();
+      if (unit != unitCursor || incident != incidentCursor) {
+        await _pullEvents();
+      }
+      if (!_stopped && _client?.connected == true) {
+        onState(SyncConnectionState.connected, null);
+      }
     } catch (error) {
-      onState(SyncConnectionState.error, error);
+      if (!_stopped) {
+        onState(SyncConnectionState.error, error);
+        if (!ApiClient.isAuthenticationFailure(error) &&
+            _client?.connected != true) {
+          _scheduleReconnect();
+        }
+      }
     }
   }
 
@@ -220,7 +348,7 @@ class SyncCoordinator {
     } finally {
       _busy = false;
     }
-    if (needsBootstrap) await _bootstrapAndConnect();
+    if (needsBootstrap && !_stopped) await _bootstrapAndConnect();
   }
 
   void _scheduleReconnect() {
@@ -238,12 +366,18 @@ class SyncCoordinator {
 
   Future<void> stop() async {
     _stopped = true;
+    _bootstrapped = false;
+    _bootstrapGeneration++;
+    _inFlightBootstrap = null;
+    _busy = false;
     _checkpointTimer?.cancel();
     _checkpointTimer = null;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    await _client?.disconnect();
+    _reconnectAttempt = 0;
+    final client = _client;
     _client = null;
+    await client?.disconnect();
     onState(SyncConnectionState.stopped, null);
   }
 

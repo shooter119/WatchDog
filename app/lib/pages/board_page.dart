@@ -112,12 +112,11 @@ class _BoardPageState extends State<BoardPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (widget.controller.connectionLost &&
+                    !widget.controller.syncing &&
                     !widget.controller.isGuest) ...[
                   AppBanner(
                     kind: AppBannerKind.offline,
-                    text: widget.controller.syncError == null
-                        ? '网络已中断，看板数据可能不是最新'
-                        : '网络已中断：${widget.controller.syncError}',
+                    text: '网络已中断，看板数据可能不是最新',
                     actionLabel: '重试',
                     onAction: widget.controller.refreshNow,
                   ),
@@ -177,7 +176,7 @@ class _BoardPageState extends State<BoardPage> {
   Future<void> _onRefresh() async {
     await widget.controller.refreshNow();
     if (!mounted) return;
-    if (widget.controller.syncError != null) {
+    if (widget.controller.syncError != null && !widget.controller.syncing) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

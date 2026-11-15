@@ -8,9 +8,16 @@ import 'package:record/record.dart';
 
 import '../api/api_client.dart';
 import 'audio_service.dart';
+import 'resilient_dns.dart';
 
 typedef RealtimeTextCallback =
     void Function(String text, {required bool finalText});
+typedef RealtimeAsrSocketFactory =
+    Future<WebSocket> Function(
+      String url, {
+      Map<String, dynamic>? headers,
+      CompressionOptions compression,
+    });
 
 class RealtimeAsrResult {
   final String text;
@@ -25,6 +32,7 @@ class RealtimeAsrService {
   final ApiClient api;
   final AudioRecorder _recorder;
   final RealtimeTextCallback? onText;
+  final RealtimeAsrSocketFactory _socketFactory;
   final int maxAudioBytes;
   final int packetBytes;
 
@@ -46,9 +54,11 @@ class RealtimeAsrService {
     required this.api,
     this.onText,
     AudioRecorder? recorder,
+    RealtimeAsrSocketFactory? socketFactory,
     this.maxAudioBytes = 2 * 1024 * 1024,
     this.packetBytes = 3200,
-  }) : _recorder = recorder ?? AudioRecorder();
+  }) : _recorder = recorder ?? AudioRecorder(),
+       _socketFactory = socketFactory ?? connectResilientWebSocket;
 
   Future<void> start({String? opId}) async {
     if (_started) throw StateError('实时语音会话已启动');
@@ -96,7 +106,7 @@ class RealtimeAsrService {
         'Realtime ASR connect host=${uri.host} path=${uri.path} opId=${opId ?? '-'}',
       );
       try {
-        final socket = await WebSocket.connect(
+        final socket = await _socketFactory(
           uri.toString(),
           headers: api.realtimeAsrHeaders(opId: opId),
           compression: CompressionOptions.compressionDefault,

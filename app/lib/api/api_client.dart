@@ -12,6 +12,7 @@ import '../models/key_sites.dart';
 import '../models/admin_login.dart';
 import '../models/video_resources.dart';
 import '../models/hazmat.dart';
+import '../services/resilient_dns.dart';
 import '../services/settings.dart';
 import '../services/scoped_json_cache.dart';
 
@@ -28,6 +29,8 @@ class ApiClient {
   final IOClient _client = _newHttpClient();
   IOClient? _activeChatClient;
   final Set<IOClient> _transientClients = <IOClient>{};
+  final Set<Timer> _pendingRetryTimers = <Timer>{};
+  final Set<Completer<void>> _pendingRetryWaits = <Completer<void>>{};
   bool _disposed = false;
 
   ApiClient({
@@ -314,9 +317,12 @@ class ApiClient {
       path: '/api/sync/bootstrap',
       queryParameters: query,
     ).toString();
-    final res = await _client
-        .get(_uri(path), headers: _headers)
-        .timeout(const Duration(seconds: 15));
+    final uri = _uri(path);
+    final res = await _withIdempotentSyncRetry(
+      uri,
+      (client) => client.get(uri, headers: _headers),
+      timeout: const Duration(seconds: 15),
+    );
     final body = _decodeJson(res, fallback: '获取实时同步快照失败');
     if (res.statusCode != 200) {
       throw _apiException(res, body: body, fallback: '获取实时同步快照失败');
@@ -338,9 +344,12 @@ class ApiClient {
       path: '/api/sync/checkpoint',
       queryParameters: query,
     ).toString();
-    final res = await _client
-        .get(_uri(path), headers: _headers)
-        .timeout(const Duration(seconds: 10));
+    final uri = _uri(path);
+    final res = await _withIdempotentSyncRetry(
+      uri,
+      (client) => client.get(uri, headers: _headers),
+      timeout: const Duration(seconds: 10),
+    );
     final body = _decodeJson(res, fallback: '校准实时同步失败');
     if (res.statusCode != 200) {
       throw _apiException(res, body: body, fallback: '校准实时同步失败');
@@ -367,9 +376,12 @@ class ApiClient {
           'incident_id': forIncidentId,
       },
     ).toString();
-    final res = await _client
-        .get(_uri(path), headers: _headers)
-        .timeout(const Duration(seconds: 15));
+    final uri = _uri(path);
+    final res = await _withIdempotentSyncRetry(
+      uri,
+      (client) => client.get(uri, headers: _headers),
+      timeout: const Duration(seconds: 15),
+    );
     final body = _decodeJson(res, fallback: '补拉实时事件失败');
     if (res.statusCode != 200) {
       throw _apiException(res, body: body, fallback: '补拉实时事件失败');
@@ -383,15 +395,17 @@ class ApiClient {
         .toList();
   }
 
-  /// 创建带底层连接/空闲超时的移动端 HTTP 客户端。
+  /// 创建带底层连接/空闲超时与抗冷启动 DNS 解析的移动端 HTTP 客户端。
   ///
   /// `Future.timeout` 只能停止等待 Dart Future，不能保证底层 socket 被关闭。
   /// 所有 API 请求都使用受控客户端；辅助页另建一个客户端，便于单独取消。
   static IOClient _newHttpClient() {
-    final httpClient = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 12)
-      ..idleTimeout = const Duration(seconds: 25);
-    return IOClient(httpClient);
+    return IOClient(
+      createResilientHttpClient(
+        connectionTimeout: const Duration(seconds: 12),
+        idleTimeout: const Duration(seconds: 25),
+      ),
+    );
   }
 
   IOClient _newChatClient() => _newHttpClient();
@@ -410,6 +424,14 @@ class ApiClient {
       client.close();
     }
     _transientClients.clear();
+    for (final timer in List<Timer>.of(_pendingRetryTimers)) {
+      timer.cancel();
+    }
+    _pendingRetryTimers.clear();
+    for (final wait in List<Completer<void>>.of(_pendingRetryWaits)) {
+      if (!wait.isCompleted) wait.completeError(StateError('API 客户端已释放'));
+    }
+    _pendingRetryWaits.clear();
   }
 
   /// 网关故障时可能返回 HTML（例如 503），不能直接 jsonDecode，
@@ -509,12 +531,93 @@ class ApiClient {
         code: 'INVALID_RESPONSE_SHAPE',
       );
 
+  static bool _isRetryableTransportError(Object error) =>
+      error is SocketException ||
+      error is HandshakeException ||
+      error is TlsException ||
+      error is HttpException ||
+      error is http.ClientException ||
+      error is TimeoutException;
+
+  static bool _isSyntheticTestHost(String host) {
+    if (!ResilientDnsResolver.shouldBypass(host)) return false;
+    var normalized = host.trim().toLowerCase();
+    while (normalized.endsWith('.')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    if (normalized.isEmpty) return true;
+    if (InternetAddress.tryParse(normalized) != null) return false;
+    return !normalized.contains('.') ||
+        normalized.endsWith('.test') ||
+        normalized.endsWith('.invalid');
+  }
+
+  Future<void> _cancellableRetryDelay(Duration duration) {
+    if (_disposed) return Future<void>.error(StateError('API 客户端已释放'));
+    final completer = Completer<void>();
+    late final Timer timer;
+    timer = Timer(duration, () {
+      _pendingRetryTimers.remove(timer);
+      _pendingRetryWaits.remove(completer);
+      if (!completer.isCompleted) completer.complete();
+    });
+    _pendingRetryTimers.add(timer);
+    _pendingRetryWaits.add(completer);
+    return completer.future;
+  }
+
+  /// 幂等同步与会话续期请求重试：
+  /// 首次沿用共享 `_client` 保持连接池复用；仅在 502/503/504 或短暂传输异常时
+  /// 失效对应域名 DNS 缓存并使用独立短寿命客户端退避重试（350ms、700ms）。
+  Future<http.Response> _withIdempotentSyncRetry(
+    Uri uri,
+    Future<http.Response> Function(http.Client client) send, {
+    required Duration timeout,
+  }) async {
+    const attempts = 3;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      if (_disposed) throw StateError('API 客户端已释放');
+      final IOClient? transientClient = attempt == 0 ? null : _newHttpClient();
+      if (transientClient != null) _transientClients.add(transientClient);
+      final client = transientClient ?? _client;
+      try {
+        final response = await send(client).timeout(timeout);
+        final retryableStatus =
+            response.statusCode == 502 ||
+            response.statusCode == 503 ||
+            response.statusCode == 504;
+        if (!retryableStatus) return response;
+        ResilientDnsResolver.instance.invalidate(uri.host);
+        if (_disposed || attempt == attempts - 1) return response;
+      } catch (error) {
+        if (!_isRetryableTransportError(error)) rethrow;
+        ResilientDnsResolver.instance.invalidate(uri.host);
+        if (_disposed ||
+            attempt == attempts - 1 ||
+            _isSyntheticTestHost(uri.host)) {
+          rethrow;
+        }
+      } finally {
+        if (transientClient != null) {
+          _transientClients.remove(transientClient);
+          transientClient.close();
+        }
+      }
+      await _cancellableRetryDelay(
+        Duration(milliseconds: 350 * (attempt + 1)),
+      );
+    }
+    throw StateError('请求重试失败');
+  }
+
   /// 后端冷启动或移动网络切换时，认证请求可能短暂收到 502/503/504
   /// 或在连接层超时。认证写入按设备幂等，允许短暂退避后重试。
   Future<http.Response> _withTransientRetry(
     Future<http.Response> Function(IOClient client) request, {
     required Duration timeout,
+    String? host,
   }) async {
+    final resolvedHost = host ?? Uri.tryParse(baseUrl)?.host;
     const attempts = 3;
     for (var attempt = 0; attempt < attempts; attempt++) {
       if (_disposed) throw StateError('API 客户端已释放');
@@ -526,16 +629,25 @@ class ApiClient {
             response.statusCode == 502 ||
             response.statusCode == 503 ||
             response.statusCode == 504;
-        if (!retryable || attempt == attempts - 1) return response;
+        if (!retryable) return response;
+        if (resolvedHost != null && resolvedHost.isNotEmpty) {
+          ResilientDnsResolver.instance.invalidate(resolvedHost);
+        }
+        if (attempt == attempts - 1) return response;
       } catch (_) {
-        if (attempt == attempts - 1) rethrow;
+        if (resolvedHost != null && resolvedHost.isNotEmpty) {
+          ResilientDnsResolver.instance.invalidate(resolvedHost);
+        }
+        if (_disposed || attempt == attempts - 1) rethrow;
       } finally {
         // Future.timeout 不会自动关闭底层 socket；每次重试结束后关闭本次
         // 专用客户端，不能触碰同时进行的共享 API 请求。
         _transientClients.remove(client);
         client.close();
       }
-      await Future<void>.delayed(Duration(milliseconds: 700 * (attempt + 1)));
+      await _cancellableRetryDelay(
+        Duration(milliseconds: 700 * (attempt + 1)),
+      );
     }
     throw StateError('请求重试失败');
   }
@@ -1473,9 +1585,10 @@ class ApiClient {
     required String unitCode,
     required String realName,
   }) async {
+    final uri = _uri('/api/auth/verify');
     final res = await _withTransientRetry(
       (client) => client.post(
-        _uri('/api/auth/verify'),
+        uri,
         headers: {
           'Content-Type': 'application/json',
           if (apiToken.isNotEmpty) 'X-Api-Token': apiToken,
@@ -1491,6 +1604,7 @@ class ApiClient {
         }),
       ),
       timeout: const Duration(seconds: 12),
+      host: uri.host,
     );
     final body = _decodeJson(res, fallback: '单位认证失败');
     if (res.statusCode != 200) {
@@ -1511,9 +1625,10 @@ class ApiClient {
     String? phone,
     String? applyReason,
   }) async {
+    final uri = _uri('/api/auth/apply');
     final res = await _withTransientRetry(
       (client) => client.post(
-        _uri('/api/auth/apply'),
+        uri,
         headers: {
           'Content-Type': 'application/json',
           if (apiToken.isNotEmpty) 'X-Api-Token': apiToken,
@@ -1531,6 +1646,7 @@ class ApiClient {
         }),
       ),
       timeout: const Duration(seconds: 12),
+      host: uri.host,
     );
     final body = _decodeJson(res, fallback: '提交申请失败');
     if (res.statusCode != 202 && res.statusCode != 200) {
@@ -1696,9 +1812,12 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> refreshSession() async {
-    final res = await _client
-        .post(_uri('/api/auth/refresh'), headers: _headers)
-        .timeout(const Duration(seconds: 10));
+    final uri = _uri('/api/auth/refresh');
+    final res = await _withIdempotentSyncRetry(
+      uri,
+      (client) => client.post(uri, headers: _headers),
+      timeout: const Duration(seconds: 10),
+    );
     final body = _decodeJson(res, fallback: '续期认证会话失败');
     if (res.statusCode != 200) {
       throw _apiException(res, body: body, fallback: '续期认证会话失败');

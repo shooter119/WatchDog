@@ -37,11 +37,24 @@ typedef OfflineOperationEnqueuer =
       required Map<String, dynamic> payload,
     });
 typedef OfflineQueueDrainer = Future<void> Function();
+typedef ApiClientFactory =
+    ApiClient Function({
+      required String baseUrl,
+      required String incidentId,
+      required String sessionToken,
+      required String deviceId,
+      required String actorName,
+      required String unitId,
+      required String unitCode,
+      void Function(ApiException error)? onAuthenticationFailure,
+    });
 
 class AppController extends ChangeNotifier {
   final LocalAsrService? localAsr;
   final OfflineOperationEnqueuer? _offlineOperationEnqueuer;
   final OfflineQueueDrainer? _offlineQueueDrainer;
+  final SyncClientFactory? _syncClientFactory;
+  final ApiClientFactory? _apiFactory;
   final LocalParser localParser = LocalParser();
   ApiClient? api;
   final AlarmService alarm = AlarmService();
@@ -58,8 +71,12 @@ class AppController extends ChangeNotifier {
     this.localAsr,
     OfflineOperationEnqueuer? offlineOperationEnqueuer,
     OfflineQueueDrainer? offlineQueueDrainer,
+    @visibleForTesting SyncClientFactory? syncClientFactory,
+    @visibleForTesting ApiClientFactory? apiFactory,
   }) : _offlineOperationEnqueuer = offlineOperationEnqueuer,
-       _offlineQueueDrainer = offlineQueueDrainer;
+       _offlineQueueDrainer = offlineQueueDrainer,
+       _syncClientFactory = syncClientFactory,
+       _apiFactory = apiFactory;
 
   List<Entry> entries = [];
   final OrgDirectory orgDirectory = OrgDirectory();
@@ -113,6 +130,8 @@ class AppController extends ChangeNotifier {
   /// 最近一次同步成功时间戳（0 = 从未成功过）
   int _lastSyncSuccessAt = 0;
   int _firstSyncFailureAt = 0;
+  int _lastSyncErrorLogAt = 0;
+  bool _syncSnapshotApplied = false;
 
   /// 平滑断线判定：实时 WebSocket 已建立时保持在线；连接进入错误/重连后，
   /// 连续超过 [connectionLostThreshold] 毫秒没有同步成功才视为断线，避免网络
@@ -404,7 +423,6 @@ class AppController extends ChangeNotifier {
   void _startAuthenticatedServices() {
     if (_disposed || !_authenticated || _syncStarted) return;
     _startSessionRefreshTimer();
-    unawaited(refreshAdminCapability());
     _adminCapabilityTimer?.cancel();
     _adminCapabilityTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_appInForeground) {
@@ -412,7 +430,20 @@ class AppController extends ChangeNotifier {
         unawaited(refreshPendingMembersCount());
       }
     });
+    final previousStartFuture = _realtimeStartFuture;
     startSync();
+    final startFuture = _realtimeStartFuture;
+    if (startFuture != null && !identical(startFuture, previousStartFuture)) {
+      final generation = _sessionGeneration;
+      unawaited(
+        startFuture.whenComplete(() {
+          unawaited(_runPostBootstrapStartupTasks(generation: generation));
+        }),
+      );
+      unawaited(_ensureOptionalServices());
+      return;
+    }
+    unawaited(refreshAdminCapability());
     // 认证前的名单请求会被服务端拒绝；认证完成后重新拉取，拿到单位当前名单。
     unawaited(loadRoster());
     // 启动后同步个人设置（服务器较新拉取、本地较新推送）
@@ -424,6 +455,33 @@ class AppController extends ChangeNotifier {
     // 报警、TTS 和后台值守在后台初始化，任何系统权限/插件问题都不影响
     // 活跃警情列表与新建警情。
     unawaited(_ensureOptionalServices());
+  }
+
+  Future<void> _runPostBootstrapStartupTasks({required int generation}) async {
+    if (_disposed || !_authenticated || generation != _sessionGeneration) {
+      return;
+    }
+    unawaited(refreshAdminCapability());
+    if (!_syncSnapshotApplied) {
+      unawaited(loadRoster());
+      unawaited(refreshPendingMembersCount());
+    }
+    unawaited(syncSettings());
+    final activeApi = api;
+    if (activeApi != null) {
+      unawaited(OpLogService.instance.flush(api: activeApi));
+      final incidentId =
+          currentIncident?.id ?? await Settings.currentIncidentId;
+      if (_disposed ||
+          !_authenticated ||
+          generation != _sessionGeneration ||
+          !identical(api, activeApi)) {
+        return;
+      }
+      if (incidentId.isNotEmpty) {
+        unawaited(DiagnosticLogService.instance.flush(api: activeApi));
+      }
+    }
   }
 
   void _startSessionRefreshTimer() {
@@ -453,6 +511,13 @@ class AppController extends ChangeNotifier {
       if (!ApiClient.isAuthenticationFailure(error) && error is! StateError) {
         debugPrint('WatchDog resume session check failed: $error');
       }
+    }
+    if (!_disposed &&
+        _authenticated &&
+        _syncCoordinator != null &&
+        _syncCoordinator!.running &&
+        syncConnectionState != SyncConnectionState.connected) {
+      unawaited(_syncCoordinator!.checkpointNow());
     }
   }
 
@@ -847,6 +912,7 @@ class AppController extends ChangeNotifier {
     _sessionRefreshTimer?.cancel();
     _sessionRefreshTimer = null;
     _syncStarted = false;
+    _syncSnapshotApplied = false;
     _syncFuture = null;
     _keepAliveFuture = null;
     syncing = false;
@@ -1097,17 +1163,20 @@ class AppController extends ChangeNotifier {
       await _syncCoordinator?.stop();
       _syncCoordinator = null;
     }
+    _syncSnapshotApplied = false;
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
     final sessionToken = await Settings.sessionToken;
     final unitId = await Settings.unitId;
     final unitCode = await Settings.unitCode;
-    final nextApi = ApiClient(
+    final actorName = await Settings.realName;
+    final deviceId = await OpLogService.instance.deviceId;
+    final nextApi = (_apiFactory ?? _defaultApiFactory)(
       baseUrl: serverUrl,
       incidentId: incidentId,
       sessionToken: sessionToken,
-      deviceId: await OpLogService.instance.deviceId,
-      actorName: await Settings.realName,
+      deviceId: deviceId,
+      actorName: actorName,
       unitId: unitId,
       unitCode: unitCode,
       onAuthenticationFailure: _handleAuthenticationFailure,
@@ -1121,11 +1190,14 @@ class AppController extends ChangeNotifier {
     debugPrint(
       'WatchDog config ready: url=$serverUrl, '
       'incident=${incidentId.isEmpty ? 'none' : 'selected'}, '
-      'actor=${(await Settings.realName).isEmpty ? 'empty' : 'configured'}',
+      'actor=${actorName.isEmpty ? 'empty' : 'configured'}',
     );
-    // 有当前警情时顺手补传上次启动/异常遗留的诊断日志；没有警情时
-    // /api/logs 会拒绝请求，日志仍保存在本机，待加入警情后重试。
-    if (incidentId.isNotEmpty) {
+    // 有当前警情时顺手补传上次启动/异常遗留的诊断日志；冷启动首轮同步前
+    // 先留给 _runPostBootstrapStartupTasks 错峰上传，避免与 bootstrap 并发抢占冷启动通道。
+    final deferColdStartLogFlush =
+        !_syncStarted &&
+        (_authenticated || (sessionToken.isNotEmpty && unitId.isNotEmpty));
+    if (incidentId.isNotEmpty && !deferColdStartLogFlush) {
       unawaited(DiagnosticLogService.instance.flush(api: nextApi));
     }
     tts.enabled = await Settings.ttsEnabled;
@@ -1142,10 +1214,40 @@ class AppController extends ChangeNotifier {
       alarmMin: await Settings.alarmMin,
     );
     if (restartRealtime && _authenticated) {
-      _realtimeStartFuture = _startRealtimeSync();
-      unawaited(_realtimeStartFuture!);
+      _trackRealtimeStart(_startRealtimeSync());
     }
     _notify();
+  }
+
+  static ApiClient _defaultApiFactory({
+    required String baseUrl,
+    required String incidentId,
+    required String sessionToken,
+    required String deviceId,
+    required String actorName,
+    required String unitId,
+    required String unitCode,
+    void Function(ApiException error)? onAuthenticationFailure,
+  }) => ApiClient(
+    baseUrl: baseUrl,
+    incidentId: incidentId,
+    sessionToken: sessionToken,
+    deviceId: deviceId,
+    actorName: actorName,
+    unitId: unitId,
+    unitCode: unitCode,
+    onAuthenticationFailure: onAuthenticationFailure,
+  );
+
+  void _trackRealtimeStart(Future<void> future) {
+    _realtimeStartFuture = future;
+    unawaited(
+      future.whenComplete(() {
+        if (identical(_realtimeStartFuture, future)) {
+          _realtimeStartFuture = null;
+        }
+      }),
+    );
   }
 
   void startSync() {
@@ -1156,8 +1258,7 @@ class AppController extends ChangeNotifier {
     }
     _syncStarted = true;
     _restartTickTimer();
-    _realtimeStartFuture = _startRealtimeSync();
-    unawaited(_realtimeStartFuture!);
+    _trackRealtimeStart(_startRealtimeSync());
   }
 
   Future<void> sync() {
@@ -1166,6 +1267,20 @@ class AppController extends ChangeNotifier {
     }
     final realtime = _syncCoordinator;
     if (realtime != null && realtime.running) return realtime.checkpointNow();
+    final realtimeStart = _realtimeStartFuture;
+    if (realtimeStart != null) {
+      return realtimeStart.then((_) {
+        if (identical(_realtimeStartFuture, realtimeStart)) {
+          _realtimeStartFuture = null;
+        }
+        if (_disposed) return Future<void>.value();
+        final started = _syncCoordinator;
+        if (started != null && started.running) {
+          return Future<void>.value();
+        }
+        return sync();
+      });
+    }
     final existing = _syncFuture;
     if (existing != null) return existing;
     final a = api!;
@@ -1194,6 +1309,7 @@ class AppController extends ChangeNotifier {
       onSnapshot: _applySyncSnapshot,
       onEvent: _applySyncEvent,
       onState: _handleSyncState,
+      clientFactory: _syncClientFactory,
     );
     _syncCoordinator = coordinator;
     await coordinator.start(incidentId: incidentId.isEmpty ? null : incidentId);
@@ -1204,26 +1320,46 @@ class AppController extends ChangeNotifier {
       unawaited(_invalidateAuthenticationOnce());
       return;
     }
+    if (_disposed) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
     syncConnectionState = state;
     if (state == SyncConnectionState.connected) {
-      _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
+      _lastSyncSuccessAt = now;
       _firstSyncFailureAt = 0;
       syncError = null;
-    } else if (error != null) {
-      _firstSyncFailureAt = _firstSyncFailureAt == 0
-          ? DateTime.now().millisecondsSinceEpoch
-          : _firstSyncFailureAt;
-      syncError = error is TimeoutException ? '连接服务器超时，请检查网络后重试' : '$error';
+      syncing = false;
+    } else if (state == SyncConnectionState.stopped) {
+      syncing = false;
+    } else {
+      final coordinatorRunning = _syncCoordinator?.running == true;
+      syncing =
+          coordinatorRunning ||
+          state == SyncConnectionState.bootstrapping ||
+          state == SyncConnectionState.connecting;
+      syncError = null;
+      if (error != null) {
+        _firstSyncFailureAt = _firstSyncFailureAt == 0
+            ? now
+            : _firstSyncFailureAt;
+        if (now - _lastSyncErrorLogAt >= 15000) {
+          _lastSyncErrorLogAt = now;
+          OpLogService.instance.record(
+            'realtime-sync',
+            'sync_retry',
+            '$error',
+            level: 'warn',
+          );
+          debugPrint('WatchDog realtime sync retry: $error');
+        }
+      }
     }
-    syncing =
-        state == SyncConnectionState.bootstrapping ||
-        state == SyncConnectionState.connecting;
     _notify();
   }
 
   void _applySyncSnapshot(Map<String, dynamic> snapshot) {
-    unawaited(refreshPendingMembersCount());
     if (_disposed) return;
+    _syncSnapshotApplied = true;
+    unawaited(refreshPendingMembersCount());
     final roster = snapshot['roster'] is Map
         ? Map<String, dynamic>.from(snapshot['roster'] as Map)
         : <String, dynamic>{};
@@ -1532,10 +1668,15 @@ class AppController extends ChangeNotifier {
       }
       // 请求级超时和 HttpClient 的连接/空闲超时负责回收失败连接；不能为了
       // 一次同步失败关闭共享客户端，否则会中断同时进行的日志或其他请求。
+      final now = DateTime.now().millisecondsSinceEpoch;
       _firstSyncFailureAt = _firstSyncFailureAt == 0
-          ? DateTime.now().millisecondsSinceEpoch
+          ? now
           : _firstSyncFailureAt;
-      syncError = e is TimeoutException ? '连接服务器超时，请检查网络后重试' : e.toString();
+      syncError = null;
+      if (now - _lastSyncErrorLogAt >= 15000) {
+        _lastSyncErrorLogAt = now;
+        OpLogService.instance.record('sync', 'sync_retry', '$e', level: 'warn');
+      }
       debugPrint('WatchDog sync failed: $e');
     } finally {
       if (generation == _sessionGeneration && !_disposed) {
@@ -1706,6 +1847,7 @@ class AppController extends ChangeNotifier {
     _sessionRefreshTimer?.cancel();
     _sessionRefreshTimer = null;
     _syncStarted = false;
+    _syncSnapshotApplied = false;
     _syncFuture = null;
     _keepAliveFuture = null;
     syncing = false;
@@ -1743,6 +1885,8 @@ class AppController extends ChangeNotifier {
   void _resetSessionHealth() {
     _lastSyncSuccessAt = 0;
     _firstSyncFailureAt = 0;
+    _lastSyncErrorLogAt = 0;
+    _syncSnapshotApplied = false;
     syncError = null;
     _announced.clear();
     _scheduled.clear();

@@ -8,8 +8,11 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'resilient_dns.dart';
 
 int? _arm64VersionCodeFromTag(String tagName) {
   final idx = tagName.lastIndexOf('+');
@@ -71,8 +74,15 @@ class UpdateService {
   UpdateService({
     http.Client Function()? httpClientFactory,
     UpdateEventLogger? logger,
-  }) : _httpClientFactory = httpClientFactory ?? http.Client.new,
+  }) : _httpClientFactory = httpClientFactory ?? _defaultHttpClient,
        _logger = logger;
+
+  static http.Client _defaultHttpClient() => IOClient(
+    createResilientHttpClient(
+      connectionTimeout: const Duration(seconds: 12),
+      idleTimeout: const Duration(seconds: 15),
+    ),
+  );
 
   void _log(String stage, String message, {String level = 'info'}) {
     _logger?.call(stage, message, level);

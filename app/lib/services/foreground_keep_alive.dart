@@ -4,7 +4,9 @@ import 'dart:io';
 
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
+import 'resilient_dns.dart';
 import 'secure_store.dart';
 import 'settings.dart';
 
@@ -252,10 +254,11 @@ void watchdogStartCallback() {
 /// 服务 isolate 内的任务处理器：优先保持业务 WebSocket，断线时每 30 秒快照校准。
 class WatchdogTaskHandler extends TaskHandler {
   WatchdogTaskHandler({http.Client? httpClient})
-    : _httpClient = httpClient ?? http.Client();
+    : _httpClient = httpClient ?? IOClient(createResilientHttpClient());
 
   final http.Client _httpClient;
   WebSocket? _socket;
+  bool _destroyed = false;
   String _serverUrl = '';
   String _incidentId = '';
   String _token = '';
@@ -281,7 +284,7 @@ class WatchdogTaskHandler extends TaskHandler {
 
   @override
   void onRepeatEvent(DateTime timestamp) {
-    if (_incidentId.isEmpty) return;
+    if (_destroyed || _incidentId.isEmpty) return;
     if (isMainSnapshotFresh(
       lastSyncAt: _lastMainSyncAt,
       nowMs: timestamp.millisecondsSinceEpoch,
@@ -341,6 +344,7 @@ class WatchdogTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    _destroyed = true;
     await _socket?.close(WebSocketStatus.normalClosure);
     _socket = null;
     _httpClient.close();
@@ -540,14 +544,17 @@ class WatchdogTaskHandler extends TaskHandler {
       query: '',
     );
     try {
-      final socket = await WebSocket.connect(uri.toString(), headers: {
-        'X-Incident-Id': _incidentId,
-        if (_token.isNotEmpty) 'X-Api-Token': _token,
-        if (_sessionToken.isNotEmpty) 'Authorization': 'Bearer $_sessionToken',
-        if (_unitId.isNotEmpty) 'X-Unit-Id': _unitId,
-        if (_unitCode.isNotEmpty) 'X-Unit-Code': _unitCode,
-      });
-      if (generation != _contextGeneration || _incidentId.isEmpty) {
+      final socket = await connectResilientWebSocket(
+        uri.toString(),
+        headers: {
+          'X-Incident-Id': _incidentId,
+          if (_token.isNotEmpty) 'X-Api-Token': _token,
+          if (_sessionToken.isNotEmpty) 'Authorization': 'Bearer $_sessionToken',
+          if (_unitId.isNotEmpty) 'X-Unit-Id': _unitId,
+          if (_unitCode.isNotEmpty) 'X-Unit-Code': _unitCode,
+        },
+      );
+      if (_destroyed || generation != _contextGeneration || _incidentId.isEmpty) {
         await socket.close(WebSocketStatus.normalClosure);
         return;
       }

@@ -1339,56 +1339,78 @@ class HomePageState extends State<HomePage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
-      builder: (ctx) {
-        final serverUrl = c.api?.baseUrl ?? '未配置服务端';
-        final isGuest = c.isGuest;
-        final isConnected = !c.connectionLost;
-        final syncErr = c.syncError;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.pageMargin),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      isConnected ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
-                      color: isConnected ? AppColors.online : AppColors.cautionText,
+      builder: (ctx) => ListenableBuilder(
+        listenable: c,
+        builder: (ctx, _) {
+          final serverUrl = c.api?.baseUrl ?? '未配置服务端';
+          final isGuest = c.isGuest;
+          final isSyncing = c.syncing;
+          final isConnected = !c.connectionLost;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.pageMargin),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isGuest
+                            ? Icons.phone_android_outlined
+                            : isSyncing
+                            ? Icons.cloud_sync_outlined
+                            : (isConnected
+                                  ? Icons.cloud_done_outlined
+                                  : Icons.cloud_off_outlined),
+                        color: isSyncing
+                            ? AppColors.textSecondary
+                            : (isConnected
+                                  ? AppColors.online
+                                  : AppColors.cautionText),
+                      ),
+                      const SizedBox(width: AppSpacing.s2),
+                      Text(
+                        '连接与同步状态',
+                        style: AppTextStyles.h2.copyWith(
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.s3),
+                  Text(
+                    isGuest
+                        ? '模式：游客模式（单机演练）'
+                        : isSyncing
+                        ? '状态：同步中'
+                        : (isConnected ? '状态：已联网绑定' : '状态：连接已中断'),
+                    style: AppTextStyles.bodyMd,
+                  ),
+                  const SizedBox(height: AppSpacing.s1),
+                  Text(
+                    '服务地址：$serverUrl',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
                     ),
-                    const SizedBox(width: AppSpacing.s2),
-                    Text(
-                      '连接与同步状态',
-                      style: AppTextStyles.h2.copyWith(color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(height: AppSpacing.s4),
+                  FilledButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      c.refreshNow();
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.actionPrimary,
                     ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.s3),
-                Text(
-                  isGuest ? '模式：游客模式（单机演练）' : '状态：已联网绑定',
-                  style: AppTextStyles.bodyMd,
-                ),
-                const SizedBox(height: AppSpacing.s1),
-                Text('服务地址：$serverUrl', style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
-                if (syncErr != null) ...[
-                  const SizedBox(height: AppSpacing.s2),
-                  Text('同步异常：$syncErr', style: AppTextStyles.caption.copyWith(color: AppColors.alarmText)),
+                    child: const Text('立即重试同步'),
+                  ),
                 ],
-                const SizedBox(height: AppSpacing.s4),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    c.refreshNow();
-                  },
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.actionPrimary),
-                  child: const Text('立即重试同步'),
-                ),
-              ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 

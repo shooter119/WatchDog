@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../api/api_client.dart';
+import 'resilient_dns.dart';
 
 typedef SyncMessageHandler = void Function(Map<String, dynamic> message);
 typedef SyncSocketFactory = Future<WebSocket> Function(Uri uri, {Map<String, dynamic>? headers});
@@ -29,7 +30,7 @@ class RealtimeClient {
   static Future<WebSocket> _defaultSocketFactory(
     Uri uri, {
     Map<String, dynamic>? headers,
-  }) => WebSocket.connect(uri.toString(), headers: headers);
+  }) => connectResilientWebSocket(uri.toString(), headers: headers);
 
   bool get connected => _socket?.readyState == WebSocket.open;
 
