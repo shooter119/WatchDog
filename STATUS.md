@@ -12,7 +12,7 @@
 | 归档复盘 | ✅ 12 小时无业务活动自动归档；归档列表可改名，详情展示参战力量快照和晚到早事件时间线 |
 | 离线现场操作 | ✅ 进退场、压力复核和随手记使用本地 SQLite 队列，重启后保留，恢复网络后按操作 ID 幂等补传 |
 | 后端测试 | ✅ `npm test`：340 个用例通过（CI 门禁基线 300；含两实例 WebSocket 验收） |
-| App 检查 | ✅ `flutter analyze` 0 警告通过，`flutter test`：535 个用例通过（CI 门禁基线 444） |
+| App 检查 | ✅ `flutter analyze` 0 警告通过，`flutter test`：548 个用例通过（CI 门禁基线 444） |
 | Android | ✅ 集中开发 Android，正式签名链路已配置 |
 | iOS | ⏸ 暂缓 |
 

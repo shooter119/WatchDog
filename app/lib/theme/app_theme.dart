@@ -134,6 +134,28 @@ ThemeData buildAppTheme([AppPalette? palette]) {
         ),
       ),
     ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: p.textPrimary,
+        minimumSize: const Size(48, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        side: BorderSide(
+          color: p.brightness == Brightness.dark
+              ? const Color(0xFF6E7681)
+              : p.border,
+          width: 1.0,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+        textStyle: const TextStyle(
+          fontFamily: AppFonts.family,
+          fontFamilyFallback: AppFonts.fallback,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ),
     snackBarTheme: SnackBarThemeData(
       backgroundColor: p.actionPrimary,
       contentTextStyle: TextStyle(color: p.onPrimary),

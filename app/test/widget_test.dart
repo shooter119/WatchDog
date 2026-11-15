@@ -3286,7 +3286,7 @@ void main() {
         find.byKey(const Key('incident-selection-overlay')),
       );
       expect(card.width, closeTo(320, 0.5));
-      expect(card.bottom, closeTo(412, 1));
+      expect(card.bottom, closeTo(420, 1));
       expect(find.byKey(const Key('auth-sheet-handle')), findsOneWidget);
       expect(find.byKey(const Key('auth-guest-mode')), findsNothing);
       final material = tester.widget<Material>(
@@ -3314,7 +3314,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('认证信息不正确时弹窗提示', (tester) async {
+    testWidgets('认证信息不正确时内联提示且修改输入后自动清除', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: buildAppTheme(),
@@ -3340,18 +3340,656 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      expect(find.byType(AlertDialog), findsOneWidget);
-      expect(find.text('认证失败'), findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byType(AlertDialog),
-          matching: find.text('单位名称或验证码错误'),
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byKey(const Key('auth-error')), findsOneWidget);
+      expect(find.text('单位名称或验证码错误'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      await tester.enterText(find.byKey(const Key('auth-unit-code')), '1002');
+      await tester.pump();
+      expect(find.byKey(const Key('auth-error')), findsNothing);
+    });
+
+    testWidgets('认证浮层在状态栏36dp与350dp中文大键盘下无溢出且提交按钮可见', (tester) async {
+      tester.view.physicalSize = const Size(360 * 3, 740 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.padding = const FakeViewPadding(top: 36 * 3);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 350 * 3);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: const TextScaler.linear(1.25),
+            ),
+            child: child!,
+          ),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (_, __, ___) async {},
+            onEnterGuestMode: () async {},
+          ),
         ),
-        findsOneWidget,
       );
-      await tester.tap(find.text('知道了'));
+      await tester.pumpAndSettle();
+
+      final card = tester.getRect(
+        find.byKey(const Key('incident-selection-overlay')),
+      );
+      expect(card.bottom, closeTo(390, 1));
+      final submit = tester.getRect(find.byKey(const Key('auth-submit')));
+      expect(submit.bottom, lessThanOrEqualTo(card.bottom + 0.5));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('认证浮层单位验证码支持明密文切换并反映在TextField状态', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (_, __, ___) async {},
+            onEnterGuestMode: () async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final codeField = find.byKey(const Key('auth-unit-code'));
+      expect(tester.widget<TextField>(codeField).obscureText, isTrue);
+
+      final toggle = find.byKey(const Key('auth-code-visibility-toggle'));
+      expect(toggle, findsOneWidget);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextField>(codeField).obscureText, isFalse);
+
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(codeField).obscureText, isTrue);
+    });
+
+    testWidgets('无键盘时认证浮层自适应内容高度且游客按钮符合48dp圆角规范', (tester) async {
+      tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (_, __, ___) async {},
+            onEnterGuestMode: () async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final card = tester.getRect(
+        find.byKey(const Key('incident-selection-overlay')),
+      );
+      expect(card.height, lessThan(520));
+      expect(find.text('先完成用户认证'), findsOneWidget);
+
+      final guestBtn = find.byKey(const Key('auth-guest-mode'));
+      expect(guestBtn, findsOneWidget);
+      expect(tester.getSize(guestBtn).height, greaterThanOrEqualTo(48));
+
+      final submit = tester.getRect(find.byKey(const Key('auth-submit')));
+      final scroll = tester.getRect(find.byType(SingleChildScrollView));
+      expect(submit.top - scroll.bottom, greaterThanOrEqualTo(10.0));
+    });
+
+    testWidgets('首框预填浮动标签不被顶裁且输入框垂直间距保持在14dp以上', (tester) async {
+      await Settings.setUnitName('示例省消防救援总队');
+      await Settings.setRealName('张三');
+      addTearDown(() async {
+        await Settings.setUnitName('');
+        await Settings.setRealName('');
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (_, __, ___) async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('示例省消防救援总队'), findsOneWidget);
+      expect(find.text('张三'), findsOneWidget);
+
+      final unitRect = tester.getRect(find.byKey(const Key('auth-unit-name')));
+      final realRect = tester.getRect(find.byKey(const Key('auth-real-name')));
+      expect(realRect.top - unitRect.bottom, greaterThanOrEqualTo(14.0));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('入队申请审核中视图长队站名在窄屏大字号下不发生横向溢出且高度自适应', (tester) async {
+      tester.view.physicalSize = const Size(320 * 3, 720 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      await Settings.setPendingApplication(
+        unitName: '示例省示例市示例县消防救援大队城南特勤站第一分队',
+        unitCode: '1001',
+        realName: '李四',
+        stationName: '特勤救援站第一出动编队',
+        phone: '13800000000',
+      );
+      addTearDown(Settings.clearPendingApplication);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: const TextScaler.linear(1.3),
+            ),
+            child: child!,
+          ),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (_, __, ___) async {},
+            onEnterGuestMode: () async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('入队申请审核中'), findsOneWidget);
+      expect(find.text('示例省示例市示例县消防救援大队城南特勤站第一分队'), findsOneWidget);
+
+      final card = tester.getRect(
+        find.byKey(const Key('incident-selection-overlay')),
+      );
+      expect(card.width, closeTo(320 - 32, 1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('认证浮层在360x380分屏与640x360横屏下无键盘与kb=75过渡态均无溢出', (tester) async {
+      const testCases = [
+        (Size(360 * 3, 380 * 3), 0.0),
+        (Size(360 * 3, 380 * 3), 75.0),
+        (Size(640 * 3, 360 * 3), 0.0),
+        (Size(640 * 3, 360 * 3), 75.0),
+      ];
+
+      for (final (physicalSize, kbInset) in testCases) {
+        tester.view.physicalSize = physicalSize;
+        tester.view.devicePixelRatio = 3.0;
+        tester.view.viewInsets = FakeViewPadding(bottom: kbInset * 3);
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('incident-selection-overlay')), findsOneWidget);
+        expect(find.byKey(const Key('auth-submit')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+
+        final card = tester.getRect(
+          find.byKey(const Key('incident-selection-overlay')),
+        );
+        final logicalHeight = physicalSize.height / 3.0;
+        expect(card.bottom, lessThanOrEqualTo(logicalHeight - kbInset + 0.5));
+        expect(card.top, greaterThanOrEqualTo(0.0));
+      }
+    });
+
+    testWidgets('认证浮层在360x380分屏与640x360横屏下弹出300dp大键盘无溢出', (tester) async {
+      const shortSizes = [
+        Size(360 * 3, 380 * 3),
+        Size(640 * 3, 360 * 3),
+      ];
+
+      for (final physicalSize in shortSizes) {
+        tester.view.physicalSize = physicalSize;
+        tester.view.devicePixelRatio = 3.0;
+        tester.view.viewInsets = const FakeViewPadding(bottom: 300 * 3);
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('incident-selection-overlay')), findsOneWidget);
+        expect(find.byKey(const Key('auth-sheet-handle')), findsOneWidget);
+        expect(find.byKey(const Key('auth-guest-mode')), findsNothing);
+        expect(find.byKey(const Key('auth-submit')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+    });
+
+    testWidgets('入队申请审核中视图在360x380分屏与640x360横屏矮视口下无溢出且可滚动', (tester) async {
+      await Settings.setPendingApplication(
+        unitName: '示例县消防救援大队',
+        unitCode: '1001',
+        realName: '李四',
+        stationName: '特勤救援站',
+        phone: '13800000000',
+      );
+      addTearDown(Settings.clearPendingApplication);
+
+      const shortSizes = [
+        Size(360 * 3, 380 * 3),
+        Size(640 * 3, 360 * 3),
+      ];
+
+      for (final physicalSize in shortSizes) {
+        tester.view.physicalSize = physicalSize;
+        tester.view.devicePixelRatio = 3.0;
+        tester.view.viewInsets = FakeViewPadding.zero;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildAppTheme(),
+            home: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('入队申请审核中'), findsOneWidget);
+        expect(find.byKey(const Key('pending-check-status')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+
+        // 验证可顺畅滚动至底部撤销操作区域
+        await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -260));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('pending-cancel-app')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+    });
+
+    testWidgets('认证表单内联错误态下聚焦第3框正常裁剪且回滚顶部首框标签完整', (tester) async {
+      await Settings.setUnitName('示例省消防救援总队');
+      await Settings.setRealName('张三');
+      addTearDown(() async {
+        await Settings.setUnitName('');
+        await Settings.setRealName('');
+      });
+
+      tester.view.physicalSize = const Size(360 * 3, 640 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 240 * 3);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: IncidentSelectionOverlay(
+            authenticationRequired: true,
+            activeIncidents: const [],
+            loading: false,
+            onSelect: (_) async {},
+            onCreate: () async {},
+            onAuthenticate: (_, __, ___) async {
+              throw ApiException('单位名称或验证码错误');
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. 验证预填文字渲染
+      expect(find.text('示例省消防救援总队'), findsOneWidget);
+      expect(find.text('张三'), findsOneWidget);
+
+      // 2. 触发认证错误，呈现内联错误提示
+      await tester.tap(find.byKey(const Key('auth-submit')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const Key('auth-error')), findsOneWidget);
+
+      // 3. 验证 SingleChildScrollView 显式 hardEdge 裁剪规范 (R1)
+      final scrollView = tester.widget<SingleChildScrollView>(
+        find.byType(SingleChildScrollView),
+      );
+      expect(scrollView.clipBehavior, Clip.hardEdge);
+
+      // 4. 聚焦并滚动至第3框 (auth-unit-code)
+      await tester.showKeyboard(find.byKey(const Key('auth-unit-code')));
+      await tester.ensureVisible(find.byKey(const Key('auth-unit-code')));
+      await tester.pumpAndSettle();
+
+      final codeRect = tester.getRect(find.byKey(const Key('auth-unit-code')));
+      final scrollRect = tester.getRect(find.byType(SingleChildScrollView));
+      expect(codeRect.bottom, lessThanOrEqualTo(scrollRect.bottom + 1.0));
+
+      // 5. 回滚至顶部 (offset = 0)
+      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, 300));
+      await tester.pumpAndSettle();
+
+      final scrollable = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byType(SingleChildScrollView),
+          matching: find.byType(Scrollable),
+        ).first,
+      );
+      expect(scrollable.position.pixels, closeTo(0.0, 0.5));
+
+      // 6. 验证首框浮动标签完整可见且未被顶裁
+      final labelFinder = find.text('单位名称');
+      expect(labelFinder, findsOneWidget);
+      final labelRect = tester.getRect(labelFinder);
+      expect(labelRect.top, greaterThanOrEqualTo(scrollRect.top));
+      expect(labelRect.bottom, lessThanOrEqualTo(scrollRect.bottom));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('分屏360x380矮视口下键盘收起动态过渡无RenderFlex溢出', (tester) async {
+      tester.view.physicalSize = const Size(360 * 3, 380 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200 * 3);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(360, 380),
+              viewInsets: EdgeInsets.only(bottom: 200),
+              textScaler: TextScaler.linear(1.3),
+            ),
+            child: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Dismiss keyboard
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(360, 380),
+              viewInsets: EdgeInsets.zero,
+              textScaler: TextScaler.linear(1.3),
+            ),
+            child: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('横屏640x360矮视口下键盘收起动态过渡无RenderFlex溢出', (tester) async {
+      tester.view.physicalSize = const Size(640 * 3, 360 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200 * 3);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(640, 360),
+              viewInsets: EdgeInsets.only(bottom: 200),
+              textScaler: TextScaler.linear(1.3),
+            ),
+            child: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Dismiss keyboard
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(640, 360),
+              viewInsets: EdgeInsets.zero,
+              textScaler: TextScaler.linear(1.3),
+            ),
+            child: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('横屏640x360矮视口下入队申请审核中键盘收起动态过渡无RenderFlex溢出', (tester) async {
+      await Settings.setPendingApplication(
+        unitName: '示例县消防救援大队',
+        unitCode: '1001',
+        realName: '李四',
+        stationName: '特勤救援站',
+        phone: '13800000000',
+      );
+      addTearDown(Settings.clearPendingApplication);
+
+      tester.view.physicalSize = const Size(640 * 3, 360 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200 * 3);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(640, 360),
+              viewInsets: EdgeInsets.only(bottom: 200),
+              textScaler: TextScaler.linear(1.3),
+            ),
+            child: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Dismiss keyboard
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(640, 360),
+              viewInsets: EdgeInsets.zero,
+              textScaler: TextScaler.linear(1.3),
+            ),
+            child: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('分屏360x380矮视口下入队申请审核中键盘收起动态过渡无RenderFlex溢出', (tester) async {
+      await Settings.setPendingApplication(
+        unitName: '示例县消防救援大队',
+        unitCode: '1001',
+        realName: '李四',
+        stationName: '特勤救援站',
+        phone: '13800000000',
+      );
+      addTearDown(Settings.clearPendingApplication);
+
+      tester.view.physicalSize = const Size(360 * 3, 380 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 200 * 3);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(360, 380),
+              viewInsets: EdgeInsets.only(bottom: 200),
+              textScaler: TextScaler.linear(1.3),
+            ),
+            child: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Dismiss keyboard
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(360, 380),
+              viewInsets: EdgeInsets.zero,
+              textScaler: TextScaler.linear(1.3),
+            ),
+            child: IncidentSelectionOverlay(
+              authenticationRequired: true,
+              activeIncidents: const [],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+              onAuthenticate: (_, __, ___) async {},
+              onEnterGuestMode: () async {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.takeException(), isNull);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('警情选择浮层在零尺寸约束下不产生负约束', (tester) async {

@@ -74,6 +74,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     with WidgetsBindingObserver {
   bool _busy = false;
   String? _error;
+  bool _obscureUnitCode = true;
   Map<String, String>? _pendingApp;
   final TextEditingController _unitName = TextEditingController();
   final TextEditingController _realName = TextEditingController();
@@ -81,6 +82,12 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
   final TextEditingController _searchController = TextEditingController();
   String _searchKeyword = '';
   String? _currentUserUnitName;
+
+  void _clearError() {
+    if (_error != null) {
+      setState(() => _error = null);
+    }
+  }
 
   @override
   void initState() {
@@ -510,180 +517,256 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
 
   Future<void> _showAuthenticationError(String message) async {
     if (!mounted) return;
-    setState(() => _error = message);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('认证失败'),
-        content: Text(message),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('知道了'),
+    setState(() {
+      _error = message;
+      _busy = false;
+    });
+  }
+
+  Widget _buildNormalHeader() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.noteInfo.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-        ],
-      ),
+          child: Icon(
+            Icons.verified_user_outlined,
+            color: AppColors.noteInfo,
+            size: 26,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s3),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '先完成用户认证',
+                style: AppTextStyles.h1.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s1),
+              AntiOrphanText(
+                text: '认证后才能查看和记录本单位的现场警情。',
+                style: AppTextStyles.bodyMd.copyWith(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildAuthentication() {
-    final hasKeyboard = MediaQuery.viewInsetsOf(context).bottom > 80;
+  Widget _buildKeyboardHeader() {
     return Column(
-      mainAxisSize: hasKeyboard ? MainAxisSize.min : MainAxisSize.max,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Flexible(
-          fit: hasKeyboard ? FlexFit.loose : FlexFit.tight,
-          child: SingleChildScrollView(
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!hasKeyboard) ...[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: AppColors.actionPrimary.withValues(
-                            alpha: 0.13,
-                          ),
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                        ),
-                        child: Icon(
-                          Icons.verified_user_outlined,
-                          color: AppColors.actionPrimary,
-                          size: 26,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '先完成用户认证',
-                              style: TextStyle(
-                                fontSize: 21,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              '认证后才能查看和记录本单位的现场警情。',
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 13,
-                                height: 1.35,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                ] else ...[
-                  Center(
-                    child: Container(
-                      key: const Key('auth-sheet-handle'),
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.textTertiary.withValues(alpha: 0.42),
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '用户认证',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '使用单位账号继续',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                ],
-                TextField(
-                  key: const Key('auth-unit-name'),
-                  controller: _unitName,
-                  enabled: !_busy,
-                  maxLength: 120,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: '单位名称',
-                    hintText: '请输入所属消防救援单位全称',
-                    prefixIcon: Icon(Icons.business_outlined),
-                    counterText: '',
-                  ),
-                ),
-                SizedBox(height: hasKeyboard ? 10 : 12),
-                TextField(
-                  key: const Key('auth-real-name'),
-                  controller: _realName,
-                  enabled: !_busy,
-                  maxLength: 20,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: '真实姓名',
-                    hintText: '请输入姓名，用于现场记录署名',
-                    prefixIcon: Icon(Icons.person_outline),
-                    counterText: '',
-                  ),
-                ),
-                SizedBox(height: hasKeyboard ? 10 : 12),
-                TextField(
-                  key: const Key('auth-unit-code'),
-                  controller: _unitCode,
-                  enabled: !_busy,
-                  maxLength: 12,
-                  obscureText: true,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _authenticate(),
-                  decoration: const InputDecoration(
-                    labelText: '单位验证码',
-                    hintText: '请输入 4 位验证码',
-                    prefixIcon: Icon(Icons.password_outlined),
-                    counterText: '',
-                  ),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 8),
-                  AppNotice(
-                    key: const Key('auth-error'),
-                    kind: AppNoticeKind.error,
-                    text: _error!,
-                  ),
-                ],
-              ],
+        Center(
+          child: Container(
+            key: const Key('auth-sheet-handle'),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.textTertiary.withValues(alpha: 0.42),
+              borderRadius: BorderRadius.circular(AppRadius.pill),
             ),
           ),
         ),
-        FilledButton.icon(
-          key: const Key('auth-submit'),
-          onPressed: _busy ? null : _authenticate,
-          icon: _busy
-              ? SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.onPrimary,
-                  ),
-                )
-              : const Icon(Icons.arrow_forward_rounded),
-          label: const Text('认证并继续'),
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+        const SizedBox(height: AppSpacing.s3),
+        Text(
+          '用户认证',
+          style: AppTextStyles.h2.copyWith(
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+          ),
         ),
+        const SizedBox(height: AppSpacing.s1),
+        Text(
+          '使用单位账号继续',
+          style: AppTextStyles.bodyMd.copyWith(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAuthentication(double maxHeight) {
+    final hasKeyboard = MediaQuery.viewInsetsOf(context).bottom > 80;
+    final isExtremeShort = maxHeight < 280;
+
+    final formFields = [
+      AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        child: hasKeyboard
+            ? KeyedSubtree(
+                key: const ValueKey('auth-keyboard-header'),
+                child: _buildKeyboardHeader(),
+              )
+            : KeyedSubtree(
+                key: const ValueKey('auth-normal-header'),
+                child: _buildNormalHeader(),
+              ),
+      ),
+      SizedBox(height: isExtremeShort ? AppSpacing.s2 : AppSpacing.s4),
+      TextField(
+        key: const Key('auth-unit-name'),
+        controller: _unitName,
+        enabled: !_busy,
+        maxLength: 120,
+        textInputAction: TextInputAction.next,
+        onChanged: (_) => _clearError(),
+        decoration: const InputDecoration(
+          labelText: '单位名称',
+          hintText: '请输入所属消防救援单位全称',
+          prefixIcon: Icon(Icons.business_outlined),
+          counterText: '',
+        ),
+      ),
+      const SizedBox(height: 14),
+      TextField(
+        key: const Key('auth-real-name'),
+        controller: _realName,
+        enabled: !_busy,
+        maxLength: 20,
+        textInputAction: TextInputAction.next,
+        onChanged: (_) => _clearError(),
+        decoration: const InputDecoration(
+          labelText: '真实姓名',
+          hintText: '请输入姓名，用于现场记录署名',
+          prefixIcon: Icon(Icons.person_outline),
+          counterText: '',
+        ),
+      ),
+      const SizedBox(height: 14),
+      TextField(
+        key: const Key('auth-unit-code'),
+        controller: _unitCode,
+        enabled: !_busy,
+        maxLength: 12,
+        obscureText: _obscureUnitCode,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _authenticate(),
+        onChanged: (_) => _clearError(),
+        decoration: InputDecoration(
+          labelText: '单位验证码',
+          hintText: '请输入单位验证码',
+          prefixIcon: const Icon(Icons.password_outlined),
+          counterText: '',
+          suffixIcon: IconButton(
+            key: const Key('auth-code-visibility-toggle'),
+            icon: Icon(
+              _obscureUnitCode
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+              size: 20,
+              color: AppColors.textTertiary,
+            ),
+            tooltip: _obscureUnitCode ? '显示验证码' : '隐藏验证码',
+            onPressed: () {
+              setState(() => _obscureUnitCode = !_obscureUnitCode);
+            },
+          ),
+        ),
+      ),
+      if (_error != null) ...[
+        const SizedBox(height: AppSpacing.s2),
+        AppNotice(
+          key: const Key('auth-error'),
+          kind: AppNoticeKind.error,
+          text: _error!,
+        ),
+      ],
+    ];
+
+    final submitButton = FilledButton.icon(
+      key: const Key('auth-submit'),
+      onPressed: _busy ? null : _authenticate,
+      icon: _busy
+          ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.onPrimary,
+              ),
+            )
+          : const Icon(Icons.arrow_forward_rounded),
+      label: const Text('认证并继续'),
+      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+    );
+
+    if (isExtremeShort) {
+      return SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        clipBehavior: Clip.hardEdge,
+        padding: const EdgeInsets.only(top: 8, bottom: AppSpacing.s3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ...formFields,
+            const SizedBox(height: AppSpacing.s3),
+            submitButton,
+            if (!hasKeyboard && widget.onEnterGuestMode != null) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                key: const Key('auth-guest-mode'),
+                onPressed: _busy ? null : widget.onEnterGuestMode,
+                icon: const Icon(Icons.explore_outlined, size: 18),
+                label: const Text('先以游客身份体验（单机可用）'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              ),
+            ],
+            if (!hasKeyboard) ...[
+              const SizedBox(height: 8),
+              Text(
+                '首次认证成功后，本机将记住当前单位和姓名。',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Flexible(
+          fit: FlexFit.loose,
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            clipBehavior: Clip.hardEdge,
+            padding: const EdgeInsets.only(top: 8, bottom: AppSpacing.s3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: formFields,
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s3),
+        submitButton,
         if (!hasKeyboard && widget.onEnterGuestMode != null) ...[
           const SizedBox(height: 10),
           OutlinedButton.icon(
@@ -692,8 +775,11 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             icon: const Icon(Icons.explore_outlined, size: 18),
             label: const Text('先以游客身份体验（单机可用）'),
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(44),
-              foregroundColor: AppColors.textPrimary,
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
           ),
         ],
@@ -709,152 +795,209 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     );
   }
 
-  Widget _buildPendingApprovalView() {
+  Widget _buildPendingApprovalView(double maxHeight) {
     final pending = _pendingApp!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
+    final isExtremeShort = maxHeight < 320;
+
+    final content = [
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.noticeWarningBg,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            child: Icon(
+              Icons.hourglass_top_rounded,
+              color: AppColors.noticeWarningFg,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.s3),
+          Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: AppColors.noticeWarningBg,
-                        borderRadius: BorderRadius.circular(AppRadius.md),
-                      ),
-                      child: Icon(
-                        Icons.hourglass_top_rounded,
-                        color: AppColors.noticeWarningFg,
-                        size: 26,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '入队申请审核中',
-                            style: TextStyle(
-                              fontSize: 21,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            '申请已提交，等待站长或安全员审批通过。',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceSubtle,
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Column(
-                    children: [
-                      _buildInfoRow('申请单位', pending['unit_name'] ?? '-'),
-                      const Divider(height: 20),
-                      _buildInfoRow('申请队员', pending['real_name'] ?? '-'),
-                      if ((pending['station_name'] ?? '').isNotEmpty) ...[
-                        const Divider(height: 20),
-                        _buildInfoRow('所属队站', pending['station_name']!),
-                      ],
-                      if ((pending['phone'] ?? '').isNotEmpty) ...[
-                        const Divider(height: 20),
-                        _buildInfoRow('联系电话', pending['phone']!),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
                 Text(
-                  '💡 站长在手机 App【设置 → 入队审批】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
-                  style: TextStyle(
-                    color: AppColors.textTertiary,
-                    fontSize: 12,
-                    height: 1.4,
+                  '入队申请审核中',
+                  style: AppTextStyles.h1.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s1),
+                AntiOrphanText(
+                  text: '申请已提交，等待站长或安全员审批通过。',
+                  style: AppTextStyles.bodyMd.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    height: 1.35,
                   ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.s4),
+      AppCard(
+        color: AppColors.surfaceSubtle,
+        radius: AppRadius.md,
+        padding: const EdgeInsets.all(AppSpacing.cardInner),
+        side: BorderSide(color: AppColors.border),
+        child: Column(
+          children: [
+            _buildInfoRow('申请单位', pending['unit_name'] ?? '-'),
+            const Divider(height: 20),
+            _buildInfoRow('申请队员', pending['real_name'] ?? '-'),
+            if ((pending['station_name'] ?? '').isNotEmpty) ...[
+              const Divider(height: 20),
+              _buildInfoRow('所属队站', pending['station_name']!),
+            ],
+            if ((pending['phone'] ?? '').isNotEmpty) ...[
+              const Divider(height: 20),
+              _buildInfoRow('联系电话', pending['phone']!),
+            ],
+          ],
         ),
-        FilledButton.icon(
-          key: const Key('pending-check-status'),
-          onPressed: _busy ? null : () => _checkPendingStatus(silent: false),
-          icon: _busy
-              ? SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.onPrimary,
-                  ),
-                )
-              : const Icon(Icons.refresh_rounded),
-          label: const Text('检查审批状态'),
-          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+      ),
+      const SizedBox(height: AppSpacing.s3),
+      const AppNotice(
+        kind: AppNoticeKind.info,
+        icon: Icons.lightbulb_outline_rounded,
+        text: '站长在手机 App【设置 → 入队审批】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
+      ),
+      if (_error != null) ...[
+        const SizedBox(height: AppSpacing.s2),
+        AppNotice(
+          key: const Key('pending-error'),
+          kind: AppNoticeKind.error,
+          text: _error!,
         ),
-        if (widget.onEnterGuestMode != null) ...[
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
+      ],
+    ];
+
+    final checkStatusButton = FilledButton.icon(
+      key: const Key('pending-check-status'),
+      onPressed: _busy ? null : () => _checkPendingStatus(silent: false),
+      icon: _busy
+          ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.onPrimary,
+              ),
+            )
+          : const Icon(Icons.refresh_rounded),
+      label: const Text('检查审批状态'),
+      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+    );
+
+    final guestButton = widget.onEnterGuestMode != null
+        ? OutlinedButton.icon(
             key: const Key('pending-guest-mode'),
             onPressed: widget.onEnterGuestMode,
             icon: const Icon(Icons.explore_outlined, size: 18),
             label: const Text('先以游客身份体验'),
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(44),
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          )
+        : null;
+
+    final cancelButton = TextButton(
+      key: const Key('pending-cancel-app'),
+      onPressed: _busy
+          ? null
+          : () async {
+              await Settings.clearPendingApplication();
+              if (mounted) setState(() => _pendingApp = null);
+            },
+      child: Text(
+        '撤销申请并重新填写',
+        style: TextStyle(color: AppColors.textSecondary),
+      ),
+    );
+
+    if (isExtremeShort) {
+      return SingleChildScrollView(
+        clipBehavior: Clip.hardEdge,
+        padding: const EdgeInsets.only(bottom: AppSpacing.s3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ...content,
+            const SizedBox(height: AppSpacing.s3),
+            checkStatusButton,
+            if (guestButton != null) ...[
+              const SizedBox(height: AppSpacing.s2),
+              guestButton,
+            ],
+            const SizedBox(height: AppSpacing.s1),
+            cancelButton,
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Flexible(
+          fit: FlexFit.loose,
+          child: SingleChildScrollView(
+            clipBehavior: Clip.hardEdge,
+            padding: const EdgeInsets.only(bottom: AppSpacing.s3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: content,
             ),
           ),
-        ],
-        const SizedBox(height: 6),
-        TextButton(
-          key: const Key('pending-cancel-app'),
-          onPressed: _busy
-              ? null
-              : () async {
-                  await Settings.clearPendingApplication();
-                  if (mounted) setState(() => _pendingApp = null);
-                },
-          child: Text(
-            '撤销申请并重新填写',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
         ),
+        const SizedBox(height: AppSpacing.s3),
+        checkStatusButton,
+        if (guestButton != null) ...[
+          const SizedBox(height: AppSpacing.s2),
+          guestButton,
+        ],
+        const SizedBox(height: AppSpacing.s1),
+        cancelButton,
       ],
     );
   }
 
   Widget _buildInfoRow(String label, String value) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          style: AppTextStyles.bodyMd.copyWith(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+          ),
         ),
-        Text(
-          value,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        const SizedBox(width: AppSpacing.s3),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            softWrap: true,
+            style: AppTextStyles.bodyMd.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
         ),
       ],
     );
@@ -1209,7 +1352,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             icon: const Icon(Icons.add),
             label: const Text('新建警情'),
             style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(50),
+              minimumSize: const Size.fromHeight(52),
             ),
           ),
           if (widget.onEnterWithoutIncident != null)
@@ -1220,7 +1363,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                 icon: const Icon(Icons.arrow_forward_outlined),
                 label: const Text('直接进入 App'),
                 style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(46),
+                  minimumSize: const Size.fromHeight(48),
                 ),
               ),
             ),
@@ -1257,27 +1400,48 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             ClipRect(
               child: BackdropFilter(
                 filter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                child: ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
+                child: ColoredBox(
+                  color: AppColors.palette.floatShadow.first.color.withValues(
+                    alpha: AppColors.palette.brightness == Brightness.dark
+                        ? 0.55
+                        : 0.35,
+                  ),
+                ),
               ),
             ),
             const ModalBarrier(dismissible: false, color: Colors.transparent),
             SafeArea(
-              child: AnimatedPadding(
+              child: Padding(
                 padding: MediaQuery.viewInsetsOf(context),
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOutCubic,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final hasKeyboard =
                         MediaQuery.viewInsetsOf(context).bottom > 80;
+                    final isShortViewport = constraints.maxHeight < 460;
+                    final isExtremeShort = constraints.maxHeight < 320;
+                    final isMicroShort = constraints.maxHeight < 280;
+
+                    final double verticalMargin;
+                    if (hasKeyboard || isShortViewport) {
+                      if (isMicroShort) {
+                        verticalMargin = 4.0;
+                      } else if (isExtremeShort) {
+                        verticalMargin = 8.0;
+                      } else {
+                        verticalMargin = 12.0;
+                      }
+                    } else {
+                      verticalMargin = 24.0;
+                    }
+
                     final width = math.max(
                       1.0,
-                      math.min(constraints.maxWidth - 32, 560.0),
+                      math.min(constraints.maxWidth - 32, 520.0),
                     );
                     final height = math.max(
                       1.0,
                       math.min(
-                        constraints.maxHeight - (hasKeyboard ? 16 : 20),
+                        constraints.maxHeight - verticalMargin,
                         640.0,
                       ),
                     );
@@ -1285,46 +1449,84 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       1.0,
                       math.min(constraints.maxWidth, 560.0),
                     );
+
+                    final topPadding = (hasKeyboard || isShortViewport)
+                        ? (isExtremeShort ? AppSpacing.s2 : AppSpacing.s3)
+                        : AppSpacing.s6;
+                    final bottomPadding = (hasKeyboard || isShortViewport)
+                        ? (isExtremeShort ? AppSpacing.s2 : AppSpacing.s3)
+                        : AppSpacing.s5;
+                    final hPadding = constraints.maxWidth < 340
+                        ? AppSpacing.s3
+                        : AppSpacing.s5;
+
+                    final cardConstraints = hasKeyboard
+                        ? BoxConstraints(
+                            minWidth: keyboardWidth,
+                            maxWidth: keyboardWidth,
+                            maxHeight: height,
+                          )
+                        : BoxConstraints(
+                            minWidth: width,
+                            maxWidth: width,
+                            maxHeight: height,
+                          );
+                    final innerContentMaxHeight = math.max(
+                      1.0,
+                      height - topPadding - bottomPadding,
+                    );
+
                     return Align(
                       alignment: hasKeyboard
                           ? Alignment.bottomCenter
                           : Alignment.center,
                       child: Padding(
-                        padding: EdgeInsets.only(bottom: hasKeyboard ? 8 : 0),
+                        padding: EdgeInsets.zero,
                         child: ConstrainedBox(
-                          constraints: hasKeyboard
-                              ? BoxConstraints(
-                                  minWidth: keyboardWidth,
-                                  maxWidth: keyboardWidth,
-                                  maxHeight: height,
-                                )
-                              : BoxConstraints.tightFor(
-                                  width: width,
-                                  height: height,
-                                ),
-                          child: Material(
-                            key: const Key('incident-selection-overlay'),
-                            color: AppColors.surface,
-                            elevation: hasKeyboard ? 16 : 12,
-                            shadowColor: Colors.black.withValues(alpha: 0.3),
-                            shape: RoundedRectangleBorder(
+                          constraints: cardConstraints,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOutCubic,
+                            decoration: BoxDecoration(
                               borderRadius: hasKeyboard
                                   ? const BorderRadius.vertical(
                                       top: Radius.circular(AppRadius.xl),
                                     )
                                   : BorderRadius.circular(AppRadius.xl),
+                              boxShadow: AppShadow.float,
                             ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                20,
-                                hasKeyboard ? 10 : 22,
-                                20,
-                                hasKeyboard ? 12 : 18,
+                            child: Material(
+                              key: const Key('incident-selection-overlay'),
+                              color: AppColors.surface,
+                              elevation: 0,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: hasKeyboard
+                                    ? const BorderRadius.vertical(
+                                        top: Radius.circular(AppRadius.xl),
+                                      )
+                                    : BorderRadius.circular(AppRadius.xl),
+                                side: BorderSide(
+                                  color: AppColors.border.withValues(alpha: 0.9),
+                                  width: 1.0,
+                                ),
                               ),
-                              child: _pendingApp != null
-                                  ? _buildPendingApprovalView()
-                                  : _buildAuthentication(),
+                              clipBehavior: Clip.antiAlias,
+                              child: Padding(
+                                padding: EdgeInsets.fromLTRB(
+                                  hPadding,
+                                  topPadding,
+                                  hPadding,
+                                  bottomPadding,
+                                ),
+                                child: _pendingApp != null
+                                    ? _buildPendingApprovalView(
+                                        innerContentMaxHeight,
+                                      )
+                                    : _buildAuthentication(
+                                        innerContentMaxHeight,
+                                      ),
+                              ),
                             ),
                           ),
                         ),
