@@ -20,6 +20,7 @@ class FireControlLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     // 颜色在 build 期解析：默认值不能写成构造参数默认值，否则会被
     // 编译期常量固化，切换主题后 logo 不跟着变。
     final background = this.background ?? AppColors.actionPrimary;

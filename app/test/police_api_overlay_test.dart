@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watchdog/models/models.dart';
 import 'package:watchdog/pages/incident_selection_overlay.dart';
+import 'package:watchdog/services/theme_controller.dart';
+import 'package:watchdog/theme/app_palette.dart';
+import 'package:watchdog/theme/app_theme.dart';
+import 'package:watchdog/theme/app_widgets.dart';
 
 void main() {
   final customIncident = Incident(
@@ -38,7 +42,7 @@ void main() {
     claimed: false,
   );
 
-  testWidgets('混合列表展示【自建】与官方【处置中】【待认领】标签及对应操作', (tester) async {
+  testWidgets('混合列表统一展示【进入】按钮、独立【自建】/辖区标签及【处置中】提示', (tester) async {
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
@@ -70,24 +74,28 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 验证自建警情及 Badge
+    // 所有卡片右侧操作胶囊统一为【进入】
+    expect(find.text('进入'), findsNWidgets(3));
+    expect(find.text('加入'), findsNothing);
+    expect(find.text('待认领'), findsNothing);
+
+    // 验证自建警情及标签
     expect(find.text('自建'), findsOneWidget);
-    expect(find.text('加入'), findsOneWidget);
     expect(find.text('南区综合演练现场'), findsOneWidget);
 
-    // 验证官方已认领警情及 Badge
+    // 验证官方已认领警情保留第3层【处置中】提示与辖区标签
     expect(find.text('处置中'), findsOneWidget);
+    expect(find.text('柯城区'), findsOneWidget);
     expect(find.text('柯城区新桥街88号'), findsOneWidget);
 
-    // 验证官方未认领警情及 Badge与属地
-    expect(find.text('待认领'), findsOneWidget);
+    // 验证官方未认领警情无【处置中】并展示属地
     expect(find.text('龙游县荣昌广场'), findsOneWidget);
     expect(find.text('龙游县'), findsOneWidget);
 
     // 验证底部新建警情按钮
     expect(find.text('新建警情'), findsOneWidget);
 
-    // 点击【待认领】卡片触发认领建档
+    // 点击未认领外部警情卡片触发认领建档
     await tester.tap(find.text('龙游县荣昌广场'));
     await tester.pumpAndSettle();
     expect(claimedIncident?.externalId, 'ext-unclaimed-2');
@@ -508,6 +516,409 @@ void main() {
       // 派出本单位力量或描述提及本单位跨区增援时可见
       expect(find.text('跨区联动厂房冒烟'), findsOneWidget);
       expect(find.text('跨区增援危化品槽车处置'), findsOneWidget);
+    });
+  });
+
+  group('状态标签防误标、终态归队与暗曜主题适配', () {
+    testWidgets('官方状态为【已归队】且已被认领时最右侧为【进入】、显示【已归队】且绝不出现【处置中】', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      const returnedExternal = ExternalIncident(
+        externalId: 'ext-returned-1',
+        incidentNumber: '20261115001',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '火灾扑救',
+        eventSummary: '示例厂房冒烟警情',
+        officialStatus: '已归队',
+        factHighlights: ['1人被困', '处置中'],
+        crimeAddress: '示例大道100号',
+        registerTime: 1786177100000,
+        claimed: true,
+        claimedIncidentId: 'local-returned-1',
+      );
+
+      const archivedLinkedExternal = ExternalIncident(
+        externalId: 'ext-returned-2',
+        incidentNumber: '20261115002',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '社会救助',
+        eventSummary: '示例小区电梯困人警情',
+        officialStatus: '',
+        factHighlights: ['处置中'],
+        crimeAddress: '示例大道200号',
+        registerTime: 1786177150000,
+        claimed: true,
+        claimedIncidentId: 'local-archived-2',
+      );
+
+      const archivedLinkedLocal = Incident(
+        id: 'local-archived-2',
+        number: '20261115002',
+        title: '示例小区电梯困人警情',
+        status: 'archived',
+        info: {'incident_status': '已归队'},
+        createdAt: 1786177150000,
+        lastActivityAt: 1786177150000,
+      );
+
+      const terminalCustomIncident = Incident(
+        id: 'custom-terminal-3',
+        number: '20261115003#警情',
+        title: '示例自建演练归队',
+        status: 'archived',
+        info: {'incident_status': '已归队'},
+        unresolvedActiveCount: 3,
+        createdAt: 1786177200000,
+        lastActivityAt: 1786177200000,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: IncidentSelectionOverlay(
+              activeIncidents: const [
+                archivedLinkedLocal,
+                terminalCustomIncident,
+              ],
+              externalIncidents: const [
+                returnedExternal,
+                archivedLinkedExternal,
+              ],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 三张卡片右侧均为【进入】，且均显示【已归队】
+      expect(find.text('进入'), findsNWidgets(3));
+      expect(find.text('已归队'), findsNWidgets(3));
+      // 终态卡片任何位置绝不出现【处置中】或【3人处置中】
+      expect(find.textContaining('处置'), findsNothing);
+      // 原有其他关键事实保留
+      expect(find.text('1人被困'), findsOneWidget);
+      // 验证外部警情卡片【已归队】位于第3层 factHighlights 首位（紧随出动力量标签之后）
+      final wrap1 = find.byKey(
+        const Key('ext-forces-wrap-ext_ext-returned-1'),
+      );
+      final textsInWrap1 = tester
+          .widgetList<Text>(
+            find.descendant(of: wrap1, matching: find.byType(Text)),
+          )
+          .map((t) => t.data)
+          .toList();
+      expect(textsInWrap1, ['示例路站', '已归队', '1人被困']);
+    });
+
+    testWidgets('官方状态为【作战中】时：已认领第3层显示【处置中】且右侧为【进入】，未认领无【处置中】且右侧为【进入】', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      const claimedFighting = ExternalIncident(
+        externalId: 'ext-fight-claimed',
+        incidentNumber: '20261115101',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '火灾扑救',
+        eventSummary: '示例仓库火情扑救',
+        officialStatus: '作战中',
+        crimeAddress: '示例大道100号',
+        registerTime: 1786177100000,
+        claimed: true,
+        claimedIncidentId: 'claimed-fight-local',
+      );
+
+      const unclaimedFighting = ExternalIncident(
+        externalId: 'ext-fight-unclaimed',
+        incidentNumber: '20261115102',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '抢险救援',
+        eventSummary: '示例路段车辆救援',
+        officialStatus: '作战中',
+        crimeAddress: '示例大道200号',
+        registerTime: 1786177200000,
+        claimed: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: IncidentSelectionOverlay(
+              activeIncidents: const [],
+              externalIncidents: const [claimedFighting, unclaimedFighting],
+              loading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 两张卡片最右侧按钮均为【进入】
+      expect(find.text('进入'), findsNWidgets(2));
+      expect(find.text('待认领'), findsNothing);
+
+      // 已认领卡片第 3 层 factHighlights 首位显示【处置中】，且采用安全绿状态配色
+      final claimedWrap = find.byKey(
+        const Key('ext-forces-wrap-ext_ext-fight-claimed'),
+      );
+      expect(claimedWrap, findsOneWidget);
+      final claimedTexts = tester
+          .widgetList<Text>(
+            find.descendant(of: claimedWrap, matching: find.byType(Text)),
+          )
+          .map((t) => t.data)
+          .toList();
+      expect(claimedTexts, ['示例路站', '处置中', '作战中']);
+
+      final inProgressText = tester.widget<Text>(find.text('处置中'));
+      expect(inProgressText.style?.color, AppColors.safeText);
+      final inProgressContainer = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('处置中'),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final inProgressDeco = inProgressContainer.decoration! as BoxDecoration;
+      expect(inProgressDeco.color, AppColors.safeSurface);
+      expect(
+        inProgressDeco.border,
+        Border.all(color: AppColors.safe.withValues(alpha: 0.3), width: 1.0),
+      );
+
+      // 未认领卡片第 3 层无【处置中】
+      final unclaimedWrap = find.byKey(
+        const Key('ext-forces-wrap-ext_ext-fight-unclaimed'),
+      );
+      expect(unclaimedWrap, findsOneWidget);
+      expect(
+        find.descendant(of: unclaimedWrap, matching: find.text('处置中')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: unclaimedWrap, matching: find.text('作战中')),
+        findsOneWidget,
+      );
+      expect(find.text('处置中'), findsOneWidget);
+    });
+
+    testWidgets('在 AppPalette.nightTactical（暗曜）下渲染浮层卡片无异常且文字与按钮配色正确随主题切换', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        ThemeController.instance.resetForTest();
+      });
+
+      ThemeController.instance.resetForTest();
+
+      const customActive = Incident(
+        id: 'custom-night-1',
+        number: '20261115201#警情',
+        title: '示例演练现场',
+        status: 'active',
+        createdAt: 1786177100000,
+        lastActivityAt: 1786177100000,
+      );
+
+      const externalActive = ExternalIncident(
+        externalId: 'ext-night-1',
+        incidentNumber: '20261115202',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '火灾扑救',
+        eventSummary: '示例商铺火情',
+        officialStatus: '作战中',
+        crimeAddress: '示例大道100号',
+        registerTime: 1786177150000,
+        claimed: true,
+        claimedIncidentId: 'claimed-night-1',
+      );
+
+      const externalReturned = ExternalIncident(
+        externalId: 'ext-night-2',
+        incidentNumber: '20261115203',
+        detachmentName: '示例支队',
+        brigadeName: '示例大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '社会救助',
+        eventSummary: '示例小区救助',
+        officialStatus: '已归队',
+        crimeAddress: '示例大道200号',
+        registerTime: 1786177200000,
+        claimed: true,
+        claimedIncidentId: 'claimed-night-2',
+      );
+
+      await tester.pumpWidget(
+        ListenableBuilder(
+          listenable: ThemeController.instance,
+          builder: (context, _) => MaterialApp(
+            theme: buildAppTheme(),
+            themeAnimationDuration: Duration.zero,
+            home: KeyedSubtree(
+              key: ValueKey(ThemeController.instance.currentId),
+              child: Scaffold(
+                body: IncidentSelectionOverlay(
+                  activeIncidents: const [customActive],
+                  externalIncidents: const [externalActive, externalReturned],
+                  loading: false,
+                  onSelect: (_) async {},
+                  onCreate: () async {},
+                  onReorganizeExternal: () async {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 昼白基线验证
+      final daylightOverlay = tester.widget<Material>(
+        find.byKey(const Key('incident-selection-overlay')),
+      );
+      expect(daylightOverlay.color, AppPalette.daylight.background);
+
+      // 动态切换为暗曜（AppPalette.nightTactical）
+      ThemeController.instance.select(AppPalette.nightTactical);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+
+      final nightOverlay = tester.widget<Material>(
+        find.byKey(const Key('incident-selection-overlay')),
+      );
+      expect(nightOverlay.color, AppPalette.nightTactical.background);
+
+      // 标题文字为暗曜高对比浅色
+      final titleText = tester.widget<Text>(find.text('示例商铺火情'));
+      expect(titleText.style?.color, AppPalette.nightTactical.textPrimary);
+
+      // 右侧【进入】胶囊背景与文字跟随暗曜 actionPrimary
+      final enterText = tester.widget<Text>(find.text('进入').first);
+      expect(enterText.style?.color, AppPalette.nightTactical.actionPrimary);
+      final enterPill = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('进入').first,
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final enterDeco = enterPill.decoration! as BoxDecoration;
+      expect(
+        enterDeco.color,
+        AppPalette.nightTactical.actionPrimary.withValues(alpha: 0.12),
+      );
+
+      // 【自建】辖区标签与右侧【进入】彻底解耦，读取 cautionSurface / cautionText
+      final customTagText = tester.widget<Text>(find.text('自建'));
+      expect(customTagText.style?.color, AppPalette.nightTactical.cautionText);
+      final customTagContainer = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('自建'),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      expect(
+        (customTagContainer.decoration! as BoxDecoration).color,
+        AppPalette.nightTactical.cautionSurface,
+      );
+
+      // 外部辖区标签读取 surfaceSubtle / textSecondary
+      final districtTagText = tester.widget<Text>(find.text('示例县').first);
+      expect(
+        districtTagText.style?.color,
+        AppPalette.nightTactical.textSecondary,
+      );
+      final districtTagContainer = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('示例县').first,
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      expect(
+        (districtTagContainer.decoration! as BoxDecoration).color,
+        AppPalette.nightTactical.surfaceSubtle,
+      );
+
+      // 【处置中】第3层标签在暗曜下读取 safeSurface / safeText / safe border
+      final activeTagText = tester.widget<Text>(find.text('处置中'));
+      expect(activeTagText.style?.color, AppPalette.nightTactical.safeText);
+      final activeTagContainer = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text('处置中'),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final activeDeco = activeTagContainer.decoration! as BoxDecoration;
+      expect(
+        activeDeco.color,
+        AppPalette.nightTactical.safe.withValues(alpha: 0.12),
+      );
+      expect(
+        activeDeco.border,
+        Border.all(
+          color: AppPalette.nightTactical.safe.withValues(alpha: 0.3),
+          width: 1.0,
+        ),
+      );
+
+      // 搜索框文字采用暗曜 textPrimary
+      final searchField = tester.widget<TextField>(find.byType(TextField).first);
+      expect(searchField.style?.color, AppPalette.nightTactical.textPrimary);
+
+      // 空态提示在暗曜下同样使用 textPrimary 且无异常
+      await tester.enterText(find.byType(TextField).first, '不存在的关键词xyz');
+      await tester.pumpAndSettle();
+      final emptyTitle = tester.widget<Text>(find.text('当前没有进行中的警情'));
+      expect(emptyTitle.style?.color, AppPalette.nightTactical.textPrimary);
+      expect(tester.takeException(), isNull);
     });
   });
 }

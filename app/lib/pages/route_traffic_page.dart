@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -422,8 +423,9 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
   }
 
   Future<void> _startNavigation() async {
-    final uri = _info?.navigationUri;
-    if (uri == null) {
+    final webUri = _info?.navigationUri;
+    final nativeUri = _info?.nativeAndroidNavigationUri;
+    if (webUri == null) {
       if (mounted) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
@@ -431,7 +433,23 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
       }
       return;
     }
-    final ok = await _gateway.launchNavigation(uri);
+
+    var ok = false;
+    if (defaultTargetPlatform == TargetPlatform.android && nativeUri != null) {
+      try {
+        ok = await _gateway.launchNavigation(nativeUri);
+      } catch (_) {
+        ok = false;
+      }
+    }
+    if (!ok) {
+      try {
+        ok = await _gateway.launchNavigation(webUri);
+      } catch (_) {
+        ok = false;
+      }
+    }
+
     if (!ok && mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -838,6 +856,10 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               Builder(
                 builder: (context) {
                   final isSelected = _selectedRouteIndex == i;
+                  final rawStrategy = routes[i].strategy.trim();
+                  final label = rawStrategy.isNotEmpty
+                      ? rawStrategy
+                      : (i == 0 ? '时间最短' : '备选路线');
                   return InkWell(
                     key: Key('route-strategy-chip-$i'),
                     borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -866,7 +888,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                         ),
                       ),
                       child: Text(
-                        '方案${i + 1} · ${routes[i].strategy}',
+                        label,
                         style: AppTextStyles.label.copyWith(
                           color: isSelected
                               ? AppColors.textOnDark

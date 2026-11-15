@@ -10,6 +10,9 @@ const {
   parseWeather,
   parseForecast,
   parseDrivingRoute,
+  hasHighway,
+  routeSignature,
+  mergeAndRankDrivingRoutes,
   cleanUnitJurisdictionName,
   normalizeNaturalVillage,
   extractPrefixWord,
@@ -518,9 +521,10 @@ test('lookupRouteTraffic：完整含起点路线、天气预报及二次命中�
   assert.equal(first.forecast.dayWeather, '多云');
   assert.equal(first.routeAvailable, true);
   assert.equal(first.routes.length, 1);
+  assert.equal(first.routes[0].strategy, '时间最短');
   assert.equal(first.routes[0].overallStatus, '拥堵');
   assert.equal(first.degraded, false);
-  assert.equal(fetchImpl.calls.length, 6);
+  assert.equal(fetchImpl.calls.length, 10);
 
   const second = await lookupRouteTraffic({
     address: '新安江街道新安东路555号',
@@ -532,7 +536,7 @@ test('lookupRouteTraffic：完整含起点路线、天气预报及二次命中�
     now: 2000,
   });
   assert.equal(second.routeAvailable, true);
-  assert.equal(fetchImpl.calls.length, 6, '缓存有效期内不应重复请求上游');
+  assert.equal(fetchImpl.calls.length, 10, '缓存有效期内不应重复请求上游');
 });
 
 test('lookupRouteTraffic：无起点坐标时仅查询终点坐标与天气，不调用驾车规划', async () => {
@@ -792,4 +796,503 @@ test('lookupRouteTraffic：拦截跨省同名小区漂移，优先结合单位�
   assert.equal(res.destination.formattedAddress.includes('龙游县'), true);
   assert.equal(res.destination.location.lat, 29.024354);
   assert.equal(res.destination.location.lon, 119.163908);
+});
+
+function buildMockPath({
+  strategy = '速度最快',
+  distance = 5000,
+  duration = 600,
+  trafficLights = 4,
+  tolls = 0,
+  tollDistance = 0,
+  roads = ['示例大道', '示例路'],
+  jamDistance = 0,
+  steps,
+} = {}) {
+  const resolvedSteps = steps || roads.map((road, idx) => ({
+    instruction: `沿${road}行驶`,
+    road,
+    distance: String(Math.round(distance / roads.length)),
+    duration: String(Math.round(duration / roads.length)),
+    action: idx === roads.length - 1 ? '到达目的地' : '直行',
+    tmcs: [
+      {
+        status: idx === 0 && jamDistance > 0 ? '拥堵' : '畅通',
+        distance: String(idx === 0 && jamDistance > 0 ? jamDistance : Math.round(distance / roads.length)),
+      },
+    ],
+  }));
+  return {
+    strategy,
+    distance: String(distance),
+    duration: String(duration),
+    traffic_lights: String(trafficLights),
+    tolls: String(tolls),
+    toll_distance: String(tollDistance),
+    steps: resolvedSteps,
+  };
+}
+
+test('lookupRouteTraffic：多策略并行查询按耗时升序排列，首条固定「时间最短」且各路线名称唯一', async () => {
+  clearCaches();
+  const fastCity = buildMockPath({
+    strategy: '速度最快',
+    distance: 6200,
+    duration: 540,
+    trafficLights: 6,
+    tolls: 0,
+    roads: ['示例大道', '示范路'],
+    jamDistance: 900,
+  });
+  const highwayFast = buildMockPath({
+    strategy: '速度最快',
+    distance: 11000,
+    duration: 600,
+    trafficLights: 2,
+    tolls: 20,
+    tollDistance: 8000,
+    roads: ['G00示例高速', '示例互通'],
+  });
+  const avoidJam = buildMockPath({
+    strategy: '速度最快',
+    distance: 7100,
+    duration: 660,
+    trafficLights: 7,
+    tolls: 0,
+    roads: ['示例北路', '示范东路'],
+    jamDistance: 0,
+  });
+  const lowTollHighway = buildMockPath({
+    strategy: '速度最快',
+    distance: 9800,
+    duration: 720,
+    trafficLights: 5,
+    tolls: 5,
+    tollDistance: 3000,
+    roads: ['S00示例支线高速', '示例大道'],
+  });
+  const noHighwaySlow = buildMockPath({
+    strategy: '速度最快',
+    distance: 7800,
+    duration: 840,
+    trafficLights: 10,
+    tolls: 0,
+    roads: ['示例南路', '示范路'],
+  });
+
+  const fetchImpl = (url) => {
+    const u = new URL(url);
+    if (u.pathname === '/v3/weather/weatherInfo' && u.searchParams.get('extensions') === 'base') {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    if (u.pathname === '/v3/weather/weatherInfo' && u.searchParams.get('extensions') === 'all') {
+      return Promise.resolve({ ok: true, json: async () => FORECAST_OK });
+    }
+    if (u.pathname === '/v3/assistant/coordinate/convert') {
+      return Promise.resolve({ ok: true, json: async () => CONVERT_OK });
+    }
+    if (u.pathname === '/v3/geocode/regeo') {
+      return Promise.resolve({ ok: true, json: async () => REGEO_OK });
+    }
+    if (u.pathname === '/v3/direction/driving') {
+      const st = u.searchParams.get('strategy');
+      const map = {
+        '10': [fastCity],
+        '19': [highwayFast],
+        '12': [avoidJam],
+        '13': [noHighwaySlow],
+        '14': [lowTollHighway],
+      };
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ status: '1', route: { paths: map[st] || [] } }),
+      });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+
+  const res = await lookupRouteTraffic({
+    address: '示例大道100号',
+    destLat: 29.10,
+    destLon: 119.20,
+    destName: '示例大道100号',
+    originLat: 29.03,
+    originLon: 119.18,
+    key: 'test-key',
+    fetchImpl,
+  });
+
+  assert.equal(res.routeAvailable, true);
+  assert.equal(res.routes.length, 4, '最多保留前 4 条路线');
+  assert.deepEqual(
+    res.routes.map((r) => r.durationSeconds),
+    [540, 600, 660, 720],
+    '必须严格按 durationSeconds 升序排列',
+  );
+  assert.deepEqual(
+    res.routes.map((r) => r.strategy),
+    ['时间最短', '高速优先', '躲避拥堵', '少收费'],
+  );
+  assert.equal(new Set(res.routes.map((r) => r.strategy)).size, 4);
+});
+
+test('mergeAndRankDrivingRoutes：纯城区路线禁止误标「高速优先」，全免费时禁止误标「少收费」', () => {
+  const cityFast = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 4500,
+        duration: 500,
+        tolls: 0,
+        tollDistance: 0,
+        roads: ['示例一路', '示例二路'],
+      })],
+    },
+  });
+  const citySecond = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 5200,
+        duration: 620,
+        tolls: 0,
+        tollDistance: 0,
+        roads: ['示例三路', '示例四路'],
+      })],
+    },
+  });
+  const cityThird = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 4100,
+        duration: 680,
+        tolls: 0,
+        tollDistance: 0,
+        roads: ['示例五路', '示例六路'],
+      })],
+    },
+  });
+
+  assert.equal(hasHighway(cityFast[0]), false);
+  assert.equal(hasHighway(citySecond[0]), false);
+
+  const ranked = mergeAndRankDrivingRoutes([
+    { strategyCode: 10, optionLabel: null, routes: cityFast },
+    { strategyCode: 19, optionLabel: '高速优先', routes: citySecond },
+    { strategyCode: 14, optionLabel: '少收费', routes: cityThird },
+  ]);
+
+  assert.equal(ranked.length, 3);
+  assert.equal(ranked[0].strategy, '时间最短');
+  assert.notEqual(ranked[1].strategy, '高速优先', '纯城区路线禁止标高速优先');
+  assert.equal(ranked[1].strategy, '备选路线');
+  assert.notEqual(ranked[2].strategy, '少收费', '无更高收费候选时禁止标少收费');
+  assert.equal(ranked[2].strategy, '距离最短');
+});
+
+test('mergeAndRankDrivingRoutes：物理路线去重保留较短耗时，无 roads 时回退 steps，并完成排序与兜底命名', () => {
+  const dupSlow = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 5200,
+        duration: 700,
+        trafficLights: 6,
+        roads: ['示例甲路', '示例乙路'],
+      })],
+    },
+  });
+  const dupFaster = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 5240,
+        duration: 610,
+        trafficLights: 5,
+        roads: ['示例甲路', '示例乙路'],
+      })],
+    },
+  });
+
+  assert.equal(routeSignature(dupSlow[0]), routeSignature(dupFaster[0]));
+
+  const noRoadA = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [{
+        strategy: '速度最快',
+        distance: '5400',
+        duration: '650',
+        traffic_lights: '3',
+        tolls: '0',
+        toll_distance: '0',
+        steps: [
+          { instruction: '沿无名支路向北直行500米', road: '', distance: '500', duration: '60', action: '直行', tmcs: [] },
+        ],
+      }],
+    },
+  });
+  const noRoadB = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [{
+        strategy: '费用较低',
+        distance: '5600',
+        duration: '650',
+        traffic_lights: '4',
+        tolls: '0',
+        toll_distance: '0',
+        steps: [
+          { instruction: '沿无名巷道向东直行600米', road: '', distance: '600', duration: '70', action: '右转', tmcs: [] },
+        ],
+      }],
+    },
+  });
+  const plainC = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 6200,
+        duration: 720,
+        roads: ['示例丙路'],
+      })],
+    },
+  });
+  const plainD = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 6600,
+        duration: 780,
+        roads: ['示例丁路'],
+      })],
+    },
+  });
+
+  const ranked = mergeAndRankDrivingRoutes([
+    { strategyCode: 10, optionLabel: null, routes: [...dupSlow, ...noRoadA, ...noRoadB, ...plainC, ...plainD] },
+    { strategyCode: 12, optionLabel: '躲避拥堵', routes: dupFaster },
+  ]);
+
+  assert.equal(ranked.length, 4);
+  assert.equal(ranked[0].durationSeconds, 610, '同签名路线应合并并保留较短 durationSeconds');
+  assert.equal(ranked[0].strategy, '时间最短');
+  assert.deepEqual(
+    ranked.map((r) => [r.durationSeconds, r.distanceMeters, r.trafficLights]),
+    [
+      [610, 5240, 5],
+      [650, 5400, 3],
+      [650, 5600, 4],
+      [720, 6200, 4],
+    ],
+  );
+  assert.deepEqual(
+    ranked.map((r) => r.strategy),
+    ['时间最短', '备选路线', '备选路线二', '备选路线三'],
+  );
+});
+
+test('mergeAndRankDrivingRoutes：支持原始 path.strategy 映射规范为「少收费」', () => {
+  const highway = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 8000,
+        duration: 480,
+        tolls: 15,
+        tollDistance: 4000,
+        roads: ['G10示例高速'],
+      })],
+    },
+  });
+  const lowFee = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '避免收费',
+        distance: 8500,
+        duration: 600,
+        tolls: 0,
+        tollDistance: 0,
+        roads: ['示例国道', '示例大道'],
+      })],
+    },
+  });
+
+  const ranked = mergeAndRankDrivingRoutes([
+    { strategyCode: 10, optionLabel: null, routes: [...highway, ...lowFee] },
+  ]);
+
+  assert.equal(ranked.length, 2);
+  assert.deepEqual(ranked.map((r) => r.strategy), ['时间最短', '少收费']);
+});
+
+test('lookupRouteTraffic：单策略异常或失败不影响其余策略返回，全失败时降级', async () => {
+  clearCaches();
+  const cityFast = buildMockPath({
+    strategy: '速度最快',
+    distance: 4800,
+    duration: 520,
+    roads: ['示例大道'],
+  });
+  const avoidJam = buildMockPath({
+    strategy: '速度最快',
+    distance: 5300,
+    duration: 610,
+    roads: ['示例绕城路'],
+  });
+
+  const partialFailFetch = (url) => {
+    const u = new URL(url);
+    if (u.pathname === '/v3/weather/weatherInfo' && u.searchParams.get('extensions') === 'base') {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    if (u.pathname === '/v3/weather/weatherInfo' && u.searchParams.get('extensions') === 'all') {
+      return Promise.resolve({ ok: true, json: async () => FORECAST_OK });
+    }
+    if (u.pathname === '/v3/assistant/coordinate/convert') {
+      return Promise.resolve({ ok: true, json: async () => CONVERT_OK });
+    }
+    if (u.pathname === '/v3/geocode/regeo') {
+      return Promise.resolve({ ok: true, json: async () => REGEO_OK });
+    }
+    if (u.pathname === '/v3/direction/driving') {
+      const st = u.searchParams.get('strategy');
+      if (st === '19') return Promise.reject(new Error('timeout'));
+      if (st === '13') return Promise.resolve({ ok: false, json: async () => ({}) });
+      if (st === '14') return Promise.resolve({ ok: true, json: async () => ({ status: '0' }) });
+      if (st === '10') return Promise.resolve({ ok: true, json: async () => ({ status: '1', route: { paths: [cityFast] } }) });
+      if (st === '12') return Promise.resolve({ ok: true, json: async () => ({ status: '1', route: { paths: [avoidJam] } }) });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+
+  const partial = await lookupRouteTraffic({
+    address: '示例大道100号',
+    city: '示例市',
+    destLat: 29.10,
+    destLon: 119.20,
+    destName: '示例大道100号',
+    destAdcode: '000000',
+    originLat: 29.03,
+    originLon: 119.18,
+    key: 'test-key',
+    fetchImpl: partialFailFetch,
+  });
+
+  assert.equal(partial.routeAvailable, true);
+  assert.equal(partial.degraded, false);
+  assert.deepEqual(partial.routes.map((r) => r.strategy), ['时间最短', '躲避拥堵']);
+
+  clearCaches();
+  const allFailFetch = (url) => {
+    const u = new URL(url);
+    if (u.pathname === '/v3/weather/weatherInfo' && u.searchParams.get('extensions') === 'base') {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    if (u.pathname === '/v3/weather/weatherInfo' && u.searchParams.get('extensions') === 'all') {
+      return Promise.resolve({ ok: true, json: async () => FORECAST_OK });
+    }
+    if (u.pathname === '/v3/assistant/coordinate/convert') {
+      return Promise.resolve({ ok: true, json: async () => CONVERT_OK });
+    }
+    if (u.pathname === '/v3/geocode/regeo') {
+      return Promise.resolve({ ok: true, json: async () => REGEO_OK });
+    }
+    return Promise.reject(new Error('network error'));
+  };
+
+  const degraded = await lookupRouteTraffic({
+    address: '示例大道100号',
+    city: '示例市',
+    destLat: 29.10,
+    destLon: 119.20,
+    destName: '示例大道100号',
+    destAdcode: '000000',
+    originLat: 29.03,
+    originLon: 119.18,
+    key: 'test-key',
+    fetchImpl: allFailFetch,
+  });
+
+  assert.equal(degraded.routeAvailable, false);
+  assert.deepEqual(degraded.routes, []);
+  assert.equal(degraded.degraded, true);
+});
+
+test('hasHighway 与「不走高速」「躲避拥堵」真实性校验', () => {
+  assert.equal(hasHighway({ tollDistanceMeters: 100, tolls: 0, roads: [], steps: [] }), true);
+  assert.equal(hasHighway({ tollDistanceMeters: 0, tolls: 5, roads: [], steps: [] }), true);
+  assert.equal(hasHighway({ tollDistanceMeters: 0, tolls: 0, roads: ['G60示范高速'], steps: [] }), true);
+  assert.equal(hasHighway({
+    tollDistanceMeters: 0,
+    tolls: 0,
+    roads: ['示例大道'],
+    steps: [{ road: '', instruction: '前方右转进入示例高速辅路' }],
+  }), true);
+  assert.equal(hasHighway({
+    tollDistanceMeters: 0,
+    tolls: 0,
+    roads: ['示例大道', '示范路'],
+    steps: [{ road: '示例大道', instruction: '沿示例大道向东直行' }],
+  }), false);
+
+  const jammedCity = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 5000,
+        duration: 500,
+        roads: ['示例拥堵大道'],
+        jamDistance: 1200,
+      })],
+    },
+  });
+  const mislabeledHighwayOnNoHighway = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 7000,
+        duration: 620,
+        tolls: 0,
+        tollDistance: 0,
+        roads: ['S20示例高速连接线'],
+        jamDistance: 1200,
+      })],
+    },
+  });
+  const lessJamCity = parseDrivingRoute({
+    status: '1',
+    route: {
+      paths: [buildMockPath({
+        strategy: '速度最快',
+        distance: 5800,
+        duration: 680,
+        roads: ['示例绕行路'],
+        jamDistance: 200,
+      })],
+    },
+  });
+
+  const ranked = mergeAndRankDrivingRoutes([
+    { strategyCode: 10, optionLabel: null, routes: [...jammedCity, ...lessJamCity] },
+    { strategyCode: 13, optionLabel: '不走高速', routes: mislabeledHighwayOnNoHighway },
+  ]);
+
+  assert.equal(ranked.length, 3);
+  assert.equal(ranked[0].strategy, '时间最短');
+  assert.notEqual(ranked[1].strategy, '不走高速', '含高速特征路线禁止标为不走高速');
+  assert.equal(ranked[1].strategy, '备选路线');
+  assert.equal(ranked[2].strategy, '躲避拥堵', '拥堵里程少于首条路线应有效推断为躲避拥堵');
 });

@@ -65,13 +65,18 @@ class LocationShareDraft {
     return '现场位置';
   }
 
+  bool get hasAmapLocation => _validAmapLocation != null;
+
   Uri get markerUri {
     final location = _validAmapLocation;
     return Uri.https('uri.amap.com', '/marker', {
       'position': location != null
           ? '${location.lon.toStringAsFixed(6)},${location.lat.toStringAsFixed(6)}'
           : '${lon.toStringAsFixed(6)},${lat.toStringAsFixed(6)}',
-      if (location == null) 'coordinate': 'wgs84',
+      'name': displayName,
+      'src': 'watchdog',
+      'coordinate': location != null ? 'gaode' : 'wgs84',
+      'callnative': '1',
     });
   }
 
@@ -84,15 +89,6 @@ class LocationShareDraft {
       return null;
     }
     return location;
-  }
-
-  Uri? get navigationUri {
-    final location = _validAmapLocation;
-    if (location == null) return null;
-    return Uri.https('uri.amap.com', '/navigation', {
-      'to':
-          '${location.lon.toStringAsFixed(6)},${location.lat.toStringAsFixed(6)}',
-    });
   }
 
   String toShareText({DateTime? now}) {
@@ -115,13 +111,6 @@ class LocationShareDraft {
       ..add('')
       ..add('查看位置：')
       ..add(markerUri.toString());
-    final navigation = navigationUri;
-    if (navigation != null) {
-      lines
-        ..add('')
-        ..add('驾车导航：')
-        ..add(navigation.toString());
-    }
 
     final currentAge = now == null ? null : ageAt(now);
     if (currentAge != null && currentAge > staleWarningAge) {

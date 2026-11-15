@@ -1598,7 +1598,7 @@ class RouteTrafficInfo {
     this.candidates = const [],
   });
 
-  Uri? get navigationUri {
+  AmapLocation? get _validDestinationLocation {
     final loc = destination?.location;
     if (loc == null ||
         loc.coordinate.toLowerCase() != 'gcj02' ||
@@ -1606,9 +1606,39 @@ class RouteTrafficInfo {
         !loc.lon.isFinite) {
       return null;
     }
+    return loc;
+  }
+
+  Uri? get navigationUri {
+    final loc = _validDestinationLocation;
+    if (loc == null) return null;
+    final destName = (destination?.displayAddress ?? '').trim();
+    final coord =
+        '${loc.lon.toStringAsFixed(6)},${loc.lat.toStringAsFixed(6)}';
     return Uri.https('uri.amap.com', '/navigation', {
-      'to': '${loc.lon.toStringAsFixed(6)},${loc.lat.toStringAsFixed(6)}',
+      'to': destName.isNotEmpty ? '$coord,$destName' : coord,
+      'mode': 'car',
+      'src': 'watchdog',
+      'callnative': '1',
     });
+  }
+
+  Uri? get nativeAndroidNavigationUri {
+    final loc = _validDestinationLocation;
+    if (loc == null) return null;
+    final destName = (destination?.displayAddress ?? '').trim();
+    return Uri(
+      scheme: 'androidamap',
+      host: 'navi',
+      queryParameters: {
+        'sourceApplication': 'watchdog',
+        'poiname': destName.isNotEmpty ? destName : '事发地点',
+        'lat': loc.lat.toStringAsFixed(6),
+        'lon': loc.lon.toStringAsFixed(6),
+        'dev': '0',
+        'style': '2',
+      },
+    );
   }
 
   static String formatDuration(int durationSeconds) {

@@ -313,17 +313,29 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('该姓名还没有登录权限'),
+        backgroundColor: AppColors.surface,
+        title: Text(
+          '该姓名还没有登录权限',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
         content: Text(
           '「$realName」已在语音识别名单中，但还没有登录权限。请提交入队申请，管理员在「设置 → 入队审批」批准后即可登录。',
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.actionPrimary,
+            ),
             child: const Text('返回修改'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.actionPrimary,
+              foregroundColor: AppColors.onPrimary,
+            ),
             child: const Text('提交入队申请'),
           ),
         ],
@@ -343,12 +355,19 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('没有找到这个姓名'),
+        backgroundColor: AppColors.surface,
+        title: Text(
+          '没有找到这个姓名',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('你要找的是不是：'),
+            Text(
+              '你要找的是不是：',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
             const SizedBox(height: AppSpacing.s2),
             for (final candidate in suggestions)
               Padding(
@@ -397,10 +416,16 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.actionPrimary,
+            ),
             child: const Text('返回修改'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'apply'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.actionPrimary,
+            ),
             child: const Text('仍要提交入队申请'),
           ),
         ],
@@ -426,15 +451,29 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('未加入单位名单'),
-        content: Text('姓名「$realName」尚未加入「$unitName」的正式队员名单。\n\n是否立即向站长提交入队申请？'),
+        backgroundColor: AppColors.surface,
+        title: Text(
+          '未加入单位名单',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: Text(
+          '姓名「$realName」尚未加入「$unitName」的正式队员名单。\n\n是否立即向站长提交入队申请？',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.actionPrimary,
+            ),
             child: const Text('返回修改'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.actionPrimary,
+              foregroundColor: AppColors.onPrimary,
+            ),
             child: const Text('提交入队申请'),
           ),
         ],
@@ -628,10 +667,19 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         maxLength: 120,
         textInputAction: TextInputAction.next,
         onChanged: (_) => _clearError(),
-        decoration: const InputDecoration(
+        style: AppTextStyles.bodyMd.copyWith(color: AppColors.textPrimary),
+        cursorColor: AppColors.actionPrimary,
+        decoration: InputDecoration(
           labelText: '单位名称',
           hintText: '请输入所属消防救援单位全称',
-          prefixIcon: Icon(Icons.business_outlined),
+          labelStyle: TextStyle(color: AppColors.textSecondary),
+          hintStyle: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+          prefixIcon: Icon(
+            Icons.business_outlined,
+            color: AppColors.textTertiary,
+          ),
+          filled: true,
+          fillColor: AppColors.surface,
           counterText: '',
         ),
       ),
@@ -643,10 +691,16 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         maxLength: 20,
         textInputAction: TextInputAction.next,
         onChanged: (_) => _clearError(),
-        decoration: const InputDecoration(
+        style: AppTextStyles.bodyMd.copyWith(color: AppColors.textPrimary),
+        cursorColor: AppColors.actionPrimary,
+        decoration: InputDecoration(
           labelText: '真实姓名',
           hintText: '请输入姓名，用于现场记录署名',
-          prefixIcon: Icon(Icons.person_outline),
+          labelStyle: TextStyle(color: AppColors.textSecondary),
+          hintStyle: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+          prefixIcon: Icon(Icons.person_outline, color: AppColors.textTertiary),
+          filled: true,
+          fillColor: AppColors.surface,
           counterText: '',
         ),
       ),
@@ -661,10 +715,19 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         textInputAction: TextInputAction.done,
         onSubmitted: (_) => _authenticate(),
         onChanged: (_) => _clearError(),
+        style: AppTextStyles.bodyMd.copyWith(color: AppColors.textPrimary),
+        cursorColor: AppColors.actionPrimary,
         decoration: InputDecoration(
           labelText: '单位验证码',
           hintText: '请输入单位验证码',
-          prefixIcon: const Icon(Icons.password_outlined),
+          labelStyle: TextStyle(color: AppColors.textSecondary),
+          hintStyle: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+          prefixIcon: Icon(
+            Icons.password_outlined,
+            color: AppColors.textTertiary,
+          ),
+          filled: true,
+          fillColor: AppColors.surface,
           counterText: '',
           suffixIcon: IconButton(
             key: const Key('auth-code-visibility-toggle'),
@@ -706,7 +769,13 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             )
           : const Icon(Icons.arrow_forward_rounded),
       label: const Text('认证并继续'),
-      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(52),
+        backgroundColor: AppColors.actionPrimary,
+        foregroundColor: AppColors.onPrimary,
+        disabledBackgroundColor: AppColors.surfaceSubtle,
+        disabledForegroundColor: AppColors.textTertiary,
+      ),
     );
 
     if (isExtremeShort) {
@@ -729,6 +798,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                 label: const Text('先以游客身份体验（单机可用）'),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
+                  foregroundColor: AppColors.textPrimary,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
@@ -776,6 +846,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             label: const Text('先以游客身份体验（单机可用）'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
+              foregroundColor: AppColors.textPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
@@ -851,21 +922,21 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         child: Column(
           children: [
             _buildInfoRow('申请单位', pending['unit_name'] ?? '-'),
-            const Divider(height: 20),
+            Divider(height: 20, color: AppColors.border),
             _buildInfoRow('申请队员', pending['real_name'] ?? '-'),
             if ((pending['station_name'] ?? '').isNotEmpty) ...[
-              const Divider(height: 20),
+              Divider(height: 20, color: AppColors.border),
               _buildInfoRow('所属队站', pending['station_name']!),
             ],
             if ((pending['phone'] ?? '').isNotEmpty) ...[
-              const Divider(height: 20),
+              Divider(height: 20, color: AppColors.border),
               _buildInfoRow('联系电话', pending['phone']!),
             ],
           ],
         ),
       ),
       const SizedBox(height: AppSpacing.s3),
-      const AppNotice(
+      AppNotice(
         kind: AppNoticeKind.info,
         icon: Icons.lightbulb_outline_rounded,
         text: '站长在手机 App【设置 → 入队审批】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
@@ -894,7 +965,13 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             )
           : const Icon(Icons.refresh_rounded),
       label: const Text('检查审批状态'),
-      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(52),
+        backgroundColor: AppColors.actionPrimary,
+        foregroundColor: AppColors.onPrimary,
+        disabledBackgroundColor: AppColors.surfaceSubtle,
+        disabledForegroundColor: AppColors.textTertiary,
+      ),
     );
 
     final guestButton = widget.onEnterGuestMode != null
@@ -905,6 +982,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             label: const Text('先以游客身份体验'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size.fromHeight(48),
+              foregroundColor: AppColors.textPrimary,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
@@ -1077,14 +1155,22 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
               e.incidentNumber == inc.number || e.claimedIncidentId == inc.id);
       if (!hasExternal) {
         final cardData = IncidentCardData.fromIncident(inc);
-        final rawLoc = inc.info['location']?.toString().trim() ?? '';
-        final cleanedLoc = rawLoc.isNotEmpty
-            ? IncidentCardData.cleanLocation(rawLoc)
+        final cleanedLoc = cardData.hasRealLocation
+            ? cardData.locationText
             : '';
-        final fallbackLoc = inc.unresolvedActiveCount > 0
-            ? '${inc.unresolvedActiveCount}人处置中'
-            : '内部自建现场';
+        final terminalLabel = cardData.officialStatus.isNotEmpty
+            ? cardData.officialStatus
+            : '已归队';
+        final fallbackLoc = cardData.isTerminalStatus
+            ? terminalLabel
+            : (inc.unresolvedActiveCount > 0
+                  ? '${inc.unresolvedActiveCount}人处置中'
+                  : '内部自建现场');
         final locationText = cleanedLoc.isNotEmpty ? cleanedLoc : fallbackLoc;
+        final customHighlights =
+            cardData.isTerminalStatus && cleanedLoc.isNotEmpty
+            ? <String>[terminalLabel]
+            : const <String>[];
         final timeText = IncidentCardData.formatTimestampMs(inc.createdAt);
 
         customItems.add(_UnifiedIncidentItem(
@@ -1092,14 +1178,20 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           category: cardData.category,
           eventTitle: inc.displayName,
           districtTag: '自建',
+          districtBg: AppColors.cautionSurface,
+          districtFg: AppColors.cautionText,
           locationText: locationText,
           timeText: timeText,
           forceTags: const [],
-          factHighlights: const [],
-          searchCorpus: '${inc.number} $locationText',
-          badgeText: '加入',
-          badgeBg: const Color(0xFFF39C12).withValues(alpha: 0.15),
-          badgeFg: const Color(0xFFD35400),
+          factHighlights: customHighlights,
+          searchCorpus: [
+            inc.number,
+            locationText,
+            ...customHighlights,
+          ].where((e) => e.trim().isNotEmpty).join(' '),
+          badgeText: '进入',
+          badgeBg: AppColors.actionPrimary.withValues(alpha: 0.12),
+          badgeFg: AppColors.actionPrimary,
           isClaimed: true,
           isCustom: true,
           onTap: () => _select(inc),
@@ -1137,22 +1229,54 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         title: eventTitle,
       );
       final forceTags = ext.compactForceTags;
-      final officialStatus = IncidentCardData.sanitizeOfficialStatus(
-        ext.officialStatus.isNotEmpty ? ext.officialStatus : ext.incidentStatus,
+      final sanitizedOfficial = IncidentCardData.sanitizeOfficialStatus(
+        ext.officialStatus,
       );
+      final officialStatus = sanitizedOfficial.isNotEmpty
+          ? sanitizedOfficial
+          : IncidentCardData.sanitizeOfficialStatus(ext.incidentStatus);
+      final matchedCardData = matched != null
+          ? IncidentCardData.fromIncident(matched)
+          : null;
+      final effectiveOfficialStatus = officialStatus.isNotEmpty
+          ? officialStatus
+          : (matchedCardData?.officialStatus ?? '');
+      final isReturned =
+          IncidentCardData.isTerminalOfficialStatus(effectiveOfficialStatus) ||
+          (matchedCardData?.isTerminalStatus ?? false);
+
       final highlights = <String>[];
       final candidates = ext.factHighlights.isNotEmpty
           ? ext.factHighlights
           : <String>[
               if (ext.incidentLevel.trim().isNotEmpty) ext.incidentLevel.trim(),
-              if (officialStatus.isNotEmpty) officialStatus,
+              if (effectiveOfficialStatus.isNotEmpty) effectiveOfficialStatus,
             ];
       for (final raw in candidates) {
         final item = raw.trim();
         if (item.isEmpty || item == '其他' || item == '处置中') continue;
+        if (isReturned && item.contains('处置')) continue;
         if (eventTitle.contains(item) || highlights.contains(item)) continue;
         highlights.add(item);
         if (highlights.length >= 3) break;
+      }
+
+      if (isReturned) {
+        highlights.removeWhere((t) => t.contains('处置'));
+        final terminalLabel =
+            (effectiveOfficialStatus.isNotEmpty &&
+                !effectiveOfficialStatus.contains('处置'))
+            ? effectiveOfficialStatus
+            : (matchedCardData != null &&
+                      matchedCardData.officialStatus.isNotEmpty &&
+                      !matchedCardData.officialStatus.contains('处置'))
+                  ? matchedCardData.officialStatus
+                  : '已归队';
+        highlights.remove(terminalLabel);
+        highlights.insert(0, terminalLabel);
+      } else if (isClaimed) {
+        highlights.remove('处置中');
+        highlights.insert(0, '处置中');
       }
 
       externalItems.add(_UnifiedIncidentItem(
@@ -1160,6 +1284,8 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         category: category,
         eventTitle: eventTitle,
         districtTag: district,
+        districtBg: AppColors.surfaceSubtle,
+        districtFg: AppColors.textSecondary,
         locationText: locationText,
         timeText: timeText,
         forceTags: forceTags,
@@ -1177,11 +1303,9 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
           ...forceTags,
           ...highlights,
         ].where((e) => e.trim().isNotEmpty).join(' '),
-        badgeText: isClaimed ? '处置中' : '待认领',
-        badgeBg: isClaimed
-            ? AppColors.actionPrimary.withValues(alpha: 0.12)
-            : const Color(0xFF27AE60).withValues(alpha: 0.14),
-        badgeFg: isClaimed ? AppColors.actionPrimary : const Color(0xFF1E8449),
+        badgeText: '进入',
+        badgeBg: AppColors.actionPrimary.withValues(alpha: 0.12),
+        badgeFg: AppColors.actionPrimary,
         isClaimed: isClaimed,
         isCustom: false,
         onTap: () {
@@ -1251,6 +1375,18 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
 
   Widget _buildSearchBar() {
     final busyOrLoading = _busy || widget.externalLoading || widget.externalReorganizing;
+    final actionIconStyle = IconButton.styleFrom(
+      backgroundColor: AppColors.surfaceSubtle,
+      foregroundColor: AppColors.textPrimary,
+      disabledBackgroundColor: AppColors.surfaceSubtle.withValues(alpha: 0.5),
+      disabledForegroundColor: AppColors.textTertiary,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        side: BorderSide(color: AppColors.border),
+      ),
+      minimumSize: const Size(42, 42),
+    );
+
     return Row(
       children: [
         Expanded(
@@ -1259,17 +1395,26 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             child: TextField(
               controller: _searchController,
               onChanged: (v) => setState(() => _searchKeyword = v),
-              style: const TextStyle(fontSize: 14),
+              style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              cursorColor: AppColors.actionPrimary,
               decoration: InputDecoration(
                 hintText: '搜索灾情事件、地点、出动队站或编号…',
                 hintStyle: TextStyle(
                   fontSize: 13.5,
                   color: AppColors.textTertiary,
                 ),
-                prefixIcon: const Icon(Icons.search, size: 20),
+                prefixIcon: Icon(
+                  Icons.search,
+                  size: 20,
+                  color: AppColors.textTertiary,
+                ),
                 suffixIcon: _searchKeyword.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
+                        icon: Icon(
+                          Icons.clear,
+                          size: 18,
+                          color: AppColors.textTertiary,
+                        ),
                         onPressed: () {
                           _searchController.clear();
                           setState(() => _searchKeyword = '');
@@ -1287,6 +1432,13 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                   borderRadius: BorderRadius.circular(AppRadius.md),
                   borderSide: BorderSide(color: AppColors.border),
                 ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  borderSide: BorderSide(
+                    color: AppColors.actionPrimary,
+                    width: 1.5,
+                  ),
+                ),
               ),
             ),
           ),
@@ -1297,38 +1449,34 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             key: const Key('external-reorganize-btn'),
             tooltip: 'AI重新整理警情',
             icon: widget.externalReorganizing
-                ? const SizedBox(
+                ? SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.actionPrimary,
+                    ),
                   )
                 : const Icon(Icons.auto_awesome_outlined, size: 20),
             onPressed: busyOrLoading ? null : _reorganizeExternal,
-            style: IconButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-              ),
-              minimumSize: const Size(42, 42),
-            ),
+            style: actionIconStyle,
           ),
         ],
         const SizedBox(width: 8),
         IconButton.filledTonal(
           tooltip: '刷新派警列表',
           icon: widget.externalLoading
-              ? const SizedBox(
+              ? SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.actionPrimary,
+                  ),
                 )
               : const Icon(Icons.refresh, size: 20),
           onPressed: busyOrLoading ? null : _refreshExternal,
-          style: IconButton.styleFrom(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.md),
-            ),
-            minimumSize: const Size(42, 42),
-          ),
+          style: actionIconStyle,
         ),
       ],
     );
@@ -1353,6 +1501,10 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             label: const Text('新建警情'),
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(52),
+              backgroundColor: AppColors.actionPrimary,
+              foregroundColor: AppColors.onPrimary,
+              disabledBackgroundColor: AppColors.surfaceSubtle,
+              disabledForegroundColor: AppColors.textTertiary,
             ),
           ),
           if (widget.onEnterWithoutIncident != null)
@@ -1364,6 +1516,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                 label: const Text('直接进入 App'),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(48),
+                  foregroundColor: AppColors.textPrimary,
                 ),
               ),
             ),
@@ -1385,6 +1538,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final incidents = widget.activeIncidents;
 
     if (widget.authenticationRequired) {
@@ -1568,10 +1722,13 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
                       child: Row(
                         children: [
-                          const SizedBox(
+                          SizedBox(
                             width: 14,
                             height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.actionPrimary,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Text(
@@ -1600,10 +1757,13 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
                       child: Row(
                         children: [
-                          const SizedBox(
+                          SizedBox(
                             width: 14,
                             height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.actionPrimary,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Text(
@@ -1671,6 +1831,7 @@ class _EmptyIncidentState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Center(
       child: SingleChildScrollView(
         child: Column(
@@ -1682,11 +1843,12 @@ class _EmptyIncidentState extends StatelessWidget {
               color: AppColors.textTertiary.withValues(alpha: 0.9),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '当前没有进行中的警情',
               style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 6),
@@ -1708,6 +1870,8 @@ class _UnifiedIncidentItem {
   final IncidentCategory category;
   final String eventTitle;
   final String districtTag;
+  final Color? districtBg;
+  final Color? districtFg;
   final String locationText;
   final String timeText;
   final List<String> forceTags;
@@ -1725,6 +1889,8 @@ class _UnifiedIncidentItem {
     required this.category,
     required this.eventTitle,
     required this.districtTag,
+    this.districtBg,
+    this.districtFg,
     required this.locationText,
     required this.timeText,
     required this.forceTags,
@@ -1754,6 +1920,7 @@ class _UnifiedIncidentOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final hasExtraChips =
         item.forceTags.isNotEmpty || item.factHighlights.isNotEmpty;
 
@@ -1844,7 +2011,7 @@ class _UnifiedIncidentOption extends StatelessWidget {
                       ),
                       margin: const EdgeInsets.only(right: 6),
                       decoration: BoxDecoration(
-                        color: item.badgeBg,
+                        color: item.districtBg ?? AppColors.surfaceSubtle,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -1852,7 +2019,7 @@ class _UnifiedIncidentOption extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: item.badgeFg,
+                          color: item.districtFg ?? AppColors.textSecondary,
                         ),
                       ),
                     ),
@@ -1934,36 +2101,53 @@ class _UnifiedIncidentOption extends StatelessWidget {
                     for (final highlight in item.factHighlights)
                       Builder(
                         builder: (_) {
-                          final isWarning = _warningHighlightPattern.hasMatch(
-                            highlight,
-                          );
+                          final isInProgress = highlight == '处置中';
+                          final isWarning =
+                              !isInProgress &&
+                              _warningHighlightPattern.hasMatch(highlight);
+                          final Color pillBg;
+                          final Color pillBorder;
+                          final Color pillText;
+                          final double borderWidth;
+                          final FontWeight fontWeight;
+                          if (isInProgress) {
+                            pillBg = AppColors.safeSurface;
+                            pillBorder = AppColors.safe.withValues(alpha: 0.3);
+                            pillText = AppColors.safeText;
+                            borderWidth = 1.0;
+                            fontWeight = FontWeight.w700;
+                          } else if (isWarning) {
+                            pillBg = AppColors.noticeWarningBg;
+                            pillBorder = AppColors.caution.withValues(alpha: 0.45);
+                            pillText = AppColors.noticeWarningFg;
+                            borderWidth = 0.75;
+                            fontWeight = FontWeight.w700;
+                          } else {
+                            pillBg = AppColors.surfaceSubtle;
+                            pillBorder = AppColors.border;
+                            pillText = AppColors.textSecondary;
+                            borderWidth = 0.75;
+                            fontWeight = FontWeight.w500;
+                          }
                           return Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 7,
                               vertical: 2.5,
                             ),
                             decoration: BoxDecoration(
-                              color: isWarning
-                                  ? AppColors.noticeWarningBg
-                                  : AppColors.surfaceSubtle,
+                              color: pillBg,
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(
-                                color: isWarning
-                                    ? AppColors.caution.withValues(alpha: 0.45)
-                                    : AppColors.border,
-                                width: 0.75,
+                                color: pillBorder,
+                                width: borderWidth,
                               ),
                             ),
                             child: Text(
                               highlight,
                               style: TextStyle(
-                                color: isWarning
-                                    ? AppColors.noticeWarningFg
-                                    : AppColors.textSecondary,
+                                color: pillText,
                                 fontSize: 11,
-                                fontWeight: isWarning
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
+                                fontWeight: fontWeight,
                               ),
                             ),
                           );

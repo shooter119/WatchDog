@@ -17,7 +17,7 @@ import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 import '../theme/assistant_avatar.dart';
 
-/// 智能体问答页「辅助」：默认常驻底部五栏导航，页内自带轻量级语音/文字/拍照输入条，AI 解答火场困难。
+/// 智能体问答页「辅助」：默认常驻底部五栏导航，支持底栏中心按钮就地语音提问、左下角悬浮键盘切换文字输入、右下角悬浮拍照识险。
 /// 辅助页语音转写结果只作为本页提问发送，不参与火场语音意图路由。
 class ChatPage extends StatefulWidget {
   final AppController controller;
@@ -43,7 +43,7 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => ChatPageState();
 }
 
-class ChatPageState extends State<ChatPage> {
+class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   late final AudioService _audio = widget.audioService ?? AudioService();
   final ScrollController _scroll = ScrollController();
   final TextEditingController _inputController = TextEditingController();
@@ -57,7 +57,8 @@ class ChatPageState extends State<ChatPage> {
   bool _visionBusy = false;
   bool _recording = false;
   bool _processing = false;
-  bool _textMode = false; // 默认「按住说话」语音条态，点击左侧图标切文字输入态
+  bool _textMode = false; // 默认双悬浮钮态，点击左下角键盘按钮切临时悬浮文字输入条
+  bool _hadKeyboardOpenInTextMode = false;
   String? _transcript;
   RealtimeAsrService? _realtime;
   String? _error;
@@ -80,9 +81,25 @@ class ChatPageState extends State<ChatPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scope = widget.controller.assistantScope;
     widget.controller.addListener(_onScopeChanged);
     _loadHistory();
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (!mounted || !_textMode) return;
+    final insetBottom = View.of(context).viewInsets.bottom;
+    if (insetBottom > 0) {
+      _hadKeyboardOpenInTextMode = true;
+      return;
+    }
+    if (_hadKeyboardOpenInTextMode) {
+      _hadKeyboardOpenInTextMode = false;
+      _toggleInputMode(false);
+    }
   }
 
   void _onScopeChanged() {
@@ -108,6 +125,13 @@ class ChatPageState extends State<ChatPage> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        titleTextStyle: AppTextStyles.title.copyWith(
+          color: AppColors.textPrimary,
+        ),
+        contentTextStyle: AppTextStyles.bodyMd.copyWith(
+          color: AppColors.textSecondary,
+        ),
         title: const Text('历史通用对话'),
         content: SizedBox(
           width: 480,
@@ -121,12 +145,19 @@ class ChatPageState extends State<ChatPage> {
                               '${m.role == 'user' ? '提问' : '回复'}：${m.content}',
                         )
                         .join('\n\n'),
+              style: AppTextStyles.bodyMd.copyWith(
+                color: AppColors.textPrimary,
+                height: 1.5,
+              ),
             ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.actionPrimary,
+            ),
             child: const Text('关闭'),
           ),
         ],
@@ -136,6 +167,7 @@ class ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onScopeChanged);
     _recordingRequested = false;
     _recordingGeneration++;
@@ -159,8 +191,12 @@ class ChatPageState extends State<ChatPage> {
   }
 
   void _toggleInputMode(bool textMode) {
-    setState(() => _textMode = textMode);
     if (textMode) {
+      final keyboardAlreadyOpen = View.of(context).viewInsets.bottom > 0;
+      setState(() {
+        _textMode = true;
+        _hadKeyboardOpenInTextMode = keyboardAlreadyOpen;
+      });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _textMode) {
           _inputFocus.requestFocus();
@@ -168,6 +204,10 @@ class ChatPageState extends State<ChatPage> {
       });
     } else {
       _inputFocus.unfocus();
+      setState(() {
+        _textMode = false;
+        _hadKeyboardOpenInTextMode = false;
+      });
     }
   }
 
@@ -175,6 +215,7 @@ class ChatPageState extends State<ChatPage> {
     final clean = _inputController.text.trim();
     if (clean.isEmpty || _sending || _clearing) return;
     _inputController.clear();
+    _toggleInputMode(false);
     unawaited(submitQuestion(clean));
   }
 
@@ -336,18 +377,35 @@ class ChatPageState extends State<ChatPage> {
     final generation = _requestGeneration;
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
+      backgroundColor: AppColors.surface,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('拍照'),
+              leading: Icon(
+                Icons.camera_alt_outlined,
+                color: AppColors.textPrimary,
+              ),
+              title: Text(
+                '拍照',
+                style: AppTextStyles.bodyMd.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+              ),
               onTap: () => Navigator.pop(context, ImageSource.camera),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('从相册选择'),
+              leading: Icon(
+                Icons.photo_library_outlined,
+                color: AppColors.textPrimary,
+              ),
+              title: Text(
+                '从相册选择',
+                style: AppTextStyles.bodyMd.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+              ),
               onTap: () => Navigator.pop(context, ImageSource.gallery),
             ),
           ],
@@ -427,19 +485,37 @@ class ChatPageState extends State<ChatPage> {
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        titleTextStyle: AppTextStyles.title.copyWith(
+          color: AppColors.textPrimary,
+        ),
         title: const Text('确认图片分析'),
         content: TextField(
           controller: controller,
           maxLines: 3,
-          decoration: const InputDecoration(hintText: '可补充关注重点'),
+          style: AppTextStyles.bodyMd.copyWith(color: AppColors.textPrimary),
+          cursorColor: AppColors.actionPrimary,
+          decoration: InputDecoration(
+            hintText: '可补充关注重点',
+            hintStyle: AppTextStyles.bodyMd.copyWith(
+              color: AppColors.textTertiary,
+            ),
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.textSecondary,
+            ),
             child: const Text('取消'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.actionPrimary,
+              foregroundColor: AppColors.onPrimary,
+            ),
             child: const Text('发送'),
           ),
         ],
@@ -518,6 +594,18 @@ class ChatPageState extends State<ChatPage> {
         _recordingRequested ||
         _recordingStarting) {
       return;
+    }
+    if (_textMode) {
+      _inputFocus.unfocus();
+      if (mounted) {
+        setState(() {
+          _textMode = false;
+          _hadKeyboardOpenInTextMode = false;
+        });
+      } else {
+        _textMode = false;
+        _hadKeyboardOpenInTextMode = false;
+      }
     }
     final generation = ++_recordingGeneration;
     _recordingRequested = true;
@@ -774,15 +862,29 @@ class ChatPageState extends State<ChatPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        titleTextStyle: AppTextStyles.title.copyWith(
+          color: AppColors.textPrimary,
+        ),
+        contentTextStyle: AppTextStyles.bodyMd.copyWith(
+          color: AppColors.textSecondary,
+        ),
         title: const Text('清空问答记录'),
         content: const Text('将删除本场景下与「辅助」的全部对话历史，确定清空？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.textSecondary,
+            ),
             child: const Text('取消'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.destructive,
+              foregroundColor: AppColors.onStatus,
+            ),
             child: const Text('清空'),
           ),
         ],
@@ -814,298 +916,275 @@ class ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      bottom: false,
-      child: Column(
-        children: [
-          _buildHeader(context),
-          if (widget.controller.currentIncident?.info.isNotEmpty == true)
-            Padding(
-              padding: const EdgeInsets.only(
-                left: AppSpacing.s4,
-                right: AppSpacing.s4,
-                bottom: AppSpacing.s2,
-              ),
-              child: Material(
-                color: AppColors.surfaceSubtle,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  side: BorderSide(color: AppColors.border, width: 1),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  key: const Key('chat-incident-context-pill'),
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  onTap: () {
-                    final api = widget.controller.api;
-                    final incident = widget.controller.currentIncident;
-                    if (api != null && incident != null) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => IncidentDetailsPage(
-                            api: api,
-                            incident: incident,
-                            controller: widget.controller,
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 48),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.s4,
-                        vertical: AppSpacing.s2,
+    Theme.of(context);
+    final keyboardOpen = View.of(context).viewInsets.bottom > 0;
+    if (_textMode && keyboardOpen && !_hadKeyboardOpenInTextMode) {
+      _hadKeyboardOpenInTextMode = true;
+    }
+    final busy = _sending || _visionBusy || _clearing;
+    final floatBottom = widget.bottomNavClearance + AppSpacing.s3;
+    final composerBottom = keyboardOpen
+        ? AppSpacing.s2
+        : widget.bottomNavClearance + AppSpacing.s2;
+
+    return KeyedSubtree(
+      key: ValueKey(AppColors.palette.id),
+      child: SafeArea(
+        bottom: false,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Column(
+              children: [
+                _buildHeader(context),
+                if (widget.controller.currentIncident?.info.isNotEmpty == true)
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: AppSpacing.s4,
+                      right: AppSpacing.s4,
+                      bottom: AppSpacing.s2,
+                    ),
+                    child: Material(
+                      color: AppColors.surfaceSubtle,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        side: BorderSide(color: AppColors.border, width: 1),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            size: 16,
-                            color: AppColors.actionPrimary,
-                          ),
-                          const SizedBox(width: AppSpacing.s2),
-                          Flexible(
-                            child: Text(
-                              '已结合当前警情资料 · 查看背景',
-                              style: AppTextStyles.caption.copyWith(
-                                color: AppColors.actionPrimary,
-                                fontWeight: FontWeight.w600,
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        key: const Key('chat-incident-context-pill'),
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                        onTap: () {
+                          final api = widget.controller.api;
+                          final incident = widget.controller.currentIncident;
+                          if (api != null && incident != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => IncidentDetailsPage(
+                                  api: api,
+                                  incident: incident,
+                                  controller: widget.controller,
+                                ),
                               ),
+                            );
+                          }
+                        },
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 48),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.s4,
+                              vertical: AppSpacing.s2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 16,
+                                  color: AppColors.actionPrimary,
+                                ),
+                                const SizedBox(width: AppSpacing.s2),
+                                Flexible(
+                                  child: Text(
+                                    '已结合当前警情资料 · 查看背景',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.actionPrimary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.s1),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 18,
+                                  color: AppColors.textTertiary,
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.s1),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            size: 18,
-                            color: AppColors.textTertiary,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
+                if (_recording) _buildRecordingHint(),
+                Expanded(child: _buildBody()),
+              ],
+            ),
+            if (!_textMode) ...[
+              Positioned(
+                left: AppSpacing.s4,
+                bottom: floatBottom,
+                child: _buildFloatingActionButton(
+                  key: const Key('chat-mode-toggle'),
+                  tooltip: '文字输入',
+                  onPressed: _recording || _processing
+                      ? null
+                      : () => _toggleInputMode(true),
+                  icon: Icon(
+                    Icons.keyboard_alt_outlined,
+                    size: 22,
+                    color: _recording || _processing
+                        ? AppColors.textTertiary
+                        : AppColors.textPrimary,
+                  ),
                 ),
               ),
-            ),
-          if (_recording) _buildRecordingHint(),
-          Expanded(child: _buildBody()),
-          _buildInputBar(context),
-        ],
+              Positioned(
+                right: AppSpacing.s4,
+                bottom: floatBottom,
+                child: _buildFloatingActionButton(
+                  key: const Key('chat-vision-button'),
+                  tooltip: '拍照分析',
+                  onPressed: busy || _recording ? null : _pickVisionImage,
+                  icon: _visionBusy
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.actionPrimary,
+                          ),
+                        )
+                      : Icon(
+                          Icons.camera_alt_outlined,
+                          size: 22,
+                          color: busy || _recording
+                              ? AppColors.textTertiary
+                              : AppColors.actionPrimary,
+                        ),
+                ),
+              ),
+            ] else
+              Positioned(
+                left: AppSpacing.s4,
+                right: AppSpacing.s4,
+                bottom: composerBottom,
+                child: _buildTextComposer(context),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildInputBar(BuildContext context) {
-    final busy = _sending || _visionBusy || _clearing;
-    // Scaffold 会消费底部 viewInsets，因此直接读取原生 View 底部内嵌以准确感知软键盘状态。
-    final keyboardOpen = View.of(context).viewInsets.bottom > 0;
-    final extraBottom = keyboardOpen ? 0.0 : widget.bottomNavClearance;
-    final bar = Container(
-      key: const Key('chat-input-bar'),
+  Widget _buildFloatingActionButton({
+    required Key key,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    required Widget icon,
+  }) {
+    return Container(
+      key: key,
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.border, width: 1),
+        boxShadow: AppShadow.card,
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        icon: icon,
+      ),
+    );
+  }
+
+  Widget _buildTextComposer(BuildContext context) {
+    return Container(
+      key: const Key('chat-text-composer'),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s2,
-        vertical: AppSpacing.s2,
+        vertical: AppSpacing.s1,
       ),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.border, width: 1)),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        border: Border.all(color: AppColors.border, width: 1),
+        boxShadow: AppShadow.card,
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           IconButton(
-            key: const Key('chat-mode-toggle'),
-            onPressed: _recording || _processing
-                ? null
-                : () => _toggleInputMode(!_textMode),
-            tooltip: _textMode ? '切换为语音提问' : '切换为文字输入',
+            key: const Key('chat-close-text-mode'),
+            onPressed: () => _toggleInputMode(false),
+            tooltip: '收起文字输入',
             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-            icon: Icon(
-              _textMode ? Icons.mic_none_rounded : Icons.keyboard_alt_outlined,
-              size: 24,
-            ),
             color: AppColors.textSecondary,
+            icon: const Icon(Icons.keyboard_hide_outlined, size: 22),
           ),
-          const SizedBox(width: AppSpacing.s1),
           Expanded(
-            child: _textMode
-                ? ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 108),
-                    child: TextField(
-                      key: const Key('chat-text-field'),
-                      controller: _inputController,
-                      focusNode: _inputFocus,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _submitTextInput(),
-                      decoration: const InputDecoration(
-                        hintText: '输入现场问题…',
-                        isDense: true,
-                      ),
-                    ),
-                  )
-                : _buildHoldToTalkBar(context),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 112),
+              child: TextField(
+                key: const Key('chat-text-field'),
+                controller: _inputController,
+                focusNode: _inputFocus,
+                minLines: 1,
+                maxLines: 4,
+                style: AppTextStyles.bodyMd.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+                cursorColor: AppColors.actionPrimary,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _submitTextInput(),
+                decoration: InputDecoration(
+                  hintText: '输入现场问题…',
+                  hintStyle: AppTextStyles.bodyMd.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s2,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: AppSpacing.s1),
-          IconButton(
-            key: const Key('chat-vision-button'),
-            onPressed: busy || _recording ? null : _pickVisionImage,
-            tooltip: '拍照分析',
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-            icon: _visionBusy
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.camera_alt_outlined, size: 24),
-            color: AppColors.textSecondary,
-          ),
-          if (_textMode) ...[
-            const SizedBox(width: AppSpacing.s1),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: _inputController,
-              builder: (context, value, _) {
-                final canSend =
-                    !_sending && !_clearing && value.text.trim().isNotEmpty;
-                return FilledButton(
-                  key: const Key('chat-send-button'),
-                  onPressed: canSend ? _submitTextInput : null,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(48, 48),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _inputController,
+            builder: (context, value, _) {
+              final canSend =
+                  !_sending && !_clearing && value.text.trim().isNotEmpty;
+              return FilledButton(
+                key: const Key('chat-send-button'),
+                onPressed: canSend ? _submitTextInput : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.actionPrimary,
+                  foregroundColor: AppColors.onPrimary,
+                  minimumSize: const Size(48, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
-                  child: _sending
-                      ? SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.onPrimary,
-                          ),
-                        )
-                      : const Icon(Icons.send_rounded, size: 20),
-                );
-              },
-            ),
-          ],
+                ),
+                child: _sending
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.onPrimary,
+                        ),
+                      )
+                    : const Icon(Icons.send_rounded, size: 20),
+              );
+            },
+          ),
         ],
-      ),
-    );
-    if (extraBottom <= 0) return bar;
-    return ColoredBox(
-      color: AppColors.surface,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: extraBottom),
-        child: bar,
-      ),
-    );
-  }
-
-  Widget _buildHoldToTalkBar(BuildContext context) {
-    final canRecord = !_processing && !_sending && !_clearing;
-    final label = _recording
-        ? '正在聆听 · 松开发送'
-        : _processing
-        ? '正在识别语音…'
-        : _sending
-        ? '正在生成回复，请稍候…'
-        : '按住向水元素提问';
-    final bgColor = _recording ? AppColors.voice : AppColors.surfaceSubtle;
-    final borderColor = _recording ? AppColors.voice : AppColors.border;
-    final fgColor = _recording ? AppColors.onPrimary : AppColors.textPrimary;
-    final iconColor = _recording ? AppColors.onPrimary : AppColors.voice;
-
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        key: const Key('chat-hold-to-talk'),
-        onTap: () {
-          if (_recording) {
-            unawaited(finishRecording());
-            return;
-          }
-          if (!canRecord) return;
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              const SnackBar(
-                content: Text('请按住说话提问，或点左侧键盘输入文字'),
-                duration: Duration(seconds: 1),
-              ),
-            );
-        },
-        onLongPressStart: canRecord
-            ? (_) {
-                HapticFeedback.mediumImpact();
-                unawaited(beginRecording());
-              }
-            : null,
-        onLongPressEnd: (_) {
-          unawaited(finishRecording());
-        },
-        onLongPressCancel: () {
-          if (_recording || _recordingRequested) {
-            unawaited(finishRecording());
-          }
-        },
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 48),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s3,
-            vertical: AppSpacing.s2,
-          ),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: borderColor, width: 1),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_processing)
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.textSecondary,
-                  ),
-                )
-              else
-                Icon(
-                  _recording ? Icons.graphic_eq_rounded : Icons.mic_none_rounded,
-                  size: 20,
-                  color: iconColor,
-                ),
-              const SizedBox(width: AppSpacing.s2),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.label.copyWith(
-                    color: _recording
-                        ? fgColor
-                        : canRecord
-                        ? fgColor
-                        : AppColors.textTertiary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1137,7 +1216,7 @@ class ChatPageState extends State<ChatPage> {
             : '录音中 · 最长 60 秒 · 已录 $_recordingSeconds 秒',
         textAlign: TextAlign.center,
         style: AppTextStyles.caption.copyWith(
-          color: warning ? AppColors.caution : AppColors.voice,
+          color: warning ? AppColors.cautionText : AppColors.voice,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -1189,9 +1268,9 @@ class ChatPageState extends State<ChatPage> {
     if (_messages.isEmpty) {
       return Column(
         children: [
-          Expanded(child: _buildWelcome()),
           if (_recording || (_processing && _transcript != null))
             _buildTranscriptPreview(),
+          Expanded(child: _buildWelcome()),
         ],
       );
     }
@@ -1212,11 +1291,11 @@ class ChatPageState extends State<ChatPage> {
         Expanded(
           child: ListView.builder(
             controller: _scroll,
-            padding: const EdgeInsets.fromLTRB(
+            padding: EdgeInsets.fromLTRB(
               AppSpacing.s4,
               AppSpacing.s3,
               AppSpacing.s4,
-              AppSpacing.s6,
+              80 + widget.bottomNavClearance,
             ),
             itemCount: _messages.length,
             itemBuilder: (context, i) {
@@ -1284,11 +1363,11 @@ class ChatPageState extends State<ChatPage> {
 
   Widget _buildWelcome() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         AppSpacing.s4,
         AppSpacing.s1,
         AppSpacing.s4,
-        AppSpacing.s2,
+        80 + widget.bottomNavClearance,
       ),
       children: [
         Padding(
@@ -1401,6 +1480,7 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final isUser = message.isUser;
     final split = isUser
         ? (message.content, null)
@@ -1489,13 +1569,37 @@ class _MessageBubble extends StatelessWidget {
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.textPrimary,
                                 ),
-                                strong: TextStyle(
+                                strong: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.textPrimary,
                                 ),
-                                em: TextStyle(
+                                em: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
                                   fontStyle: FontStyle.italic,
                                   color: AppColors.textPrimary,
+                                ),
+                                del: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
+                                  color: AppColors.textTertiary,
+                                  decoration: TextDecoration.lineThrough,
+                                ),
+                                a: AppTextStyles.bodyMd.copyWith(
+                                  height: 1.5,
+                                  color: AppColors.noteInfo,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: AppColors.noteInfo,
+                                ),
+                                tableHead: AppTextStyles.label.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                                tableBody: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textPrimary,
+                                ),
+                                tableBorder: TableBorder.all(
+                                  color: AppColors.border,
+                                  width: 1,
                                 ),
                                 blockquote: AppTextStyles.bodyMd.copyWith(
                                   height: 1.5,
@@ -1645,6 +1749,7 @@ class _ThinkingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
       child: Row(
@@ -1675,6 +1780,7 @@ class _VisionCallout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return AppCard(
       key: const Key('chat-vision-callout'),
       onTap: onTap,
@@ -1751,12 +1857,13 @@ class _SampleQuestion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = AppTextStyles.label.copyWith(
-      fontWeight: FontWeight.w700,
-      color: AppColors.textPrimary,
-    );
     return LayoutBuilder(
       builder: (context, constraints) {
+        Theme.of(context);
+        final style = AppTextStyles.label.copyWith(
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        );
         // 三条预设提问按最长标题统一高度，大字与窄屏下也不截断文字。
         final textWidth = max(1.0, constraints.maxWidth - 96);
         var textHeight = 0.0;

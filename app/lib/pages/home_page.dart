@@ -1322,9 +1322,13 @@ class HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.controller.clockTick,
-      builder: (context, _) => _buildContent(context),
+    Theme.of(context);
+    return KeyedSubtree(
+      key: ValueKey(AppColors.palette.id),
+      child: AnimatedBuilder(
+        animation: widget.controller.clockTick,
+        builder: (context, _) => _buildContent(context),
+      ),
     );
   }
 
@@ -1468,9 +1472,11 @@ class HomePageState extends State<HomePage> {
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
+                    Text(
                       '警情处置',
-                      style: AppTextStyles.h1,
+                      style: AppTextStyles.h1.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1486,10 +1492,12 @@ class HomePageState extends State<HomePage> {
               : Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         '警情处置',
-                        style: AppTextStyles.h1,
+                        style: AppTextStyles.h1.copyWith(
+                          color: AppColors.textPrimary,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -3107,7 +3115,7 @@ class HomePageState extends State<HomePage> {
             labelText: '姓名',
             prefixIcon: Icon(Icons.person_outline, size: 20),
           ),
-          style: const TextStyle(fontSize: 16),
+          style: TextStyle(fontSize: 16, color: AppColors.textPrimary),
         );
         final pressureField = TextField(
           controller: ed.pressureCtrl,
@@ -3117,7 +3125,7 @@ class HomePageState extends State<HomePage> {
             labelText: '压力',
             suffixText: 'MPa',
           ),
-          style: const TextStyle(fontSize: 16),
+          style: TextStyle(fontSize: 16, color: AppColors.textPrimary),
         );
 
         final Widget fieldsContent = compact
@@ -3737,47 +3745,7 @@ class _NoIncidentTaskBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleStyle = AppTextStyles.bodyLg.copyWith(
-      color: AppColors.textPrimary,
-      fontWeight: FontWeight.w800,
-    );
-    final summary = Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: AppSpacing.s10,
-          height: AppSpacing.s10,
-          decoration: BoxDecoration(
-            color: AppColors.incidentFireSurface,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
-          child: Icon(
-            Icons.local_fire_department_outlined,
-            color: AppColors.incidentFire,
-            size: 24,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.s3),
-        Expanded(
-          child: Text(
-            _title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: titleStyle,
-          ),
-        ),
-      ],
-    );
-    final action = OutlinedButton.icon(
-      key: const Key('choose-incident-from-home'),
-      onPressed: onChooseIncident,
-      icon: const Icon(Icons.add_circle_outline),
-      label: const Text(_actionLabel),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.actionPrimary,
-        minimumSize: const Size(0, 48),
-      ),
-    );
+    Theme.of(context);
     return AppCard(
       key: const Key('no-incident-card'),
       padding: const EdgeInsets.symmetric(
@@ -3787,6 +3755,48 @@ class _NoIncidentTaskBar extends StatelessWidget {
       radius: AppRadius.lg,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          Theme.of(context);
+          final titleStyle = AppTextStyles.bodyLg.copyWith(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+          );
+          final summary = Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: AppSpacing.s10,
+                height: AppSpacing.s10,
+                decoration: BoxDecoration(
+                  color: AppColors.incidentFireSurface,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Icon(
+                  Icons.local_fire_department_outlined,
+                  color: AppColors.incidentFire,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s3),
+              Expanded(
+                child: Text(
+                  _title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: titleStyle,
+                ),
+              ),
+            ],
+          );
+          final action = OutlinedButton.icon(
+            key: const Key('choose-incident-from-home'),
+            onPressed: onChooseIncident,
+            icon: const Icon(Icons.add_circle_outline),
+            label: const Text(_actionLabel),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.actionPrimary,
+              minimumSize: const Size(0, 48),
+            ),
+          );
           final stacked = !_fitsBeside(context, constraints.maxWidth, titleStyle);
           if (stacked) {
             return Column(
@@ -4376,19 +4386,13 @@ class _LocationTimeLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final locStyle = AppTextStyles.caption.copyWith(
-      color: mutedLocation ? AppColors.textTertiary : AppColors.textSecondary,
-      fontWeight: FontWeight.w500,
-      height: 1.35,
-    );
-    final timeStyle = AppTextStyles.caption.copyWith(
-      color: AppColors.textTertiary,
-      fontWeight: FontWeight.w600,
-      fontFeatures: const [FontFeature.tabularFigures()],
-      height: 1.35,
-    );
-
+    Theme.of(context);
     if (time.isEmpty) {
+      final locStyle = AppTextStyles.caption.copyWith(
+        color: mutedLocation ? AppColors.textTertiary : AppColors.textSecondary,
+        fontWeight: FontWeight.w500,
+        height: 1.35,
+      );
       return AntiOrphanText(
         text: location,
         style: locStyle,
@@ -4398,6 +4402,20 @@ class _LocationTimeLine extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        Theme.of(context);
+        final locStyle = AppTextStyles.caption.copyWith(
+          color: mutedLocation
+              ? AppColors.textTertiary
+              : AppColors.textSecondary,
+          fontWeight: FontWeight.w500,
+          height: 1.35,
+        );
+        final timeStyle = AppTextStyles.caption.copyWith(
+          color: AppColors.textTertiary,
+          fontWeight: FontWeight.w600,
+          fontFeatures: const [FontFeature.tabularFigures()],
+          height: 1.35,
+        );
         final maxWidth = constraints.maxWidth;
         final combinedSpan = TextSpan(
           children: [

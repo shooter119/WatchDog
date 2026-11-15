@@ -243,7 +243,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
                 ),
                 children: [
                   Text(
-                    '分享的是纯文本和 HTTPS 高德链接。微信收到后可点击链接查看位置或驾车路线，不保证直接唤起高德 App。',
+                    '分享的是纯文本与单个高德位置链接，微信收到后点击可查看位置并在页面内发起驾车导航（支持时自动尝试拉起高德 App）。',
                     style: AppTextStyles.label.copyWith(
                       height: 1.5,
                       color: AppColors.textSecondary,
@@ -458,9 +458,9 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         AppNotice(
           kind: AppNoticeKind.info,
           icon: Icons.info_outline,
-          text: draft.navigationUri == null
-              ? '地址或坐标转换未完成，仍可分享 WGS84 查看位置；驾车导航已隐藏。'
-              : '地址查询未完成，但高德驾车导航仍可用。',
+          text: !draft.hasAmapLocation
+              ? '地址或坐标转换未完成，已切换为 WGS84 坐标，仍可分享查看位置。'
+              : '地址查询未完成，但高德位置链接仍可用。',
         ),
       ],
       const SizedBox(height: AppSpacing.s3),

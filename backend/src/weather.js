@@ -145,7 +145,7 @@ function parseDrivingRoute(payload) {
   const rawPaths = payload.route?.paths;
   if (!Array.isArray(rawPaths) || rawPaths.length === 0) return [];
 
-  return rawPaths.slice(0, 3).map((path) => {
+  return rawPaths.slice(0, 4).map((path) => {
     const strategy = strOrEmpty(path?.strategy) || '推荐路线';
     const distanceMeters = Math.max(0, Math.round(Number(path?.distance) || 0));
     const durationSeconds = Math.max(0, Math.round(Number(path?.duration) || 0));
@@ -276,6 +276,218 @@ function parseDrivingRoute(payload) {
       },
       congestedSegments,
       steps,
+    };
+  });
+}
+
+const DRIVING_STRATEGIES = [
+  { strategy: 10, optionLabel: null },
+  { strategy: 19, optionLabel: '高速优先' },
+  { strategy: 12, optionLabel: '躲避拥堵' },
+  { strategy: 13, optionLabel: '不走高速' },
+  { strategy: 14, optionLabel: '少收费' },
+];
+
+const OPTION_LABEL_PRIORITY = ['高速优先', '躲避拥堵', '不走高速', '少收费'];
+const FALLBACK_ROUTE_NAMES = ['备选路线', '备选路线二', '备选路线三', '备选路线四'];
+
+/** 判断路线是否真正包含高速路段或高速收费特征，防止纯城区路线误标高速。 */
+function hasHighway(route) {
+  if (!route) return false;
+  if ((Number(route.tollDistanceMeters) || 0) > 0) return true;
+  if ((Number(route.tolls) || 0) > 0) return true;
+  const roads = Array.isArray(route.roads) ? route.roads : [];
+  if (roads.some((r) => /高速|[GS]\d{1,4}/i.test(String(r || '')))) return true;
+  const steps = Array.isArray(route.steps) ? route.steps : [];
+  return steps.some(
+    (s) => /高速/.test(s?.road || '') || /高速/.test(s?.instruction || ''),
+  );
+}
+
+function congestionMeters(route) {
+  const s = route?.trafficSummary;
+  if (!s) return 0;
+  return (Number(s.jamMeters) || 0) + (Number(s.severeJamMeters) || 0);
+}
+
+/** 生成物理路线规范签名：优先 roads 列表，为空时回退 steps，结合 200 米粒度里程及收费标记。 */
+function routeSignature(route) {
+  const roads = Array.isArray(route?.roads)
+    ? route.roads.map((r) => strOrEmpty(r)).filter(Boolean)
+    : [];
+  const pathTokens = roads.length > 0
+    ? roads
+    : (Array.isArray(route?.steps) ? route.steps : [])
+        .map((s) => strOrEmpty(s?.road) || strOrEmpty(s?.instruction) || `${strOrEmpty(s?.action)}#${Number(s?.distanceMeters) || 0}`)
+        .filter(Boolean);
+  const distBucket = Math.round((Number(route?.distanceMeters) || 0) / 200);
+  const hasToll = (Number(route?.tollDistanceMeters) || 0) > 0 ? 1 : 0;
+  const prefix = roads.length > 0 ? 'r' : 's';
+  return `${prefix}:${pathTokens.join('|')}#d:${distBucket}#t:${hasToll}`;
+}
+
+function isBetterRouteSnapshot(candidate, current) {
+  if (candidate.durationSeconds !== current.durationSeconds) {
+    return candidate.durationSeconds < current.durationSeconds;
+  }
+  if (candidate.distanceMeters !== current.distanceMeters) {
+    return candidate.distanceMeters < current.distanceMeters;
+  }
+  return candidate.trafficLights < current.trafficLights;
+}
+
+function normalizeRawStrategy(raw) {
+  const s = strOrEmpty(raw);
+  if (!s) return null;
+  if (s === '速度最快' || s === '时间最短' || s === '推荐路线' || s === '备选路线') {
+    return null;
+  }
+  if (s === '费用较低' || s === '避免收费' || s === '少收费') return '少收费';
+  if (s === '避免高速' || s === '不走高速') return '不走高速';
+  if (s === '避开拥堵' || s === '躲避拥堵') return '躲避拥堵';
+  if (s === '路程最短' || s === '距离最短') return '距离最短';
+  return s;
+}
+
+function isLabelAuthentic(entry, label, ctx) {
+  if (label === '高速优先') return hasHighway(entry.route);
+  if (label === '不走高速') return !hasHighway(entry.route);
+  if (label === '少收费') return ctx.maxTolls > 0 && entry.route.tolls < ctx.maxTolls;
+  if (label === '躲避拥堵') {
+    return entry.strategyCodes.has(12) ||
+      (ctx.firstCongestionMeters > 0 && congestionMeters(entry.route) < ctx.firstCongestionMeters);
+  }
+  if (label === '距离最短') {
+    return entry.route.distanceMeters === ctx.minDistance &&
+      entry.route.distanceMeters < ctx.firstRoute.distanceMeters;
+  }
+  return true;
+}
+
+/** 合并多策略驾车结果：物理去重、按耗时升序截取前 4 条、校验特征真实性并赋予唯一标签。 */
+function mergeAndRankDrivingRoutes(strategyResults) {
+  if (!Array.isArray(strategyResults) || strategyResults.length === 0) return [];
+
+  const mergedMap = new Map();
+  for (const item of strategyResults) {
+    if (!item || !Array.isArray(item.routes)) continue;
+    const { strategyCode, optionLabel, routes } = item;
+    for (const route of routes) {
+      if (!route) continue;
+      const sig = routeSignature(route);
+      const existing = mergedMap.get(sig);
+      if (!existing) {
+        mergedMap.set(sig, {
+          route,
+          optionLabels: new Set(optionLabel ? [optionLabel] : []),
+          strategyCodes: new Set(strategyCode !== undefined && strategyCode !== null ? [strategyCode] : []),
+          rawStrategies: route.strategy ? [route.strategy] : [],
+        });
+      } else {
+        if (isBetterRouteSnapshot(route, existing.route)) {
+          existing.route = route;
+        }
+        if (optionLabel) existing.optionLabels.add(optionLabel);
+        if (strategyCode !== undefined && strategyCode !== null) {
+          existing.strategyCodes.add(strategyCode);
+        }
+        if (route.strategy && !existing.rawStrategies.includes(route.strategy)) {
+          existing.rawStrategies.push(route.strategy);
+        }
+      }
+    }
+  }
+
+  const entries = [...mergedMap.values()].sort((a, b) => {
+    const ra = a.route;
+    const rb = b.route;
+    return (ra.durationSeconds - rb.durationSeconds) ||
+      (ra.distanceMeters - rb.distanceMeters) ||
+      (ra.trafficLights - rb.trafficLights);
+  });
+
+  const topEntries = entries.slice(0, 4);
+  if (topEntries.length === 0) return [];
+
+  const firstRoute = topEntries[0].route;
+  const ctx = {
+    firstRoute,
+    firstCongestionMeters: congestionMeters(firstRoute),
+    maxTolls: Math.max(0, ...topEntries.map((e) => Number(e.route.tolls) || 0)),
+    minDistance: Math.min(...topEntries.map((e) => Number(e.route.distanceMeters) || 0)),
+  };
+
+  const usedNames = new Set();
+  return topEntries.map((entry, index) => {
+    let assignedName = '';
+    if (index === 0) {
+      assignedName = '时间最短';
+    } else {
+      for (const candidateLabel of OPTION_LABEL_PRIORITY) {
+        if (
+          entry.optionLabels.has(candidateLabel) &&
+          !usedNames.has(candidateLabel) &&
+          isLabelAuthentic(entry, candidateLabel, ctx)
+        ) {
+          assignedName = candidateLabel;
+          break;
+        }
+      }
+
+      if (!assignedName) {
+        for (const raw of entry.rawStrategies) {
+          const mapped = normalizeRawStrategy(raw);
+          if (
+            mapped &&
+            !usedNames.has(mapped) &&
+            isLabelAuthentic(entry, mapped, ctx)
+          ) {
+            assignedName = mapped;
+            break;
+          }
+        }
+      }
+
+      if (!assignedName) {
+        if (
+          !usedNames.has('距离最短') &&
+          entry.route.distanceMeters === ctx.minDistance &&
+          entry.route.distanceMeters < firstRoute.distanceMeters
+        ) {
+          assignedName = '距离最短';
+        } else if (
+          !usedNames.has('躲避拥堵') &&
+          ctx.firstCongestionMeters > 0 &&
+          congestionMeters(entry.route) < ctx.firstCongestionMeters
+        ) {
+          assignedName = '躲避拥堵';
+        } else if (
+          !usedNames.has('不走高速') &&
+          !hasHighway(entry.route) &&
+          hasHighway(firstRoute)
+        ) {
+          assignedName = '不走高速';
+        } else if (
+          !usedNames.has('少收费') &&
+          ctx.maxTolls > 0 &&
+          entry.route.tolls < ctx.maxTolls &&
+          entry.route.tolls < firstRoute.tolls
+        ) {
+          assignedName = '少收费';
+        }
+      }
+
+      if (!assignedName) {
+        assignedName =
+          FALLBACK_ROUTE_NAMES.find((name) => !usedNames.has(name)) ||
+          `备选路线${index + 1}`;
+      }
+    }
+
+    usedNames.add(assignedName);
+    return {
+      ...entry.route,
+      strategy: assignedName,
     };
   });
 }
@@ -830,9 +1042,23 @@ async function lookupRouteTraffic({
     if (cachedRoutes) {
       routes = cachedRoutes;
     } else {
-      const url = `${AMAP_BASE}/v3/direction/driving?origin=${originLonGcj},${originLatGcj}` +
-        `&destination=${destLon},${destLat}&extensions=all&strategy=10&output=JSON&key=${encodeURIComponent(key)}`;
-      routes = parseDrivingRoute(await fetchJson(url, fetchImpl));
+      const strategyResults = await Promise.allSettled(
+        DRIVING_STRATEGIES.map(async ({ strategy, optionLabel }) => {
+          const url = `${AMAP_BASE}/v3/direction/driving?origin=${originLonGcj},${originLatGcj}` +
+            `&destination=${destLon},${destLat}&extensions=all&strategy=${strategy}&output=JSON&key=${encodeURIComponent(key)}`;
+          const payload = await fetchJson(url, fetchImpl);
+          return {
+            strategyCode: strategy,
+            optionLabel,
+            routes: parseDrivingRoute(payload),
+          };
+        }),
+      );
+      routes = mergeAndRankDrivingRoutes(
+        strategyResults
+          .filter((item) => item.status === 'fulfilled' && item.value)
+          .map((item) => item.value),
+      );
       if (routes.length > 0) rtStore.set(routeKey, routes, now);
     }
   }
@@ -872,6 +1098,10 @@ module.exports = {
   parseWeather,
   parseForecast,
   parseDrivingRoute,
+  DRIVING_STRATEGIES,
+  hasHighway,
+  routeSignature,
+  mergeAndRankDrivingRoutes,
   parseCandidatesFromTips,
   resolveUnitJurisdiction,
   cleanUnitJurisdictionName,

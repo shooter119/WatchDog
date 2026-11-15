@@ -37,6 +37,7 @@ ThemeData buildAppTheme([AppPalette? palette]) {
         secondary: p.caution,
         onSecondary: p.textPrimary,
         onSurface: p.textPrimary,
+        onSurfaceVariant: p.textSecondary,
         surface: p.surface,
         surfaceContainerHighest: p.surfaceSubtle,
         outline: p.border,
@@ -47,9 +48,15 @@ ThemeData buildAppTheme([AppPalette? palette]) {
     brightness: p.brightness,
     splashFactory: InkRipple.splashFactory,
     colorScheme: scheme,
+    canvasColor: p.surface,
     scaffoldBackgroundColor: p.background,
     fontFamily: AppFonts.family,
     fontFamilyFallback: AppFonts.fallback,
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: p.actionPrimary,
+      selectionColor: p.actionPrimary.withValues(alpha: 0.24),
+      selectionHandleColor: p.actionPrimary,
+    ),
     appBarTheme: AppBarTheme(
       backgroundColor: p.surface,
       foregroundColor: p.textPrimary,
@@ -82,9 +89,13 @@ ThemeData buildAppTheme([AppPalette? palette]) {
       fillColor: p.surface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       labelStyle: TextStyle(color: p.textSecondary),
-      hintStyle: TextStyle(color: p.textTertiary, fontSize: 13),
-      prefixIconColor: p.textTertiary,
-      suffixIconColor: p.textTertiary,
+      floatingLabelStyle: TextStyle(color: p.textSecondary),
+      hintStyle: TextStyle(color: p.textSecondary, fontSize: 13),
+      helperStyle: TextStyle(color: p.textSecondary),
+      prefixStyle: TextStyle(color: p.textPrimary),
+      suffixStyle: TextStyle(color: p.textSecondary),
+      prefixIconColor: p.textSecondary,
+      suffixIconColor: p.textSecondary,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
         borderSide: BorderSide(
@@ -166,20 +177,27 @@ ThemeData buildAppTheme([AppPalette? palette]) {
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: p.surface,
+      surfaceTintColor: Colors.transparent,
       actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.xl),
       ),
-      titleTextStyle: TextStyle(
-        color: p.textPrimary,
-        fontSize: 19,
-        fontWeight: FontWeight.w800,
-      ),
-      contentTextStyle: TextStyle(
-        color: p.textSecondary,
-        fontSize: 15,
-        height: 1.4,
-      ),
+      titleTextStyle: AppTextStyles.title.copyWith(color: p.textPrimary),
+      contentTextStyle: AppTextStyles.bodyMd.copyWith(color: p.textSecondary),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: p.surface,
+      modalBackgroundColor: p.surface,
+      surfaceTintColor: Colors.transparent,
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: p.surface,
+      surfaceTintColor: Colors.transparent,
+      textStyle: AppTextStyles.bodyMd.copyWith(color: p.textPrimary),
+    ),
+    listTileTheme: ListTileThemeData(
+      textColor: p.textPrimary,
+      iconColor: p.textSecondary,
     ),
     dividerTheme: DividerThemeData(color: p.border),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: p.actionPrimary),

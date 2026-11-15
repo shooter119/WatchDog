@@ -18,6 +18,7 @@ class AssistantAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Container(
       margin: margin,
       width: size,

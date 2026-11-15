@@ -3140,7 +3140,7 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('警情浮层加入按钮回调选择流程', (tester) async {
+    testWidgets('警情浮层进入按钮回调选择流程', (tester) async {
       var selected = false;
       const incident = Incident(
         id: 'gate-incident',
@@ -3160,7 +3160,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.text('加入'));
+      await tester.tap(find.text('进入'));
       await tester.pumpAndSettle();
       expect(selected, isTrue);
     });
@@ -3190,7 +3190,7 @@ void main() {
       expect(tester.widget<FilledButton>(createButton).onPressed, isNotNull);
     });
 
-    testWidgets('警情浮层父级点击排除重复语义但保留加入按钮', (tester) async {
+    testWidgets('警情浮层父级点击排除重复语义但保留进入按钮', (tester) async {
       const incident = Incident(
         id: 'semantic-incident',
         number: '2026-8-25-2',
@@ -3215,7 +3215,7 @@ void main() {
       );
       expect(row, findsOneWidget);
       expect(tester.widget<InkWell>(row).excludeFromSemantics, isTrue);
-      expect(find.text('加入'), findsOneWidget);
+      expect(find.text('进入'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -4110,18 +4110,28 @@ void main() {
       expect(find.text('设置'), findsOneWidget);
       expect(find.byType(VoiceButton), findsOneWidget);
       expect(find.byKey(const Key('nav-indicator-辅助')), findsOneWidget);
-      // 独立轻量 AI 输入条默认语音态（「按住向水元素提问」）+ 右侧拍照入口
-      expect(find.byKey(const Key('chat-input-bar')), findsOneWidget);
-      expect(find.byKey(const Key('chat-hold-to-talk')), findsOneWidget);
-      expect(find.text('按住向水元素提问'), findsOneWidget);
+      // 移除底部整行输入条，默认显示左下角键盘与右下角拍照双悬浮圆钮
+      expect(find.byKey(const Key('chat-input-bar')), findsNothing);
+      expect(find.byKey(const Key('chat-hold-to-talk')), findsNothing);
+      expect(find.byKey(const Key('chat-mode-toggle')), findsOneWidget);
       expect(find.byKey(const Key('chat-vision-button')), findsOneWidget);
       expect(find.byType(TextField), findsNothing);
-      // 点左侧键盘按钮切换到文字态，输入框和发送按钮出现，且底栏「处置」红钮依然常驻
+      // 点左下角键盘按钮切换到临时文字输入条，双悬浮圆钮隐藏且底栏「处置」红钮依然常驻
       await tester.tap(find.byKey(const Key('chat-mode-toggle')));
       await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-text-composer')), findsOneWidget);
+      expect(find.byKey(const Key('chat-close-text-mode')), findsOneWidget);
       expect(find.byKey(const Key('chat-text-field')), findsOneWidget);
       expect(find.byKey(const Key('chat-send-button')), findsOneWidget);
+      expect(find.byKey(const Key('chat-mode-toggle')), findsNothing);
+      expect(find.byKey(const Key('chat-vision-button')), findsNothing);
       expect(find.byType(VoiceButton), findsOneWidget);
+      // 点击收起按钮恢复双悬浮圆钮
+      await tester.tap(find.byKey(const Key('chat-close-text-mode')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-text-composer')), findsNothing);
+      expect(find.byKey(const Key('chat-mode-toggle')), findsOneWidget);
+      expect(find.byKey(const Key('chat-vision-button')), findsOneWidget);
       // 从辅助页可直接点击底栏「看板」横向切换
       await tester.tap(find.text('看板'));
       await tester.pumpAndSettle();
@@ -4138,14 +4148,15 @@ void main() {
       expect(find.text('服务连接'), findsOneWidget);
     });
 
-    testWidgets('辅助页底部正中红钮始终归属警情处置页', (tester) async {
+    testWidgets('辅助页底部正中红钮空闲轻点切回警情处置页', (tester) async {
       await tester.pumpWidget(WatchDogApp(controller: _FakeController()));
       await tester.pump();
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('nav-indicator-辅助')), findsOneWidget);
-      expect(find.byKey(const Key('chat-hold-to-talk')), findsOneWidget);
-      // 点击底部正中「处置」红钮直接切回警情处置页
+      expect(find.byKey(const Key('chat-mode-toggle')), findsOneWidget);
+      expect(find.byKey(const Key('chat-vision-button')), findsOneWidget);
+      // 空闲态轻点底部正中「处置」红钮切回警情处置页
       await tester.tap(find.byType(VoiceButton));
       await tester.pumpAndSettle();
       expect(find.text('警情处置'), findsOneWidget);
@@ -4295,7 +4306,138 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('辅助页输入条自动避让底栏中心凸起语音钮，无重叠遮挡', (tester) async {
+    testWidgets('辅助页双悬浮圆钮与临时输入条均避让底栏中心凸起语音钮，无重叠遮挡', (tester) async {
+      for (final width in [320.0, 390.0]) {
+        tester.view.physicalSize = Size(width * 3, 800 * 3);
+        tester.view.devicePixelRatio = 3.0;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          WatchDogApp(
+            key: ValueKey('chat-float-layout-$width'),
+            controller: _FakeController(),
+          ),
+        );
+        await tester.pump();
+        await tester.tap(find.text('辅助'));
+        await tester.pumpAndSettle();
+
+        final navSurface = tester.getRect(
+          find.byKey(const Key('bottom-nav-surface')),
+        );
+        final voiceSurface = tester.getRect(
+          find.byKey(const Key('voice-button-surface')),
+        );
+        final modeToggle = tester.getRect(
+          find.byKey(const Key('chat-mode-toggle')),
+        );
+        final visionButton = tester.getRect(
+          find.byKey(const Key('chat-vision-button')),
+        );
+        expect(voiceSurface.top, closeTo(navSurface.top - 12.0, 1.0));
+        expect(voiceSurface.bottom, lessThanOrEqualTo(navSurface.bottom));
+        expect(
+          modeToggle.right,
+          lessThan(voiceSurface.left),
+          reason: '$width 下左下角键盘圆钮不得与中心语音钮水平重叠',
+        );
+        expect(
+          visionButton.left,
+          greaterThan(voiceSurface.right),
+          reason: '$width 下右下角拍照圆钮不得与中心语音钮水平重叠',
+        );
+        expect(
+          modeToggle.bottom,
+          lessThanOrEqualTo(voiceSurface.top),
+          reason: '$width 下左下角键盘圆钮不得与凸起语音圆顶垂直重叠',
+        );
+        expect(
+          visionButton.bottom,
+          lessThanOrEqualTo(voiceSurface.top),
+          reason: '$width 下右下角拍照圆钮不得与凸起语音圆顶垂直重叠',
+        );
+
+        await tester.tap(find.byKey(const Key('chat-mode-toggle')));
+        await tester.pumpAndSettle();
+        final composer = tester.getRect(
+          find.byKey(const Key('chat-text-composer')),
+        );
+        expect(
+          composer.bottom,
+          lessThanOrEqualTo(voiceSurface.top),
+          reason: '$width 下临时文字输入条底边不得与凸起语音圆顶重叠',
+        );
+        expect(tester.takeException(), isNull);
+      }
+    });
+
+    testWidgets('辅助页长按底栏中心语音钮就地语音提问，未选警情也可触发且不跳回处置页', (tester) async {
+      final api = _FakeApi(transcribeText: '浓烟环境有哪些快速搜索原则？');
+      final controller = _FakeController(currentIncident: null)
+        ..enterWithoutIncident();
+      final audio = _FakeAudio();
+      await tester.pumpWidget(
+        WatchDogApp(controller: controller, chatAudioService: audio),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+      controller.api = api;
+      await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
+      expect(find.text('辅助问答'), findsOneWidget);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(VoiceButton)),
+      );
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(find.byKey(const Key('chat-recording-limit')), findsOneWidget);
+      expect(find.text('正在聆听，松开结束'), findsOneWidget);
+      expect(find.byKey(const Key('nav-indicator-辅助')), findsOneWidget);
+      expect(find.text('警情处置'), findsNothing);
+
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pumpAndSettle();
+
+      expect(find.text('浓烟环境有哪些快速搜索原则？'), findsOneWidget);
+      expect(find.text('回答：浓烟环境有哪些快速搜索原则？'), findsOneWidget);
+      expect(find.byKey(const Key('nav-indicator-辅助')), findsOneWidget);
+      expect(api.parseCalls, 0);
+      expect(audio.stops, 1);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页文字输入发送后自动收起为双悬浮圆钮', (tester) async {
+      final controller = _FakeController();
+      await tester.pumpWidget(WatchDogApp(controller: controller));
+      await tester.pump();
+      await tester.pumpAndSettle();
+      controller.api = _FakeApi();
+      await tester.tap(find.text('辅助'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('chat-mode-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-text-composer')), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('chat-text-field')),
+        '室内轰燃前兆有哪些？',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('chat-send-button')));
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('chat-text-composer')), findsNothing);
+      expect(find.byKey(const Key('chat-mode-toggle')), findsOneWidget);
+      expect(find.byKey(const Key('chat-vision-button')), findsOneWidget);
+      expect(find.text('室内轰燃前兆有哪些？'), findsOneWidget);
+      expect(find.text('回答：室内轰燃前兆有哪些？'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('辅助页文字模式软键盘收起后自动恢复双悬浮圆钮', (tester) async {
       tester.view.physicalSize = const Size(390 * 3, 800 * 3);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
@@ -4304,20 +4446,21 @@ void main() {
       await tester.tap(find.text('辅助'));
       await tester.pumpAndSettle();
 
-      final navSurface = tester.getRect(
-        find.byKey(const Key('bottom-nav-surface')),
-      );
-      final voiceSurface = tester.getRect(
-        find.byKey(const Key('voice-button-surface')),
-      );
-      final inputBar = tester.getRect(find.byKey(const Key('chat-input-bar')));
-      expect(voiceSurface.top, closeTo(navSurface.top - 12.0, 1.0));
-      expect(voiceSurface.bottom, lessThanOrEqualTo(navSurface.bottom));
-      expect(
-        inputBar.bottom,
-        lessThanOrEqualTo(voiceSurface.top),
-        reason: '辅助页输入条底边不得与凸起语音圆顶重叠',
-      );
+      await tester.tap(find.byKey(const Key('chat-mode-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-text-composer')), findsOneWidget);
+
+      // 模拟软键盘弹出
+      tester.view.viewInsets = FakeViewPadding(bottom: 300 * 3);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-text-composer')), findsOneWidget);
+
+      // 模拟软键盘收起：自动收起输入条并恢复双悬浮圆钮
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-text-composer')), findsNothing);
+      expect(find.byKey(const Key('chat-mode-toggle')), findsOneWidget);
+      expect(find.byKey(const Key('chat-vision-button')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -4496,11 +4639,13 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('辅助问答'), findsOneWidget);
-      expect(find.byKey(const Key('chat-hold-to-talk')), findsOneWidget);
+      expect(find.byKey(const Key('chat-mode-toggle')), findsOneWidget);
+      expect(find.byKey(const Key('chat-vision-button')), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(const Key('chat-mode-toggle')));
       await tester.pumpAndSettle();
+      expect(find.byKey(const Key('chat-text-composer')), findsOneWidget);
       expect(find.byKey(const Key('chat-text-field')), findsOneWidget);
       expect(find.byKey(const Key('chat-send-button')), findsOneWidget);
       expect(tester.takeException(), isNull);

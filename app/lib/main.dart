@@ -13,6 +13,7 @@ import 'pages/incident_selection_overlay.dart';
 import 'pages/notes_page.dart';
 import 'pages/settings_page.dart';
 import 'pages/video_playback_surface.dart';
+import 'services/audio_service.dart';
 import 'services/foreground_keep_alive.dart';
 import 'services/app_data_epoch.dart';
 import 'services/local_asr_service.dart';
@@ -93,8 +94,9 @@ double _bottomNavBarHeight(BuildContext context) {
 
 class WatchDogApp extends StatefulWidget {
   final AppController? controller;
+  final AudioService? chatAudioService;
 
-  const WatchDogApp({super.key, this.controller});
+  const WatchDogApp({super.key, this.controller, this.chatAudioService});
 
   @override
   State<WatchDogApp> createState() => _WatchDogAppState();
@@ -111,6 +113,8 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换到警情处置后自动开始录音
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
   bool _processing = false; // 识别/确认中（禁用语音按钮，避免重复触发）
+  bool _chatRecording = false; // 辅助页就地语音提问录音态
+  bool _chatProcessing = false; // 辅助页就地语音提问识别态
   bool _voiceCapPressed = false; // 顶部破界凸起区按下态联动
 
   @override
@@ -173,6 +177,9 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     HapticFeedback.selectionClick();
     DiagnosticLogService.instance.setPage(_pageName(i));
     if (_tab == 3 && i != 3) {
+      if (_chatRecording) {
+        unawaited(_chatKey.currentState?.finishRecording());
+      }
       _chatKey.currentState?.dismissKeyboard();
     }
     setState(() {
@@ -208,7 +215,18 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
 
   /// 录音中点击按钮 = 停止录音（松手时机丢失/权限弹窗场景的兜底出口）
   void _voiceTap() {
-    if (controller.needsIncidentSelection) return;
+    if (controller.needsAuthentication || controller.needsIncidentSelection) {
+      return;
+    }
+    if (_tab == 3) {
+      if (_chatRecording) {
+        unawaited(_chatKey.currentState?.finishRecording());
+        return;
+      }
+      if (_chatProcessing) return;
+      _goVoice();
+      return;
+    }
     if (_recording) {
       _homeKey.currentState?.finishRecording();
       return;
@@ -231,7 +249,16 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   }
 
   void _voiceLongPressStart(LongPressStartDetails _) {
-    if (controller.needsIncidentSelection) return;
+    if (controller.needsAuthentication || controller.needsIncidentSelection) {
+      return;
+    }
+    if (_tab == 3) {
+      if (_chatProcessing) return;
+      HapticFeedback.mediumImpact();
+      _chatKey.currentState?.dismissKeyboard();
+      unawaited(_chatKey.currentState?.beginRecording());
+      return;
+    }
     if (controller.requiresIncident) {
       controller.requestIncidentSelection();
       return;
@@ -239,9 +266,6 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     if (_processing) return;
     HapticFeedback.mediumImpact();
     if (_tab != 2) {
-      if (_tab == 3) {
-        _chatKey.currentState?.dismissKeyboard();
-      }
       setState(() {
         _tab = 2;
         _pendingVoice = true;
@@ -252,7 +276,13 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   }
 
   void _voiceLongPressEnd(LongPressEndDetails _) {
-    if (controller.needsIncidentSelection) return;
+    if (controller.needsAuthentication || controller.needsIncidentSelection) {
+      return;
+    }
+    if (_tab == 3 || _chatRecording) {
+      unawaited(_chatKey.currentState?.finishRecording());
+      return;
+    }
     if (controller.requiresIncident) return;
     if (_pendingVoice) {
       // 切页后的首帧录音尚未启动时松手，取消自动录音请求。
@@ -263,6 +293,10 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   }
 
   void _voiceLongPressCancel() {
+    if (_tab == 3 || _chatRecording) {
+      unawaited(_chatKey.currentState?.finishRecording());
+      return;
+    }
     if (_pendingVoice) {
       setState(() => _pendingVoice = false);
       return;
@@ -374,7 +408,16 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
               ChatPage(
                 key: _chatKey,
                 controller: controller,
+                audioService: widget.chatAudioService,
                 bottomNavClearance: 14.0,
+                onRecordingChanged: (v) {
+                  if (!mounted || _chatRecording == v) return;
+                  setState(() => _chatRecording = v);
+                },
+                onProcessingChanged: (v) {
+                  if (!mounted || _chatProcessing == v) return;
+                  setState(() => _chatProcessing = v);
+                },
               ),
               SettingsPage(controller: controller),
             ];
@@ -487,6 +530,9 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
               return s == 'alarm' || s == 'timeout';
             });
 
+            final activeRecording = _tab == 3 ? _chatRecording : _recording;
+            final activeProcessing = _tab == 3 ? _chatProcessing : _processing;
+
             final appScaffold = Scaffold(
               body: bodyContent,
               bottomNavigationBar: ExcludeSemantics(
@@ -497,8 +543,8 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                     index: _tab,
                     boardAlert: boardAlert,
                     pendingCount: controller.pendingMemberCount,
-                    recording: _recording,
-                    processing: _processing,
+                    recording: activeRecording,
+                    processing: activeProcessing,
                     capPressed: _voiceCapPressed,
                     onSelect: _selectTab,
                     onVoiceTap: _voiceTap,
@@ -531,12 +577,14 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                           child: ExcludeSemantics(
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onTap: _processing ? null : _voiceTap,
-                              onLongPressStart:
-                                  _processing ? null : _voiceLongPressStart,
-                              onLongPressEnd:
-                                  _processing ? null : _voiceLongPressEnd,
-                              onLongPressCancel: _processing
+                              onTap: activeProcessing ? null : _voiceTap,
+                              onLongPressStart: activeProcessing
+                                  ? null
+                                  : _voiceLongPressStart,
+                              onLongPressEnd: activeProcessing
+                                  ? null
+                                  : _voiceLongPressEnd,
+                              onLongPressCancel: activeProcessing
                                   ? null
                                   : () {
                                       if (_voiceCapPressed) {
@@ -544,7 +592,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                                       }
                                       _voiceLongPressCancel();
                                     },
-                              onTapDown: _processing
+                              onTapDown: activeProcessing
                                   ? null
                                   : (_) {
                                       HapticFeedback.heavyImpact();
@@ -633,7 +681,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                       return Positioned(
                         right: 12,
                         bottom:
-                            (_tab == 3 ? 162 : 96) +
+                            (_tab == 3 ? 152 : 96) +
                             MediaQuery.paddingOf(context).bottom,
                         child: FloatingVideoWindow(
                           session: _videoPlayback,
@@ -768,10 +816,10 @@ class _BottomNav extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                     boxShadow: AppShadow.float,
                   ),
-                  child: const Text(
+                  child: Text(
                     '正在聆听，松开结束',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.onStatus,
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
                     ),

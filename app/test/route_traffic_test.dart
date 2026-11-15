@@ -106,13 +106,51 @@ void main() {
       );
     });
 
-    test('生成高德驾车导航链接', () {
+    test('生成高德驾车导航链接与 Android 原生 URI', () {
       final uri = mockRouteInfo.navigationUri;
       expect(uri, isNotNull);
       expect(uri!.scheme, 'https');
       expect(uri.host, 'uri.amap.com');
       expect(uri.path, '/navigation');
-      expect(uri.queryParameters, {'to': '119.281000,29.474000'});
+      expect(uri.queryParameters, {
+        'to': '119.281000,29.474000,浙江省杭州市建德市新安江街道新安东路1号',
+        'mode': 'car',
+        'src': 'watchdog',
+        'callnative': '1',
+      });
+
+      final nativeUri = mockRouteInfo.nativeAndroidNavigationUri;
+      expect(nativeUri, isNotNull);
+      expect(nativeUri!.scheme, 'androidamap');
+      expect(nativeUri.host, 'navi');
+      expect(nativeUri.queryParameters, {
+        'sourceApplication': 'watchdog',
+        'poiname': '浙江省杭州市建德市新安江街道新安东路1号',
+        'lat': '29.474000',
+        'lon': '119.281000',
+        'dev': '0',
+        'style': '2',
+      });
+
+      const emptyNameRoute = RouteTrafficInfo(
+        destination: RouteEndpointInfo(
+          queryAddress: '',
+          formattedAddress: '',
+          location: AmapLocation(lat: 29.5, lon: 119.3, coordinate: 'gcj02'),
+        ),
+      );
+      expect(emptyNameRoute.navigationUri?.queryParameters['to'], '119.300000,29.500000');
+      expect(emptyNameRoute.nativeAndroidNavigationUri?.queryParameters['poiname'], '事发地点');
+
+      const wgs84Route = RouteTrafficInfo(
+        destination: RouteEndpointInfo(
+          queryAddress: '示例大道100号',
+          formattedAddress: '示例市示例大道100号',
+          location: AmapLocation(lat: 29.5, lon: 119.3, coordinate: 'wgs84'),
+        ),
+      );
+      expect(wgs84Route.navigationUri, isNull);
+      expect(wgs84Route.nativeAndroidNavigationUri, isNull);
     });
 
     test('生成路况纯文本简报', () {
@@ -297,19 +335,21 @@ void main() {
       expect(find.textContaining('风向：东南风 · ≤3级'), findsOneWidget);
       expect(find.textContaining('上风或侧上风方向停车'), findsOneWidget);
 
-      // 验证多方案切换
-      expect(find.text('方案1 · 速度最快'), findsOneWidget);
-      expect(find.text('方案2 · 备选路线'), findsOneWidget);
-      await tester.tap(find.text('方案2 · 备选路线'));
+      // 验证多方案切换（直接展示策略名，不再拼接「方案N · 」前缀）
+      expect(find.text('速度最快'), findsOneWidget);
+      expect(find.text('备选路线'), findsOneWidget);
+      expect(find.textContaining('方案1'), findsNothing);
+      await tester.tap(find.text('备选路线'));
       await tester.pumpAndSettle();
       expect(find.text('15 分钟'), findsOneWidget);
       expect(find.text('7.5 公里'), findsOneWidget);
 
-      // 验证导航按钮
+      // 验证导航按钮（Android 环境优先尝试拉起原生高德 App）
       await tester.tap(find.byKey(const Key('route-traffic-navigate')));
       await tester.pumpAndSettle();
       expect(launchedUri, isNotNull);
-      expect(launchedUri!.host, 'uri.amap.com');
+      expect(launchedUri!.scheme, 'androidamap');
+      expect(launchedUri!.host, 'navi');
 
       // 验证复制简报
       await tester.tap(find.byKey(const Key('route-traffic-copy')));
@@ -771,5 +811,214 @@ void main() {
       expect(capturedDestLat, 28.869366);
       expect(capturedDestLon, 118.980502);
     });
+
+    testWidgets('空 strategy 兜底文案正确且不带方案编号前缀', (tester) async {
+      final fallbackInfo = RouteTrafficInfo(
+        destination: const RouteEndpointInfo(
+          queryAddress: '示例大道100号',
+          formattedAddress: '示例市示例大道100号',
+          location: AmapLocation(lat: 29.474, lon: 119.281, coordinate: 'gcj02'),
+        ),
+        routes: const [
+          DrivingRoutePlan(
+            strategy: '',
+            distanceMeters: 4200,
+            durationSeconds: 480,
+            trafficLights: 3,
+          ),
+          DrivingRoutePlan(
+            strategy: '',
+            distanceMeters: 5100,
+            durationSeconds: 600,
+            trafficLights: 5,
+          ),
+        ],
+        routeAvailable: true,
+      );
+
+      final controller = _FakeController(
+        mockIncident: const Incident(
+          id: 'inc-empty-strategy',
+          number: '2026-11-15-01',
+          title: '示例火警',
+          status: 'active',
+          createdAt: 1000,
+          lastActivityAt: 2000,
+          info: {'location': '示例大道100号', 'administrative_area': '示例市'},
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: RouteTrafficPage(
+            controller: controller,
+            gateway: RouteTrafficGateway(
+              requestPermission: () async => true,
+              locationServiceEnabled: () async => true,
+              currentLocation: () async => null,
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async => fallbackInfo,
+              openAppSettings: () async {},
+              openLocationSettings: () async {},
+              copyText: (_) async {},
+              launchNavigation: (_) async => true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('时间最短'), findsOneWidget);
+      expect(find.text('备选路线'), findsOneWidget);
+      expect(find.textContaining('方案1'), findsNothing);
+      expect(find.textContaining('方案2'), findsNothing);
+    });
+
+    testWidgets(
+      'Android 原生拉起返回 false 或抛异常时自动回退高德 Web 导航链接',
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+      (tester) async {
+      final launched = <Uri>[];
+      var throwOnNative = false;
+      var failAll = false;
+
+      final controller = _FakeController(
+        mockIncident: const Incident(
+          id: 'inc-fallback',
+          number: '2026-11-15-02',
+          title: '示例火警',
+          status: 'active',
+          createdAt: 1000,
+          lastActivityAt: 2000,
+          info: {'location': '示例大道100号', 'administrative_area': '示例市'},
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: RouteTrafficPage(
+            controller: controller,
+            gateway: RouteTrafficGateway(
+              requestPermission: () async => true,
+              locationServiceEnabled: () async => true,
+              currentLocation: () async => null,
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async => mockRouteInfo,
+              openAppSettings: () async {},
+              openLocationSettings: () async {},
+              copyText: (_) async {},
+              launchNavigation: (uri) async {
+                launched.add(uri);
+                if (failAll) return false;
+                if (uri.scheme == 'androidamap') {
+                  if (throwOnNative) throw Exception('no amap app');
+                  return false;
+                }
+                return true;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1) 原生返回 false -> 回退 webUri
+      await tester.tap(find.byKey(const Key('route-traffic-navigate')));
+      await tester.pumpAndSettle();
+      expect(launched.map((u) => u.scheme).toList(), ['androidamap', 'https']);
+      expect(launched.last.host, 'uri.amap.com');
+
+      // 2) 原生抛异常 -> 捕获异常并回退 webUri
+      launched.clear();
+      throwOnNative = true;
+      await tester.tap(find.byKey(const Key('route-traffic-navigate')));
+      await tester.pumpAndSettle();
+      expect(launched.map((u) => u.scheme).toList(), ['androidamap', 'https']);
+
+      // 3) 两者均失败 -> 提示无法打开外部地图导航应用
+      launched.clear();
+      throwOnNative = false;
+      failAll = true;
+      await tester.tap(find.byKey(const Key('route-traffic-navigate')));
+      await tester.pumpAndSettle();
+      expect(find.text('无法打开外部地图导航应用'), findsOneWidget);
+    },
+    );
+
+    testWidgets(
+      '非 Android 平台直接拉起高德 Web 导航链接',
+      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+      (tester) async {
+      final launched = <Uri>[];
+      final controller = _FakeController(
+        mockIncident: const Incident(
+          id: 'inc-ios',
+          number: '2026-11-15-03',
+          title: '示例火警',
+          status: 'active',
+          createdAt: 1000,
+          lastActivityAt: 2000,
+          info: {'location': '示例大道100号', 'administrative_area': '示例市'},
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: RouteTrafficPage(
+            controller: controller,
+            gateway: RouteTrafficGateway(
+              requestPermission: () async => true,
+              locationServiceEnabled: () async => true,
+              currentLocation: () async => null,
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async => mockRouteInfo,
+              openAppSettings: () async {},
+              openLocationSettings: () async {},
+              copyText: (_) async {},
+              launchNavigation: (uri) async {
+                launched.add(uri);
+                return true;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('route-traffic-navigate')));
+      await tester.pumpAndSettle();
+      expect(launched, hasLength(1));
+      expect(launched.single.scheme, 'https');
+      expect(launched.single.host, 'uri.amap.com');
+      expect(launched.single.queryParameters['callnative'], '1');
+    },
+    );
   });
 }

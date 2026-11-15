@@ -297,6 +297,7 @@ class AppNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final Color bg;
     final Color textColor;
     final Color iconColor;
@@ -404,6 +405,7 @@ class AppBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     Color bg;
     Color borderColor;
     Color iconColor;
@@ -534,6 +536,7 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final effectiveRadius = BorderRadius.circular(radius);
     final effectiveShadow = side != null
         ? null
@@ -592,6 +595,7 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final s = EntryStatus.of(status);
     final Color fg;
     final Color bg;
@@ -669,6 +673,7 @@ class SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.s3, top: AppSpacing.s2),
       child: Row(
@@ -732,6 +737,7 @@ class CountdownText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     // 默认色在 build 期解析，否则 const 默认参数会把主题色固化在编译期。
     final color = this.color ?? AppColors.textPrimary;
     if (ms <= 0 && showOvertime) {
@@ -955,6 +961,7 @@ class ConnectionStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final isFailed = !localOnly && syncError != null && !syncing;
     final canRetry =
         !localOnly && !syncing && onRetry != null && (!connected || isFailed);
@@ -1189,6 +1196,7 @@ class _VoiceButtonState extends State<VoiceButton>
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     final size = widget.size;
     final hitSize = size >= 64 ? size + 8 : math.max(size, 48.0);
     final hint = widget.processing
@@ -1363,6 +1371,7 @@ class AppEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Theme.of(context);
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.s6),
       child: Column(

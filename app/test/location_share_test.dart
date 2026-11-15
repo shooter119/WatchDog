@@ -87,24 +87,21 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('分享链接使用正确经纬度顺序和降级规则', () {
+  test('分享链接使用正确经纬度顺序、callnative=1 与降级规则', () {
     final draft = _draft();
+    expect(draft.hasAmapLocation, isTrue);
     expect(draft.markerUri.host, 'uri.amap.com');
     expect(draft.markerUri.path, '/marker');
-    expect(
-      draft.markerUri.queryParameters,
-      {'position': '120.123450,30.256780'},
-    );
-
-    final navigation = draft.navigationUri!;
-    expect(navigation.path, '/navigation');
-    expect(
-      navigation.queryParameters,
-      {'to': '120.123450,30.256780'},
-    );
+    expect(draft.markerUri.queryParameters, {
+      'position': '120.123450,30.256780',
+      'name': '示例仓库火灾',
+      'src': 'watchdog',
+      'coordinate': 'gaode',
+      'callnative': '1',
+    });
 
     final degraded = LocationShareDraft(
-      incidentName: draft.incidentName,
+      incidentName: '',
       unitName: draft.unitName,
       address: '',
       locatedAt: draft.locatedAt,
@@ -113,18 +110,19 @@ void main() {
       accuracyMeters: draft.accuracyMeters,
       amapLocation: null,
     );
-    expect(degraded.navigationUri, isNull);
-    expect(
-      degraded.markerUri.queryParameters,
-      {
-        'position': '120.120000,30.250000',
-        'coordinate': 'wgs84',
-      },
-    );
+    expect(degraded.hasAmapLocation, isFalse);
+    expect(degraded.markerUri.queryParameters, {
+      'position': '120.120000,30.250000',
+      'name': '现场位置',
+      'src': 'watchdog',
+      'coordinate': 'wgs84',
+      'callnative': '1',
+    });
   });
 
-  test('分享文案按固定顺序输出、链接独立成行且不包含发送人', () {
-    final text = _draft().toShareText(now: _now);
+  test('分享文案仅保留单个查看位置链接、固定顺序输出且不包含发送人', () {
+    final draft = _draft();
+    final text = draft.toShareText(now: _now);
     final fields = [
       '警情：示例仓库火灾',
       '单位：示例县消防救援大队',
@@ -133,9 +131,7 @@ void main() {
       '精度：约 8.0 米',
       'WGS84：30.250000, 120.120000',
       '查看位置：',
-      'https://uri.amap.com/marker?position=120.123450%2C30.256780',
-      '驾车导航：',
-      'https://uri.amap.com/navigation?to=120.123450%2C30.256780',
+      draft.markerUri.toString(),
     ];
     var previous = -1;
     for (final field in fields) {
@@ -143,11 +139,13 @@ void main() {
       expect(index, greaterThan(previous), reason: field);
       previous = index;
     }
+    expect(text, contains('src=watchdog'));
+    expect(text, contains('callnative=1'));
+    expect(text, contains('coordinate=gaode'));
+    expect(text, isNot(contains('驾车导航：')));
+    expect(text, isNot(contains('/navigation')));
     expect(text, isNot(contains('发送人')));
     expect(text, isNot(contains('姓名')));
-    expect(text, isNot(contains('src=watchdog')));
-    expect(text, isNot(contains('callnative=')));
-    expect(text, isNot(contains('coordinate=gaode')));
   });
 
   test('天气响应防御性解析高德坐标字段', () {
@@ -263,7 +261,7 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('地址失败仍可分享 WGS84，高德坐标缺失时隐藏导航', (tester) async {
+  testWidgets('地址失败仍可分享 WGS84 单链接，高德坐标缺失时提示坐标降级', (tester) async {
     final harness = _GatewayHarness()..weather = WeatherInfo.empty;
     final controller = AppController()
       ..currentIncident = const Incident(
@@ -286,10 +284,33 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.textContaining('单个高德位置链接'), findsOneWidget);
+    expect(find.textContaining('附带高德查看位置和驾车导航链接'), findsNothing);
     expect(find.text('地址暂不可用'), findsOneWidget);
-    expect(find.textContaining('仍可分享 WGS84 查看位置；驾车导航已隐藏'), findsOneWidget);
-    expect(find.textContaining('驾车导航：\n'), findsNothing);
+    expect(find.textContaining('已切换为 WGS84 坐标，仍可分享查看位置'), findsOneWidget);
+    expect(find.textContaining('驾车导航：'), findsNothing);
     expect(find.byKey(const Key('location-share-copy')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+
+    final addressOnlyFailHarness = _GatewayHarness()
+      ..weather = const WeatherInfo(
+        address: '',
+        amapLocation: _amapLocation,
+      );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: Scaffold(
+          body: LocationShareSheet(
+            controller: controller,
+            gateway: addressOnlyFailHarness.gateway,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('地址查询未完成，但高德位置链接仍可用'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox());
     controller.dispose();
