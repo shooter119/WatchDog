@@ -58,8 +58,10 @@ function createOrthomapRouter(root) {
       try { file = await fs.realpath(path.join(directory, 'tiles', String(z), String(x), `${y}.jpg`)); }
       catch (error) { if (error.code === 'ENOENT') return res.sendStatus(404); throw error; }
       if (!file.startsWith(`${directory}${path.sep}`)) return res.sendStatus(404);
-      res.sendFile(file, { cacheControl: false, dotfiles: 'deny' }, (error) => {
-        if (error && !res.headersSent) res.sendStatus(error.statusCode === 404 ? 404 : 500);
+      const relativeFile = path.relative(directory, file);
+      if (!relativeFile || relativeFile.startsWith('..') || path.isAbsolute(relativeFile)) return res.sendStatus(404);
+      res.sendFile(relativeFile, { root: directory, cacheControl: false, dotfiles: 'deny' }, (error) => {
+        if (error && !res.headersSent) res.sendStatus(error.statusCode === 404 || error.statusCode === 403 ? 404 : 500);
       });
     } catch (error) { next(error); }
   });
