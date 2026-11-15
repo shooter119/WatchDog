@@ -25,7 +25,7 @@ class NavIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Icon(
+    final icon = Icon(
       switch (glyph) {
         NavGlyph.log =>
           selected ? RemixIcons.file_list_3_fill : RemixIcons.file_list_3_line,
@@ -41,5 +41,13 @@ class NavIcon extends StatelessWidget {
       size: size,
       color: color,
     );
+    // file_list_3_* 字形含右下角折角，文档主体相对外框略左偏，做光学居中微调而不改变布局尺寸。
+    if (glyph == NavGlyph.log) {
+      return Transform.translate(
+        offset: Offset(size * (1.5 / 28.0), 0),
+        child: icon,
+      );
+    }
+    return icon;
   }
 }

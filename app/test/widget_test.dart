@@ -3556,7 +3556,9 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('320/360/390/430 宽度下底部导航无溢出、语音按钮不越界', (tester) async {
+    testWidgets('320/360/390/430 宽度下底部导航无溢出、五栏文字严格对齐且中心语音钮微凸破界', (
+      tester,
+    ) async {
       for (final width in [320.0, 360.0, 390.0, 430.0]) {
         tester.view.physicalSize = Size(width * 3, 800 * 3);
         tester.view.devicePixelRatio = 3.0;
@@ -3582,22 +3584,41 @@ void main() {
         );
         expect(
           voiceSurface.top,
-          greaterThanOrEqualTo(navSurface.top),
-          reason: '$width 语音圆面上沿应收在底栏背景内',
+          closeTo(navSurface.top - 12.0, 1.0),
+          reason: '$width 语音圆面上沿应向上凸出底栏顶边线约 12dp',
         );
         expect(
           voiceSurface.bottom,
           lessThanOrEqualTo(navSurface.bottom),
-          reason: '$width 语音圆面下沿应收在底栏背景内',
+          reason: '$width 语音圆面下沿应落在底栏背景内',
         );
-        // 四个导航入口均可见且不重叠
+        // 五个导航标签均可见、横排不重叠且中心垂直严格对齐
         final logs = tester.getRect(find.text('日志'));
         final boards = tester.getRect(find.text('看板'));
+        final disposes = tester.getRect(find.text('处置'));
         final assists = tester.getRect(find.text('辅助'));
         final settings = tester.getRect(find.text('设置'));
         expect(logs.right, lessThanOrEqualTo(boards.left));
-        expect(boards.right, lessThanOrEqualTo(assists.left));
+        expect(boards.right, lessThanOrEqualTo(disposes.left));
+        expect(disposes.right, lessThanOrEqualTo(assists.left));
         expect(assists.right, lessThanOrEqualTo(settings.left));
+        for (final labelRect in [logs, boards, assists, settings]) {
+          expect(
+            labelRect.center.dy,
+            closeTo(disposes.center.dy, 0.1),
+            reason: '$width 五栏标签中心 Y 坐标应严格对齐',
+          );
+          expect(
+            labelRect.bottom,
+            closeTo(disposes.bottom, 0.1),
+            reason: '$width 五栏标签底边 Y 坐标应严格对齐',
+          );
+        }
+        expect(
+          voiceSurface.bottom,
+          lessThanOrEqualTo(disposes.top - 3.0),
+          reason: '$width 语音圆钮下沿与处置文字之间应有清晰留白',
+        );
         final centers = [
           logs.center.dx,
           boards.center.dx,
@@ -3612,7 +3633,7 @@ void main() {
             reason: '$width 五个导航入口应保持严格等距',
           );
         }
-        // 语音按钮不遮挡左右导航图标
+        // 语音按钮不遮挡左右导航文字
         expect(button.left, greaterThanOrEqualTo(boards.right));
         expect(button.right, lessThanOrEqualTo(assists.left));
         await tester.pumpWidget(const SizedBox());
@@ -3636,7 +3657,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('辅助页输入条位于底栏上方且处置按钮完整位于底栏背景内', (tester) async {
+    testWidgets('辅助页输入条自动避让底栏中心凸起语音钮，无重叠遮挡', (tester) async {
       tester.view.physicalSize = const Size(390 * 3, 800 * 3);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
@@ -3652,9 +3673,123 @@ void main() {
         find.byKey(const Key('voice-button-surface')),
       );
       final inputBar = tester.getRect(find.byKey(const Key('chat-input-bar')));
-      expect(voiceSurface.top, greaterThanOrEqualTo(navSurface.top));
+      expect(voiceSurface.top, closeTo(navSurface.top - 12.0, 1.0));
       expect(voiceSurface.bottom, lessThanOrEqualTo(navSurface.bottom));
-      expect(inputBar.bottom, lessThanOrEqualTo(navSurface.top + 0.5));
+      expect(
+        inputBar.bottom,
+        lessThanOrEqualTo(voiceSurface.top),
+        reason: '辅助页输入条底边不得与凸起语音圆顶重叠',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('底部五栏选中指示条 Y 坐标严格共线且 1.5x 大字号下不跑偏', (tester) async {
+      for (final scale in [1.0, 1.5]) {
+        tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+        tester.view.devicePixelRatio = 3.0;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+            child: WatchDogApp(controller: _FakeController()),
+          ),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        // 先检查当前五栏标签 Y 坐标在大字号下仍严格对齐
+        final baseRect = tester.getRect(find.text('处置'));
+        for (final label in const ['日志', '看板', '辅助', '设置']) {
+          final rect = tester.getRect(find.text(label));
+          expect(
+            rect.center.dy,
+            closeTo(baseRect.center.dy, 0.1),
+            reason: 'scale=$scale 时「$label」中心 Y 偏离基准',
+          );
+        }
+
+        // 逐个页签切换，校验底部 20×3 指示条 Y 坐标共线
+        final indicatorRects = <String, Rect>{
+          '处置': tester.getRect(find.byKey(const Key('nav-indicator-处置'))),
+        };
+        for (final label in const ['日志', '看板', '辅助', '设置']) {
+          await tester.tap(find.text(label));
+          await tester.pumpAndSettle();
+          indicatorRects[label] = tester.getRect(
+            find.byKey(Key('nav-indicator-$label')),
+          );
+        }
+        final baseIndicator = indicatorRects['处置']!;
+        for (final entry in indicatorRects.entries) {
+          expect(
+            entry.value.top,
+            closeTo(baseIndicator.top, 0.1),
+            reason: 'scale=$scale 时「${entry.key}」指示条 top 未对齐',
+          );
+          expect(
+            entry.value.bottom,
+            closeTo(baseIndicator.bottom, 0.1),
+            reason: 'scale=$scale 时「${entry.key}」指示条 bottom 未对齐',
+          );
+        }
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
+
+    testWidgets('底部处置槽位凸起顶冠可点击切页，且识别处理态拦截触发', (tester) async {
+      tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      final c = _FakeController();
+      await tester.pumpWidget(WatchDogApp(controller: c));
+      await tester.pump();
+
+      await tester.tap(find.text('日志'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('nav-indicator-日志')), findsOneWidget);
+
+      final navSurface = tester.getRect(
+        find.byKey(const Key('bottom-nav-surface')),
+      );
+      // 点击底栏顶边线上方 -6dp 的凸起圆弧顶冠区域，应精准命中并切回警情处置页
+      await tester.tapAt(Offset(navSurface.center.dx, navSurface.top - 6.0));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('nav-indicator-处置')), findsOneWidget);
+      expect(find.text('警情处置'), findsOneWidget);
+
+      // 凸起顶冠区域支持长按从其他页切回警情处置
+      await tester.tap(find.text('日志'));
+      await tester.pumpAndSettle();
+      await tester.longPressAt(Offset(navSurface.center.dx, navSurface.top - 6.0));
+      await tester.pump();
+      expect(find.byKey(const Key('nav-indicator-处置')), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // 重新挂载含真实音频依赖（_FakeController 无录音授权会弹选警情层）验证独立与真实组合
+      final cActive = _FakeController()
+        ..currentIncident = const Incident(
+          id: 'inc-proc',
+          number: '2026-11-15-01',
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        );
+      await tester.pumpWidget(WatchDogApp(controller: cActive));
+      await tester.pump();
+      final homeState = tester.state<HomePageState>(find.byType(HomePage));
+      homeState.widget.onProcessingChanged?.call(true);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('nav-dispose-tab')));
+      await tester.pump();
+      expect(find.text('长按说话，松开识别'), findsNothing);
+      await tester.tapAt(Offset(navSurface.center.dx, navSurface.top - 6.0));
+      await tester.pump();
+      expect(find.text('长按说话，松开识别'), findsNothing);
+      homeState.widget.onProcessingChanged?.call(false);
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('nav-dispose-tab')));
+      await tester.pump();
+      expect(find.text('长按说话，松开识别'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

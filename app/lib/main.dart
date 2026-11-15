@@ -82,6 +82,15 @@ Future<void> _bootstrapApp(DiagnosticLogService diagnostics) async {
   runApp(const WatchDogApp());
 }
 
+const double _kVoiceNavProtrusion = 12.0;
+const double _kVoiceNavButtonSize = 52.0;
+
+double _bottomNavBarHeight(BuildContext context) {
+  final labelScaleHeight = (MediaQuery.textScalerOf(context).scale(12) * 1.2)
+      .ceilToDouble();
+  return math.max(70.0, 55.0 + labelScaleHeight);
+}
+
 class WatchDogApp extends StatefulWidget {
   final AppController? controller;
 
@@ -95,11 +104,14 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   late final AppController controller;
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
   final VideoPlaybackSession _videoPlayback = VideoPlaybackSession();
   int _tab = 2; // 警情处置默认进入（tab 顺序：日志0/看板1/警情处置2/辅助3/设置4）
   bool _pendingVoice = false; // 底部语音按钮长按 → 切换到警情处置后自动开始录音
   bool _recording = false; // 录音状态（页面上报，驱动底部按钮停止图标+脉冲）
   bool _processing = false; // 识别/确认中（禁用语音按钮，避免重复触发）
+  bool _voiceCapPressed = false; // 顶部破界凸起区按下态联动
 
   @override
   void initState() {
@@ -199,20 +211,22 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     if (controller.needsIncidentSelection) return;
     if (_recording) {
       _homeKey.currentState?.finishRecording();
-    } else {
-      if (_tab == 2) {
-        HapticFeedback.lightImpact();
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
+      return;
+    }
+    if (_processing) return;
+    if (_tab == 2) {
+      HapticFeedback.lightImpact();
+      (_messengerKey.currentState ?? ScaffoldMessenger.maybeOf(context))
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(
           const SnackBar(
             content: Text('长按说话，松开识别'),
             duration: Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ),
         );
-      } else {
-        _goVoice();
-      }
+    } else {
+      _goVoice();
     }
   }
 
@@ -222,8 +236,8 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
       controller.requestIncidentSelection();
       return;
     }
-    HapticFeedback.mediumImpact();
     if (_processing) return;
+    HapticFeedback.mediumImpact();
     if (_tab != 2) {
       if (_tab == 3) {
         _chatKey.currentState?.dismissKeyboard();
@@ -248,6 +262,16 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
     _homeKey.currentState?.finishRecording();
   }
 
+  void _voiceLongPressCancel() {
+    if (_pendingVoice) {
+      setState(() => _pendingVoice = false);
+      return;
+    }
+    if (_recording) {
+      _homeKey.currentState?.finishRecording();
+    }
+  }
+
   /// 语音识别为火场日志：自动记入 + 跳日志页
   Future<void> _routeNote(String text) async {
     if (controller.needsIncidentSelection) return;
@@ -269,7 +293,8 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
         data: {'text': text},
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        (_messengerKey.currentState ?? ScaffoldMessenger.maybeOf(context))
+            ?.showSnackBar(
           SnackBar(
             content: Text('记日志失败：$e'),
             duration: const Duration(seconds: 3),
@@ -306,6 +331,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   Widget _buildScaffold(BuildContext context) {
     return MaterialApp(
       title: kDebugMode ? '火场智控·测试' : '火场智控',
+      scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       // 默认 200ms 的 Theme 渐变会与瞬切的 AppColors 并存，出现两套配色。
@@ -345,7 +371,11 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                 videoPlayback: _videoPlayback,
                 onVideoFloating: () => _selectTab(2),
               ),
-              ChatPage(key: _chatKey, controller: controller),
+              ChatPage(
+                key: _chatKey,
+                controller: controller,
+                bottomNavClearance: 14.0,
+              ),
               SettingsPage(controller: controller),
             ];
             final startupGateLocked =
@@ -469,20 +499,72 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                     pendingCount: controller.pendingMemberCount,
                     recording: _recording,
                     processing: _processing,
+                    capPressed: _voiceCapPressed,
                     onSelect: _selectTab,
                     onVoiceTap: _voiceTap,
                     onVoiceLongPressStart: _voiceLongPressStart,
                     onVoiceLongPressEnd: _voiceLongPressEnd,
+                    onVoiceLongPressCancel: _voiceLongPressCancel,
                   ),
                 ),
               ),
             );
+            final navBarHeight = _bottomNavBarHeight(context);
+            final safeBottom = MediaQuery.paddingOf(context).bottom;
+            final keyboardOpen = View.of(context).viewInsets.bottom > 0;
             return PopScope(
               canPop: !startupGateLocked,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   appScaffold,
+                  if (!startupGateLocked && !keyboardOpen)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: navBarHeight + safeBottom,
+                      height: _kVoiceNavProtrusion,
+                      child: Center(
+                        child: SizedBox(
+                          width: _kVoiceNavButtonSize,
+                          height: _kVoiceNavProtrusion,
+                          child: ExcludeSemantics(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _processing ? null : _voiceTap,
+                              onLongPressStart:
+                                  _processing ? null : _voiceLongPressStart,
+                              onLongPressEnd:
+                                  _processing ? null : _voiceLongPressEnd,
+                              onLongPressCancel: _processing
+                                  ? null
+                                  : () {
+                                      if (_voiceCapPressed) {
+                                        setState(() => _voiceCapPressed = false);
+                                      }
+                                      _voiceLongPressCancel();
+                                    },
+                              onTapDown: _processing
+                                  ? null
+                                  : (_) {
+                                      HapticFeedback.heavyImpact();
+                                      setState(() => _voiceCapPressed = true);
+                                    },
+                              onTapUp: (_) {
+                                if (_voiceCapPressed) {
+                                  setState(() => _voiceCapPressed = false);
+                                }
+                              },
+                              onTapCancel: () {
+                                if (_voiceCapPressed) {
+                                  setState(() => _voiceCapPressed = false);
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   if (startupGateLocked)
                     IncidentSelectionOverlay(
                       onEnterWithoutIncident: () {
@@ -551,7 +633,7 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
                       return Positioned(
                         right: 12,
                         bottom:
-                            (_tab == 3 ? 148 : 84) +
+                            (_tab == 3 ? 162 : 96) +
                             MediaQuery.paddingOf(context).bottom,
                         child: FloatingVideoWindow(
                           session: _videoPlayback,
@@ -570,17 +652,19 @@ class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
   }
 }
 
-/// 底部导航：日志 / 看板 / 中央凸起「处置」语音按钮 / 辅助 / 设置（全页常驻）
+/// 底部导航：日志 / 看板 / 中央破界悬浮「处置」语音钮 / 辅助 / 设置（全页常驻）
 class _BottomNav extends StatelessWidget {
   final int index;
   final bool boardAlert;
   final int pendingCount;
   final bool recording; // 录音中：按钮变停止图标 + 橙色脉冲 + 上方提示
   final bool processing; // 识别/确认中：禁用语音按钮
+  final bool capPressed; // 顶部 12dp 破界区按下态同步
   final ValueChanged<int> onSelect;
   final VoidCallback onVoiceTap;
   final GestureLongPressStartCallback onVoiceLongPressStart;
   final GestureLongPressEndCallback onVoiceLongPressEnd;
+  final VoidCallback? onVoiceLongPressCancel;
 
   const _BottomNav({
     required this.index,
@@ -588,18 +672,18 @@ class _BottomNav extends StatelessWidget {
     this.pendingCount = 0,
     required this.recording,
     required this.processing,
+    this.capPressed = false,
     required this.onSelect,
     required this.onVoiceTap,
     required this.onVoiceLongPressStart,
     required this.onVoiceLongPressEnd,
+    this.onVoiceLongPressCancel,
   });
 
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
-    final labelScaleHeight = (MediaQuery.textScalerOf(context).scale(12) * 1.2)
-        .ceilToDouble();
-    final barHeight = math.max(78.0, 62.0 + labelScaleHeight);
+    final barHeight = _bottomNavBarHeight(context);
     return Container(
       key: const Key('bottom-nav-surface'),
       height: barHeight + safeBottom,
@@ -608,7 +692,6 @@ class _BottomNav extends StatelessWidget {
         border: Border(
           top: BorderSide(color: AppColors.border, width: 1),
         ),
-        boxShadow: AppShadow.float,
       ),
       child: Stack(
         clipBehavior: Clip.none,
@@ -642,9 +725,11 @@ class _BottomNav extends StatelessWidget {
                     selected: index == 2,
                     recording: recording,
                     processing: processing,
+                    capPressed: capPressed,
                     onTap: onVoiceTap,
                     onLongPressStart: onVoiceLongPressStart,
                     onLongPressEnd: onVoiceLongPressEnd,
+                    onLongPressCancel: onVoiceLongPressCancel,
                   ),
                 ),
                 Expanded(
@@ -671,7 +756,7 @@ class _BottomNav extends StatelessWidget {
             Positioned(
               left: 0,
               right: 0,
-              top: -64,
+              top: -62,
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -700,90 +785,173 @@ class _BottomNav extends StatelessWidget {
   }
 }
 
-class _CenterDisposeNavSlot extends StatelessWidget {
+/// 五栏共享底脚：统一标签文字行高基线与 20×3 指示条垂直位置，确保五栏 0.0dp 横向对齐。
+class _NavLabelFooter extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color color;
+
+  const _NavLabelFooter({
+    required this.label,
+    required this.selected,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            strutStyle: const StrutStyle(
+              fontSize: 12,
+              height: 1.15,
+              forceStrutHeight: true,
+            ),
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.15,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 3),
+          AnimatedContainer(
+            key: selected ? Key('nav-indicator-$label') : null,
+            duration: disableAnimations
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            width: 20,
+            height: 3,
+            decoration: BoxDecoration(
+              color: selected ? AppColors.actionPrimary : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CenterDisposeNavSlot extends StatefulWidget {
   final bool selected;
   final bool recording;
   final bool processing;
+  final bool capPressed;
   final VoidCallback onTap;
   final GestureLongPressStartCallback onLongPressStart;
   final GestureLongPressEndCallback onLongPressEnd;
+  final VoidCallback? onLongPressCancel;
 
   const _CenterDisposeNavSlot({
     required this.selected,
     required this.recording,
     required this.processing,
+    this.capPressed = false,
     required this.onTap,
     required this.onLongPressStart,
     required this.onLongPressEnd,
+    this.onLongPressCancel,
   });
 
   @override
+  State<_CenterDisposeNavSlot> createState() => _CenterDisposeNavSlotState();
+}
+
+class _CenterDisposeNavSlotState extends State<_CenterDisposeNavSlot> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.actionPrimary : AppColors.textTertiary;
-    final disableAnimations = MediaQuery.of(context).disableAnimations;
-    return GestureDetector(
-      key: const Key('nav-dispose-tab'),
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      onLongPressStart: onLongPressStart,
-      onLongPressEnd: onLongPressEnd,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          VoiceButton(
-            size: 52,
-            recording: recording,
-            processing: processing,
-            enabled: true,
-            onTap: onTap,
-            onLongPressStart: onLongPressStart,
-            onLongPressEnd: onLongPressEnd,
-          ),
-          Semantics(
-            label: '处置',
-            selected: selected,
-            button: true,
-            container: true,
-            excludeSemantics: true,
-            child: SizedBox(
+    final color =
+        widget.selected ? AppColors.actionPrimary : AppColors.textTertiary;
+    final semanticsLabel = widget.processing
+        ? '处置，识别处理中'
+        : widget.recording
+        ? '处置，正在录音'
+        : '处置，语音录入';
+    final semanticsHint = widget.processing
+        ? '识别处理中，请稍候'
+        : widget.recording
+        ? '点击或松开结束录音'
+        : '长按开始录音，点击进入警情处置';
+
+    return Semantics(
+      label: semanticsLabel,
+      hint: semanticsHint,
+      selected: widget.selected,
+      button: true,
+      enabled: !widget.processing,
+      container: true,
+      excludeSemantics: true,
+      onTap: widget.processing ? null : widget.onTap,
+      child: GestureDetector(
+        key: const Key('nav-dispose-tab'),
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.processing ? null : widget.onTap,
+        onLongPressStart: widget.processing ? null : widget.onLongPressStart,
+        onLongPressEnd: widget.processing ? null : widget.onLongPressEnd,
+        onLongPressCancel: widget.processing
+            ? null
+            : () {
+                if (_pressed) setState(() => _pressed = false);
+                widget.onLongPressCancel?.call();
+              },
+        onTapDown: widget.processing
+            ? null
+            : (_) {
+                HapticFeedback.heavyImpact();
+                setState(() => _pressed = true);
+              },
+        onTapUp: (_) {
+          if (_pressed) setState(() => _pressed = false);
+        },
+        onTapCancel: () {
+          if (_pressed) setState(() => _pressed = false);
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.bottomCenter,
+          children: [
+            SizedBox(
               width: double.infinity,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '处置',
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.1,
-                        fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                        color: color,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    AnimatedContainer(
-                      key: selected ? const Key('nav-indicator-处置') : null,
-                      duration: disableAnimations
-                          ? Duration.zero
-                          : const Duration(milliseconds: 160),
-                      curve: Curves.easeOut,
-                      width: 20,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: selected ? AppColors.actionPrimary : Colors.transparent,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                      ),
-                    ),
-                  ],
+              height: double.infinity,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: _NavLabelFooter(
+                  label: '处置',
+                  selected: widget.selected,
+                  color: color,
                 ),
               ),
             ),
-          ),
-        ],
+            Positioned(
+              top: -_kVoiceNavProtrusion,
+              left: 0,
+              right: 0,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: VoiceButton(
+                  size: _kVoiceNavButtonSize,
+                  recording: widget.recording,
+                  processing: widget.processing,
+                  activeTab: widget.selected,
+                  interactive: false,
+                  externalPressed: _pressed || widget.capPressed,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -809,7 +977,6 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? AppColors.actionPrimary : AppColors.textTertiary;
-    final disableAnimations = MediaQuery.of(context).disableAnimations;
     final semanticsLabel = hasAlert ? '$label，有人员危险' : label;
     return Semantics(
       label: semanticsLabel,
@@ -820,32 +987,17 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       child: InkWell(
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: disableAnimations
-              ? Duration.zero
-              : const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          constraints: const BoxConstraints(minHeight: 52),
-          padding: const EdgeInsets.fromLTRB(4, 3, 4, 6),
+        child: SizedBox(
+          width: double.infinity,
+          height: double.infinity,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              AnimatedContainer(
-                duration: disableAnimations
-                    ? Duration.zero
-                    : const Duration(milliseconds: 160),
-                curve: Curves.easeOut,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 1,
-                ),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? AppColors.actionPrimary.withValues(alpha: 0.10)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
+              SizedBox(
+                width: 32,
+                height: 28,
                 child: Stack(
+                  alignment: Alignment.center,
                   clipBehavior: Clip.none,
                   children: [
                     NavIcon(
@@ -856,8 +1008,8 @@ class _NavItem extends StatelessWidget {
                     ),
                     if (hasAlert)
                       Positioned(
-                        right: -3,
-                        top: -3,
+                        right: 0,
+                        top: -2,
                         child: Container(
                           width: 10,
                           height: 10,
@@ -873,46 +1025,29 @@ class _NavItem extends StatelessWidget {
                       )
                     else if (hasBadge)
                       Positioned(
-                        right: -2,
+                        right: 0,
                         top: -2,
                         child: Container(
-                          width: 8,
-                          height: 8,
+                          width: 10,
+                          height: 10,
                           decoration: BoxDecoration(
-                            color: AppColors.caution,
+                            color: AppColors.cautionText,
                             shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.surface,
+                              width: 2,
+                            ),
                           ),
                         ),
                       ),
                   ],
                 ),
               ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.1,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: color,
-                ),
-              ),
-              const SizedBox(height: 3),
-              AnimatedContainer(
-                key: selected ? Key('nav-indicator-$label') : null,
-                duration: disableAnimations
-                    ? Duration.zero
-                    : const Duration(milliseconds: 160),
-                curve: Curves.easeOut,
-                width: 20,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: selected ? AppColors.actionPrimary : Colors.transparent,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
+              const SizedBox(height: 5),
+              _NavLabelFooter(
+                label: label,
+                selected: selected,
+                color: color,
               ),
             ],
           ),

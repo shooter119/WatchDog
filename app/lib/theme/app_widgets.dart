@@ -1053,16 +1053,19 @@ class ConnectionStatus extends StatelessWidget {
   }
 }
 
-/// 中央语音按钮：橙色圆形 + 白色麦克风（CustomPainter 绘制，DPR 无关）
-/// - 默认：橙色圆 + 白麦克风
+/// 中央语音按钮：橙色圆形 + 白色麦克风（录音态叠加 CustomPainter 短波形）
+/// - 默认：橙色圆 + 白麦克风（主页保留定向橙色柔和阴影，非主页收敛为轻量中性阴影）
 /// - 按下：轻微缩放(0.94) + 颜色加深（Transform 缩放，不引起布局跳动）
 /// - 录音中：更深橙色 + 白麦克风 + 按钮内部短波形（不外扩、不越界）
 /// - 处理中：中性灰圆 + 白色转圈（独立视觉态，禁用触发避免重复识别）
 class VoiceButton extends StatefulWidget {
-  final double size; // 视觉直径（默认 64，命中区域 size+8 ≥ 44）
+  final double size; // 视觉直径（默认 64，独立渲染命中区 size+8 ≥ 44）
   final bool recording;
   final bool processing; // 识别/确认中：独立视觉状态 + 禁止重复触发
   final bool enabled; // 额外禁用开关（保留原语义）
+  final bool activeTab; // 处于处置主页时显示定向暖色阴影，其他页签收敛为中性阴影
+  final bool interactive; // 独立使用时自带手势与 Semantics；嵌入底栏槽位时由槽位统一承接
+  final bool externalPressed; // 嵌入槽位模式下由外层传入按下态
   final VoidCallback? onTap;
   final GestureLongPressStartCallback? onLongPressStart;
   final GestureLongPressEndCallback? onLongPressEnd;
@@ -1073,6 +1076,9 @@ class VoiceButton extends StatefulWidget {
     this.recording = false,
     this.processing = false,
     this.enabled = true,
+    this.activeTab = true,
+    this.interactive = true,
+    this.externalPressed = false,
     this.onTap,
     this.onLongPressStart,
     this.onLongPressEnd,
@@ -1130,28 +1136,149 @@ class _VoiceButtonState extends State<VoiceButton>
 
   bool get _disabled => !widget.enabled || widget.processing;
 
+  bool get _isPressed => (_pressed || widget.externalPressed) && !_disabled;
+
   /// 按下/录音用更深橙色（由现有 voice 色派生，不新增设计系统颜色）
   Color get _fill {
     if (widget.processing) return AppColors.textTertiary;
     if (widget.recording) {
       return Color.lerp(AppColors.voice, Colors.black, 0.22)!;
     }
-    if (_pressed) return AppColors.voicePressed;
+    if (_isPressed) return AppColors.voicePressed;
     return AppColors.voice;
+  }
+
+  List<BoxShadow> get _shadows {
+    if (widget.processing) {
+      return [
+        BoxShadow(
+          color: AppColors.textTertiary.withValues(alpha: 0.18),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+    if (widget.recording) {
+      return [
+        BoxShadow(
+          color: AppColors.voice.withValues(alpha: 0.32),
+          blurRadius: 18,
+          spreadRadius: 2,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+    if (!widget.activeTab) {
+      return [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.12),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+    return [
+      BoxShadow(
+        color: AppColors.voice.withValues(alpha: 0.26),
+        blurRadius: 12,
+        spreadRadius: 0,
+        offset: const Offset(0, 3),
+      ),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
     final size = widget.size;
     final hitSize = size >= 64 ? size + 8 : math.max(size, 48.0);
-    final glowColor = widget.processing
-        ? AppColors.textTertiary.withValues(alpha: 0.2)
-        : AppColors.voice.withValues(alpha: widget.recording ? 0 : 0.35);
     final hint = widget.processing
         ? '识别处理中，请稍候'
         : widget.recording
         ? '松开结束录音'
         : '长按开始录音，点击进入警情处置';
+
+    final surface = SizedBox(
+      width: size,
+      height: size,
+      child: AnimatedScale(
+        scale: _isPressed ? 0.94 : 1,
+        duration: _disableAnimations
+            ? Duration.zero
+            : const Duration(milliseconds: 110),
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          key: const Key('voice-button-surface'),
+          duration: _disableAnimations
+              ? Duration.zero
+              : const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _fill,
+            border: Border.all(color: AppColors.surface, width: 3.0),
+            boxShadow: _shadows,
+          ),
+          child: ClipOval(
+            child: widget.processing
+                ? const Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                : Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (widget.recording)
+                        Positioned(
+                          top: size * 0.15,
+                          left: 0,
+                          right: 0,
+                          child: Center(
+                            child: NavIcon(
+                              glyph: NavGlyph.voice,
+                              color: Colors.white,
+                              size: size * 0.32,
+                            ),
+                          ),
+                        )
+                      else
+                        NavIcon(
+                          glyph: NavGlyph.voice,
+                          color: Colors.white,
+                          size: size * 0.46,
+                        ),
+                      if (widget.recording)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: size * 0.13,
+                          height: size * 0.26,
+                          child: AnimatedBuilder(
+                            animation: _wave,
+                            builder: (context, _) => CustomPaint(
+                              painter: _WavePainter(
+                                t: _wave.value,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+
+    if (!widget.interactive) {
+      return surface;
+    }
+
     return Semantics(
       label: widget.processing
           ? '识别处理中'
@@ -1177,99 +1304,7 @@ class _VoiceButtonState extends State<VoiceButton>
         child: SizedBox(
           width: hitSize,
           height: hitSize,
-          child: Center(
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: AnimatedScale(
-                scale: _pressed && !_disabled ? 0.94 : 1,
-                duration: _disableAnimations
-                    ? Duration.zero
-                    : const Duration(milliseconds: 110),
-                curve: Curves.easeOut,
-                child: AnimatedContainer(
-                  key: const Key('voice-button-surface'),
-                  duration: _disableAnimations
-                      ? Duration.zero
-                      : const Duration(milliseconds: 140),
-                  curve: Curves.easeOut,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _fill,
-                    border: Border.all(color: AppColors.surface, width: 2.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: glowColor,
-                        blurRadius: widget.processing
-                            ? 10
-                            : widget.recording
-                            ? 22
-                            : 16,
-                        spreadRadius: widget.processing
-                            ? 1
-                            : widget.recording
-                            ? 4
-                            : 2,
-                      ),
-                    ],
-                  ),
-                  child: ClipOval(
-                    child: widget.processing
-                        ? const Center(
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                                color: Colors.white,
-                              ),
-                            ),
-                          )
-                        : Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              if (widget.recording)
-                                Positioned(
-                                  top: size * 0.15,
-                                  left: 0,
-                                  right: 0,
-                                  child: Center(
-                                    child: NavIcon(
-                                      glyph: NavGlyph.voice,
-                                      color: Colors.white,
-                                      size: size * 0.32,
-                                    ),
-                                  ),
-                                )
-                              else
-                                NavIcon(
-                                  glyph: NavGlyph.voice,
-                                  color: Colors.white,
-                                  size: size * 0.46,
-                                ),
-                              if (widget.recording)
-                                Positioned(
-                                  left: 0,
-                                  right: 0,
-                                  bottom: size * 0.13,
-                                  height: size * 0.26,
-                                  child: AnimatedBuilder(
-                                    animation: _wave,
-                                    builder: (context, _) => CustomPaint(
-                                      painter: _WavePainter(
-                                        t: _wave.value,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          child: Center(child: surface),
         ),
       ),
     );

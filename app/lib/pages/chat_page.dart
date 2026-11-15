@@ -26,6 +26,7 @@ class ChatPage extends StatefulWidget {
   final ValueChanged<bool>? onSendingChanged; // 问答请求中（兼容外部监听）
   final AudioService? audioService; // 测试注入
   final Duration requestTimeout;
+  final double bottomNavClearance; // 键盘收起时为底部凸起语音按钮预留的避让间隙
 
   const ChatPage({
     super.key,
@@ -35,6 +36,7 @@ class ChatPage extends StatefulWidget {
     this.onSendingChanged,
     this.audioService,
     this.requestTimeout = const Duration(seconds: 45),
+    this.bottomNavClearance = 0.0,
   });
 
   @override
@@ -899,7 +901,10 @@ class ChatPageState extends State<ChatPage> {
 
   Widget _buildInputBar(BuildContext context) {
     final busy = _sending || _visionBusy || _clearing;
-    return Container(
+    // Scaffold 会消费底部 viewInsets，因此直接读取原生 View 底部内嵌以准确感知软键盘状态。
+    final keyboardOpen = View.of(context).viewInsets.bottom > 0;
+    final extraBottom = keyboardOpen ? 0.0 : widget.bottomNavClearance;
+    final bar = Container(
       key: const Key('chat-input-bar'),
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.s2,
@@ -993,6 +998,14 @@ class ChatPageState extends State<ChatPage> {
             ),
           ],
         ],
+      ),
+    );
+    if (extraBottom <= 0) return bar;
+    return ColoredBox(
+      color: AppColors.surface,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: extraBottom),
+        child: bar,
       ),
     );
   }
