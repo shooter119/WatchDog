@@ -149,6 +149,25 @@ class ResilientDnsResolver {
     return false;
   }
 
+  /// 判断是否为本地 TUN / 代理拦截常用的基准测试 Fake-IP 网段（198.18.0.0/15）。
+  static bool isFakeIp(InternetAddress addr) {
+    final raw = addr.rawAddress;
+    if (addr.type == InternetAddressType.IPv4 && raw.length == 4) {
+      return _isFakeIpv4(raw[0], raw[1]);
+    }
+    if (addr.type == InternetAddressType.IPv6 &&
+        raw.length == 16 &&
+        raw.sublist(0, 10).every((b) => b == 0) &&
+        raw[10] == 0xFF &&
+        raw[11] == 0xFF) {
+      return _isFakeIpv4(raw[12], raw[13]);
+    }
+    return false;
+  }
+
+  static bool _isFakeIpv4(int b0, int b1) =>
+      b0 == 198 && (b1 == 18 || b1 == 19);
+
   static bool _isPublicIpv4(int b0, int b1, int b2, int b3) {
     if (b0 == 0) return false; // 0.0.0.0/8 unspecified
     if (b0 == 10) return false; // 10.0.0.0/8 RFC1918
@@ -159,7 +178,7 @@ class ResilientDnsResolver {
     if (b0 == 192 && b1 == 0 && b2 == 0) return false; // 192.0.0.0/24 IETF
     if (b0 == 192 && b1 == 0 && b2 == 2) return false; // 192.0.2.0/24 TEST-NET-1
     if (b0 == 192 && b1 == 168) return false; // 192.168.0.0/16 RFC1918
-    if (b0 == 198 && (b1 == 18 || b1 == 19)) return false; // 198.18.0.0/15 Fake-IP
+    if (_isFakeIpv4(b0, b1)) return false; // 198.18.0.0/15 Fake-IP
     if (b0 == 198 && b1 == 51 && b2 == 100) return false; // 198.51.100.0/24 doc
     if (b0 == 203 && b1 == 0 && b2 == 113) return false; // 203.0.113.0/24 doc
     if (b0 >= 224) return false; // 224.0.0.0/4 multicast & 240.0.0.0/4 reserved
@@ -176,6 +195,16 @@ class ResilientDnsResolver {
     _epochs[key] = (_epochs[key] ?? 0) + 1;
   }
 
+  Future<List<InternetAddress>> _resolveBypass(String host, String key) async {
+    final literal = InternetAddress.tryParse(key);
+    if (literal != null) return <InternetAddress>[literal];
+    if (key.isEmpty) throw SocketException("Failed host lookup: '$host'");
+    return _systemLookup(
+      key,
+      type: InternetAddressType.any,
+    ).timeout(_systemLookupTimeout);
+  }
+
   /// 解析主机地址列表（IPv4 优先）。
   Future<List<InternetAddress>> resolve(
     String host, {
@@ -183,13 +212,7 @@ class ResilientDnsResolver {
   }) async {
     final key = _normalizeHost(host);
     if (shouldBypass(key)) {
-      final literal = InternetAddress.tryParse(key);
-      if (literal != null) return <InternetAddress>[literal];
-      if (key.isEmpty) throw SocketException("Failed host lookup: '$host'");
-      return _systemLookup(
-        key,
-        type: InternetAddressType.any,
-      ).timeout(_systemLookupTimeout);
+      return _resolveBypass(host, key);
     }
 
     if (!forceRefresh) {
@@ -217,6 +240,39 @@ class ResilientDnsResolver {
     return future;
   }
 
+  /// 当候选地址连接失败、TLS 握手超时或命中 Fake-IP 拦截时执行回退解析：
+  /// 先失效缓存并复查系统 DNS（剔除已失败 IP 与 Fake-IP），若过滤后无可用候选，
+  /// 立即执行 DoH 与公网 LKG 兜底并缓存。
+  Future<List<InternetAddress>> resolveFallback(
+    String host, {
+    Set<String> excludeAddresses = const <String>{},
+  }) async {
+    final key = _normalizeHost(host);
+    if (shouldBypass(key)) {
+      return _resolveBypass(host, key);
+    }
+
+    invalidate(key);
+    final startEpoch = _epochs[key] ?? 0;
+    final systemResult = await _lookupSystemAddresses(key);
+    final filteredSystem = _prioritizePublicAndSort(
+      systemResult.addresses.where(
+        (addr) => !isFakeIp(addr) && !_isExcluded(addr, excludeAddresses),
+      ),
+    );
+    if (filteredSystem.isNotEmpty) {
+      _storeCache(key, filteredSystem, startEpoch);
+      return filteredSystem;
+    }
+
+    return _resolveDohOrLkg(
+      key,
+      startEpoch,
+      excludeAddresses: excludeAddresses,
+      fallbackError: systemResult.error,
+    );
+  }
+
   /// 仅在非绕过域名且真实 TLS/连接验证成功后，才将公网 IP 写入 LKG。
   Future<void> recordVerifiedSuccess(
     String host,
@@ -232,10 +288,8 @@ class ResilientDnsResolver {
     }
   }
 
-  Future<List<InternetAddress>> _resolvePipeline(
-    String key,
-    int startEpoch,
-  ) async {
+  Future<({List<InternetAddress> addresses, SocketException? error})>
+      _lookupSystemAddresses(String key) async {
     SocketException? firstSocketException;
 
     // Stage 1: 系统双栈查询（2.5s 超时，IPv4 排前）。
@@ -246,8 +300,7 @@ class ResilientDnsResolver {
       ).timeout(_systemLookupTimeout);
       final sorted = _sortAndDedupe(stage1);
       if (sorted.isNotEmpty) {
-        _storeCache(key, sorted, startEpoch);
-        return sorted;
+        return (addresses: sorted, error: null);
       }
     } on SocketException catch (error) {
       firstSocketException ??= error;
@@ -264,8 +317,7 @@ class ResilientDnsResolver {
       ).timeout(_systemLookupTimeout);
       final sorted = _sortAndDedupe(stage2);
       if (sorted.isNotEmpty) {
-        _storeCache(key, sorted, startEpoch);
-        return sorted;
+        return (addresses: sorted, error: null);
       }
     } on SocketException catch (error) {
       firstSocketException ??= error;
@@ -273,10 +325,42 @@ class ResilientDnsResolver {
       // 降级进入 Stage 3。
     }
 
+    return (addresses: const <InternetAddress>[], error: firstSocketException);
+  }
+
+  Future<List<InternetAddress>> _resolvePipeline(
+    String key,
+    int startEpoch,
+  ) async {
+    final systemResult = await _lookupSystemAddresses(key);
+    if (systemResult.addresses.isNotEmpty) {
+      _storeCache(key, systemResult.addresses, startEpoch);
+      return systemResult.addresses;
+    }
+
+    return _resolveDohOrLkg(
+      key,
+      startEpoch,
+      fallbackError: systemResult.error,
+    );
+  }
+
+  Future<List<InternetAddress>> _resolveDohOrLkg(
+    String key,
+    int startEpoch, {
+    Set<String> excludeAddresses = const <String>{},
+    SocketException? fallbackError,
+  }) async {
     // Stage 3: 国内 IP 字面量 DoH JSON 并发竞速（严格过滤公网 IP）。
     try {
       final stage3 = await _dohLookup(key);
-      final publicIps = _sortAndDedupe(stage3.where(isPublicRoutableIp));
+      final publicIps = _sortAndDedupe(
+        stage3.where(
+          (addr) =>
+              isPublicRoutableIp(addr) &&
+              !_isExcluded(addr, excludeAddresses),
+        ),
+      );
       if (publicIps.isNotEmpty) {
         _storeCache(key, publicIps, startEpoch);
         return publicIps;
@@ -287,7 +371,7 @@ class ResilientDnsResolver {
 
     // Stage 4: 最近一次 TLS 验证成功的公网 LKG 兜底。
     final lkg = await _readLastKnownGood(key);
-    if (lkg != null) {
+    if (lkg != null && !_isExcluded(lkg, excludeAddresses)) {
       final list = List<InternetAddress>.unmodifiable(<InternetAddress>[lkg]);
       _storeCache(
         key,
@@ -298,10 +382,34 @@ class ResilientDnsResolver {
       return list;
     }
 
-    if (firstSocketException != null) {
-      throw firstSocketException;
+    if (fallbackError != null) {
+      throw fallbackError;
     }
     throw SocketException("Failed host lookup: '$key'");
+  }
+
+  static bool _isExcluded(
+    InternetAddress addr,
+    Set<String> excludeAddresses,
+  ) {
+    if (excludeAddresses.isEmpty) return false;
+    return excludeAddresses.contains(addr.address) ||
+        excludeAddresses.contains('${addr.type.name}:${addr.address}');
+  }
+
+  static List<InternetAddress> _prioritizePublicAndSort(
+    Iterable<InternetAddress> addresses,
+  ) {
+    final list = addresses.toList(growable: false);
+    if (list.isEmpty) return const <InternetAddress>[];
+    final public = _sortAndDedupe(list.where(isPublicRoutableIp));
+    final nonPublic = _sortAndDedupe(
+      list.where((addr) => !isPublicRoutableIp(addr)),
+    );
+    return List<InternetAddress>.unmodifiable(<InternetAddress>[
+      ...public,
+      ...nonPublic,
+    ]);
   }
 
   void _storeCache(
@@ -458,9 +566,11 @@ class ResilientDnsResolver {
 /// 创建挂载抗冷启动 DNS 解析与严格 TLS 主机名校验证书链的 `HttpClient`。
 HttpClient createResilientHttpClient({
   ResilientDnsResolver? resolver,
-  Duration connectionTimeout = const Duration(seconds: 12),
+  Duration connectionTimeout = const Duration(seconds: 20),
   Duration idleTimeout = const Duration(seconds: 25),
   bool? directProxy,
+  @visibleForTesting Duration tlsHandshakeTimeout = const Duration(seconds: 6),
+  @visibleForTesting SecurityContext? tlsContext,
 }) {
   final useDirectProxy = directProxy ?? kReleaseMode;
   final dns = resolver ?? ResilientDnsResolver.instance;
@@ -483,6 +593,7 @@ HttpClient createResilientHttpClient({
     final port = uri.hasPort ? uri.port : (isSecure ? 443 : 80);
 
     var cancelled = false;
+    var verified = false;
     ConnectionTask<Socket>? activeTask;
     Socket? activeTcpSocket;
 
@@ -490,10 +601,26 @@ HttpClient createResilientHttpClient({
       cancelled = true;
       activeTask?.cancel();
       activeTcpSocket?.destroy();
+      if (!verified && !ResilientDnsResolver.shouldBypass(uri.host)) {
+        dns.invalidate(uri.host);
+      }
     }
 
     Future<Socket> connectAttempt(dynamic hostOrAddr) async {
-      final task = await Socket.startConnect(hostOrAddr, port);
+      const tcpTimeout = Duration(seconds: 5);
+      final taskFuture = Socket.startConnect(hostOrAddr, port);
+      final task = await taskFuture.timeout(
+        tcpTimeout,
+        onTimeout: () {
+          unawaited(
+            taskFuture.then((lateTask) {
+              lateTask.cancel();
+              lateTask.socket.then((s) => s.destroy(), onError: (_) {});
+            }, onError: (_) {}),
+          );
+          throw SocketException('TCP connection timed out ($hostOrAddr:$port)');
+        },
+      );
       if (cancelled) {
         task.cancel();
         task.socket.then((s) => s.destroy(), onError: (_) {});
@@ -501,7 +628,7 @@ HttpClient createResilientHttpClient({
       }
       activeTask = task;
       try {
-        final socket = await task.socket.timeout(const Duration(seconds: 8));
+        final socket = await task.socket.timeout(tcpTimeout);
         activeTask = null;
         if (cancelled) {
           socket.destroy();
@@ -521,22 +648,53 @@ HttpClient createResilientHttpClient({
       }
     }
 
-    Future<Socket> secureIfNeeded(Socket tcp, {required bool invalidateOnFail}) async {
+    Future<Socket> secureIfNeeded(
+      Socket tcp, {
+      required bool invalidateOnFail,
+      VoidCallback? onTlsTimeout,
+    }) async {
       if (!isSecure) return tcp;
+      if (cancelled) {
+        tcp.destroy();
+        throw const SocketException('Connection cancelled');
+      }
       activeTcpSocket = tcp;
+      final secureFuture = SecureSocket.secure(
+        tcp,
+        host: uri.host,
+        context: tlsContext,
+      );
       try {
-        final secure = await SecureSocket.secure(tcp, host: uri.host);
+        final secure = await secureFuture.timeout(
+          tlsHandshakeTimeout,
+          onTimeout: () {
+            onTlsTimeout?.call();
+            unawaited(
+              secureFuture.then(
+                (lateSocket) => lateSocket.destroy(),
+                onError: (_) {},
+              ),
+            );
+            throw TimeoutException(
+              'TLS handshake timed out',
+              tlsHandshakeTimeout,
+            );
+          },
+        );
         activeTcpSocket = null;
         if (cancelled) {
           secure.destroy();
           throw const SocketException('Connection cancelled');
         }
         return secure;
-      } catch (_) {
+      } catch (error) {
         activeTcpSocket = null;
         tcp.destroy();
         if (!cancelled && invalidateOnFail) {
           dns.invalidate(uri.host);
+        }
+        if (error is TimeoutException) {
+          throw SocketException('TLS handshake timed out (${uri.host}:$port)');
         }
         rethrow;
       }
@@ -545,56 +703,79 @@ HttpClient createResilientHttpClient({
     Future<Socket> connectFuture() async {
       if (ResilientDnsResolver.shouldBypass(uri.host)) {
         final tcp = await connectAttempt(uri.host);
-        return secureIfNeeded(tcp, invalidateOnFail: false);
+        final finalSocket = await secureIfNeeded(tcp, invalidateOnFail: false);
+        verified = true;
+        return finalSocket;
       }
 
       final tried = <String>{};
-      Socket? connectedTcp;
-      InternetAddress? connectedAddr;
       Object? lastError;
+      var hadTransportOrFakeIpFailure = false;
 
-      Future<void> tryCandidates(List<InternetAddress> candidates) async {
+      Future<Socket?> tryCandidates(
+        List<InternetAddress> candidates, {
+        required bool trackFallbackNeed,
+      }) async {
         for (final addr in candidates) {
           if (cancelled) throw const SocketException('Connection cancelled');
-          final key = '${addr.type.name}:${addr.address}';
-          if (!tried.add(key)) continue;
+          if (!tried.add(addr.address)) continue;
+          var tlsAttempted = false;
+          var tlsTimedOut = false;
           try {
-            connectedTcp = await connectAttempt(addr);
-            connectedAddr = addr;
-            return;
+            final tcp = await connectAttempt(addr);
+            if (isSecure) {
+              tlsAttempted = true;
+            }
+            final finalSocket = await secureIfNeeded(
+              tcp,
+              invalidateOnFail: true,
+              onTlsTimeout: () => tlsTimedOut = true,
+            );
+            verified = true;
+            unawaited(dns.recordVerifiedSuccess(uri.host, addr));
+            return finalSocket;
           } catch (error) {
             if (cancelled) throw const SocketException('Connection cancelled');
             lastError = error;
+            if (trackFallbackNeed &&
+                (ResilientDnsResolver.isFakeIp(addr) ||
+                    !tlsAttempted ||
+                    tlsTimedOut)) {
+              hadTransportOrFakeIpFailure = true;
+            }
           }
         }
+        return null;
       }
 
       final initialCandidates = await dns.resolve(uri.host);
       if (cancelled) throw const SocketException('Connection cancelled');
-      await tryCandidates(initialCandidates);
+      final firstSocket = await tryCandidates(
+        initialCandidates,
+        trackFallbackNeed: true,
+      );
+      if (firstSocket != null) return firstSocket;
 
-      if (connectedTcp == null && !cancelled) {
-        dns.invalidate(uri.host);
-        final refreshed = await dns.resolve(uri.host, forceRefresh: true);
-        if (cancelled) throw const SocketException('Connection cancelled');
-        await tryCandidates(refreshed);
+      if (!cancelled && (hadTransportOrFakeIpFailure || tried.isEmpty)) {
+        try {
+          final fallbackCandidates = await dns.resolveFallback(
+            uri.host,
+            excludeAddresses: tried,
+          );
+          if (cancelled) throw const SocketException('Connection cancelled');
+          final fallbackSocket = await tryCandidates(
+            fallbackCandidates,
+            trackFallbackNeed: false,
+          );
+          if (fallbackSocket != null) return fallbackSocket;
+        } catch (error) {
+          if (cancelled) throw const SocketException('Connection cancelled');
+          lastError ??= error;
+        }
       }
 
-      final tcp = connectedTcp;
-      final addr = connectedAddr;
-      if (tcp == null || addr == null) {
-        if (lastError != null) throw lastError!;
-        throw SocketException('Failed to connect to ${uri.host}:$port');
-      }
-
-      if (cancelled) {
-        tcp.destroy();
-        throw const SocketException('Connection cancelled');
-      }
-
-      final finalSocket = await secureIfNeeded(tcp, invalidateOnFail: true);
-      unawaited(dns.recordVerifiedSuccess(uri.host, addr));
-      return finalSocket;
+      if (lastError != null) throw lastError!;
+      throw SocketException('Failed to connect to ${uri.host}:$port');
     }
 
     final socketFuture = connectFuture()..ignore();
@@ -606,23 +787,53 @@ HttpClient createResilientHttpClient({
   return httpClient;
 }
 
-final HttpClient _sharedWsHttpClient = createResilientHttpClient(
-  idleTimeout: const Duration(seconds: 25),
-);
-
-/// 使用抗冷启动 DNS 与严格 TLS 校验证书的共享 HTTP 客户端建立 WebSocket 连接。
+/// 使用抗冷启动 DNS 与严格 TLS 校验证书的受控短生命周期 HTTP 客户端建立 WebSocket 连接。
 Future<WebSocket> connectResilientWebSocket(
   String url, {
   Iterable<String>? protocols,
   Map<String, dynamic>? headers,
   CompressionOptions compression = CompressionOptions.compressionDefault,
   HttpClient? customClient,
-}) {
-  return WebSocket.connect(
+  Duration timeout = const Duration(seconds: 12),
+  @visibleForTesting ResilientDnsResolver? resolver,
+}) async {
+  final ownedClient = customClient == null
+      ? createResilientHttpClient(
+          resolver: resolver,
+          idleTimeout: const Duration(seconds: 25),
+        )
+      : null;
+  final client = customClient ?? ownedClient!;
+  final connectFuture = WebSocket.connect(
     url,
     protocols: protocols,
     headers: headers,
     compression: compression,
-    customClient: customClient ?? _sharedWsHttpClient,
+    customClient: client,
   );
+  try {
+    final socket = await connectFuture.timeout(
+      timeout,
+      onTimeout: () {
+        unawaited(
+          connectFuture.then(
+            (lateSocket) => lateSocket.close(WebSocketStatus.goingAway),
+            onError: (_) {},
+          ),
+        );
+        throw TimeoutException('WebSocket connection timed out ($url)', timeout);
+      },
+    );
+    ownedClient?.close(force: false);
+    return socket;
+  } catch (_) {
+    ownedClient?.close(force: true);
+    final parsedUri = Uri.tryParse(url);
+    if (parsedUri != null &&
+        parsedUri.host.isNotEmpty &&
+        !ResilientDnsResolver.shouldBypass(parsedUri.host)) {
+      (resolver ?? ResilientDnsResolver.instance).invalidate(parsedUri.host);
+    }
+    rethrow;
+  }
 }

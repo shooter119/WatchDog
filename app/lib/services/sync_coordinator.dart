@@ -123,12 +123,24 @@ class SyncCoordinator {
     await _bootstrapAndConnect();
   }
 
-  Future<void> checkpointNow() async {
+  Future<void> checkpointNow({bool force = false}) async {
     if (_stopped) return;
     _reconnectAttempt = 0;
     if (!_bootstrapped || _client?.connected != true) {
       _reconnectTimer?.cancel();
       _reconnectTimer = null;
+      if (force) {
+        _bootstrapGeneration++;
+        _inFlightBootstrap = null;
+        _busy = false;
+        final previousClient = _client;
+        _client = null;
+        if (previousClient != null) {
+          unawaited(previousClient.disconnect().catchError((Object _) {}));
+        }
+        await _bootstrapAndConnect();
+        return;
+      }
       final inFlight = _inFlightBootstrap;
       if (inFlight != null) {
         await inFlight;

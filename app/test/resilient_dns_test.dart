@@ -6,15 +6,58 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:watchdog/api/api_client.dart';
+import 'package:watchdog/services/realtime_sync_client.dart';
 import 'package:watchdog/services/resilient_dns.dart';
 
 Future<void> _instantDelay(Duration _) async {}
+
+({SecurityContext serverContext, SecurityContext clientContext, Directory dir})
+    _createTempTlsContexts(String hostname) {
+  final dir = Directory.systemTemp.createTempSync('watchdog_tls_test_');
+  final keyPath = '${dir.path}/key.pem';
+  final certPath = '${dir.path}/cert.pem';
+  final result = Process.runSync('openssl', <String>[
+    'req',
+    '-x509',
+    '-newkey',
+    'ec',
+    '-pkeyopt',
+    'ec_paramgen_curve:prime256v1',
+    '-nodes',
+    '-keyout',
+    keyPath,
+    '-out',
+    certPath,
+    '-days',
+    '1',
+    '-subj',
+    '/CN=$hostname',
+    '-addext',
+    'subjectAltName=DNS:$hostname',
+    '-addext',
+    'basicConstraints=critical,CA:TRUE',
+    '-addext',
+    'keyUsage=critical,keyCertSign,digitalSignature,keyEncipherment',
+    '-addext',
+    'extendedKeyUsage=serverAuth',
+  ]);
+  if (result.exitCode != 0) {
+    throw StateError('openssl cert generation failed: ${result.stderr}');
+  }
+  final serverContext = SecurityContext()
+    ..useCertificateChain(certPath)
+    ..usePrivateKey(keyPath);
+  final clientContext = SecurityContext()..setTrustedCertificates(certPath);
+  return (serverContext: serverContext, clientContext: clientContext, dir: dir);
+}
 
 class _RealHttpOverrides extends HttpOverrides {
   @override
   String findProxyFromEnvironment(Uri url, Map<String, String>? environment) =>
       'DIRECT';
 }
+
+final class _DefaultIoOverrides extends IOOverrides {}
 
 Future<T> _withRealHttp<T>(Future<T> Function() fn) =>
     HttpOverrides.runWithHttpOverrides(fn, _RealHttpOverrides());
@@ -652,6 +695,447 @@ void main() {
           SocketException("Failed host lookup: '$host'"),
         );
       });
+    }));
+  });
+
+  group('Issue #47 Fake-IP TLS 回退与 WebSocket 建连超时收口', () {
+    test('ResilientDnsResolver.isFakeIp 与 resolveFallback 正确跳过 Fake-IP 并回退 DoH/LKG', () async {
+      expect(ResilientDnsResolver.isFakeIp(InternetAddress('198.18.0.53')), isTrue);
+      expect(ResilientDnsResolver.isFakeIp(InternetAddress('198.19.255.254')), isTrue);
+      expect(ResilientDnsResolver.isFakeIp(InternetAddress('::ffff:198.18.0.53')), isTrue);
+      expect(ResilientDnsResolver.isFakeIp(InternetAddress('198.20.0.1')), isFalse);
+      expect(ResilientDnsResolver.isFakeIp(InternetAddress('127.0.0.1')), isFalse);
+      expect(ResilientDnsResolver.isFakeIp(InternetAddress('93.184.216.34')), isFalse);
+
+      // 1) 系统持续返回 Fake-IP 时，resolveFallback 穿透到 DoH 并仅返回公网 IP。
+      final resolverWithDoh = ResilientDnsResolver(
+        systemLookup: (host, {type = InternetAddressType.any}) async => [
+          InternetAddress('198.18.0.53'),
+        ],
+        dohLookup: (host) async => [
+          InternetAddress('198.18.0.99'),
+          InternetAddress('93.184.216.34'),
+        ],
+        delay: _instantDelay,
+      );
+      final dohResult = await resolverWithDoh.resolveFallback(
+        'api.example.com',
+        excludeAddresses: {'198.18.0.53'},
+      );
+      expect(dohResult.map((a) => a.address), ['93.184.216.34']);
+
+      // 2) DoH 为空时回退至 LKG 公网 IP；若 LKG 也在排除名单中则抛出 SocketException。
+      final resolverWithLkg = ResilientDnsResolver(
+        systemLookup: (host, {type = InternetAddressType.any}) async => [
+          InternetAddress('198.18.0.53'),
+        ],
+        dohLookup: (host) async => const <InternetAddress>[],
+        delay: _instantDelay,
+      );
+      await resolverWithLkg.recordVerifiedSuccess(
+        'api.example.com',
+        InternetAddress('93.184.216.34'),
+      );
+      final lkgResult = await resolverWithLkg.resolveFallback(
+        'api.example.com',
+        excludeAddresses: {'198.18.0.53'},
+      );
+      expect(lkgResult.map((a) => a.address), ['93.184.216.34']);
+
+      await expectLater(
+        resolverWithLkg.resolveFallback(
+          'api.example.com',
+          excludeAddresses: {'198.18.0.53', '93.184.216.34'},
+        ),
+        throwsA(isA<SocketException>()),
+      );
+    });
+
+    test('Fake-IP (198.18.0.53) TCP 秒通但 TLS 握手超时时自动切换 DoH 公网 IP 完成 HTTPS 连接', () => _withRealHttp(() async {
+      final tls = _createTempTlsContexts('api.example.com');
+      addTearDown(() => tls.dir.deleteSync(recursive: true));
+
+      // 模拟 Fake-IP TUN：TCP 秒通但不响应 TLS ClientHello。
+      final sinkSockets = <Socket>[];
+      final fakeIpSink = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final sinkSub = fakeIpSink.listen((socket) {
+        sinkSockets.add(socket);
+        socket.listen((_) {}, onError: (_) {});
+      });
+
+      // 真实 HTTPS 后端（由公网 IP 93.184.216.34 映射到达）。
+      final httpsServer = await HttpServer.bindSecure(
+        InternetAddress.loopbackIPv4,
+        0,
+        tls.serverContext,
+      );
+      final httpsSub = httpsServer.listen((request) async {
+        await request.drain<void>();
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..write('fallback-tls-ok');
+        await request.response.close();
+      });
+
+      addTearDown(() async {
+        for (final s in sinkSockets) {
+          s.destroy();
+        }
+        await sinkSub.cancel();
+        await fakeIpSink.close();
+        await httpsSub.cancel();
+        await httpsServer.close(force: true);
+      });
+
+      final resolver = ResilientDnsResolver(
+        systemLookup: (host, {type = InternetAddressType.any}) async => [
+          InternetAddress('198.18.0.53'),
+        ],
+        dohLookup: (host) async => [InternetAddress('93.184.216.34')],
+        delay: _instantDelay,
+      );
+
+      final parentIoOverrides = IOOverrides.current ?? _DefaultIoOverrides();
+      await IOOverrides.runZoned(() async {
+        final client = IOClient(
+          createResilientHttpClient(
+            resolver: resolver,
+            tlsHandshakeTimeout: const Duration(milliseconds: 250),
+            tlsContext: tls.clientContext,
+          ),
+        );
+        addTearDown(client.close);
+
+        final res = await client.get(
+          Uri.parse('https://api.example.com:${httpsServer.port}/ping'),
+        );
+        expect(res.statusCode, 200);
+        expect(res.body, 'fallback-tls-ok');
+      }, socketStartConnect: (host, port, {sourceAddress, sourcePort = 0}) {
+        final target = host is InternetAddress ? host.address : host.toString();
+        return IOOverrides.runWithIOOverrides(() {
+          if (target == '198.18.0.53') {
+            return Socket.startConnect(
+              InternetAddress.loopbackIPv4,
+              fakeIpSink.port,
+            );
+          }
+          if (target == '93.184.216.34') {
+            return Socket.startConnect(
+              InternetAddress.loopbackIPv4,
+              httpsServer.port,
+            );
+          }
+          return Socket.startConnect(
+            host,
+            port,
+            sourceAddress: sourceAddress,
+            sourcePort: sourcePort,
+          );
+        }, parentIoOverrides);
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('dns_lkg_v1_api.example.com'), '93.184.216.34');
+    }));
+
+    test('Fake-IP (198.18.0.53) TCP 秒通但 TLS 握手失败时自动切换 LKG 公网 IP 完成 HTTPS 连接', () => _withRealHttp(() async {
+      final tls = _createTempTlsContexts('api.example.com');
+      addTearDown(() => tls.dir.deleteSync(recursive: true));
+
+      // 模拟 Fake-IP 立即返回明文响应导致 HandshakeException。
+      final fakeIpServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final fakeSub = fakeIpServer.listen((socket) {
+        socket.add(utf8.encode('HTTP/1.1 200 OK\r\n\r\n'));
+        socket.destroy();
+      });
+
+      final httpsServer = await HttpServer.bindSecure(
+        InternetAddress.loopbackIPv4,
+        0,
+        tls.serverContext,
+      );
+      final httpsSub = httpsServer.listen((request) async {
+        await request.drain<void>();
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..write('lkg-tls-ok');
+        await request.response.close();
+      });
+
+      addTearDown(() async {
+        await fakeSub.cancel();
+        await fakeIpServer.close();
+        await httpsSub.cancel();
+        await httpsServer.close(force: true);
+      });
+
+      final resolver = ResilientDnsResolver(
+        systemLookup: (host, {type = InternetAddressType.any}) async => [
+          InternetAddress('198.18.0.53'),
+        ],
+        dohLookup: (host) async => const <InternetAddress>[],
+        delay: _instantDelay,
+      );
+      await resolver.recordVerifiedSuccess(
+        'api.example.com',
+        InternetAddress('93.184.216.34'),
+      );
+
+      final parentIoOverrides = IOOverrides.current ?? _DefaultIoOverrides();
+      await IOOverrides.runZoned(() async {
+        final client = IOClient(
+          createResilientHttpClient(
+            resolver: resolver,
+            tlsContext: tls.clientContext,
+          ),
+        );
+        addTearDown(client.close);
+
+        final res = await client.get(
+          Uri.parse('https://api.example.com:${httpsServer.port}/ping'),
+        );
+        expect(res.statusCode, 200);
+        expect(res.body, 'lkg-tls-ok');
+      }, socketStartConnect: (host, port, {sourceAddress, sourcePort = 0}) {
+        final target = host is InternetAddress ? host.address : host.toString();
+        return IOOverrides.runWithIOOverrides(() {
+          if (target == '198.18.0.53') {
+            return Socket.startConnect(
+              InternetAddress.loopbackIPv4,
+              fakeIpServer.port,
+            );
+          }
+          if (target == '93.184.216.34') {
+            return Socket.startConnect(
+              InternetAddress.loopbackIPv4,
+              httpsServer.port,
+            );
+          }
+          return Socket.startConnect(
+            host,
+            port,
+            sourceAddress: sourceAddress,
+            sourcePort: sourcePort,
+          );
+        }, parentIoOverrides);
+      });
+    }));
+
+    test('connectResilientWebSocket 不传 customClient 时短生命周期 client 关闭后仍可正常通信', () => _withRealHttp(() async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final sub = server.listen((request) async {
+        if (WebSocketTransformer.isUpgradeRequest(request)) {
+          final ws = await WebSocketTransformer.upgrade(request);
+          ws.listen((msg) => ws.add('echo:$msg'));
+          return;
+        }
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await sub.cancel();
+        await server.close(force: true);
+      });
+
+      final socket = await connectResilientWebSocket(
+        'ws://127.0.0.1:${server.port}/ws',
+      );
+      addTearDown(socket.close);
+
+      socket.add('owned-client');
+      final reply = await socket.first.timeout(const Duration(seconds: 2));
+      expect(reply, 'echo:owned-client');
+    }));
+
+    test('connectResilientWebSocket 当服务端不回 101 时按 timeout 超时退出并失效缓存', () => _withRealHttp(() async {
+      final heldSockets = <Socket>[];
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final sub = server.listen((socket) {
+        heldSockets.add(socket);
+        // 接收 HTTP 升级请求但不返回 101 Switching Protocols。
+        socket.listen((_) {}, onError: (_) {});
+      });
+      addTearDown(() async {
+        for (final s in heldSockets) {
+          s.destroy();
+        }
+        await sub.cancel();
+        await server.close();
+      });
+
+      var lookups = 0;
+      final resolver = ResilientDnsResolver(
+        systemLookup: (host, {type = InternetAddressType.any}) async {
+          lookups++;
+          return [InternetAddress.loopbackIPv4];
+        },
+        delay: _instantDelay,
+      );
+
+      final stopwatch = Stopwatch()..start();
+      await expectLater(
+        connectResilientWebSocket(
+          'ws://api.example.com:${server.port}/api/realtime',
+          timeout: const Duration(milliseconds: 200),
+          resolver: resolver,
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      stopwatch.stop();
+
+      expect(lookups, 1);
+      expect(stopwatch.elapsedMilliseconds, lessThan(1500));
+
+      // 超时已触发 invalidate，后续解析必须重新查询。
+      await resolver.resolve('api.example.com');
+      expect(lookups, 2);
+    }));
+
+    test('RealtimeClient connectTimeout 超时退出并安全清理迟到 socket，disconnect 同步防泄漏', () => _withRealHttp(() async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final serverSockets = <WebSocket>[];
+      final serverCloseEvents = <Completer<int?>>[];
+      final receivedMessages = <String>[];
+      final sub = server.listen((request) async {
+        if (WebSocketTransformer.isUpgradeRequest(request)) {
+          final ws = await WebSocketTransformer.upgrade(request);
+          serverSockets.add(ws);
+          final closed = Completer<int?>();
+          serverCloseEvents.add(closed);
+          ws.listen(
+            (msg) => receivedMessages.add(msg.toString()),
+            onDone: () {
+              if (!closed.isCompleted) closed.complete(ws.closeCode);
+            },
+          );
+          return;
+        }
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+      });
+      addTearDown(() async {
+        for (final ws in serverSockets) {
+          await ws.close();
+        }
+        await sub.cancel();
+        await server.close(force: true);
+      });
+
+      final api = ApiClient(
+        baseUrl: 'http://127.0.0.1:${server.port}',
+        incidentId: 'incident-1',
+        sessionToken: 'token-1',
+      );
+      addTearDown(api.dispose);
+
+      final defaultClient = RealtimeClient(api: api, onMessage: (_) {});
+      expect(defaultClient.connectTimeout, const Duration(seconds: 12));
+      defaultClient.dispose();
+
+      // 1) socketFactory 挂起超过 connectTimeout 时抛出 TimeoutException，且迟到 socket 会被自动关闭。
+      final lateCompleter = Completer<WebSocket>();
+      final timeoutClient = RealtimeClient(
+        api: api,
+        onMessage: (_) {},
+        connectTimeout: const Duration(milliseconds: 150),
+        socketFactory: (_, {headers}) => lateCompleter.future,
+      );
+      addTearDown(timeoutClient.dispose);
+
+      final stopwatch = Stopwatch()..start();
+      await expectLater(
+        timeoutClient.connect(
+          unitCursor: '0',
+          incidentCursor: '0',
+          incidentId: 'incident-1',
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      stopwatch.stop();
+      expect(timeoutClient.connected, isFalse);
+      expect(stopwatch.elapsedMilliseconds, lessThan(1000));
+
+      final lateWs = await WebSocket.connect('ws://127.0.0.1:${server.port}/ws');
+      lateCompleter.complete(lateWs);
+      final lateCloseCode = await serverCloseEvents.last.future.timeout(
+        const Duration(seconds: 2),
+      );
+      expect(lateCloseCode, WebSocketStatus.goingAway);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(lateWs.readyState, isNot(WebSocket.open));
+      expect(receivedMessages, isEmpty);
+
+      // 2) socketFactory 挂起期间主动调用 disconnect() 后，迟到 socket 同样被安全关闭。
+      final cancelCompleter = Completer<WebSocket>();
+      final cancelClient = RealtimeClient(
+        api: api,
+        onMessage: (_) {},
+        connectTimeout: const Duration(seconds: 5),
+        socketFactory: (_, {headers}) => cancelCompleter.future,
+      );
+      final pendingConnect = cancelClient.connect(
+        unitCursor: '0',
+        incidentCursor: '0',
+        incidentId: 'incident-1',
+      );
+      await cancelClient.disconnect();
+
+      final canceledLateWs = await WebSocket.connect(
+        'ws://127.0.0.1:${server.port}/ws',
+      );
+      cancelCompleter.complete(canceledLateWs);
+      await pendingConnect;
+      final cancelCloseCode = await serverCloseEvents.last.future.timeout(
+        const Duration(seconds: 2),
+      );
+      expect(cancelCloseCode, WebSocketStatus.normalClosure);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(cancelClient.connected, isFalse);
+      expect(canceledLateWs.readyState, isNot(WebSocket.open));
+      expect(receivedMessages, isEmpty);
+    }));
+
+    test('createResilientHttpClient 未完成验证前被 connectionTimeout 取消时 onCancel 失效缓存', () => _withRealHttp(() async {
+      final sinkSockets = <Socket>[];
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final sub = server.listen((socket) {
+        sinkSockets.add(socket);
+        socket.listen((_) {}, onError: (_) {});
+      });
+      addTearDown(() async {
+        for (final s in sinkSockets) {
+          s.destroy();
+        }
+        await sub.cancel();
+        await server.close();
+      });
+
+      var lookups = 0;
+      final resolver = ResilientDnsResolver(
+        systemLookup: (host, {type = InternetAddressType.any}) async {
+          lookups++;
+          return [InternetAddress.loopbackIPv4];
+        },
+        delay: _instantDelay,
+      );
+      final client = IOClient(
+        createResilientHttpClient(
+          resolver: resolver,
+          connectionTimeout: const Duration(milliseconds: 200),
+          tlsHandshakeTimeout: const Duration(seconds: 6),
+        ),
+      );
+      addTearDown(client.close);
+
+      await expectLater(
+        client.get(Uri.parse('https://api.example.com:${server.port}/ping')),
+        throwsA(isA<Exception>()),
+      );
+      expect(lookups, 1);
+
+      await resolver.resolve('api.example.com');
+      expect(lookups, 2);
     }));
   });
 }

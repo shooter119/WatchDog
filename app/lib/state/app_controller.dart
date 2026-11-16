@@ -55,6 +55,7 @@ class AppController extends ChangeNotifier {
   final OfflineQueueDrainer? _offlineQueueDrainer;
   final SyncClientFactory? _syncClientFactory;
   final ApiClientFactory? _apiFactory;
+  final int Function() _nowMs;
   final LocalParser localParser = LocalParser();
   ApiClient? api;
   final AlarmService alarm = AlarmService();
@@ -73,10 +74,14 @@ class AppController extends ChangeNotifier {
     OfflineQueueDrainer? offlineQueueDrainer,
     @visibleForTesting SyncClientFactory? syncClientFactory,
     @visibleForTesting ApiClientFactory? apiFactory,
+    @visibleForTesting int Function()? nowMs,
   }) : _offlineOperationEnqueuer = offlineOperationEnqueuer,
        _offlineQueueDrainer = offlineQueueDrainer,
        _syncClientFactory = syncClientFactory,
-       _apiFactory = apiFactory;
+       _apiFactory = apiFactory,
+       _nowMs = nowMs ?? _defaultNowMs;
+
+  static int _defaultNowMs() => DateTime.now().millisecondsSinceEpoch;
 
   List<Entry> entries = [];
   final OrgDirectory orgDirectory = OrgDirectory();
@@ -96,6 +101,12 @@ class AppController extends ChangeNotifier {
   );
 
   bool syncing = false;
+  bool _manualRefreshInFlight = false;
+  bool _legacySyncInFlight = false;
+  int _nextSyncOpToken = 0;
+  final Set<int> _activeManualRefreshOps = <int>{};
+  final Set<int> _activeLegacySyncOps = <int>{};
+  bool _lastConnectionLost = false;
   int _assistantPending = 0;
   bool get _assistantBusy => _assistantPending > 0;
   String? syncError;
@@ -141,7 +152,7 @@ class AppController extends ChangeNotifier {
   bool get connectionLost => isConnectionLost(
     lastSyncSuccessAt: _lastSyncSuccessAt,
     firstSyncFailureAt: _firstSyncFailureAt,
-    nowMs: DateTime.now().millisecondsSinceEpoch,
+    nowMs: _nowMs(),
     thresholdMs: connectionLostThreshold,
     syncConnected: syncConnectionState == SyncConnectionState.connected,
   );
@@ -241,6 +252,12 @@ class AppController extends ChangeNotifier {
         ? foregroundTickInterval
         : backgroundTickInterval;
     _tickTimer = Timer.periodic(interval, (_) {
+      final lost = connectionLost;
+      if (lost != _lastConnectionLost) {
+        _lastConnectionLost = lost;
+        _recomputeSyncing();
+        _notify();
+      }
       _checkThresholds();
       clockTick.value++;
     });
@@ -264,6 +281,10 @@ class AppController extends ChangeNotifier {
     if (_tickTimer != null) {
       _restartTickTimer();
     }
+    ForegroundKeepAlive.reportMainLifecycle(
+      inForeground: _appInForeground,
+      syncConnected: syncConnectionState == SyncConnectionState.connected,
+    );
   }
 
   int pendingMemberCount = 0;
@@ -504,6 +525,16 @@ class AppController extends ChangeNotifier {
     if (_tickTimer != null) {
       _restartTickTimer();
     }
+    ForegroundKeepAlive.reportMainLifecycle(
+      inForeground: _appInForeground,
+      syncConnected: syncConnectionState == SyncConnectionState.connected,
+    );
+    final lost = connectionLost;
+    if (lost != _lastConnectionLost) {
+      _lastConnectionLost = lost;
+      _recomputeSyncing();
+      _notify();
+    }
     unawaited(refreshPendingMembersCount());
     try {
       await _refreshSession();
@@ -734,6 +765,7 @@ class AppController extends ChangeNotifier {
     _isGuest = true;
     await Settings.setIsGuestMode(true);
     _initGuestIncident();
+    _recomputeSyncing();
     unawaited(_ensureOptionalServices());
     _notify();
   }
@@ -915,7 +947,11 @@ class AppController extends ChangeNotifier {
     _syncSnapshotApplied = false;
     _syncFuture = null;
     _keepAliveFuture = null;
-    syncing = false;
+    _activeManualRefreshOps.clear();
+    _manualRefreshInFlight = false;
+    _activeLegacySyncOps.clear();
+    _legacySyncInFlight = false;
+    _recomputeSyncing();
     try {
       await activeApi?.logout();
     } catch (_) {
@@ -1076,6 +1112,7 @@ class AppController extends ChangeNotifier {
       unitCode: unitCode,
       warnMin: calcConfig.warnMin,
       alarmMin: calcConfig.alarmMin,
+      mainInForeground: _appInForeground,
     );
   }
 
@@ -1158,11 +1195,12 @@ class AppController extends ChangeNotifier {
   Future<void> _refreshConfigOnce() async {
     if (_disposed) return;
     final previousApi = api;
-    final restartRealtime = _syncStarted && _syncCoordinator != null;
-    if (restartRealtime) {
-      await _syncCoordinator?.stop();
+    final existingCoordinator = _syncCoordinator;
+    if (existingCoordinator != null) {
       _syncCoordinator = null;
+      await existingCoordinator.stop();
     }
+    if (_disposed) return;
     _syncSnapshotApplied = false;
     final serverUrl = await Settings.serverUrl;
     final incidentId = await Settings.currentIncidentId;
@@ -1213,9 +1251,10 @@ class AppController extends ChangeNotifier {
       warnMin: await Settings.warnMin,
       alarmMin: await Settings.alarmMin,
     );
-    if (restartRealtime && _authenticated) {
+    if (!_refreshConfigAgain && _syncStarted && _authenticated) {
       _trackRealtimeStart(_startRealtimeSync());
     }
+    _recomputeSyncing();
     _notify();
   }
 
@@ -1239,12 +1278,41 @@ class AppController extends ChangeNotifier {
     onAuthenticationFailure: onAuthenticationFailure,
   );
 
+  void _recomputeSyncing() {
+    syncing = shouldShowSyncingIndicator(
+      disposed: _disposed,
+      isGuest: _isGuest,
+      authenticated: _authenticated,
+      syncConnectionState: syncConnectionState,
+      syncSnapshotApplied: _syncSnapshotApplied,
+      connectionLost: connectionLost,
+      coordinatorRunning: _syncCoordinator?.running == true,
+      realtimeStarting: _realtimeStartFuture != null,
+      manualRefreshInFlight: _manualRefreshInFlight,
+      legacySyncInFlight: _legacySyncInFlight,
+    );
+  }
+
+  void _reportMainSnapshotToKeepAlive() {
+    final activeEntries = entries.where((entry) => entry.isActive).toList()
+      ..sort((a, b) => a.exitAt.compareTo(b.exitAt));
+    ForegroundKeepAlive.reportMainSnapshot(
+      activeCount: activeEntries.length,
+      earliestExitAt: activeEntries.isEmpty ? 0 : activeEntries.first.exitAt,
+      mainInForeground: _appInForeground,
+      mainSyncConnected: syncConnectionState == SyncConnectionState.connected,
+    );
+  }
+
   void _trackRealtimeStart(Future<void> future) {
     _realtimeStartFuture = future;
+    _recomputeSyncing();
     unawaited(
       future.whenComplete(() {
         if (identical(_realtimeStartFuture, future)) {
           _realtimeStartFuture = null;
+          _recomputeSyncing();
+          _notify();
         }
       }),
     );
@@ -1259,14 +1327,19 @@ class AppController extends ChangeNotifier {
     _syncStarted = true;
     _restartTickTimer();
     _trackRealtimeStart(_startRealtimeSync());
+    _notify();
   }
 
-  Future<void> sync() {
+  Future<void> sync() => _sync(force: false);
+
+  Future<void> _sync({bool force = false}) {
     if (_disposed || _assistantBusy || api == null) {
       return Future<void>.value();
     }
     final realtime = _syncCoordinator;
-    if (realtime != null && realtime.running) return realtime.checkpointNow();
+    if (realtime != null && realtime.running) {
+      return realtime.checkpointNow(force: force);
+    }
     final realtimeStart = _realtimeStartFuture;
     if (realtimeStart != null) {
       return realtimeStart.then((_) {
@@ -1276,9 +1349,12 @@ class AppController extends ChangeNotifier {
         if (_disposed) return Future<void>.value();
         final started = _syncCoordinator;
         if (started != null && started.running) {
+          if (force && syncConnectionState != SyncConnectionState.connected) {
+            return started.checkpointNow(force: true);
+          }
           return Future<void>.value();
         }
-        return sync();
+        return _sync(force: force);
       });
     }
     final existing = _syncFuture;
@@ -1303,7 +1379,12 @@ class AppController extends ChangeNotifier {
     if (_disposed || !_authenticated || a == null) return;
     final incidentId = await Settings.currentIncidentId;
     if (_disposed || !_authenticated || !identical(api, a)) return;
-    await _syncCoordinator?.stop();
+    final previous = _syncCoordinator;
+    if (previous != null) {
+      _syncCoordinator = null;
+      await previous.stop();
+    }
+    if (_disposed || !_authenticated || !identical(api, a)) return;
     final coordinator = SyncCoordinator(
       api: a,
       onSnapshot: _applySyncSnapshot,
@@ -1321,37 +1402,48 @@ class AppController extends ChangeNotifier {
       return;
     }
     if (_disposed) return;
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = _nowMs();
+    final wasConnected = syncConnectionState == SyncConnectionState.connected;
     syncConnectionState = state;
     if (state == SyncConnectionState.connected) {
       _lastSyncSuccessAt = now;
       _firstSyncFailureAt = 0;
       syncError = null;
-      syncing = false;
     } else if (state == SyncConnectionState.stopped) {
-      syncing = false;
+      // 由 shouldShowSyncingIndicator 统一收口状态计算
     } else {
-      final coordinatorRunning = _syncCoordinator?.running == true;
-      syncing =
-          coordinatorRunning ||
-          state == SyncConnectionState.bootstrapping ||
-          state == SyncConnectionState.connecting;
+      if (wasConnected) {
+        // 实时通道刚掉线：从掉线时刻重新起算 30 秒平滑窗口
+        _lastSyncSuccessAt = now;
+        _firstSyncFailureAt = now;
+      }
       syncError = null;
-      if (error != null) {
+      if (error != null ||
+          state == SyncConnectionState.reconnecting ||
+          state == SyncConnectionState.error) {
         _firstSyncFailureAt = _firstSyncFailureAt == 0
             ? now
             : _firstSyncFailureAt;
-        if (now - _lastSyncErrorLogAt >= 15000) {
-          _lastSyncErrorLogAt = now;
-          OpLogService.instance.record(
-            'realtime-sync',
-            'sync_retry',
-            '$error',
-            level: 'warn',
-          );
-          debugPrint('WatchDog realtime sync retry: $error');
-        }
       }
+      if (error != null && now - _lastSyncErrorLogAt >= 15000) {
+        _lastSyncErrorLogAt = now;
+        OpLogService.instance.record(
+          'realtime-sync',
+          'sync_retry',
+          '$error',
+          level: 'warn',
+        );
+        debugPrint('WatchDog realtime sync retry: $error');
+      }
+    }
+    _lastConnectionLost = connectionLost;
+    _recomputeSyncing();
+    ForegroundKeepAlive.reportMainLifecycle(
+      inForeground: _appInForeground,
+      syncConnected: syncConnectionState == SyncConnectionState.connected,
+    );
+    if (state == SyncConnectionState.connected) {
+      _reportMainSnapshotToKeepAlive();
     }
     _notify();
   }
@@ -1422,9 +1514,12 @@ class AppController extends ChangeNotifier {
     final unitId = (snapshot['unit'] as Map?)?['id']?.toString();
     if (unitId != null && unitId.isNotEmpty) unawaited(_cacheRoster(unitId));
     unawaited(localAsr?.updateHotwords(orgDirectory.asrTerms));
-    _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
+    _lastSyncSuccessAt = _nowMs();
     _firstSyncFailureAt = 0;
+    _lastConnectionLost = connectionLost;
     syncError = null;
+    _recomputeSyncing();
+    _reportMainSnapshotToKeepAlive();
     unawaited(_rescheduleNotifications());
     _notify();
   }
@@ -1556,13 +1651,20 @@ class AppController extends ChangeNotifier {
         }
         break;
     }
-    _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
+    _lastSyncSuccessAt = _nowMs();
+    _firstSyncFailureAt = 0;
+    _lastConnectionLost = connectionLost;
+    _recomputeSyncing();
+    _reportMainSnapshotToKeepAlive();
     unawaited(_rescheduleNotifications());
     _notify();
   }
 
   Future<void> _syncInternal(ApiClient a, int generation) async {
-    syncing = true;
+    final opToken = ++_nextSyncOpToken;
+    _activeLegacySyncOps.add(opToken);
+    _legacySyncInFlight = true;
+    _recomputeSyncing();
     // 让页面在慢请求期间立即进入“同步中”，而不是等请求结束后才收到
     // 一次性状态通知；这也避免短请求沿用上一轮“已连接”文案造成误导。
     _notify();
@@ -1629,14 +1731,10 @@ class AppController extends ChangeNotifier {
         }
       }
       syncError = null;
-      _lastSyncSuccessAt = DateTime.now().millisecondsSinceEpoch;
+      _lastSyncSuccessAt = _nowMs();
       _firstSyncFailureAt = 0;
-      final activeEntries = entries.where((entry) => entry.isActive).toList()
-        ..sort((a, b) => a.exitAt.compareTo(b.exitAt));
-      ForegroundKeepAlive.reportMainSnapshot(
-        activeCount: activeEntries.length,
-        earliestExitAt: activeEntries.isEmpty ? 0 : activeEntries.first.exitAt,
-      );
+      _lastConnectionLost = connectionLost;
+      _reportMainSnapshotToKeepAlive();
       await _rescheduleNotifications();
       unawaited(_ensureOptionalServices());
     } catch (e) {
@@ -1668,7 +1766,7 @@ class AppController extends ChangeNotifier {
       }
       // 请求级超时和 HttpClient 的连接/空闲超时负责回收失败连接；不能为了
       // 一次同步失败关闭共享客户端，否则会中断同时进行的日志或其他请求。
-      final now = DateTime.now().millisecondsSinceEpoch;
+      final now = _nowMs();
       _firstSyncFailureAt = _firstSyncFailureAt == 0
           ? now
           : _firstSyncFailureAt;
@@ -1679,10 +1777,11 @@ class AppController extends ChangeNotifier {
       }
       debugPrint('WatchDog sync failed: $e');
     } finally {
-      if (generation == _sessionGeneration && !_disposed) {
-        syncing = false;
-        _notify();
-      }
+      _activeLegacySyncOps.remove(opToken);
+      _legacySyncInFlight = _activeLegacySyncOps.isNotEmpty;
+      _lastConnectionLost = connectionLost;
+      _recomputeSyncing();
+      _notify();
     }
   }
 
@@ -1850,7 +1949,11 @@ class AppController extends ChangeNotifier {
     _syncSnapshotApplied = false;
     _syncFuture = null;
     _keepAliveFuture = null;
-    syncing = false;
+    _activeManualRefreshOps.clear();
+    _manualRefreshInFlight = false;
+    _activeLegacySyncOps.clear();
+    _legacySyncInFlight = false;
+    _recomputeSyncing();
     await _stopKeepAliveSafely();
     await _clearScheduledNotifications();
     await Settings.setCurrentIncidentId('');
@@ -1887,6 +1990,7 @@ class AppController extends ChangeNotifier {
     _firstSyncFailureAt = 0;
     _lastSyncErrorLogAt = 0;
     _syncSnapshotApplied = false;
+    _lastConnectionLost = false;
     syncError = null;
     _announced.clear();
     _scheduled.clear();
@@ -1922,9 +2026,23 @@ class AppController extends ChangeNotifier {
   }
 
   /// 下拉刷新：等待一次实际同步完成（与轮询互斥），供刷新控件与失败反馈使用
-  Future<void> refreshNow() {
+  Future<void> refreshNow() async {
     unawaited(_ensureOptionalServices(force: true));
-    return sync();
+    if (_disposed || _isGuest) return;
+    final opToken = ++_nextSyncOpToken;
+    _activeManualRefreshOps.add(opToken);
+    _manualRefreshInFlight = true;
+    _recomputeSyncing();
+    _notify();
+    try {
+      await _sync(force: true);
+    } finally {
+      _activeManualRefreshOps.remove(opToken);
+      _manualRefreshInFlight = _activeManualRefreshOps.isNotEmpty;
+      _lastConnectionLost = connectionLost;
+      _recomputeSyncing();
+      _notify();
+    }
   }
 
   /// 新条目到达时调度本地通知；exitAt 变化（改名/压力复核）时重新调度
@@ -2274,20 +2392,43 @@ class AppController extends ChangeNotifier {
     _sessionGeneration++;
     _syncFuture = null;
     _keepAliveFuture = null;
-    await refreshConfig();
-    unawaited(syncKeepAlive());
+    unawaited(_clearScheduledNotifications());
+    _resetSessionHealth();
     // 列表或新建冲突响应已经带回了完整警情档案。先完成本机选择，
     // 详细人员/日志数据放到后台同步，避免网络抖动阻塞“加入警情”这个动作。
     if (knownIncident != null) {
       currentIncident = knownIncident;
+      activeIncidents = [
+        knownIncident,
+        ...activeIncidents.where((item) => item.id != knownIncident.id),
+      ];
       entries = [];
       notes = [];
       forces = [];
+      _recomputeSyncing();
       _notify();
-      unawaited(sync());
+    }
+    await refreshConfig();
+    if (_disposed) return;
+    unawaited(syncKeepAlive());
+    if (knownIncident != null) {
+      if (!_syncStarted) {
+        if (_authenticated) {
+          startSync();
+        } else {
+          unawaited(sync());
+        }
+      }
       return;
     }
-    await sync();
+    if (_authenticated) {
+      if (!_syncStarted) {
+        startSync();
+      }
+      await (_realtimeStartFuture ?? Future<void>.value());
+    } else {
+      await sync();
+    }
   }
 
   Future<Incident> createIncident() async {
@@ -2334,12 +2475,31 @@ class AppController extends ChangeNotifier {
     }
     await Settings.setCurrentIncidentId(incident.id);
     _enteredWithoutIncident = false;
+    currentIncident = incident;
+    activeIncidents = [
+      incident,
+      ...activeIncidents.where((item) => item.id != incident.id),
+    ];
+    entries = [];
+    notes = [];
+    forces = [];
     _sessionGeneration++;
     _syncFuture = null;
     _keepAliveFuture = null;
+    unawaited(_clearScheduledNotifications());
+    _resetSessionHealth();
+    _recomputeSyncing();
+    _notify();
     await refreshConfig();
+    if (_disposed) return incident;
     unawaited(syncKeepAlive());
-    await sync();
+    if (!_syncStarted) {
+      if (_authenticated) {
+        startSync();
+      } else {
+        await sync();
+      }
+    }
     return incident;
   }
 
@@ -2428,12 +2588,31 @@ class AppController extends ChangeNotifier {
     }
     await Settings.setCurrentIncidentId(incident.id);
     _enteredWithoutIncident = false;
+    currentIncident = incident;
+    activeIncidents = [
+      incident,
+      ...activeIncidents.where((item) => item.id != incident.id),
+    ];
+    entries = [];
+    notes = [];
+    forces = [];
     _sessionGeneration++;
     _syncFuture = null;
     _keepAliveFuture = null;
+    unawaited(_clearScheduledNotifications());
+    _resetSessionHealth();
+    _recomputeSyncing();
+    _notify();
     await refreshConfig();
+    if (_disposed) return incident;
     unawaited(syncKeepAlive());
-    await sync();
+    if (!_syncStarted) {
+      if (_authenticated) {
+        startSync();
+      } else {
+        await sync();
+      }
+    }
     return incident;
   }
 
@@ -2464,9 +2643,20 @@ class AppController extends ChangeNotifier {
     entries = [];
     notes = [];
     forces = [];
+    unawaited(_clearScheduledNotifications());
+    _resetSessionHealth();
+    _recomputeSyncing();
+    _notify();
     await refreshConfig();
+    if (_disposed) return;
     unawaited(syncKeepAlive());
-    await sync();
+    if (!_syncStarted) {
+      if (_authenticated) {
+        startSync();
+      } else {
+        await sync();
+      }
+    }
   }
 
   /// 退出当前警情只清除本机选择，不归档服务器档案；之后仍可从活跃列表重新加入。
@@ -2481,9 +2671,20 @@ class AppController extends ChangeNotifier {
     entries = [];
     notes = [];
     forces = [];
+    unawaited(_clearScheduledNotifications());
+    _resetSessionHealth();
+    _recomputeSyncing();
+    _notify();
     await refreshConfig();
+    if (_disposed) return;
     unawaited(syncKeepAlive());
-    await sync();
+    if (!_syncStarted) {
+      if (_authenticated) {
+        startSync();
+      } else {
+        await sync();
+      }
+    }
   }
 
   Future<void> refreshIncidentData(String id) async {
@@ -3083,6 +3284,11 @@ class AppController extends ChangeNotifier {
     _disposed = true;
     _adminCapabilityTimer?.cancel();
     _sessionGeneration++;
+    _activeManualRefreshOps.clear();
+    _manualRefreshInFlight = false;
+    _activeLegacySyncOps.clear();
+    _legacySyncInFlight = false;
+    _recomputeSyncing();
     unawaited(OpLogService.instance.flushLocal());
     unawaited(_syncCoordinator?.stop() ?? Future<void>.value());
     _tickTimer?.cancel();
@@ -3097,6 +3303,45 @@ class AppController extends ChangeNotifier {
     clockTick.dispose();
     super.dispose();
   }
+}
+
+/// 同步状态指示器统一计算规则：
+/// - 已释放或游客模式 -> false；
+/// - 主动手动刷新（refreshNow）或旧路径同步进行中 -> true；
+/// - 未认证或已停止且无启动任务 -> false；
+/// - 实时通道已连接（connected）-> false；
+/// - 首次快照尚未就绪时：未超过 30 秒断线阈值且仍在同步/启动/连接中 -> true，超时后 -> false（转「已中断」）；
+/// - 首次快照就绪后：返回 false（30 秒内保「已连接」，超 30 秒转「已中断」）。
+@visibleForTesting
+bool shouldShowSyncingIndicator({
+  required bool disposed,
+  required bool isGuest,
+  required bool authenticated,
+  required SyncConnectionState syncConnectionState,
+  required bool syncSnapshotApplied,
+  required bool connectionLost,
+  required bool coordinatorRunning,
+  required bool realtimeStarting,
+  required bool manualRefreshInFlight,
+  required bool legacySyncInFlight,
+}) {
+  if (disposed || isGuest) return false;
+  if (manualRefreshInFlight || legacySyncInFlight) return true;
+  if (!authenticated) return false;
+  if (syncConnectionState == SyncConnectionState.connected) return false;
+  if (syncConnectionState == SyncConnectionState.stopped &&
+      !coordinatorRunning &&
+      !realtimeStarting) {
+    return false;
+  }
+  if (!syncSnapshotApplied) {
+    if (connectionLost) return false;
+    return coordinatorRunning ||
+        realtimeStarting ||
+        syncConnectionState == SyncConnectionState.bootstrapping ||
+        syncConnectionState == SyncConnectionState.connecting;
+  }
+  return false;
 }
 
 /// 平滑断线判定纯函数（可单测）：

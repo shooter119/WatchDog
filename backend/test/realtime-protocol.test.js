@@ -60,10 +60,10 @@ function startServer(port) {
   return child;
 }
 
-function openSyncSocket(device = 'realtime-test-device') {
+function openSyncSocket(device = 'realtime-test-device', extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(`ws://127.0.0.1:${ports[0]}/api/realtime`, {
-      headers: headers(device),
+      headers: { ...headers(device), ...extraHeaders },
     });
     const messages = [];
     socket.on('message', (data) => {
@@ -80,6 +80,46 @@ function openSyncSocket(device = 'realtime-test-device') {
     });
     socket.once('error', reject);
   });
+}
+
+function waitForClose(socket, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    if (socket.readyState === WebSocket.CLOSED) return resolve({ code: null, reason: '' });
+    const timer = setTimeout(() => reject(new Error('等待 WebSocket 关闭超时')), timeoutMs);
+    socket.once('close', (code, reason) => {
+      clearTimeout(timer);
+      resolve({ code, reason: reason ? reason.toString() : '' });
+    });
+  });
+}
+
+async function closeSyncSocket(socket) {
+  if (!socket || socket.readyState === WebSocket.CLOSED) return;
+  const closed = waitForClose(socket);
+  socket.close();
+  await closed;
+}
+
+async function fetchMetrics() {
+  const response = await fetch(`${baseA}/api/metrics`, {
+    headers: { 'X-Metrics-Token': 'realtime-metrics-token' },
+  });
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function postSyncNote(opId, text) {
+  const response = await fetch(`${baseB}/api/notes`, {
+    method: 'POST',
+    headers: {
+      ...headers('writer-device'),
+      'X-Actor-Name-B64': Buffer.from('测试员').toString('base64'),
+      'X-Op-Id': opId,
+    },
+    body: JSON.stringify({ text, category: '其他' }),
+  });
+  assert.equal(response.status, 201);
+  return response.json();
 }
 
 function waitForMessage(messages, predicate) {
@@ -238,4 +278,125 @@ test('同一设备的新 WebSocket 会替换旧连接', { concurrency: false }, 
   assert.ok(metrics.websocket_replacements >= 1);
   await oldConnectionClosed;
   second.socket.close();
+});
+
+test('CORS 预检响应允许 X-Sync-Client 请求头', { concurrency: false }, async () => {
+  const response = await fetch(`${baseA}/api/sync/bootstrap`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'http://localhost',
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Headers': 'X-Sync-Client',
+    },
+  });
+  assert.equal(response.status, 204);
+  const allowHeaders = String(response.headers.get('access-control-allow-headers') || '');
+  assert.match(allowHeaders, /\bX-Sync-Client\b/i);
+});
+
+test('同设备 main 与 keepalive 槽位互不替换且均可正常收发事件', { concurrency: false }, async () => {
+  const beforeMetrics = await fetchMetrics();
+
+  // 1) main 先建连，keepalive 后建连：main 保持 open 且双方共收事件
+  const deviceA = `slot-isolation-a-${randomUUID()}`;
+  const mainFirst = await openSyncSocket(deviceA);
+  await waitForMessage(mainFirst.messages, (message) => message.type === 'ready');
+  let mainFirstClosed = false;
+  mainFirst.socket.once('close', () => { mainFirstClosed = true; });
+
+  const keepaliveSecond = await openSyncSocket(deviceA, { 'X-Sync-Client': 'keepalive' });
+  await waitForMessage(keepaliveSecond.messages, (message) => message.type === 'ready');
+
+  assert.equal(mainFirstClosed, false);
+  assert.equal(mainFirst.socket.readyState, WebSocket.OPEN);
+  assert.equal(keepaliveSecond.socket.readyState, WebSocket.OPEN);
+
+  const opIdA = `slot-a-${randomUUID()}`;
+  await postSyncNote(opIdA, 'main先连后keepalive共收');
+  const [evMainA, evKeepaliveA] = await Promise.all([
+    waitForMessage(mainFirst.messages, (message) => message.client_op_id === opIdA),
+    waitForMessage(keepaliveSecond.messages, (message) => message.client_op_id === opIdA),
+  ]);
+  assert.equal(evMainA.event_type, 'note.created');
+  assert.equal(evKeepaliveA.event_type, 'note.created');
+  await Promise.all([closeSyncSocket(mainFirst.socket), closeSyncSocket(keepaliveSecond.socket)]);
+
+  // 2) 反之亦然：keepalive 先建连，main 后建连：keepalive 保持 open 且双方共收事件
+  const deviceB = `slot-isolation-b-${randomUUID()}`;
+  const keepaliveFirst = await openSyncSocket(deviceB, { 'X-Sync-Client': 'keepalive' });
+  await waitForMessage(keepaliveFirst.messages, (message) => message.type === 'ready');
+  let keepaliveFirstClosed = false;
+  keepaliveFirst.socket.once('close', () => { keepaliveFirstClosed = true; });
+
+  const mainSecond = await openSyncSocket(deviceB, { 'X-Sync-Client': 'main' });
+  await waitForMessage(mainSecond.messages, (message) => message.type === 'ready');
+
+  assert.equal(keepaliveFirstClosed, false);
+  assert.equal(keepaliveFirst.socket.readyState, WebSocket.OPEN);
+  assert.equal(mainSecond.socket.readyState, WebSocket.OPEN);
+
+  const opIdB = `slot-b-${randomUUID()}`;
+  await postSyncNote(opIdB, 'keepalive先连后main共收');
+  const [evKeepaliveB, evMainB] = await Promise.all([
+    waitForMessage(keepaliveFirst.messages, (message) => message.client_op_id === opIdB),
+    waitForMessage(mainSecond.messages, (message) => message.client_op_id === opIdB),
+  ]);
+  assert.equal(evKeepaliveB.event_type, 'note.created');
+  assert.equal(evMainB.event_type, 'note.created');
+  await Promise.all([closeSyncSocket(keepaliveFirst.socket), closeSyncSocket(mainSecond.socket)]);
+
+  const afterMetrics = await fetchMetrics();
+  assert.equal(afterMetrics.websocket_replacements, beforeMetrics.websocket_replacements);
+});
+
+test('同设备同角色重复建连按 4001 替换旧连接且不影响另一角色', { concurrency: false }, async () => {
+  const beforeMetrics = await fetchMetrics();
+  const device = `slot-replace-${randomUUID()}`;
+
+  const main1 = await openSyncSocket(device);
+  await waitForMessage(main1.messages, (message) => message.type === 'ready');
+  const keepalive1 = await openSyncSocket(device, { 'X-Sync-Client': 'keepalive' });
+  await waitForMessage(keepalive1.messages, (message) => message.type === 'ready');
+
+  // main -> main 替换：main1 被 4001 关闭，keepalive1 不受影响
+  const main1Closed = waitForClose(main1.socket);
+  let keepalive1ClosedUnexpectedly = false;
+  const onKeepaliveUnexpectedClose = () => { keepalive1ClosedUnexpectedly = true; };
+  keepalive1.socket.once('close', onKeepaliveUnexpectedClose);
+
+  const main2 = await openSyncSocket(device, { 'X-Sync-Client': 'main' });
+  await waitForMessage(main2.messages, (message) => message.type === 'ready');
+  const main1CloseInfo = await main1Closed;
+  assert.equal(main1CloseInfo.code, 4001);
+  assert.equal(main1CloseInfo.reason, 'replaced by newer connection');
+  assert.equal(keepalive1ClosedUnexpectedly, false);
+  assert.equal(keepalive1.socket.readyState, WebSocket.OPEN);
+  keepalive1.socket.off('close', onKeepaliveUnexpectedClose);
+
+  // keepalive -> keepalive 替换：keepalive1 被 4001 关闭，main2 不受影响
+  const keepalive1Closed = waitForClose(keepalive1.socket);
+  let main2ClosedUnexpectedly = false;
+  main2.socket.once('close', () => { main2ClosedUnexpectedly = true; });
+
+  const keepalive2 = await openSyncSocket(device, { 'X-Sync-Client': 'keepalive' });
+  await waitForMessage(keepalive2.messages, (message) => message.type === 'ready');
+  const keepalive1CloseInfo = await keepalive1Closed;
+  assert.equal(keepalive1CloseInfo.code, 4001);
+  assert.equal(keepalive1CloseInfo.reason, 'replaced by newer connection');
+  assert.equal(main2ClosedUnexpectedly, false);
+  assert.equal(main2.socket.readyState, WebSocket.OPEN);
+
+  const afterMetrics = await fetchMetrics();
+  assert.equal(afterMetrics.websocket_replacements, beforeMetrics.websocket_replacements + 2);
+
+  const opId = `slot-replace-ev-${randomUUID()}`;
+  await postSyncNote(opId, '同角色替换后仍可收发');
+  const [evMain2, evKeepalive2] = await Promise.all([
+    waitForMessage(main2.messages, (message) => message.client_op_id === opId),
+    waitForMessage(keepalive2.messages, (message) => message.client_op_id === opId),
+  ]);
+  assert.equal(evMain2.event_type, 'note.created');
+  assert.equal(evKeepalive2.event_type, 'note.created');
+
+  await Promise.all([closeSyncSocket(main2.socket), closeSyncSocket(keepalive2.socket)]);
 });

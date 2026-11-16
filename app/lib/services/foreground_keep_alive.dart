@@ -37,12 +37,15 @@ class ForegroundKeepAlive {
   static const _kUnitCode = 'keepalive_unit_code';
   static const _kWarnMin = 'keepalive_warn_min';
   static const _kAlarmMin = 'keepalive_alarm_min';
+  static const _kMainInForeground = 'keepalive_main_in_foreground';
   static const _contextUpdatedMessage = 'keepalive_context_updated';
 
   /// 将主 isolate 的最新摘要交给服务 isolate，避免前台时重复请求。
   static void reportMainSnapshot({
     required int activeCount,
     required int earliestExitAt,
+    bool? mainInForeground,
+    bool? mainSyncConnected,
   }) {
     if (!Platform.isAndroid) return;
     try {
@@ -51,9 +54,29 @@ class ForegroundKeepAlive {
         'at': DateTime.now().millisecondsSinceEpoch,
         'activeCount': activeCount,
         'earliestExitAt': earliestExitAt,
+        if (mainInForeground != null) 'mainInForeground': mainInForeground,
+        if (mainSyncConnected != null) 'mainSyncConnected': mainSyncConnected,
       });
     } catch (_) {
       // 服务未启动或插件尚未就绪时忽略；下一次服务启动会自行拉取完整快照。
+    }
+  }
+
+  /// 将主 isolate 的前后台状态与实时同步连接状态同步给服务 isolate。
+  static void reportMainLifecycle({
+    required bool inForeground,
+    required bool syncConnected,
+  }) {
+    if (!Platform.isAndroid) return;
+    try {
+      FlutterForegroundTask.sendDataToTask({
+        'type': 'main_lifecycle',
+        'at': DateTime.now().millisecondsSinceEpoch,
+        'inForeground': inForeground,
+        'syncConnected': syncConnected,
+      });
+    } catch (_) {
+      // 服务未启动或插件尚未就绪时忽略。
     }
   }
 
@@ -132,6 +155,7 @@ class ForegroundKeepAlive {
     required String unitCode,
     required int warnMin,
     required int alarmMin,
+    bool mainInForeground = false,
   }) {
     if (!Platform.isAndroid) {
       return Future<void>.value(); // 非 Android（含测试环境）无前台服务
@@ -152,6 +176,10 @@ class ForegroundKeepAlive {
       await _writeSensitive(_kUnitCode, unitCode);
       await FlutterForegroundTask.saveData(key: _kWarnMin, value: warnMin);
       await FlutterForegroundTask.saveData(key: _kAlarmMin, value: alarmMin);
+      await FlutterForegroundTask.saveData(
+        key: _kMainInForeground,
+        value: mainInForeground,
+      );
       if (await FlutterForegroundTask.isRunningService) {
         // 配置已经完整写入后再通知服务 isolate 重读；消息本身不携带
         // 令牌或现场数据，避免在跨 isolate 通道中传递敏感上下文。
@@ -191,6 +219,7 @@ class ForegroundKeepAlive {
         _kUnitCode,
         _kWarnMin,
         _kAlarmMin,
+        _kMainInForeground,
       ]) {
         try {
           await FlutterForegroundTask.removeData(key: key);
@@ -251,12 +280,26 @@ void watchdogStartCallback() {
   FlutterForegroundTask.setTaskHandler(WatchdogTaskHandler());
 }
 
+typedef KeepAliveSocketFactory = Future<WebSocket> Function(
+  String url, {
+  Map<String, dynamic>? headers,
+});
+
 /// 服务 isolate 内的任务处理器：优先保持业务 WebSocket，断线时每 30 秒快照校准。
 class WatchdogTaskHandler extends TaskHandler {
-  WatchdogTaskHandler({http.Client? httpClient})
-    : _httpClient = httpClient ?? IOClient(createResilientHttpClient());
+  WatchdogTaskHandler({
+    http.Client? httpClient,
+    KeepAliveSocketFactory? socketFactory,
+  }) : _httpClient = httpClient ?? IOClient(createResilientHttpClient()),
+       _socketFactory = socketFactory ?? _defaultSocketFactory;
+
+  static Future<WebSocket> _defaultSocketFactory(
+    String url, {
+    Map<String, dynamic>? headers,
+  }) => connectResilientWebSocket(url, headers: headers);
 
   final http.Client _httpClient;
+  final KeepAliveSocketFactory _socketFactory;
   WebSocket? _socket;
   bool _destroyed = false;
   String _serverUrl = '';
@@ -269,12 +312,33 @@ class WatchdogTaskHandler extends TaskHandler {
   int _alarmMin = 5;
   int _contextGeneration = 0;
   Future<void>? _refreshFuture;
+  int? _refreshingGeneration;
   int _lastMainSyncAt = 0;
+  int _lastMainLifecycleAt = 0;
+  int _mainStateGeneration = 0;
   int _mainActiveCount = 0;
   int _mainEarliestExitAt = 0;
+  bool _mainInForeground = false;
+  bool _mainSyncConnected = false;
   String _unitCursor = '0';
   String _incidentCursor = '0';
   final Map<String, Map<String, Object>> _backgroundEntries = {};
+
+  /// 主 isolate 处于前台且已建立实时连接或快照仍在 8 秒新鲜窗口内时，
+  /// 由主通道全权主控同步，后台值守不主动抢占连接或发起冗余拉取。
+  bool _isMainOnline(int nowMs) =>
+      _mainInForeground &&
+      (_mainSyncConnected ||
+          isMainSnapshotFresh(lastSyncAt: _lastMainSyncAt, nowMs: nowMs));
+
+  Future<void> _closeSocket() async {
+    final socket = _socket;
+    _socket = null;
+    if (socket == null) return;
+    try {
+      await socket.close(WebSocketStatus.normalClosure);
+    } catch (_) {}
+  }
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -285,10 +349,15 @@ class WatchdogTaskHandler extends TaskHandler {
   @override
   void onRepeatEvent(DateTime timestamp) {
     if (_destroyed || _incidentId.isEmpty) return;
-    if (isMainSnapshotFresh(
-      lastSyncAt: _lastMainSyncAt,
-      nowMs: timestamp.millisecondsSinceEpoch,
-    )) {
+    final nowMs = timestamp.millisecondsSinceEpoch;
+    if (_isMainOnline(nowMs)) {
+      if (_socket != null) {
+        unawaited(_closeSocket());
+      }
+      unawaited(_updateNotificationFromMain(_lastMainSyncAt));
+      return;
+    }
+    if (isMainSnapshotFresh(lastSyncAt: _lastMainSyncAt, nowMs: nowMs)) {
       return;
     }
     if (_socket?.readyState == WebSocket.open) {
@@ -301,23 +370,53 @@ class WatchdogTaskHandler extends TaskHandler {
 
   @override
   void onReceiveData(Object data) {
-    if (data is Map &&
-        data['type'] == ForegroundKeepAlive._contextUpdatedMessage) {
+    if (data is! Map) return;
+    final type = data['type'];
+    if (type == ForegroundKeepAlive._contextUpdatedMessage) {
       // 只接收刷新信号，完整上下文仍从各自的持久化存储读取。
       unawaited(_reloadContext());
       return;
     }
-    if (data is! Map || data['type'] != 'main_snapshot') return;
+    if (type == 'main_lifecycle') {
+      final at = (data['at'] as num?)?.toInt() ?? 0;
+      if (at > 0 && at < _lastMainLifecycleAt) return;
+      if (at > _lastMainLifecycleAt) _lastMainLifecycleAt = at;
+      _mainStateGeneration++;
+      _mainInForeground = data['inForeground'] == true;
+      _mainSyncConnected = data['syncConnected'] == true;
+      if (_mainInForeground && _mainSyncConnected && _socket != null) {
+        unawaited(_closeSocket());
+      }
+      return;
+    }
+    if (type != 'main_snapshot') return;
     final at = (data['at'] as num?)?.toInt() ?? 0;
-    if (at <= _lastMainSyncAt) return;
+    if (at <= 0 || at < _lastMainSyncAt) return;
     _lastMainSyncAt = at;
     _mainActiveCount = (data['activeCount'] as num?)?.toInt() ?? 0;
     _mainEarliestExitAt = (data['earliestExitAt'] as num?)?.toInt() ?? 0;
+    final mainInForeground = data['mainInForeground'];
+    final mainSyncConnected = data['mainSyncConnected'];
+    if (mainInForeground is bool || mainSyncConnected is bool) {
+      _mainStateGeneration++;
+      if (mainInForeground is bool) _mainInForeground = mainInForeground;
+      if (mainSyncConnected is bool) _mainSyncConnected = mainSyncConnected;
+    }
+    if (_isMainOnline(at) && _socket != null) {
+      unawaited(_closeSocket());
+    }
     unawaited(_updateNotificationFromMain(at));
   }
 
   Future<void> _updateNotificationFromMain(int at) async {
     if (at != _lastMainSyncAt || _incidentId.isEmpty) return;
+    if (at <= 0) {
+      await FlutterForegroundTask.updateService(
+        notificationTitle: '火场指挥中',
+        notificationText: '后台实时同步与报警保护已开启',
+      );
+      return;
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
     if (_mainActiveCount <= 0) {
       await FlutterForegroundTask.updateService(
@@ -345,8 +444,7 @@ class WatchdogTaskHandler extends TaskHandler {
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     _destroyed = true;
-    await _socket?.close(WebSocketStatus.normalClosure);
-    _socket = null;
+    await _closeSocket();
     _httpClient.close();
   }
 
@@ -360,13 +458,16 @@ class WatchdogTaskHandler extends TaskHandler {
     _unitId = '';
     _unitCode = '';
     _lastMainSyncAt = 0;
+    _lastMainLifecycleAt = 0;
     _mainActiveCount = 0;
     _mainEarliestExitAt = 0;
+    _mainInForeground = false;
+    _mainSyncConnected = false;
+    final initialMainStateGeneration = _mainStateGeneration;
     _unitCursor = '0';
     _incidentCursor = '0';
     _backgroundEntries.clear();
-    await _socket?.close(WebSocketStatus.normalClosure);
-    _socket = null;
+    await _closeSocket();
 
     final serverUrl =
         await FlutterForegroundTask.getData<String>(
@@ -398,6 +499,11 @@ class WatchdogTaskHandler extends TaskHandler {
           key: ForegroundKeepAlive._kAlarmMin,
         ) ??
         5;
+    final mainInForeground =
+        await FlutterForegroundTask.getData<bool>(
+          key: ForegroundKeepAlive._kMainInForeground,
+        ) ??
+        false;
     if (generation != _contextGeneration) return;
 
     // 前台服务可配置为开机/应用更新后自启。服务 isolate 恢复时必须和
@@ -417,6 +523,10 @@ class WatchdogTaskHandler extends TaskHandler {
     _unitCode = unitCode;
     _warnMin = warnMin;
     _alarmMin = alarmMin;
+    if (_mainStateGeneration == initialMainStateGeneration) {
+      _mainInForeground = mainInForeground;
+      _mainSyncConnected = false;
+    }
 
     // 清理旧版本可能已写入 flutter_foreground_task SharedPreferences 的
     // 敏感键，但不读取它们，避免升级后继续使用明文凭据。
@@ -430,6 +540,10 @@ class WatchdogTaskHandler extends TaskHandler {
       } catch (_) {}
     }
     if (generation != _contextGeneration) return;
+    if (_mainInForeground) {
+      await _updateNotificationFromMain(_lastMainSyncAt);
+      return;
+    }
     await _refreshForContext(generation);
   }
 
@@ -442,28 +556,40 @@ class WatchdogTaskHandler extends TaskHandler {
   }
 
   Future<void> _refreshForContext(int generation) async {
-    if (generation != _contextGeneration || _incidentId.isEmpty) return;
+    if (generation != _contextGeneration ||
+        _incidentId.isEmpty ||
+        (_mainInForeground && _mainSyncConnected)) {
+      return;
+    }
     final existing = _refreshFuture;
     if (existing != null) {
+      final existingGeneration = _refreshingGeneration;
       await existing;
-      if (generation != _contextGeneration) {
-        await _refreshForContext(_contextGeneration);
+      if (generation == _contextGeneration &&
+          existingGeneration != generation &&
+          !(_mainInForeground && _mainSyncConnected)) {
+        await _refreshForContext(generation);
       }
       return;
     }
     final future = _refresh(generation);
     _refreshFuture = future;
+    _refreshingGeneration = generation;
     try {
       await future;
     } finally {
-      if (identical(_refreshFuture, future)) _refreshFuture = null;
+      if (identical(_refreshFuture, future)) {
+        _refreshFuture = null;
+        _refreshingGeneration = null;
+      }
     }
   }
 
   Future<void> _refresh(int generation) async {
     if (generation != _contextGeneration ||
         _serverUrl.isEmpty ||
-        _incidentId.isEmpty) {
+        _incidentId.isEmpty ||
+        (_mainInForeground && _mainSyncConnected)) {
       return;
     }
     if (!_isSafeServerUrl(_serverUrl)) return;
@@ -483,7 +609,11 @@ class WatchdogTaskHandler extends TaskHandler {
           )
           .timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return;
-      if (generation != _contextGeneration || incidentId != _incidentId) return;
+      if (generation != _contextGeneration ||
+          incidentId != _incidentId ||
+          (_mainInForeground && _mainSyncConnected)) {
+        return;
+      }
       final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
       final cursors = body['cursors'] as Map<String, dynamic>?;
       _unitCursor = cursors?['unit']?.toString() ?? _unitCursor;
@@ -534,7 +664,15 @@ class WatchdogTaskHandler extends TaskHandler {
   }
 
   Future<void> _connectRealtime(int generation) async {
-    if (generation != _contextGeneration || _incidentId.isEmpty || _serverUrl.isEmpty) return;
+    if (generation != _contextGeneration ||
+        _incidentId.isEmpty ||
+        _serverUrl.isEmpty) {
+      return;
+    }
+    if (_mainInForeground && _mainSyncConnected) {
+      await _closeSocket();
+      return;
+    }
     if (_socket?.readyState == WebSocket.open) return;
     final base = Uri.tryParse(_serverUrl);
     if (base == null || base.host.isEmpty) return;
@@ -544,19 +682,26 @@ class WatchdogTaskHandler extends TaskHandler {
       query: '',
     );
     try {
-      final socket = await connectResilientWebSocket(
+      final socket = await _socketFactory(
         uri.toString(),
         headers: {
           'X-Incident-Id': _incidentId,
+          'X-Sync-Client': 'keepalive',
           if (_token.isNotEmpty) 'X-Api-Token': _token,
           if (_sessionToken.isNotEmpty) 'Authorization': 'Bearer $_sessionToken',
           if (_unitId.isNotEmpty) 'X-Unit-Id': _unitId,
           if (_unitCode.isNotEmpty) 'X-Unit-Code': _unitCode,
         },
       );
-      if (_destroyed || generation != _contextGeneration || _incidentId.isEmpty) {
+      if (_destroyed ||
+          generation != _contextGeneration ||
+          _incidentId.isEmpty ||
+          (_mainInForeground && _mainSyncConnected)) {
         await socket.close(WebSocketStatus.normalClosure);
         return;
+      }
+      if (_socket != null) {
+        unawaited(_closeSocket());
       }
       _socket = socket;
       socket.listen(
@@ -586,9 +731,7 @@ class WatchdogTaskHandler extends TaskHandler {
       final message = jsonDecode(data.toString());
       if (message is! Map<String, dynamic>) return;
       if (message['type'] == 'resync_required') {
-        final socket = _socket;
-        _socket = null;
-        unawaited(socket?.close(WebSocketStatus.normalClosure) ?? Future<void>.value());
+        unawaited(_closeSocket());
         return;
       }
       if (message['type'] != 'event') return;

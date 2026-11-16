@@ -24,6 +24,7 @@ import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
+import '../services/sync_coordinator.dart';
 import '../services/video_playback_session.dart';
 import '../state/app_controller.dart';
 import '../theme/app_dialogs.dart';
@@ -1346,6 +1347,24 @@ class HomePageState extends State<HomePage> {
           final isGuest = c.isGuest;
           final isSyncing = c.syncing;
           final isConnected = !c.connectionLost;
+          final reconnectingInBackground =
+              !isGuest &&
+              !isSyncing &&
+              isConnected &&
+              c.syncConnectionState != SyncConnectionState.connected &&
+              c.syncConnectionState != SyncConnectionState.stopped;
+          final statusText = isGuest
+              ? '模式：游客模式（单机演练）'
+              : isSyncing
+              ? '状态：同步中'
+              : (isConnected ? '状态：已联网绑定' : '状态：连接已中断');
+          final detailHint = isGuest
+              ? null
+              : isSyncing
+              ? '正在同步警情与实时通道数据'
+              : reconnectingInBackground
+              ? '实时通道正在后台重连，已保留最近同步数据'
+              : (!isConnected ? '连续超过 30 秒未能同步，请检查网络或立即重试' : null);
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.pageMargin),
@@ -1363,7 +1382,7 @@ class HomePageState extends State<HomePage> {
                             : (isConnected
                                   ? Icons.cloud_done_outlined
                                   : Icons.cloud_off_outlined),
-                        color: isSyncing
+                        color: isGuest || isSyncing
                             ? AppColors.textSecondary
                             : (isConnected
                                   ? AppColors.online
@@ -1379,14 +1398,18 @@ class HomePageState extends State<HomePage> {
                     ],
                   ),
                   const SizedBox(height: AppSpacing.s3),
-                  Text(
-                    isGuest
-                        ? '模式：游客模式（单机演练）'
-                        : isSyncing
-                        ? '状态：同步中'
-                        : (isConnected ? '状态：已联网绑定' : '状态：连接已中断'),
-                    style: AppTextStyles.bodyMd,
-                  ),
+                  Text(statusText, style: AppTextStyles.bodyMd),
+                  if (detailHint != null) ...[
+                    const SizedBox(height: AppSpacing.s1),
+                    Text(
+                      detailHint,
+                      style: AppTextStyles.caption.copyWith(
+                        color: isConnected
+                            ? AppColors.textSecondary
+                            : AppColors.cautionText,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.s1),
                   Text(
                     '服务地址：$serverUrl',
@@ -1396,10 +1419,12 @@ class HomePageState extends State<HomePage> {
                   ),
                   const SizedBox(height: AppSpacing.s4),
                   FilledButton(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      c.refreshNow();
-                    },
+                    onPressed: isGuest
+                        ? null
+                        : () {
+                            Navigator.pop(ctx);
+                            unawaited(c.refreshNow());
+                          },
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.actionPrimary,
                     ),

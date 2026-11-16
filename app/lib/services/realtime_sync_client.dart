@@ -16,8 +16,10 @@ class RealtimeClient {
   final void Function(Object error)? onError;
   final void Function()? onDone;
   final SyncSocketFactory socketFactory;
+  final Duration connectTimeout;
   WebSocket? _socket;
   bool _closed = false;
+  int _connectEpoch = 0;
 
   RealtimeClient({
     required this.api,
@@ -25,12 +27,14 @@ class RealtimeClient {
     this.onError,
     this.onDone,
     SyncSocketFactory? socketFactory,
-  }) : socketFactory = socketFactory ?? _defaultSocketFactory;
-
-  static Future<WebSocket> _defaultSocketFactory(
-    Uri uri, {
-    Map<String, dynamic>? headers,
-  }) => connectResilientWebSocket(uri.toString(), headers: headers);
+    this.connectTimeout = const Duration(seconds: 12),
+  }) : socketFactory =
+           socketFactory ??
+           ((uri, {headers}) => connectResilientWebSocket(
+                 uri.toString(),
+                 headers: headers,
+                 timeout: connectTimeout,
+               ));
 
   bool get connected => _socket?.readyState == WebSocket.open;
 
@@ -39,14 +43,42 @@ class RealtimeClient {
     required String incidentCursor,
     String? incidentId,
   }) async {
-    await disconnect();
+    final previousSocket = _socket;
+    _socket = null;
     _closed = false;
-    final socket = await socketFactory(
+    final epoch = ++_connectEpoch;
+    if (previousSocket != null) {
+      try {
+        await previousSocket.close(WebSocketStatus.normalClosure);
+      } catch (_) {}
+    }
+    if (_closed || epoch != _connectEpoch) return;
+
+    final socketFuture = socketFactory(
       api.realtimeSyncUri(),
       headers: api.realtimeSyncHeaders(),
     );
-    if (_closed) {
-      socket.close();
+    var timedOut = false;
+    final socket = await socketFuture.timeout(
+      connectTimeout,
+      onTimeout: () {
+        timedOut = true;
+        unawaited(
+          socketFuture.then(
+            (lateSocket) => lateSocket.close(WebSocketStatus.goingAway),
+            onError: (_) {},
+          ),
+        );
+        throw TimeoutException(
+          'Realtime WebSocket connection timed out',
+          connectTimeout,
+        );
+      },
+    );
+    if (_closed || timedOut || epoch != _connectEpoch) {
+      try {
+        await socket.close(WebSocketStatus.normalClosure);
+      } catch (_) {}
       return;
     }
     _socket = socket;
@@ -75,9 +107,14 @@ class RealtimeClient {
 
   Future<void> disconnect() async {
     _closed = true;
+    _connectEpoch++;
     final socket = _socket;
     _socket = null;
-    if (socket != null) await socket.close(WebSocketStatus.normalClosure);
+    if (socket != null) {
+      try {
+        await socket.close(WebSocketStatus.normalClosure);
+      } catch (_) {}
+    }
   }
 
   void dispose() {

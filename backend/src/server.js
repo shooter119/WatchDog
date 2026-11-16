@@ -153,7 +153,7 @@ app.use(express.json({ limit: '512kb' }));
 app.use((req, res, next) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Session-Token, X-Incident-Id, X-Api-Token, X-Device-Id, X-Unit-Id, X-Unit-Code, X-Actor-Name, X-Actor-Name-B64, X-Op-Id, X-Expected-Version, X-Management-Token');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Session-Token, X-Incident-Id, X-Api-Token, X-Device-Id, X-Unit-Id, X-Unit-Code, X-Actor-Name, X-Actor-Name-B64, X-Op-Id, X-Expected-Version, X-Management-Token, X-Sync-Client');
   res.set('Access-Control-Expose-Headers', 'X-Request-Id');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
@@ -744,7 +744,12 @@ function queueSyncNotification(notification) {
 
 syncWss.on('connection', (ws, req, auth) => {
   const deviceId = auth.auth.deviceId || null;
-  const previous = deviceId ? syncDevices.get(deviceId) : null;
+  const rawSyncClient = String(realtimeHeader(req, 'x-sync-client') || '').trim().toLowerCase();
+  const syncClientRole = rawSyncClient === 'keepalive'
+    ? 'keepalive'
+    : (SESSION_AUTH_REQUIRED && !realtimeHeader(req, 'x-device-id') ? 'keepalive' : 'main');
+  const deviceSlotKey = deviceId ? `${deviceId}:${syncClientRole}` : null;
+  const previous = deviceSlotKey ? syncDevices.get(deviceSlotKey) : null;
   if (previous) {
     metrics.websocketReplacements += 1;
     try {
@@ -758,6 +763,7 @@ syncWss.on('connection', (ws, req, auth) => {
     ws,
     unitId: auth.unit.id,
     deviceId,
+    syncClientRole,
     sessionId: auth.auth.sessionId,
     incidentId: null,
     unitCursor: '0',
@@ -770,7 +776,7 @@ syncWss.on('connection', (ws, req, auth) => {
   };
   syncSessions.add(state);
   metrics.websocketConnections += 1;
-  if (deviceId) syncDevices.set(deviceId, state);
+  if (deviceSlotKey) syncDevices.set(deviceSlotKey, state);
   ws.on('pong', () => { state.lastPongAt = Date.now(); });
   state.heartbeat = setInterval(() => {
     void validateSocketSession(state);
@@ -807,7 +813,7 @@ syncWss.on('connection', (ws, req, auth) => {
   ws.on('close', () => {
     clearInterval(state.heartbeat);
     syncSessions.delete(state);
-    if (deviceId && syncDevices.get(deviceId) === state) syncDevices.delete(deviceId);
+    if (deviceSlotKey && syncDevices.get(deviceSlotKey) === state) syncDevices.delete(deviceSlotKey);
   });
   ws.on('error', () => {});
 });
