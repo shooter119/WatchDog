@@ -29,15 +29,15 @@ void main() {
 
   final mockRouteInfo = RouteTrafficInfo(
     destination: const RouteEndpointInfo(
-      queryAddress: '新安东路1号',
-      formattedAddress: '浙江省杭州市建德市新安江街道新安东路1号',
-      city: '杭州市',
-      district: '建德市',
+      queryAddress: '示范东路1号',
+      formattedAddress: '示例省示例市示例县示例街道示范东路1号',
+      city: '示例市',
+      district: '示例县',
       adcode: '330182',
       location: AmapLocation(lat: 29.474, lon: 119.281, coordinate: 'gcj02'),
     ),
     origin: const RouteOriginInfo(
-      address: '浙江省杭州市建德市洋溪街道洋安大道',
+      address: '示例省示例市示例县示例南街道示范大道',
       location: AmapLocation(lat: 29.491, lon: 119.302, coordinate: 'gcj02'),
     ),
     weather: const RouteWeatherLive(
@@ -46,7 +46,7 @@ void main() {
       humidity: '65',
       windDirection: '东南',
       windPower: '≤3',
-      city: '建德市',
+      city: '示例县',
     ),
     forecast: const RouteWeatherForecast(
       dayWeather: '多云',
@@ -61,19 +61,19 @@ void main() {
         durationSeconds: 780,
         trafficLights: 6,
         overallStatus: '局部缓行',
-        roads: const ['洋安大道', '新安江大桥', '新安东路'],
+        roads: const ['示范大道', '示范大桥', '示范东路'],
         trafficSummary: const TrafficSummary(
           smoothMeters: 5200,
           slowMeters: 1200,
           jamMeters: 400,
         ),
         congestedSegments: const [
-          CongestedSegment(road: '新安江大桥', status: '拥堵', distanceMeters: 400),
+          CongestedSegment(road: '示范大桥', status: '拥堵', distanceMeters: 400),
         ],
         steps: const [
           RouteStepInfo(
-            instruction: '沿洋安大道向西南行驶1.8公里左转',
-            road: '洋安大道',
+            instruction: '沿示范大道向西南行驶1.8公里左转',
+            road: '示范大道',
             distanceMeters: 1800,
             durationSeconds: 180,
             action: '左转',
@@ -87,7 +87,7 @@ void main() {
         durationSeconds: 900,
         trafficLights: 8,
         overallStatus: '畅通',
-        roads: ['洋安大道', '白沙路'],
+        roads: ['示范大道', '示范二路'],
       ),
     ],
     routeAvailable: true,
@@ -113,7 +113,7 @@ void main() {
       expect(uri.host, 'uri.amap.com');
       expect(uri.path, '/navigation');
       expect(uri.queryParameters, {
-        'to': '119.281000,29.474000,浙江省杭州市建德市新安江街道新安东路1号',
+        'to': '119.281000,29.474000,示例省示例市示例县示例街道示范东路1号',
         'mode': 'car',
         'src': 'watchdog',
         'callnative': '1',
@@ -125,7 +125,7 @@ void main() {
       expect(nativeUri.host, 'navi');
       expect(nativeUri.queryParameters, {
         'sourceApplication': 'watchdog',
-        'poiname': '浙江省杭州市建德市新安江街道新安东路1号',
+        'poiname': '示例省示例市示例县示例街道示范东路1号',
         'lat': '29.474000',
         'lon': '119.281000',
         'dev': '0',
@@ -154,13 +154,13 @@ void main() {
     });
 
     test('生成路况纯文本简报', () {
-      final text = mockRouteInfo.toSummaryText(incidentName: '建德某厂火警');
-      expect(text, contains('警情：建德某厂火警'));
-      expect(text, contains('事发地点：浙江省杭州市建德市新安江街道新安东路1号'));
+      final text = mockRouteInfo.toSummaryText(incidentName: '示例县某厂火警');
+      expect(text, contains('警情：示例县某厂火警'));
+      expect(text, contains('事发地点：示例省示例市示例县示例街道示范东路1号'));
       expect(text, contains('预计行程：13 分钟（6.8 公里，红绿灯 6 个）'));
       expect(text, contains('整体路况：局部缓行'));
-      expect(text, contains('途经道路：洋安大道 → 新安江大桥 → 新安东路'));
-      expect(text, contains('拥堵提醒：新安江大桥 · 拥堵 400米'));
+      expect(text, contains('途经道路：示范大道 → 示范大桥 → 示范东路'));
+      expect(text, contains('拥堵提醒：示范大桥 · 拥堵 400米'));
       expect(text, contains('现场天气：多云 · 22℃ · 湿度65% · 东南风 · ≤3级'));
       expect(text, contains('高德驾车导航：'));
     });
@@ -262,13 +262,13 @@ void main() {
         mockIncident: const Incident(
           id: 'inc-1',
           number: '2026-11-05-01',
-          title: '建德某厂火警',
+          title: '示例县某厂火警',
           status: 'active',
           createdAt: 1000,
           lastActivityAt: 2000,
           info: {
-            'location': '新安东路1号',
-            'administrative_area': '建德市',
+            'location': '示范东路1号',
+            'administrative_area': '示例县',
           },
         ),
       );
@@ -298,8 +298,8 @@ void main() {
                 destName,
                 destAdcode,
               }) async {
-                expect(address, '新安东路1号');
-                expect(city, '建德市');
+                expect(address, '示范东路1号');
+                expect(city, '示例县');
                 expect(originLat, 29.491);
                 expect(originLon, 119.302);
                 return mockRouteInfo;
@@ -325,10 +325,10 @@ void main() {
       expect(find.text('红绿灯 6 个'), findsOneWidget);
       expect(find.text('路况：局部缓行'), findsOneWidget);
       expect(find.text('沿途拥堵/缓行路段'), findsOneWidget);
-      expect(find.text('新安江大桥'), findsWidgets);
+      expect(find.text('示范大桥'), findsWidgets);
       expect(find.text('主要途经道路'), findsOneWidget);
-      expect(find.text('洋安大道'), findsWidgets);
-      expect(find.text('新安东路'), findsWidgets);
+      expect(find.text('示范大道'), findsWidgets);
+      expect(find.text('示范东路'), findsWidgets);
       expect(find.text('事发地气象与火场风向'), findsOneWidget);
       expect(find.text('多云'), findsWidgets);
       expect(find.text('22℃'), findsOneWidget);
@@ -355,7 +355,7 @@ void main() {
       await tester.tap(find.byKey(const Key('route-traffic-copy')));
       await tester.pumpAndSettle();
       expect(copiedText, isNotNull);
-      expect(copiedText, contains('建德某厂火警'));
+      expect(copiedText, contains('示例县某厂火警'));
     });
 
     testWidgets('定位权限被拒时不阻断查询，降级展示天气并提示授权', (tester) async {
@@ -365,11 +365,11 @@ void main() {
         mockIncident: const Incident(
           id: 'inc-1',
           number: '2026-11-05-01',
-          title: '建德某厂火警',
+          title: '示例县某厂火警',
           status: 'active',
           createdAt: 1000,
           lastActivityAt: 2000,
-          info: {'location': '新安东路1号'},
+          info: {'location': '示范东路1号'},
         ),
       );
 
@@ -527,13 +527,13 @@ void main() {
         mockIncident: const Incident(
           id: 'inc-1',
           number: '2026-11-05-01',
-          title: '建德某厂火警',
+          title: '示例县某厂火警',
           status: 'active',
           createdAt: 1000,
           lastActivityAt: 2000,
           info: {
-            'location': '新安东路1号',
-            'administrative_area': '建德市',
+            'location': '示范东路1号',
+            'administrative_area': '示例县',
           },
         ),
       );
@@ -574,7 +574,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final weatherTop = tester.getTopLeft(find.text('事发地气象与火场风向')).dy;
-      final endpointsTop = tester.getTopLeft(find.text('浙江省杭州市建德市新安江街道新安东路1号')).dy;
+      final endpointsTop = tester.getTopLeft(find.text('示例省示例市示例县示例街道示范东路1号')).dy;
 
       expect(weatherTop, lessThan(endpointsTop), reason: '气象卡片必须置顶于起终点卡片之前');
     });
@@ -587,8 +587,8 @@ void main() {
 
       final longWeatherInfo = RouteTrafficInfo(
         destination: const RouteEndpointInfo(
-          queryAddress: '新安东路1号',
-          formattedAddress: '浙江省杭州市建德市新安江街道新安东路1号超长测试地址地址地址地址',
+          queryAddress: '示范东路1号',
+          formattedAddress: '示例省示例市示例县示例街道示范东路1号超长测试地址地址地址地址',
         ),
         weather: const RouteWeatherLive(
           text: '强雷阵雨伴有冰雹',
@@ -596,7 +596,7 @@ void main() {
           humidity: '99',
           windDirection: '西北偏北超强阵风',
           windPower: '9-10',
-          city: '建德市超长行政区划测试',
+          city: '示例县超长行政区划测试',
         ),
         forecast: const RouteWeatherForecast(
           dayWeather: '特大暴雨转大暴雨强对流大风黄色预警',
@@ -611,7 +611,7 @@ void main() {
             durationSeconds: 10800,
             trafficLights: 38,
             overallStatus: '严重拥堵',
-            roads: const ['洋安大道超长路段一', '新安江大桥跨江通道超长路段二', '新安东路核心主干道超长三'],
+            roads: const ['示范大道超长路段一', '示范大桥跨江通道超长路段二', '示范东路核心主干道超长三'],
             trafficSummary: const TrafficSummary(
               smoothMeters: 52000,
               slowMeters: 32000,
@@ -620,12 +620,12 @@ void main() {
             ),
             congestedSegments: const [
               CongestedSegment(
-                road: '新安江大桥超长拥堵路段名极其狭窄空间测试专用',
+                road: '示范大桥超长拥堵路段名极其狭窄空间测试专用',
                 status: '严重拥堵',
                 distanceMeters: 40000,
               ),
               CongestedSegment(
-                road: '新安东路某某辅路口持续缓行路段',
+                road: '示范东路某某辅路口持续缓行路段',
                 status: '缓行',
                 distanceMeters: 32000,
               ),
@@ -637,7 +637,7 @@ void main() {
             durationSeconds: 12000,
             trafficLights: 45,
             overallStatus: '畅通',
-            roads: ['洋安大道', '白沙路'],
+            roads: ['示范大道', '示范二路'],
             trafficSummary: TrafficSummary(
               smoothMeters: 175000,
             ),
@@ -654,7 +654,7 @@ void main() {
           status: 'active',
           createdAt: 1000,
           lastActivityAt: 2000,
-          info: {'location': '新安东路1号'},
+          info: {'location': '示范东路1号'},
         ),
       );
 
@@ -719,7 +719,7 @@ void main() {
           status: 'active',
           createdAt: 1000,
           lastActivityAt: 2000,
-          info: {'location': '新安东路1号'},
+          info: {'location': '示范东路1号'},
         ),
       );
 
@@ -764,13 +764,13 @@ void main() {
       controller.currentIncident = Incident(
         id: 'inc-official-coords',
         number: '20261108001',
-        title: '大洲镇郑家加油站附近',
+        title: '示例镇示范加油站附近',
         status: 'active',
         createdAt: 1000,
         lastActivityAt: 2000,
         info: {
-          'location': '大洲镇郑家加油站附近',
-          'administrative_area': '衢江区',
+          'location': '示例镇示范加油站附近',
+          'administrative_area': '示例区',
           'latitude': '28.869366',
           'longitude': '118.980502',
         },

@@ -7,14 +7,14 @@ void main() {
   group('PhoneCaller 基础服务测试', () {
     test('normalizePhone 正确清洗格式符号', () {
       expect(PhoneCaller.normalizePhone(' 138-1234-5678 '), '13812345678');
-      expect(PhoneCaller.normalizePhone('0570 - 8888999'), '05708888999');
+      expect(PhoneCaller.normalizePhone('010 - 8888999'), '0108888999');
       expect(PhoneCaller.normalizePhone(''), '');
     });
 
     test('isValidPhoneNumber 格式有效性判定', () {
       expect(PhoneCaller.isValidPhoneNumber('13812345678'), isTrue);
       expect(PhoneCaller.isValidPhoneNumber('19900001111'), isTrue);
-      expect(PhoneCaller.isValidPhoneNumber('05708888999'), isTrue);
+      expect(PhoneCaller.isValidPhoneNumber('0108888999'), isTrue);
       expect(PhoneCaller.isValidPhoneNumber('8888999'), isTrue);
       expect(PhoneCaller.isValidPhoneNumber('123'), isFalse);
       expect(PhoneCaller.isValidPhoneNumber('abc'), isFalse);

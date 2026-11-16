@@ -1,6 +1,9 @@
 process.env.NODE_ENV = 'test';
 process.env.WATCHDOG_SESSION_AUTH_REQUIRED = '0';
 process.env.WATCHDOG_MEMBER_AUTH_REQUIRED = '0';
+process.env.POLICE_API_REGION_KEYWORDS = '示例市,示例县,示例区,示例新城';
+process.env.POLICE_API_EXCLUDE_CITIES = '异地市,异地市2,异地甲市,异地乙市';
+process.env.POLICE_API_AUTHORIZED_UNITS = 'example-county-fire-rescue';
 
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,42 +22,46 @@ before(async () => {
 
 after(() => new Promise((r) => server.close(r)));
 
-test('衢州警情过滤逻辑', () => {
-  // 衢州支队或辖区大队
-  assert.equal(policeApiService.isQuzhouIncident({ detachmentOrgName: '衢州支队' }), true);
-  assert.equal(policeApiService.isQuzhouIncident({ brigadeOrganizationName: '龙游大队' }), true);
-  assert.equal(policeApiService.isQuzhouIncident({ districtName: '江山市' }), true);
-  assert.equal(policeApiService.isQuzhouIncident({ districtName: '开化县' }), true);
-  assert.equal(policeApiService.isQuzhouIncident({ brigadeOrganizationName: '柯城大队' }), true);
+test('辖区警情过滤逻辑', () => {
+  const opts = {
+    regionKeywords: ['示例市', '示例县', '示例区', '示例新城'],
+    excludeCities: ['异地市', '异地市2', '异地甲市', '异地乙市'],
+  };
+  // 辖区支队或辖区大队
+  assert.equal(policeApiService.isJurisdictionIncident({ detachmentOrgName: '示例市支队' }, opts), true);
+  assert.equal(policeApiService.isJurisdictionIncident({ brigadeOrganizationName: '示例县大队' }, opts), true);
+  assert.equal(policeApiService.isJurisdictionIncident({ districtName: '示例县' }, opts), true);
+  assert.equal(policeApiService.isJurisdictionIncident({ districtName: '示例区' }, opts), true);
+  assert.equal(policeApiService.isJurisdictionIncident({ brigadeOrganizationName: '示例区大队' }, opts), true);
 
-  // 虽属衢州支队但异地跨市演练/拉动必须排除
-  assert.equal(policeApiService.isQuzhouIncident({
-    detachmentOrgName: '衢州支队',
-    brigadeOrganizationName: '衢州智慧新城大队',
-    crimeAddress: '（拉动）绍兴市越城区马山街道',
-  }), false);
-  assert.equal(policeApiService.isQuzhouIncident({
-    detachmentOrgName: '衢州支队',
-    crimeAddress: '杭州市滨江区江南大道',
-  }), false);
+  // 虽属辖区支队但异地跨市演练/拉动必须排除
+  assert.equal(policeApiService.isJurisdictionIncident({
+    detachmentOrgName: '示例市支队',
+    brigadeOrganizationName: '示例新城大队',
+    crimeAddress: '（拉动）异地市甲区示范街道',
+  }, opts), false);
+  assert.equal(policeApiService.isJurisdictionIncident({
+    detachmentOrgName: '示例市支队',
+    crimeAddress: '异地市乙区示范大道',
+  }, opts), false);
 
-  // 非衢州单位排除
-  assert.equal(policeApiService.isQuzhouIncident({ detachmentOrgName: '嘉兴支队', brigadeOrganizationName: '南湖大队' }), false);
-  assert.equal(policeApiService.isQuzhouIncident({ detachmentOrgName: '杭州支队' }), false);
-  assert.equal(policeApiService.isQuzhouIncident(null), false);
+  // 非辖区单位排除
+  assert.equal(policeApiService.isJurisdictionIncident({ detachmentOrgName: '异地支队', brigadeOrganizationName: '异地大队' }, opts), false);
+  assert.equal(policeApiService.isJurisdictionIncident({ detachmentOrgName: '异地支队2' }, opts), false);
+  assert.equal(policeApiService.isJurisdictionIncident(null, opts), false);
 });
 
 test('官方警情规范化映射', () => {
   const raw = {
     id: 'test-ext-123',
     incidentNumber: '2026110712345678',
-    detachmentOrgName: '衢州支队',
-    brigadeOrganizationName: '龙游大队',
-    districtName: '龙游县',
+    detachmentOrgName: '示例市支队',
+    brigadeOrganizationName: '示例县大队',
+    districtName: '示例县',
     incidentTypeName: '火灾扑救',
     incidentLevelName: '一级',
     incidentStatusName: '出动',
-    crimeAddress: '龙游县文化路1号',
+    crimeAddress: '示例县文化路1号',
     incidentDescribe: '某住宅起火',
     registerIncidentTime: 1786177140421,
     latitude: 29.0232,
@@ -63,8 +70,8 @@ test('官方警情规范化映射', () => {
   const normalized = policeApiService.normalizeExternalIncident(raw);
   assert.equal(normalized.external_id, 'test-ext-123');
   assert.equal(normalized.incident_number, '2026110712345678');
-  assert.equal(normalized.detachment_name, '衢州支队');
-  assert.equal(normalized.crime_address, '龙游县文化路1号');
+  assert.equal(normalized.detachment_name, '示例市支队');
+  assert.equal(normalized.crime_address, '示例县文化路1号');
   assert.equal(normalized.register_time, 1786177140421);
 });
 
@@ -110,11 +117,11 @@ test('HTTP GET /api/external-incidents 接口返回与认领状态标记', async
       data: {
         list: [
           {
-            id: 'mock-qz-recent',
+            id: 'mock-ext-recent',
             incidentNumber: '20261107001',
-            detachmentOrgName: '衢州支队',
-            brigadeOrganizationName: '柯城大队',
-            crimeAddress: '柯城区三江路10号',
+            detachmentOrgName: '示例市支队',
+            brigadeOrganizationName: '示例区大队',
+            crimeAddress: '示例区示范路10号',
             incidentTypeName: '抢险救援',
             incidentStatusName: '出动',
             dispatchVehicle: '2',
@@ -122,11 +129,11 @@ test('HTTP GET /api/external-incidents 接口返回与认领状态标记', async
             registerIncidentTime: now - 3600 * 1000,
           },
           {
-            id: 'mock-qz-filing-only',
+            id: 'mock-ext-filing-only',
             incidentNumber: '20261107003',
-            detachmentOrgName: '衢州支队',
-            brigadeOrganizationName: '柯城大队',
-            crimeAddress: '柯城区示例街道18号',
+            detachmentOrgName: '示例市支队',
+            brigadeOrganizationName: '示例区大队',
+            crimeAddress: '示例区示例街道18号',
             incidentTypeName: '火灾扑救',
             incidentStatusName: '立案',
             dispatchVehicle: '0',
@@ -134,9 +141,9 @@ test('HTTP GET /api/external-incidents 接口返回与认领状态标记', async
             registerIncidentTime: now - 1800 * 1000,
           },
           {
-            id: 'mock-qz-old',
+            id: 'mock-ext-old',
             incidentNumber: '20261101002',
-            detachmentOrgName: '衢州支队',
+            detachmentOrgName: '示例市支队',
             crimeAddress: '超过3天的旧警情',
             incidentStatusName: '归队',
             registerIncidentTime: now - 5 * 24 * 3600 * 1000,
@@ -144,8 +151,8 @@ test('HTTP GET /api/external-incidents 接口返回与认领状态标记', async
           {
             id: 'mock-other-city',
             incidentNumber: '20261107999',
-            detachmentOrgName: '宁波支队',
-            crimeAddress: '宁波市海曙区',
+            detachmentOrgName: '异地支队',
+            crimeAddress: '异地市丙区',
             incidentStatusName: '出动',
             registerIncidentTime: now - 3600 * 1000,
           },
@@ -165,14 +172,14 @@ test('HTTP GET /api/external-incidents 接口返回与认领状态标记', async
   });
 
   policeApiService._resetCacheForTest();
-  const result = await policeApiService.getQuzhouIncidents({
+  const result = await policeApiService.getExternalIncidents({
     forceRefresh: true,
     upstreamUrl: mockUrl,
   });
 
   assert.equal(result.list.length, 1);
-  assert.equal(result.list[0].external_id, 'mock-qz-recent');
-  assert.equal(result.list[0].crime_address, '柯城区三江路10号');
+  assert.equal(result.list[0].external_id, 'mock-ext-recent');
+  assert.equal(result.list[0].crime_address, '示例区示范路10号');
 });
 
 test('POST /api/incidents/claim-external 认领建档与幂等防重', async () => {
@@ -180,9 +187,9 @@ test('POST /api/incidents/claim-external 认领建档与幂等防重', async () 
     const extIncident = {
       external_id: `ext-${Date.now()}`,
       incident_number: `POLICE-${Date.now()}`,
-      crime_address: '衢州市柯城区新桥街88号商铺',
+      crime_address: '示例省示例市示例区示范街88号商铺',
       incident_type: '火灾扑救',
-      district_name: '柯城区',
+      district_name: '示例区',
       incident_describe: '商铺电线短路起火，无人员被困',
       register_time: Date.now() - 1000 * 60,
     };
@@ -205,7 +212,7 @@ test('POST /api/incidents/claim-external 认领建档与幂等防重', async () 
           alarm_person_name: '李四',
           dispatch_vehicle: '4',
           dispatch_organization: '2',
-          squadron_name: '双塔站',
+          squadron_name: '示例二站',
           latitude: '28.8693',
           longitude: '118.9805',
         },
@@ -222,9 +229,9 @@ test('POST /api/incidents/claim-external 认领建档与幂等防重', async () 
     assert.equal(body1.info.disaster_category, 'fire');
     assert.equal(body1.info.latitude, '28.8693');
     assert.equal(body1.info.longitude, '118.9805');
-    assert.equal(body1.info.dispatch_summary, '4车 2站 (主调: 双塔站)');
+    assert.equal(body1.info.dispatch_summary, '4车 2站 (主调: 示例二站)');
     assert.equal(body1.forces.length, 1);
-    assert.equal(body1.forces[0].station_name, '双塔站');
+    assert.equal(body1.forces[0].station_name, '示例二站');
     assert.equal(Boolean(body1.forces[0].vehicle_count_known), false, '多站总车数分摊未知时不编造单站车数');
     assert.equal(Boolean(body1.forces[0].personnel_count_known), false, '人数未提及时标记待补充');
 
@@ -262,23 +269,23 @@ test('buildSituationDescription 与 detailPatch 后到智能覆盖', () => {
 
   // 2. detailPatch 智能非空覆盖
   const currentData = {
-    location: '莲湖雅苑2栋3单元',
-    administrative_area: '龙游县',
+    location: '示范小区2栋3单元',
+    administrative_area: '示例县',
     situation: '抢险救援',
     received_at: '2026-11-06T06:13:46.000Z',
   };
   const newData = {
-    location: '龙游县莲湖雅苑2栋3单元502室',
+    location: '示例县示范小区2栋3单元502室',
     situation: '502厨房起火，烟雾较大，无人员被困',
     trapped: '无人员被困',
     // 未提及的字段为空字符串
     hazardous_materials: '',
   };
   const merged = detailPatch(newData, currentData);
-  assert.equal(merged.location, '龙游县莲湖雅苑2栋3单元502室', '详细地址应覆盖旧简略地址');
+  assert.equal(merged.location, '示例县示范小区2栋3单元502室', '详细地址应覆盖旧简略地址');
   assert.equal(merged.situation, '502厨房起火，烟雾较大，无人员被困', '详尽灾情应覆盖旧概要');
   assert.equal(merged.trapped, '无人员被困');
-  assert.equal(merged.administrative_area, '龙游县', '未提及字段应保留已有值');
+  assert.equal(merged.administrative_area, '示例县', '未提及字段应保留已有值');
   assert.equal(merged.received_at, '2026-11-06T06:13:46.000Z', '未提及字段应保留已有时间');
 });
 
@@ -298,22 +305,28 @@ test('extractContacts、buildDispatchSummary 与 sanitizeCoordinates 容错逻�
   // 2. alarm_person_phone 为空，回退有效 alarm_phone，姓名缺省回退“报警人”
   const c2 = extractContacts({
     alarm_person_phone: '',
-    alarm_phone: '0570-8888999',
+    alarm_phone: '010-8888999',
     alarm_person_name: '',
   });
   assert.equal(c2.length, 1);
-  assert.equal(c2[0].phone, '0570-8888999');
+  assert.equal(c2[0].phone, '010-8888999');
   assert.equal(c2[0].name, '报警人');
 
-  // 3. 两个号码均为 110 转警或无效，返回空数组
+  // 3. 两个号码均为 110 转警或无效，返回空数组；掩码号码严禁被还原或采信
   const c3 = extractContacts({
     alarm_person_phone: '110',
     alarm_phone: '0110',
   });
   assert.equal(c3.length, 0);
+  const cMasked = extractContacts({
+    alarm_person_phone: '138****5678',
+    alarm_phone: '010-****999',
+    alarm_person_name: '张*',
+  });
+  assert.equal(cMasked.length, 0, '含掩码星号的脱敏电话不得伪造成7位号码');
 
   // 4. buildDispatchSummary
-  assert.equal(buildDispatchSummary({ dispatch_vehicle: '4', dispatch_organization: '2', squadron_name: '双塔站' }), '4车 2站 (主调: 双塔站)');
+  assert.equal(buildDispatchSummary({ dispatch_vehicle: '4', dispatch_organization: '2', squadron_name: '示例二站' }), '4车 2站 (主调: 示例二站)');
   assert.equal(buildDispatchSummary({ dispatch_vehicle: '2', dispatch_organization: '0' }), '2车');
   assert.equal(buildDispatchSummary({}), '');
 
@@ -334,8 +347,8 @@ test('官方警情二次清洗：地点去冗余、事件提炼与终态判定',
   // 地点清洗：剥离省前缀与有区县时的冗余市前缀，消除相邻重复区县
   assert.equal(cleanIncidentLocation('示例省示例市示例县文化路1号', '示例县'), '示例县文化路1号');
   assert.equal(cleanIncidentLocation('示例县示例县示例镇示例村12号', '示例县'), '示例县示例镇示例村12号');
-  assert.equal(cleanIncidentLocation('新桥街88号', '示例区'), '示例区新桥街88号');
-  assert.equal(cleanIncidentLocation('示例区新桥街88号', '示例区'), '示例区新桥街88号');
+  assert.equal(cleanIncidentLocation('示范街88号', '示例区'), '示例区示范街88号');
+  assert.equal(cleanIncidentLocation('示例区示范街88号', '示例区'), '示例区示范街88号');
 
   // 事件清洗：去噪提取核心描述，缺省则组合大类与处置对象
   assert.equal(
@@ -412,9 +425,9 @@ test('认领官方警情独立透传 incident_status 且刷新缓存后实时反
           {
             id: extId,
             incidentNumber: incNumber,
-            detachmentOrgName: '衢州支队',
-            brigadeOrganizationName: '龙游大队',
-            crimeAddress: '龙游县示例镇示例村8号',
+            detachmentOrgName: '示例市支队',
+            brigadeOrganizationName: '示例县大队',
+            crimeAddress: '示例县示例镇示例村8号',
             incidentTypeName: '火灾扑救',
             incidentStatusName: '归队',
             registerIncidentTime: Date.now() - 30000,
@@ -431,7 +444,7 @@ test('认领官方警情独立透传 incident_status 且刷新缓存后实时反
     policeApiService._resetCacheForTest();
   });
 
-  await policeApiService.getQuzhouIncidents({ forceRefresh: true, upstreamUrl });
+  await policeApiService.getExternalIncidents({ forceRefresh: true, upstreamUrl });
   const viewRes = await fetch(`${base}/api/incidents/${claimed.id}`, {
     headers: {
       'X-Device-Id': 'device-status-test',
@@ -572,7 +585,7 @@ test('external-incident-organizer 原始融合、AI JSON重组、hash缓存与�
       'X-Unit-Id': 'example-county-fire-rescue',
       'X-Unit-Code': '1001',
     },
-    body: JSON.stringify({ external_ids: ['mock-qz-recent'] }),
+    body: JSON.stringify({ external_ids: ['mock-ext-recent'] }),
   });
   const reorgBody = await reorgRes.json();
   assert.equal(reorgRes.status, 200);
@@ -598,25 +611,32 @@ test('querylist 请求体参数与扩展字段映射', async (t) => {
 
   await new Promise((resolve) => mockQueryServer.listen(0, '127.0.0.1', resolve));
   const mockUrl = `http://127.0.0.1:${mockQueryServer.address().port}/querylist`;
+  const originalScope = process.env.POLICE_API_SCOPE_SQUADRON_ID;
+  process.env.POLICE_API_SCOPE_SQUADRON_ID = 'test-scope-squadron-id';
   t.after(() => {
     mockQueryServer.close();
     policeApiService._resetCacheForTest();
+    if (originalScope !== undefined) {
+      process.env.POLICE_API_SCOPE_SQUADRON_ID = originalScope;
+    } else {
+      delete process.env.POLICE_API_SCOPE_SQUADRON_ID;
+    }
   });
 
   policeApiService._resetCacheForTest();
-  await policeApiService.getQuzhouIncidents({ forceRefresh: true, upstreamUrl: mockUrl });
+  await policeApiService.getExternalIncidents({ forceRefresh: true, upstreamUrl: mockUrl });
 
   assert.equal(capturedMethod, 'POST');
   assert.equal(capturedBody.whetherPage, true);
   assert.equal(capturedBody.scopeType, 1);
   assert.equal(typeof capturedBody.scopeSquadronId, 'string');
-  assert.ok(capturedBody.scopeSquadronId.length > 0);
+  assert.equal(capturedBody.scopeSquadronId, 'test-scope-squadron-id');
   assert.deepEqual(capturedBody.squadronIds, []);
   assert.ok(Number(capturedBody.startTime) > 0);
   assert.ok(Number(capturedBody.endTime) > Number(capturedBody.startTime));
   assert.deepEqual(capturedBody.pagination, { page: 1, size: 100 });
-  assert.ok(policeApiService.DEFAULT_QUERYLIST_URL.endsWith('/disater/querylist'));
-  assert.ok(policeApiService.DEFAULT_HOMEINFO_URL.endsWith('/home/homeinfo'));
+  assert.equal(typeof policeApiService.DEFAULT_QUERYLIST_URL, 'string');
+  assert.equal(typeof policeApiService.DEFAULT_HOMEINFO_URL, 'string');
 
   const { buildRawMergedText } = require('../src/external-incident-organizer');
   const raw = {
@@ -933,4 +953,460 @@ test('fetchIncidentHomeInfo 短路保护与 POST /api/incidents/claim-external �
   assert.equal(errBody.forces.length, 1);
   assert.equal(errBody.forces[0].station_name, '示例路站');
   assert.equal(Boolean(errBody.forces[0].vehicle_count_known), false);
+});
+
+test('未配置 POLICE_API_* 环境变量时安全降级为空列表，不发起外网请求', async () => {
+  const oldQueryUrl = process.env.POLICE_API_QUERYLIST_URL;
+  const oldOrgUrl = process.env.POLICE_API_ORGLIST_URL;
+  delete process.env.POLICE_API_QUERYLIST_URL;
+  delete process.env.POLICE_API_ORGLIST_URL;
+  policeApiService._resetCacheForTest();
+
+  try {
+    const result = await policeApiService.getExternalIncidents({ forceRefresh: true });
+    assert.deepEqual(result.list, []);
+    assert.equal(result.cacheHit, false);
+
+    const res = await fetch(`${base}/api/external-incidents`, {
+      headers: {
+        'X-Unit-Id': 'example-county-fire-rescue',
+        'X-Unit-Code': '1001',
+      },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.list, []);
+  } finally {
+    if (oldQueryUrl) process.env.POLICE_API_QUERYLIST_URL = oldQueryUrl;
+    if (oldOrgUrl) process.env.POLICE_API_ORGLIST_URL = oldOrgUrl;
+    policeApiService._resetCacheForTest();
+  }
+});
+
+test('单位级访问授权：未授权单位返回空列表，并拒绝认领与重整，兼容 POLICE_API_ALLOWED_UNIT_IDS', async () => {
+  // 1. GET /api/external-incidents: 未授权单位返回空列表
+  const getRes = await fetch(`${base}/api/external-incidents`, {
+    headers: {
+      'X-Unit-Id': 'unauthorized-test-unit',
+      'X-Unit-Code': '9999',
+    },
+  });
+  assert.equal(getRes.status, 200);
+  const getBody = await getRes.json();
+  assert.deepEqual(getBody.list, []);
+
+  // 2. POST /api/external-incidents/reorganize: 未授权单位返回 403
+  const reorgRes = await fetch(`${base}/api/external-incidents/reorganize`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Device-Id': 'dev-unauth',
+      'X-Unit-Id': 'unauthorized-test-unit',
+      'X-Unit-Code': '9999',
+    },
+    body: JSON.stringify({ external_ids: ['ext-1'] }),
+  });
+  assert.equal(reorgRes.status, 403);
+  const reorgBody = await reorgRes.json();
+  assert.equal(reorgBody.code, 'UNIT_NOT_AUTHORIZED');
+
+  // 3. POST /api/incidents/claim-external: 未授权单位返回 403
+  const claimRes = await fetch(`${base}/api/incidents/claim-external`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Device-Id': 'dev-unauth',
+      'X-Unit-Id': 'unauthorized-test-unit',
+      'X-Unit-Code': '9999',
+    },
+    body: JSON.stringify({
+      external_incident: { external_id: 'ext-unauth-1', incident_number: '20261116001' },
+      actor_name: '未授权队员',
+    }),
+  });
+  assert.equal(claimRes.status, 403);
+  const claimBody = await claimRes.json();
+  assert.equal(claimBody.code, 'UNIT_NOT_AUTHORIZED');
+
+  // 4. POLICE_API_ALLOWED_UNIT_IDS 环境变量生效
+  const prevAllowed = process.env.POLICE_API_ALLOWED_UNIT_IDS;
+  process.env.POLICE_API_ALLOWED_UNIT_IDS = 'allowed-unit-via-env';
+  try {
+    const allowedReorg = await fetch(`${base}/api/external-incidents/reorganize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': 'dev-allowed-env',
+        'X-Unit-Id': 'allowed-unit-via-env',
+        'X-Unit-Code': '1002',
+      },
+      body: JSON.stringify({ external_ids: [] }),
+    });
+    assert.equal(allowedReorg.status, 200);
+
+    const oldUnitBlocked = await fetch(`${base}/api/external-incidents/reorganize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': 'dev-blocked-env',
+        'X-Unit-Id': 'example-county-fire-rescue',
+        'X-Unit-Code': '1001',
+      },
+      body: JSON.stringify({ external_ids: [] }),
+    });
+    assert.equal(oldUnitBlocked.status, 403);
+  } finally {
+    if (prevAllowed !== undefined) process.env.POLICE_API_ALLOWED_UNIT_IDS = prevAllowed;
+    else delete process.env.POLICE_API_ALLOWED_UNIT_IDS;
+  }
+});
+
+test('强制刷新限流（10次/分）与 5s 缓存冷却防击穿', async () => {
+  const mockServer = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      errorCode: 0,
+      data: {
+        list: [{
+          id: 'mock-cooling-1',
+          incidentNumber: '20261116001',
+          detachmentOrgName: '示例市支队',
+          brigadeOrganizationName: '示例县大队',
+          crimeAddress: '示例县示范路1号',
+          incidentTypeName: '火灾扑救',
+          incidentStatusName: '出动',
+          dispatchVehicle: '1',
+          dispatchOrganization: '1',
+          registerIncidentTime: Date.now() - 60000,
+        }],
+        pagination: { total: 1 },
+      },
+    }));
+  });
+  await new Promise((r) => mockServer.listen(0, '127.0.0.1', r));
+  const mockUrl = `http://127.0.0.1:${mockServer.address().port}/querylist`;
+
+  const oldUrl = process.env.POLICE_API_QUERYLIST_URL;
+  process.env.POLICE_API_QUERYLIST_URL = mockUrl;
+  policeApiService._resetCacheForTest();
+
+  try {
+    // 1. 验证 5s 缓存冷却：即使 forceRefresh: true，短时间内再次请求依然直接命中缓存
+    const firstCall = await policeApiService.getExternalIncidents({ forceRefresh: true });
+    assert.equal(firstCall.list.length, 1);
+    assert.equal(firstCall.cacheHit, false);
+
+    const secondCall = await policeApiService.getExternalIncidents({ forceRefresh: true });
+    assert.equal(secondCall.list.length, 1);
+    assert.equal(secondCall.cacheHit, true, '5s 冷却期内 forceRefresh 必须返回内存缓存防击穿');
+
+    // 2. 验证 HTTP GET /api/external-incidents?refresh=true 的 10 次/分限流
+    const testDeviceId = `dev-ratelimit-${Date.now()}`;
+    let limitedHit = false;
+    for (let i = 0; i < 12; i++) {
+      const res = await fetch(`${base}/api/external-incidents?refresh=true`, {
+        headers: {
+          'X-Device-Id': testDeviceId,
+          'X-Unit-Id': 'example-county-fire-rescue',
+          'X-Unit-Code': '1001',
+        },
+      });
+      if (res.status === 429) {
+        limitedHit = true;
+        const json = await res.json();
+        assert.equal(json.code, 'RATE_LIMITED');
+        break;
+      }
+    }
+    assert.equal(limitedHit, true, '超过 10 次/分的刷新请求必须返回 429 RATE_LIMITED');
+
+    // 常规无 refresh=true 的请求不受影响
+    const normalRes = await fetch(`${base}/api/external-incidents`, {
+      headers: {
+        'X-Device-Id': testDeviceId,
+        'X-Unit-Id': 'example-county-fire-rescue',
+        'X-Unit-Code': '1001',
+      },
+    });
+    assert.equal(normalRes.status, 200);
+  } finally {
+    mockServer.close();
+    if (oldUrl) process.env.POLICE_API_QUERYLIST_URL = oldUrl;
+    else delete process.env.POLICE_API_QUERYLIST_URL;
+    policeApiService._resetCacheForTest();
+  }
+});
+
+test('外部警情出参最小化裁剪与敏感电话姓名脱敏', async () => {
+  const ts = Date.now();
+  const rawItem = {
+    id: `ext-prune-${ts}`,
+    incidentNumber: `INC-PRUNE-${ts}`,
+    detachmentOrgName: '示例市支队',
+    detachmentOrgId: 'secret-detachment-uuid',
+    brigadeOrganizationName: '示例县大队',
+    squadronOrganizationName: '示例路站',
+    districtName: '示例县',
+    incidentTypeName: '火灾扑救',
+    incidentStatusName: '出动',
+    crimeAddress: '示例县示范路88号',
+    alarmPhone: '010-8888999',
+    alarmPersonPhone: '13812345678',
+    alarmPersonName: '张三丰',
+    dispatchVehicle: '2',
+    dispatchOrganization: '1',
+    registerIncidentTime: ts - 60000,
+    raw_payload: { sensitive_internal_key: 'confidential' },
+    raw_merged_text: '内部合并全文本',
+  };
+
+  const normalized = policeApiService.normalizeExternalIncident(rawItem);
+  await app.externalIncidentOrganizer.saveIncident(normalized, ts);
+
+  const mockServer = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      errorCode: 0,
+      data: { list: [rawItem], pagination: { total: 1 } },
+    }));
+  });
+  await new Promise((r) => mockServer.listen(0, '127.0.0.1', r));
+  const mockUrl = `http://127.0.0.1:${mockServer.address().port}/querylist`;
+  const oldUrl = process.env.POLICE_API_QUERYLIST_URL;
+  process.env.POLICE_API_QUERYLIST_URL = mockUrl;
+  policeApiService._resetCacheForTest();
+
+  try {
+    const res = await fetch(`${base}/api/external-incidents?refresh=true`, {
+      headers: {
+        'X-Device-Id': `dev-prune-${ts}`,
+        'X-Unit-Id': 'example-county-fire-rescue',
+        'X-Unit-Code': '1001',
+      },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.list) && body.list.length > 0);
+    const target = body.list.find((i) => i.external_id === rawItem.id);
+    assert.ok(target);
+
+    // 1. 验证关键内部字段已被裁剪剔除
+    assert.equal('raw_payload' in target, false, '禁止下发 raw_payload');
+    assert.equal('raw_merged_text' in target, false, '禁止下发 raw_merged_text');
+    assert.equal('detachment_id' in target, false, '禁止下发 detachment_id');
+
+    // 2. 验证报警人手机号与姓名已脱敏掩码
+    assert.equal(target.alarm_person_phone, '138****5678', '手机号应保留前后位中间掩码');
+    assert.equal(target.alarm_phone.includes('****'), true, '座机应包含掩码');
+    assert.equal(target.alarm_person_name, '张*丰', '姓名应脱敏');
+    if (Array.isArray(target.contacts) && target.contacts.length > 0) {
+      assert.equal(target.contacts[0].phone, '138****5678');
+      assert.equal(target.contacts[0].name, '张*丰');
+    }
+
+    // 3. 验证 POST /api/external-incidents/reorganize 同样裁剪并脱敏
+    const reorgRes = await fetch(`${base}/api/external-incidents/reorganize`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': `dev-reorg-prune-${ts}`,
+        'X-Unit-Id': 'example-county-fire-rescue',
+        'X-Unit-Code': '1001',
+      },
+      body: JSON.stringify({ external_ids: [rawItem.id] }),
+    });
+    assert.equal(reorgRes.status, 200);
+    const reorgBody = await reorgRes.json();
+    const reorgTarget = reorgBody.list.find((i) => i.external_id === rawItem.id);
+    assert.ok(reorgTarget);
+    assert.equal('raw_payload' in reorgTarget, false);
+    assert.equal('raw_merged_text' in reorgTarget, false);
+    assert.equal('detachment_id' in reorgTarget, false);
+    assert.equal(reorgTarget.alarm_person_phone, '138****5678');
+  } finally {
+    mockServer.close();
+    if (oldUrl) process.env.POLICE_API_QUERYLIST_URL = oldUrl;
+    else delete process.env.POLICE_API_QUERYLIST_URL;
+    policeApiService._resetCacheForTest();
+  }
+});
+
+test('认领警情防客户端篡改：强制采用服务端权威记录建档并填充真实联系人，拒绝伪造ID', async () => {
+  const ts = Date.now();
+  const extId = `auth-claim-${ts}`;
+  const incNumber = `POLICE-AUTH-${ts}`;
+
+  // 1. 服务端保存真实官方权威警情（包含真实地址、出动力量与真实未脱敏联系人）
+  const authenticRecord = policeApiService.normalizeExternalIncident({
+    id: extId,
+    incidentNumber: incNumber,
+    detachmentOrgName: '示例市支队',
+    brigadeOrganizationName: '示例县大队',
+    squadronOrganizationName: '示例路站',
+    districtName: '示例县',
+    incidentTypeName: '火灾扑救',
+    incidentStatusName: '出动',
+    crimeAddress: '示例县示范路88号商铺',
+    incidentDescribe: '沿街餐饮商铺后厨油烟管道起火',
+    dispatchVehicle: '2',
+    dispatchOrganization: '1',
+    registerIncidentTime: ts - 60000,
+    alarmPersonName: '真实报警人',
+    alarmPersonPhone: '13912345678',
+  });
+  await app.externalIncidentOrganizer.saveIncident(authenticRecord, ts);
+
+  // 2. 客户端发起认领请求，但恶意篡改事发地址、事件标题、调派力量和联系人
+  const claimRes = await fetch(`${base}/api/incidents/claim-external`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Device-Id': 'dev-attacker',
+      'X-Unit-Id': 'example-county-fire-rescue',
+      'X-Unit-Code': '1001',
+      'X-Op-Id': `claim-tamper-${ts}`,
+    },
+    body: JSON.stringify({
+      external_incident: {
+        external_id: extId,
+        incident_number: incNumber,
+        event_summary: '恶意黑客篡改的假灾情标题',
+        crime_address: '虚假篡改地址999号',
+        dispatched_forces: [
+          { station_name: '假消防站', vehicle_count: 999, personnel_count: 999 },
+        ],
+        contacts: [
+          { name: '假联系人', phone: '13000000000', role: '报警人' },
+        ],
+      },
+      actor_name: '认领测试员',
+    }),
+  });
+
+  assert.equal(claimRes.status, 201);
+  const claimedBody = await claimRes.json();
+
+  // 3. 验证服务端建档以服务端权威记录为准，忽略客户端篡改
+  assert.equal(claimedBody.title, '沿街餐饮商铺后厨油烟管道起火', '主标题必须来自服务端权威提炼，忽略客户端篡改');
+  assert.equal(claimedBody.info.event_summary, '沿街餐饮商铺后厨油烟管道起火');
+  assert.equal(claimedBody.info.location, '示例县示范路88号商铺', '事发地点必须来自权威记录');
+
+  // 验证出动力量为服务端真实的示例路站，而非假消防站
+  assert.equal(claimedBody.forces.length, 1);
+  assert.equal(claimedBody.forces[0].station_name, '示例路站');
+  assert.equal(claimedBody.forces[0].vehicle_count, 2);
+
+  // 4. 验证 incident_details 中完整填充了服务端保存的真实未脱敏联系人与派车统计
+  const savedDetails = app._getLocalIncidentDetailsForTest(claimedBody.id);
+  assert.ok(savedDetails, '认领建档后必须写入 incident_details');
+  assert.deepEqual(savedDetails.contacts, [
+    { role: '报警人', name: '真实报警人', phone: '13912345678' },
+  ], '建档详情必须保留服务端真实未脱敏联系人，严禁丢失或被伪造覆盖');
+  assert.equal(savedDetails.dispatch_vehicles, '2');
+  assert.equal(savedDetails.dispatch_stations, '1');
+
+  const detailRes = await fetch(`${base}/api/incidents/${claimedBody.id}`, {
+    headers: {
+      'X-Device-Id': 'dev-attacker',
+      'X-Unit-Id': 'example-county-fire-rescue',
+      'X-Unit-Code': '1001',
+    },
+  });
+  assert.equal(detailRes.status, 200);
+
+  // 5. 严格模式下伪造不存在的 external_id 认领必须返回 404
+  const prevStrict = process.env.POLICE_API_STRICT_CLAIM;
+  process.env.POLICE_API_STRICT_CLAIM = '1';
+  try {
+    const forgedRes = await fetch(`${base}/api/incidents/claim-external`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Id': 'dev-forged',
+        'X-Unit-Id': 'example-county-fire-rescue',
+        'X-Unit-Code': '1001',
+        'X-Op-Id': `claim-forged-${ts}`,
+      },
+      body: JSON.stringify({
+        external_incident: {
+          external_id: `forged-not-exists-${ts}`,
+          incident_number: `FORGED-${ts}`,
+          event_summary: '伪造警情',
+        },
+        actor_name: '伪造攻击者',
+      }),
+    });
+    assert.equal(forgedRes.status, 404);
+    const forgedBody = await forgedRes.json();
+    assert.equal(forgedBody.code, 'EXTERNAL_INCIDENT_NOT_FOUND');
+  } finally {
+    if (prevStrict !== undefined) process.env.POLICE_API_STRICT_CLAIM = prevStrict;
+    else delete process.env.POLICE_API_STRICT_CLAIM;
+  }
+});
+
+test('LLM 提示词脱敏：剔除报警人姓名与手机号，防止第三方模型隐私泄漏', async () => {
+  const { sanitizePromptTextForLlm, organizeWithDeepSeek } = require('../src/external-incident-organizer');
+
+  const rawMergedText = [
+    '警情编号: 202611160088',
+    '立案时间: 2026-11-16 10:00:00',
+    '所属支队: 示例市支队',
+    '行政区域: 示例县',
+    '警情描述: 报警人张三（电话13812345678，备用010-8888999）报警称示范路一民房起火，邻居李四（13900001111）在场协助',
+    '报警联系: 张三 13812345678',
+  ].join('\n');
+
+  // 1. 验证工具函数脱敏逻辑
+  const sanitized = sanitizePromptTextForLlm(rawMergedText, {
+    alarm_person_name: '张三',
+    alarm_person_phone: '13812345678',
+  });
+  assert.equal(sanitized.includes('报警联系'), false, '报警联系整行必须被彻底剔除');
+  assert.equal(sanitized.includes('13812345678'), false, '手机号必须被剥离或替换');
+  assert.equal(sanitized.includes('13900001111'), false, '正文出现的手机号必须被脱敏');
+  assert.equal(sanitized.includes('010-8888999'), false, '固定电话必须被脱敏');
+  assert.equal(sanitized.includes('张三'), false, '报警人姓名必须被剔除');
+
+  // 2. 验证发往 DeepSeek 的实际请求体被严格脱敏
+  let capturedBody = null;
+  const mockFetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      async json() {
+        return {
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                event_summary: '示范路民房起火',
+                disaster_category: 'fire',
+                location_display: '示例县示范路',
+                situation_detail: '民房起火',
+              }),
+            },
+          }],
+        };
+      },
+    };
+  };
+
+  await organizeWithDeepSeek({
+    apiKey: 'test-key',
+    rawMergedText,
+    fallback: {
+      alarm_person_name: '张三',
+      alarm_person_phone: '13812345678',
+      event_summary: '民房起火',
+      incident_type: '火灾扑救',
+    },
+    fetchImpl: mockFetch,
+  });
+
+  assert.ok(capturedBody);
+  const promptContent = capturedBody.messages[1].content;
+  assert.equal(promptContent.includes('13812345678'), false);
+  assert.equal(promptContent.includes('13900001111'), false);
+  assert.equal(promptContent.includes('010-8888999'), false);
+  assert.equal(promptContent.includes('张三'), false);
 });

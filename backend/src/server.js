@@ -22,6 +22,7 @@ const {
   createExternalIncidentOrganizer,
   buildRuleFallbackStructured,
   mergeHomeInfoIntoIncident,
+  rowToNormalizedPatch,
   formatBeijingIso,
   normalizeStationName,
 } = require('./external-incident-organizer');
@@ -1559,6 +1560,85 @@ const EXTERNAL_REORGANIZE_LIMIT_PER_MIN = Number(process.env.EXTERNAL_REORGANIZE
 const externalReorganizeLimiter = new MinuteRateLimiter({
   maxEntries: 10000,
 });
+const EXTERNAL_REFRESH_LIMIT_PER_MIN = Number(process.env.EXTERNAL_REFRESH_LIMIT_PER_MIN || 10);
+const externalRefreshLimiter = new MinuteRateLimiter({
+  maxEntries: 10000,
+});
+
+function resolveRequestUnitId(req) {
+  if (req?.unit?.id) return req.unit.id;
+  if (!UNIT_AUTH_REQUIRED && req?.headers) {
+    return String(req.headers['x-unit-id'] || '').trim() || null;
+  }
+  return null;
+}
+
+function isUnitAuthorizedForExternal(unit, req = null) {
+  const unitId = unit?.id || (req ? resolveRequestUnitId(req) : null);
+  const unitName = unit?.name;
+  if (!unitId) return false;
+  const configured = (process.env.POLICE_API_ALLOWED_UNIT_IDS || process.env.POLICE_API_AUTHORIZED_UNITS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (configured.includes('*')) return true;
+  if (configured.length > 0) {
+    return configured.includes(unitId) || (unitName && configured.includes(unitName));
+  }
+  // 未显式配置白名单时的安全回退
+  const seedUnitId = process.env.WATCHDOG_SEED_UNIT_ID;
+  if (seedUnitId && (unitId === seedUnitId || unitName === seedUnitId)) return true;
+  if (process.env.NODE_ENV === 'test') {
+    return unitId === 'example-county-fire-rescue';
+  }
+  return false;
+}
+
+function maskPhoneNumber(phone) {
+  if (!phone) return '';
+  const str = String(phone).trim();
+  if (/^1[3-9]\d{9}$/.test(str)) {
+    return str.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2');
+  }
+  if (/^0\d{2,3}-\d{7,8}$/.test(str)) {
+    const parts = str.split('-');
+    const local = parts[1];
+    return `${parts[0]}-****${local.slice(4)}`;
+  }
+  if (str.length >= 7) {
+    const start = Math.floor((str.length - 4) / 2);
+    return str.slice(0, start) + '****' + str.slice(start + 4);
+  }
+  return str;
+}
+
+function maskPersonName(name) {
+  if (!name) return '';
+  const str = String(name).trim();
+  if (str.length <= 1) return str;
+  if (str.length === 2) return `${str[0]}*`;
+  return `${str[0]}*${str.slice(2)}`;
+}
+
+function projectExternalIncident(item) {
+  if (!item || typeof item !== 'object') return item;
+  const copy = { ...item };
+  delete copy.raw_payload;
+  delete copy.raw_merged_text;
+  delete copy.detachment_id;
+
+  if (copy.alarm_phone) copy.alarm_phone = maskPhoneNumber(copy.alarm_phone);
+  if (copy.alarm_person_phone) copy.alarm_person_phone = maskPhoneNumber(copy.alarm_person_phone);
+  if (copy.alarm_person_name) copy.alarm_person_name = maskPersonName(copy.alarm_person_name);
+  if (Array.isArray(copy.contacts)) {
+    copy.contacts = copy.contacts.map((c) => ({
+      ...c,
+      name: maskPersonName(c.name),
+      phone: maskPhoneNumber(c.phone),
+    }));
+  }
+  return copy;
+}
 
 const INCIDENT_INFO_KEYS = [
   'event_summary',
@@ -1904,18 +1984,36 @@ async function enrichAndAttachExternalClaimStatus(list, unitId, { awaitAi = fals
   return listWithClaimStatus;
 }
 
-// 获取衢州市最近三天的官方派警列表（原始全量融合 + AI重组缓存），并标记认领状态
+// 获取外部官方派警列表（原始全量融合 + AI重组缓存），并标记认领状态
 app.get('/api/external-incidents', async (req, res, next) => {
   try {
+    if (!isUnitAuthorizedForExternal(req.unit, req)) {
+      return res.json({
+        list: [],
+        fetched_at: Date.now(),
+        cache_hit: true,
+      });
+    }
+
     const forceRefresh = req.query.refresh === 'true' || req.query.refresh === '1';
-    const upstreamResult = await policeApiService.getQuzhouIncidents({ forceRefresh });
-    const listWithClaimStatus = await enrichAndAttachExternalClaimStatus(upstreamResult.list, req.unit?.id || null, {
+    const effectiveUnitId = resolveRequestUnitId(req);
+    if (forceRefresh) {
+      const refreshKey = `${effectiveUnitId || 'anon'}:${deviceKey(req) || req.ip || 'anon'}`;
+      if (externalRefreshLimiter.isLimited(refreshKey, EXTERNAL_REFRESH_LIMIT_PER_MIN)) {
+        return res.status(429).json({ error: '刷新请求过于频繁，请稍后再试', code: 'RATE_LIMITED' });
+      }
+    }
+
+    const upstreamResult = await policeApiService.getExternalIncidents({ forceRefresh });
+    const listWithClaimStatus = await enrichAndAttachExternalClaimStatus(upstreamResult.list, effectiveUnitId, {
       awaitAi: forceRefresh && Boolean(CFG.llm.apiKey),
       maxAwaitMs: 2200,
     });
 
+    const projectedList = listWithClaimStatus.map((item) => projectExternalIncident(item));
+
     res.json({
-      list: listWithClaimStatus,
+      list: projectedList,
       fetched_at: upstreamResult.fetchedAt,
       cache_hit: upstreamResult.cacheHit,
     });
@@ -1927,22 +2025,27 @@ app.get('/api/external-incidents', async (req, res, next) => {
 // 手动触发指定或当前外部派警的 AI 重新结构化整理
 app.post('/api/external-incidents/reorganize', async (req, res, next) => {
   try {
-    const key = `${req.unit?.id || 'default'}:${deviceKey(req) || req.ip || 'anon'}`;
+    if (!isUnitAuthorizedForExternal(req.unit, req)) {
+      return res.status(403).json({ error: '当前单位未获授权访问外部警情', code: 'UNIT_NOT_AUTHORIZED' });
+    }
+    const effectiveUnitId = resolveRequestUnitId(req);
+    const key = `${effectiveUnitId || 'default'}:${deviceKey(req) || req.ip || 'anon'}`;
     if (externalReorganizeLimiter.isLimited(key, EXTERNAL_REORGANIZE_LIMIT_PER_MIN)) {
       return res.status(429).json({ error: 'AI 重整请求过于频繁，请稍后再试', code: 'RATE_LIMITED' });
     }
     const rawIds = Array.isArray(req.body?.external_ids) ? req.body.external_ids.map(String).filter(Boolean) : null;
     let sourceList = policeApiService.peekCachedIncidents();
     if (sourceList.length === 0) {
-      const fetched = await policeApiService.getQuzhouIncidents({ forceRefresh: false });
+      const fetched = await policeApiService.getExternalIncidents({ forceRefresh: false });
       sourceList = fetched.list;
     }
-    const listWithClaimStatus = await enrichAndAttachExternalClaimStatus(sourceList, req.unit?.id || null, {
+    const listWithClaimStatus = await enrichAndAttachExternalClaimStatus(sourceList, effectiveUnitId, {
       awaitAi: Boolean(CFG.llm.apiKey),
       maxAwaitMs: 12000,
       forceReorganizeIds: rawIds && rawIds.length > 0 ? rawIds : true,
     });
-    res.json({ list: listWithClaimStatus });
+    const projectedList = listWithClaimStatus.map((item) => projectExternalIncident(item));
+    res.json({ list: projectedList });
   } catch (e) {
     next(e);
   }
@@ -2044,6 +2147,9 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     const device = deviceKey(req);
     const name = await actorName(req);
     if (!name) return res.status(403).json({ error: '请先在设置中填写真实姓名，再认领建档', code: 'REAL_NAME_REQUIRED' });
+    if (!isUnitAuthorizedForExternal(req.unit, req)) {
+      return res.status(403).json({ error: '当前单位未获授权认领外部警情', code: 'UNIT_NOT_AUTHORIZED' });
+    }
     const opId = opKey(req);
 
     const ext = req.body?.external_incident || req.body;
@@ -2051,7 +2157,7 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
       return res.status(400).json({ error: '缺少有效的官方警情数据', code: 'EXTERNAL_INCIDENT_INVALID' });
     }
 
-    const unitId = req.unit?.id || null;
+    const unitId = resolveRequestUnitId(req);
     const extId = String(ext.external_id || '').trim();
     const extNumber = String(ext.incident_number || '').trim();
 
@@ -2092,25 +2198,40 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     if (tracked?.pending) return res.status(409).json({ error: '该操作正在处理中，请稍后查询结果', code: 'OPERATION_IN_PROGRESS' });
     if (tracked?.replay) return res.status(tracked.replay.status === 201 ? 200 : tracked.replay.status).json(tracked.replay.result);
 
-    // 3. 融合服务端持久化 AI 结果与客户端参数，以“灾情事件”为主标题建档
+    // 3. 检索服务端权威记录，以“灾情事件”为主标题建档
     const now = Date.now();
-    const stored = extId ? await externalIncidentOrganizer.getStoredIncident(extId) : null;
-    const storedAiReady = stored?.ai_status === 'ready' && Boolean(stored?.event_summary);
-    const mergedRaw = {
-      ...(stored && typeof stored === 'object' ? stored : {}),
-      ...ext,
-      // 若服务端已有 AI 重组结果且客户端未传覆盖值，优先沿用 AI 结构化结论
-      event_summary: ext.event_summary || stored?.event_summary || '',
-      disaster_category: ext.disaster_category || stored?.disaster_category || '',
-      location_display: ext.location_display || stored?.location_display || '',
-      situation_detail: ext.situation_detail || stored?.situation_detail || '',
-      ai_status: ext.event_summary
-        ? (ext.ai_status || (storedAiReady ? 'ready' : 'fallback'))
-        : (stored?.ai_status || ext.ai_status || 'fallback'),
-      dispatched_forces: Array.isArray(ext.dispatched_forces) && ext.dispatched_forces.length > 0
-        ? ext.dispatched_forces
-        : stored?.dispatched_forces,
-    };
+    const matchExt = (item) => (extId && item?.external_id === extId) || (extNumber && item?.incident_number === extNumber);
+    let stored = extId ? await externalIncidentOrganizer.getStoredIncident(extId) : null;
+    if (!stored && extNumber && typeof externalIncidentOrganizer.getStoredIncidentByNumber === 'function') {
+      stored = await externalIncidentOrganizer.getStoredIncidentByNumber(extNumber);
+    }
+    let cached = policeApiService.peekCachedIncidents().find(matchExt) || null;
+    if (!stored && !cached && policeApiService.getQueryListUrl()) {
+      const fetched = await policeApiService.getExternalIncidents({ forceRefresh: false });
+      cached = (fetched?.list || []).find(matchExt) || null;
+    }
+    const baseLive = cached || (stored?.raw_payload && typeof stored.raw_payload === 'object' && Object.keys(stored.raw_payload).length > 0
+      ? policeApiService.normalizeExternalIncident(stored.raw_payload)
+      : stored);
+    const trustedRecord = (stored && baseLive)
+      ? rowToNormalizedPatch(stored, baseLive)
+      : (stored || cached);
+
+    let mergedRaw;
+    if (trustedRecord) {
+      // 强制采用服务端权威记录，客户端回传的 event_summary / dispatched_forces / crime_address 无法篡改服务端记录
+      mergedRaw = {
+        ...trustedRecord,
+        external_id: extId || trustedRecord.external_id,
+        incident_number: extNumber || trustedRecord.incident_number,
+      };
+    } else if (process.env.NODE_ENV !== 'test' || process.env.POLICE_API_STRICT_CLAIM === '1' || Boolean(policeApiService.getQueryListUrl())) {
+      await releaseTrackedOperation(tracked).catch(() => {});
+      return res.status(404).json({ error: '未找到对应的官方派警记录或记录已过期，请刷新列表后重试', code: 'EXTERNAL_INCIDENT_NOT_FOUND' });
+    } else {
+      // 兼容单测未预存权威记录的合成数据
+      mergedRaw = { ...ext };
+    }
     let mergedExt = buildRuleFallbackStructured(mergedRaw, mergedRaw.raw_payload);
     const currentForces = Array.isArray(mergedExt.dispatched_forces) ? mergedExt.dispatched_forces : [];
     const expectedOrgCount = Number(mergedExt.dispatch_organization);
@@ -2156,7 +2277,7 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     const detailData = {
       external_id: extId || undefined,
       external_incident_number: extNumber || undefined,
-      external_source: 'police_api_quzhou',
+      external_source: 'police_api',
       event_summary: mergedExt.event_summary || undefined,
       disaster_category: mergedExt.disaster_category || undefined,
       original_category: mergedExt.incident_type || undefined,
@@ -4534,5 +4655,6 @@ if (require.main === module) {
 }
 
 app.externalIncidentOrganizer = externalIncidentOrganizer;
+app._getLocalIncidentDetailsForTest = (incidentId) => localIncidentDetails.get(incidentId) || null;
 
 module.exports = app;

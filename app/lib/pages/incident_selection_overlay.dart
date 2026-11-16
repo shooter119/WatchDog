@@ -1068,70 +1068,70 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     );
   }
 
+  static final RegExp _districtPattern = RegExp(
+    r'([\u4e00-\u9fa5]{2,6}?(?:区|县|县级市|旗|高新区|经开区|新区|保税区|示范区))',
+  );
+
   static String _resolveDistrict(ExternalIncident ext) {
+    final rawDist = ext.districtName.trim();
+    if (rawDist.isNotEmpty &&
+        rawDist != '市辖区' &&
+        rawDist != '本级' &&
+        rawDist != '市辖县') {
+      return rawDist;
+    }
+
     final addr = ext.crimeAddress;
     final brigade = ext.brigadeName;
     final squadron = ext.squadronName;
-    final rawDist = ext.districtName;
 
-    const districts = [
-      ('智慧新城', ['智慧新城', '新城']),
-      ('柯城区', ['柯城']),
-      ('衢江区', ['衢江']),
-      ('江山市', ['江山']),
-      ('龙游县', ['龙游']),
-      ('常山县', ['常山']),
-      ('开化县', ['开化']),
-    ];
+    for (final source in [addr, brigade, squadron]) {
+      if (source.isEmpty) continue;
+      final match = _districtPattern.firstMatch(source);
+      if (match != null) {
+        return match.group(1)!;
+      }
+    }
 
-    for (final pair in districts) {
-      if (addr.contains(pair.$1) || pair.$2.any((k) => addr.contains(k))) return pair.$1;
+    if (ext.detachmentName.trim().isNotEmpty) {
+      return ext.detachmentName.trim();
     }
-    for (final pair in districts) {
-      if (pair.$2.any((k) => brigade.contains(k))) return pair.$1;
-    }
-    for (final pair in districts) {
-      if (pair.$2.any((k) => squadron.contains(k))) return pair.$1;
-    }
-    if (rawDist.isNotEmpty && rawDist != '市辖区') return rawDist;
-    return '衢州市';
+    return '本辖区';
   }
 
   static bool _matchesUnit(ExternalIncident ext, String? userUnitName) {
     if (userUnitName == null || userUnitName.trim().isEmpty) return true;
     final unit = userUnitName.trim();
-    const keywords = ['龙游', '江山', '柯城', '衢江', '常山', '开化', '智慧新城', '新城'];
+    if (unit.contains('支队') || unit.contains('总队') || unit.contains('指挥中心')) {
+      return true; // 支队及以上查看全辖区
+    }
+
     String? matchedKeyword;
-    for (final kw in keywords) {
-      if (unit.contains(kw)) {
-        matchedKeyword = kw;
-        break;
-      }
+    final cleanedUnit = unit
+        .replaceFirst(RegExp(r'^[\u4e00-\u9fa5]{2,5}(?:省|自治区)'), '')
+        .replaceFirst(
+          RegExp(r'^[\u4e00-\u9fa5]{2,5}市(?=[\u4e00-\u9fa5]{1,6}(?:区|县|旗|市))'),
+          '',
+        );
+    final match = RegExp(
+      r'([\u4e00-\u9fa5]{2,6}?(?:区|县|县级市|旗|高新区|经开区|新区|示范区))(?:消防救援)?(?:大队|站|中队)?',
+    ).firstMatch(cleanedUnit);
+    if (match != null) {
+      matchedKeyword = match.group(1);
     }
-    // 兼容通用脱敏或县区大队名（如“示例县消防救援大队”），支队及非县区大队仍查看全量
-    if (matchedKeyword == null && !unit.contains('支队')) {
-      final cleanedUnit = unit
-          .replaceFirst(RegExp(r'^[\u4e00-\u9fa5]{2,5}(?:省|自治区)'), '')
-          .replaceFirst(
-            RegExp(r'^[\u4e00-\u9fa5]{2,5}市(?=[\u4e00-\u9fa5]{1,5}(?:区|县))'),
-            '',
-          );
-      final match = RegExp(
-        r'^([\u4e00-\u9fa5]{1,5}[县区])(?:消防救援)?大队$',
-      ).firstMatch(cleanedUnit);
-      matchedKeyword = match?.group(1);
-    }
-    if (matchedKeyword == null) return true; // 支队或非县区大队查看全量
+
+    if (matchedKeyword == null || matchedKeyword.isEmpty) return true;
 
     final district = _resolveDistrict(ext);
-    return district.contains(matchedKeyword) ||
-        ext.locationDisplay.contains(matchedKeyword) ||
-        ext.brigadeName.contains(matchedKeyword) ||
-        ext.squadronName.contains(matchedKeyword) ||
-        ext.districtName.contains(matchedKeyword) ||
-        ext.crimeAddress.contains(matchedKeyword) ||
-        ext.dispatchedForces.any((f) => f.stationName.contains(matchedKeyword!)) ||
-        ext.incidentDescribe.contains(matchedKeyword);
+    final kw = matchedKeyword;
+    return district.contains(kw) ||
+        ext.locationDisplay.contains(kw) ||
+        ext.brigadeName.contains(kw) ||
+        ext.squadronName.contains(kw) ||
+        ext.districtName.contains(kw) ||
+        ext.crimeAddress.contains(kw) ||
+        ext.dispatchedForces.any((f) => f.stationName.contains(kw)) ||
+        ext.incidentDescribe.contains(kw);
   }
 
   List<_UnifiedIncidentItem> _buildUnifiedIncidentItems() {

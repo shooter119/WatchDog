@@ -460,6 +460,30 @@ void main() {
       await resolver.resolve('api.example.com');
       expect(lookups, 2);
     }));
+
+    test('directProxy 启用时强制直连并保持严格 TLS 校验', () => _withRealHttp(() async {
+      final rawClient = createResilientHttpClient(directProxy: true);
+      addTearDown(() => rawClient.close(force: true));
+
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final sub = server.listen((request) async {
+        await request.drain<void>();
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..write('proxy-bypassed');
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await sub.cancel();
+        await server.close(force: true);
+      });
+
+      final client = IOClient(rawClient);
+      addTearDown(client.close);
+      final res = await client.get(Uri.parse('http://127.0.0.1:${server.port}/test'));
+      expect(res.statusCode, 200);
+      expect(res.body, 'proxy-bypassed');
+    }));
   });
 
   group('ApiClient 幂等同步与会话续期重试', () {

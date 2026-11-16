@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../models/video_resources.dart';
 
 typedef VideoResourceAvailabilityChecker =
@@ -25,6 +27,10 @@ class VideoResourceProbe {
     final client = HttpClient()
       ..connectionTimeout = timeout
       ..idleTimeout = const Duration(seconds: 2);
+    if (kReleaseMode) {
+      client.findProxy = (uri) => 'DIRECT';
+      client.badCertificateCallback = null;
+    }
     try {
       final request = await client.headUrl(uri).timeout(timeout);
       request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');

@@ -379,6 +379,10 @@ class ResilientDnsResolver {
 
     for (final uri in endpoints) {
       final client = HttpClient()..connectionTimeout = _dohRequestTimeout;
+      if (kReleaseMode) {
+        client.findProxy = (uri) => 'DIRECT';
+        client.badCertificateCallback = null;
+      }
       clients.add(client);
       unawaited(
         _queryDohEndpoint(client, uri)
@@ -456,14 +460,21 @@ HttpClient createResilientHttpClient({
   ResilientDnsResolver? resolver,
   Duration connectionTimeout = const Duration(seconds: 12),
   Duration idleTimeout = const Duration(seconds: 25),
+  bool? directProxy,
 }) {
+  final useDirectProxy = directProxy ?? kReleaseMode;
   final dns = resolver ?? ResilientDnsResolver.instance;
   final httpClient = HttpClient()
     ..connectionTimeout = connectionTimeout
     ..idleTimeout = idleTimeout;
 
+  if (useDirectProxy) {
+    httpClient.findProxy = (uri) => 'DIRECT';
+    httpClient.badCertificateCallback = null;
+  }
+
   httpClient.connectionFactory = (Uri uri, String? proxyHost, int? proxyPort) {
-    if (proxyHost != null && proxyPort != null) {
+    if (!useDirectProxy && proxyHost != null && proxyPort != null) {
       return Socket.startConnect(proxyHost, proxyPort);
     }
 

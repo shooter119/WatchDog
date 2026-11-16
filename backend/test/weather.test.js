@@ -299,10 +299,10 @@ const GEOCODE_OK = {
   status: '1',
   info: 'OK',
   geocodes: [{
-    formatted_address: '浙江省杭州市建德市新安江街道新安东路555号',
-    province: '浙江省',
-    city: '杭州市',
-    district: '建德市',
+    formatted_address: '示例省示例市示例县示例街道示范东路555号',
+    province: '示例省',
+    city: '示例市',
+    district: '示例县',
     adcode: '330182',
     location: '119.28123,29.47512',
   }],
@@ -312,7 +312,7 @@ const FORECAST_OK = {
   status: '1',
   info: 'OK',
   forecasts: [{
-    city: '建德市',
+    city: '示例县',
     adcode: '330182',
     casts: [{
       date: '2026-11-05',
@@ -344,8 +344,8 @@ const DRIVING_OK = {
         toll_distance: '0',
         steps: [
           {
-            instruction: '沿洋安大道向东行驶1.8公里右转',
-            road: '洋安大道',
+            instruction: '沿示范大道向东行驶1.8公里右转',
+            road: '示范大道',
             distance: '1800',
             duration: '180',
             action: '右转',
@@ -355,8 +355,8 @@ const DRIVING_OK = {
             ],
           },
           {
-            instruction: '沿新安江大桥向南行驶1.2公里直行',
-            road: '新安江大桥',
+            instruction: '沿示范大桥向南行驶1.2公里直行',
+            road: '示范大桥',
             distance: '1200',
             duration: '260',
             action: '直行',
@@ -366,8 +366,8 @@ const DRIVING_OK = {
             ],
           },
           {
-            instruction: '沿新安东路向东行驶2.2公里到达目的地',
-            road: '新安东路',
+            instruction: '沿示范东路向东行驶2.2公里到达目的地',
+            road: '示范东路',
             distance: '2200',
             duration: '240',
             action: '到达目的地',
@@ -384,10 +384,10 @@ const DRIVING_OK = {
 test('parseGeocode：正常解析与直辖市空数组兜底', () => {
   const parsed = parseGeocode(GEOCODE_OK);
   assert.deepEqual(parsed, {
-    formattedAddress: '浙江省杭州市建德市新安江街道新安东路555号',
-    province: '浙江省',
-    city: '杭州市',
-    district: '建德市',
+    formattedAddress: '示例省示例市示例县示例街道示范东路555号',
+    province: '示例省',
+    city: '示例市',
+    district: '示例县',
     adcode: '330182',
     location: { lat: 29.47512, lon: 119.28123, coordinate: 'gcj02' },
   });
@@ -455,7 +455,7 @@ test('parseDrivingRoute：汇总路况里程、拥堵分段、主要途经道路
   assert.equal(route.distanceMeters, 5200);
   assert.equal(route.durationSeconds, 680);
   assert.equal(route.trafficLights, 6);
-  assert.deepEqual(route.roads, ['洋安大道', '新安江大桥', '新安东路']);
+  assert.deepEqual(route.roads, ['示范大道', '示范大桥', '示范东路']);
   assert.deepEqual(route.trafficSummary, {
     smoothMeters: 3700,
     slowMeters: 300,
@@ -464,9 +464,9 @@ test('parseDrivingRoute：汇总路况里程、拥堵分段、主要途经道路
     unknownMeters: 0,
   });
   assert.deepEqual(route.congestedSegments, [
-    { road: '新安江大桥', status: '严重拥堵', distanceMeters: 400 },
-    { road: '新安江大桥', status: '拥堵', distanceMeters: 800 },
-    { road: '洋安大道', status: '缓行', distanceMeters: 300 },
+    { road: '示范大桥', status: '严重拥堵', distanceMeters: 400 },
+    { road: '示范大桥', status: '拥堵', distanceMeters: 800 },
+    { road: '示范大道', status: '缓行', distanceMeters: 300 },
   ]);
   assert.equal(route.steps[0].status, '缓行');
   assert.equal(route.steps[1].status, '严重拥堵');
@@ -503,8 +503,8 @@ test('lookupRouteTraffic：完整含起点路线、天气预报及二次命中�
   fetchImpl.calls = [];
 
   const first = await lookupRouteTraffic({
-    address: '新安江街道新安东路555号',
-    city: '建德市',
+    address: '示例街道示范东路555号',
+    city: '示例县',
     originLat: 29.03,
     originLon: 119.18,
     key: 'test-key',
@@ -512,7 +512,7 @@ test('lookupRouteTraffic：完整含起点路线、天气预报及二次命中�
     now: 1000,
   });
 
-  assert.equal(first.destination.formattedAddress, '浙江省杭州市建德市新安江街道新安东路555号');
+  assert.equal(first.destination.formattedAddress, '示例省示例市示例县示例街道示范东路555号');
   assert.equal(first.destination.adcode, '330182');
   assert.equal(first.origin.address, '示例省示例市示例县示范路1号');
   assert.equal(first.origin.coordinateDegraded, false);
@@ -527,8 +527,8 @@ test('lookupRouteTraffic：完整含起点路线、天气预报及二次命中�
   assert.equal(fetchImpl.calls.length, 10);
 
   const second = await lookupRouteTraffic({
-    address: '新安江街道新安东路555号',
-    city: '建德市',
+    address: '示例街道示范东路555号',
+    city: '示例县',
     originLat: 29.0301,
     originLon: 119.1801,
     key: 'test-key',
@@ -557,7 +557,7 @@ test('lookupRouteTraffic：无起点坐标时仅查询终点坐标与天气，�
   fetchImpl.calls = [];
 
   const result = await lookupRouteTraffic({
-    address: '新安江街道新安东路555号',
+    address: '示例街道示范东路555号',
     key: 'test-key',
     fetchImpl,
   });
@@ -574,19 +574,19 @@ test('cleanUnitJurisdictionName 与 normalizeNaturalVillage 与 completeFormatte
   assert.equal(cleanUnitJurisdictionName('示例市消防救援大队'), '示例市');
   assert.equal(cleanUnitJurisdictionName('示范市消防救援支队'), '示范市');
 
-  assert.equal(normalizeNaturalVillage('航埠殿前村4村'), '航埠殿前村四村');
-  assert.equal(normalizeNaturalVillage('双港村2组'), '双港村二组');
+  assert.equal(normalizeNaturalVillage('云溪示范村4村'), '云溪示范村四村');
+  assert.equal(normalizeNaturalVillage('示范村2组'), '示范村二组');
 
-  assert.equal(extractPrefixWord('航埠殿前村4村'), '航埠');
-  assert.equal(extractPrefixWord('航埠镇殿前村'), '航埠');
+  assert.equal(extractPrefixWord('云溪示范村4村'), '云溪');
+  assert.equal(extractPrefixWord('云溪镇示范村'), '云溪');
 
   assert.equal(
-    completeFormattedAddress('示例省示例市示例区航埠镇殿前村', '航埠殿前村4村'),
-    '示例省示例市示例区航埠镇殿前村4村'
+    completeFormattedAddress('示例省示例市示例区云溪镇示范村', '云溪示范村4村'),
+    '示例省示例市示例区云溪镇示范村4村'
   );
   assert.equal(
-    completeFormattedAddress('示例省示例市示例区航埠镇殿前村4村', '航埠殿前村4村'),
-    '示例省示例市示例区航埠镇殿前村4村'
+    completeFormattedAddress('示例省示例市示例区云溪镇示范村4村', '云溪示范村4村'),
+    '示例省示例市示例区云溪镇示范村4村'
   );
 });
 
@@ -735,18 +735,18 @@ test('lookupRouteTraffic：拦截跨省同名小区漂移，优先结合单位�
     const u = new URL(url);
     if (u.pathname === '/v3/geocode/geo') {
       const addr = u.searchParams.get('address') || '';
-      // 若带了龙游县前缀，精准返回浙江龙游本地
-      if (addr.includes('龙游县')) {
+      // 若带了示例县前缀，精准返回本地
+      if (addr.includes('示例县')) {
         return Promise.resolve({
           ok: true,
           status: 200,
           json: async () => ({
             status: '1',
             geocodes: [{
-              formatted_address: '浙江省衢州市龙游县莲湖雅苑',
-              province: '浙江省',
-              city: '衢州市',
-              district: '龙游县',
+              formatted_address: '示例省示例市示例县示范小区',
+              province: '示例省',
+              city: '示例市',
+              district: '示例县',
               adcode: '330825',
               location: '119.163908,29.024354',
             }],
@@ -760,7 +760,7 @@ test('lookupRouteTraffic：拦截跨省同名小区漂移，优先结合单位�
         json: async () => ({
           status: '1',
           geocodes: [{
-            formatted_address: '广东省东莞市莲湖雅苑2栋',
+            formatted_address: '广东省东莞市示范小区2栋',
             province: '广东省',
             city: '东莞市',
             district: '桥头镇',
@@ -784,16 +784,16 @@ test('lookupRouteTraffic：拦截跨省同名小区漂移，优先结合单位�
   };
 
   const res = await lookupRouteTraffic({
-    address: '莲湖雅苑2栋3单元',
-    unitName: '龙游县消防救援大队',
+    address: '示范小区2栋3单元',
+    unitName: '示例县消防救援大队',
     key: 'test-key',
     fetchImpl,
   });
 
-  assert.equal(res.destination.province, '浙江省');
-  assert.equal(res.destination.city, '衢州市');
-  assert.equal(res.destination.district, '龙游县');
-  assert.equal(res.destination.formattedAddress.includes('龙游县'), true);
+  assert.equal(res.destination.province, '示例省');
+  assert.equal(res.destination.city, '示例市');
+  assert.equal(res.destination.district, '示例县');
+  assert.equal(res.destination.formattedAddress.includes('示例县'), true);
   assert.equal(res.destination.location.lat, 29.024354);
   assert.equal(res.destination.location.lon, 119.163908);
 });

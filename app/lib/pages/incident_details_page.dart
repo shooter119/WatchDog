@@ -71,9 +71,18 @@ class _IncidentDetailsPageState extends State<IncidentDetailsPage> {
   }
 
   Future<void> _dialPhone(String rawPhone) async {
+    final normalized = PhoneCaller.normalizePhone(rawPhone);
+    if (!PhoneCaller.isValidPhoneNumber(normalized)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('号码已脱敏或格式无效，无法拨打')),
+        );
+      }
+      return;
+    }
     await PhoneCaller.dial(
       context,
-      rawPhone,
+      normalized,
       launcher: widget.phoneLauncher,
     );
   }
@@ -551,6 +560,7 @@ class _ContactRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final normalizedPhone = phone.trim();
+    final canDial = PhoneCaller.isValidPhoneNumber(normalizedPhone);
     final label = [
       role,
       name,
@@ -565,9 +575,7 @@ class _ContactRow extends StatelessWidget {
             children: [
               Expanded(
                 child: InkWell(
-                  onTap: normalizedPhone.isEmpty
-                      ? null
-                      : () => onCall(normalizedPhone),
+                  onTap: canDial ? () => onCall(normalizedPhone) : null,
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
@@ -589,7 +597,9 @@ class _ContactRow extends StatelessWidget {
                             normalizedPhone,
                             style: AppTextStyles.bodyMd.copyWith(
                               fontWeight: FontWeight.w600,
-                              color: AppColors.actionPrimary,
+                              color: canDial
+                                  ? AppColors.actionPrimary
+                                  : AppColors.textSecondary,
                             ),
                           ),
                         ],
@@ -598,7 +608,7 @@ class _ContactRow extends StatelessWidget {
                   ),
                 ),
               ),
-              if (normalizedPhone.isNotEmpty) ...[
+              if (canDial) ...[
                 const SizedBox(width: AppSpacing.s2),
                 OutlinedButton.icon(
                   onPressed: () => onCall(normalizedPhone),

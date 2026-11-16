@@ -40,8 +40,8 @@ function sanitizeCoordinates(lat, lon) {
   const latitude = parseFloat(lat);
   const longitude = parseFloat(lon);
   if (Number.isFinite(latitude) && Number.isFinite(longitude) &&
-      latitude >= 27.5 && latitude <= 31.0 &&
-      longitude >= 118.0 && longitude <= 121.0) {
+      latitude >= 3.0 && latitude <= 54.0 &&
+      longitude >= 73.0 && longitude <= 136.0) {
     return {
       latitude: String(lat),
       longitude: String(lon),
@@ -50,13 +50,40 @@ function sanitizeCoordinates(lat, lon) {
   return { latitude: null, longitude: null };
 }
 
-function extractContacts(ext = {}) {
+function parseJsonObjectSafe(val) {
+  if (val && typeof val === 'object' && !Array.isArray(val)) return val;
+  if (typeof val === 'string' && val.trim()) {
+    try {
+      const parsed = JSON.parse(val);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function parseJsonArraySafe(val) {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string' && val.trim()) {
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {}
+  }
+  return [];
+}
+
+function extractContacts(ext = {}, rawItem = null) {
   const contacts = [];
-  const clean = (p) => String(p || '').trim().replace(/[^\d+ -]/g, '');
+  const raw = parseJsonObjectSafe(rawItem) || parseJsonObjectSafe(ext.raw_payload) || {};
+  const clean = (p) => {
+    const rawStr = String(p || '').trim();
+    if (!rawStr || rawStr.includes('*')) return '';
+    return rawStr.replace(/[^\d+ -]/g, '');
+  };
   const isInvalid = (p) => !p || /^(?:0?110|119|120|122)$/.test(p.replace(/\D/g, '')) || p.replace(/\D/g, '').length < 7;
 
-  const personPhone = clean(ext.alarm_person_phone);
-  const alarmPhone = clean(ext.alarm_phone);
+  const personPhone = clean(ext.alarm_person_phone || ext.alarmPersonPhone || raw.alarmPersonPhone || raw.alarm_person_phone);
+  const alarmPhone = clean(ext.alarm_phone || ext.alarmPhone || raw.alarmPhone || raw.alarm_phone);
 
   let chosen = '';
   if (personPhone && !isInvalid(personPhone)) {
@@ -65,12 +92,37 @@ function extractContacts(ext = {}) {
     chosen = alarmPhone;
   }
 
+  const rawNameCandidates = [
+    ext.alarm_person_name,
+    ext.alarmPersonName,
+    raw.alarmPersonName,
+    raw.alarm_person_name,
+  ];
+  const chosenName = rawNameCandidates
+    .map((v) => String(v || '').trim())
+    .find((v) => v && !v.includes('*')) || '报警人';
+
   if (chosen) {
     contacts.push({
       role: '报警人',
-      name: String(ext.alarm_person_name || '').trim() || '报警人',
+      name: chosenName,
       phone: chosen,
     });
+    return contacts;
+  }
+
+  const existingContacts = parseJsonArraySafe(ext.contacts);
+  for (const c of existingContacts) {
+    if (!c || typeof c !== 'object') continue;
+    const cleaned = clean(c.phone);
+    if (!isInvalid(cleaned)) {
+      const rawContactName = String(c.name || '').trim();
+      contacts.push({
+        role: cleanText(c.role, 40) || '报警人',
+        name: rawContactName && !rawContactName.includes('*') ? rawContactName : '报警人',
+        phone: cleaned,
+      });
+    }
   }
   return contacts;
 }
@@ -96,7 +148,7 @@ function buildDispatchSummary({ dispatch_vehicle = '', dispatch_organization = '
 function cleanIncidentLocation(rawAddress = '', districtName = '') {
   let addr = String(rawAddress || '').replace(/\s+/g, '').trim();
   const dist = String(districtName || '').replace(/\s+/g, '').trim();
-  if (!addr) return dist && dist !== '市辖区' && dist !== '衢州市' ? dist : '';
+  if (!addr) return dist && dist !== '市辖区' ? dist : '';
 
   // 剥离冗余省级/自治区前缀
   addr = addr.replace(/^[\u4e00-\u9fa5]{2,5}(?:省|自治区)/, '');
@@ -105,7 +157,7 @@ function cleanIncidentLocation(rawAddress = '', districtName = '') {
   // 消除相邻重复叠加的区县前缀（如“示例县示例县文化路1号”）
   addr = addr.replace(/^([\u4e00-\u9fa5]{2,5}(?:区|县|市))\1/, '$1');
 
-  if (dist && dist !== '市辖区' && dist !== '衢州市' && !addr.includes(dist)) {
+  if (dist && dist !== '市辖区' && !addr.includes(dist)) {
     const shortDist = dist.replace(/[区县市]$/, '');
     if (!shortDist || !addr.startsWith(shortDist)) {
       addr = `${dist}${addr}`;
@@ -118,30 +170,28 @@ function resolveDistrict(item) {
   if (!item) return '';
   const addr = String(item.crime_address || item.crimeAddress || '').trim();
   const brigade = String(item.brigade_name || item.brigadeOrganizationName || '').trim();
+  const detachment = String(item.detachment_name || item.detachmentOrgName || '').trim();
   const squadron = String(item.squadron_name || item.squadronOrganizationName || '').trim();
   const rawDist = String(item.district_name || item.districtName || '').trim();
 
-  const qzDistricts = [
-    { name: '智慧新城', keys: ['智慧新城', '新城'] },
-    { name: '柯城区', keys: ['柯城'] },
-    { name: '衢江区', keys: ['衢江'] },
-    { name: '江山市', keys: ['江山'] },
-    { name: '龙游县', keys: ['龙游'] },
-    { name: '常山县', keys: ['常山'] },
-    { name: '开化县', keys: ['开化'] },
-  ];
-
-  for (const d of qzDistricts) {
-    if (addr.includes(d.name) || d.keys.some((k) => addr.includes(k))) return d.name;
-  }
-  for (const d of qzDistricts) {
-    if (d.keys.some((k) => brigade.includes(k))) return d.name;
-  }
-  for (const d of qzDistricts) {
-    if (d.keys.some((k) => squadron.includes(k))) return d.name;
-  }
+  // 1. 若上游自带非「市辖区」的明确行政区名，优先采用
   if (rawDist && rawDist !== '市辖区') return rawDist;
-  return '衢州市';
+
+  // 2. 从大队名提取（如「示例县消防救援大队」->「示例县」、「示例区大队」->「示例区」）
+  const brigadeMatch = brigade.match(/(?:^|市|地区|盟|州)([一-龥]{2,6}?(?:区|县|市|旗|新城|特区|林区))(?:大队|消防|救援)/);
+  if (brigadeMatch) return brigadeMatch[1];
+
+  // 3. 从中队/消防站名提取
+  const squadronMatch = squadron.match(/(?:^|市|地区|盟|州)([一-龥]{2,6}?(?:区|县|市|旗|新城|特区|林区))(?:站|中队|分队)/);
+  if (squadronMatch) return squadronMatch[1];
+
+  // 4. 从地址文本提取区县级区划
+  const addrMatch = addr.match(/(?:^|省|市|地区|盟|州)([一-龥]{2,6}?(?:区|县|市|旗|新城|特区|林区))/);
+  if (addrMatch) return addrMatch[1];
+
+  // 5. 兜底返回支队名称或通用占位
+  if (detachment) return detachment.replace(/(?:消防|救援|支队).*$/, '');
+  return rawDist || '';
 }
 
 function classifyDisasterCategory({
@@ -790,12 +840,6 @@ function buildRawMergedText(rawItem = {}, normalized = {}) {
   const dorg = String(src.dispatch_organization || src.dispatchOrganization || '').trim();
   if (dorg && dorg !== '0') addLine('出动队站', dorg);
 
-  const alarmName = cleanText(src.alarm_person_name || src.alarmPersonName, 80);
-  const alarmPhone = cleanText(src.alarm_person_phone || src.alarmPersonPhone || src.alarm_phone || src.alarmPhone, 40);
-  if (alarmName || alarmPhone) {
-    addLine('报警联系', [alarmName, alarmPhone].filter(Boolean).join(' '));
-  }
-
   // 把上游其他非空补充字段一并揉入，避免未来接口新增关键文本被遗漏
   if (rawItem && typeof rawItem === 'object') {
     for (const [k, v] of Object.entries(rawItem)) {
@@ -832,62 +876,75 @@ function computeContentHash(ext = {}) {
 }
 
 function buildRuleFallbackStructured(ext = {}, rawItem = null) {
-  const district = resolveDistrict(ext);
+  const rawObj = parseJsonObjectSafe(rawItem) || parseJsonObjectSafe(ext.raw_payload);
+  const dispatchVehicle = String(
+    ext.dispatch_vehicle ?? rawObj?.dispatchVehicle ?? rawObj?.dispatch_vehicle ?? '',
+  ).trim();
+  const dispatchOrganization = String(
+    ext.dispatch_organization ?? rawObj?.dispatchOrganization ?? rawObj?.dispatch_organization ?? '',
+  ).trim();
+  const enrichedExt = {
+    ...ext,
+    dispatch_vehicle: dispatchVehicle,
+    dispatch_organization: dispatchOrganization,
+  };
+
+  const district = resolveDistrict(enrichedExt);
   const locationDisplay = cleanIncidentLocation(
-    cleanText(ext.location_display, 300) || ext.crime_address,
+    cleanText(enrichedExt.location_display, 300) || enrichedExt.crime_address,
     district,
   );
-  const officialStatus = sanitizeOfficialStatus(ext.incident_status);
-  const eventSummary = cleanText(ext.event_summary, 60) || cleanIncidentEvent(ext);
+  const officialStatus = sanitizeOfficialStatus(enrichedExt.incident_status);
+  const eventSummary = cleanText(enrichedExt.event_summary, 60) || cleanIncidentEvent(enrichedExt);
   const disasterCategory = classifyDisasterCategory({
-    disaster_category: ext.disaster_category,
-    incident_type: ext.incident_type,
-    disposal_object_name: ext.disposal_object_name,
-    incident_describe: ext.incident_describe,
+    disaster_category: enrichedExt.disaster_category,
+    incident_type: enrichedExt.incident_type,
+    disposal_object_name: enrichedExt.disposal_object_name,
+    incident_describe: enrichedExt.incident_describe,
     event_summary: eventSummary,
   });
-  const specificType = cleanText(ext.specific_type, 80) ||
-    ((ext.disposal_object_name && ext.disposal_object_name !== '其他')
-      ? cleanText(ext.disposal_object_name, 80)
-      : cleanText(ext.incident_type, 80));
-  const situationDetail = cleanText(ext.situation_detail, 1500) || buildSituationDescription(ext);
-  const extracted = extractCasualtiesAndHazmat(ext.incident_describe);
-  const dispatchedForces = parseStructuredForces(ext);
-  const dispatchSummary = buildDispatchSummary(ext);
-  const contacts = extractContacts(ext);
+  const specificType = cleanText(enrichedExt.specific_type, 80) ||
+    ((enrichedExt.disposal_object_name && enrichedExt.disposal_object_name !== '其他')
+      ? cleanText(enrichedExt.disposal_object_name, 80)
+      : cleanText(enrichedExt.incident_type, 80));
+  const situationDetail = cleanText(enrichedExt.situation_detail, 1500) || buildSituationDescription(enrichedExt);
+  const extracted = extractCasualtiesAndHazmat(enrichedExt.incident_describe);
+  const dispatchedForces = parseStructuredForces(enrichedExt);
+  const dispatchSummary = buildDispatchSummary(enrichedExt);
+  const contacts = extractContacts(enrichedExt, rawObj);
   const factHighlights = extractFactHighlights({
     event_summary: eventSummary,
-    incident_level: ext.incident_level,
-    disposal_object_name: ext.disposal_object_name,
+    incident_level: enrichedExt.incident_level,
+    disposal_object_name: enrichedExt.disposal_object_name,
     trapped: extracted.trapped,
     injured: extracted.injured,
     hazardous_materials: extracted.hazardous_materials,
     official_status: officialStatus,
   });
-  const rawMergedText = ext.raw_merged_text || buildRawMergedText(rawItem, ext);
-  const contentHash = ext.content_hash || computeContentHash(ext);
+  const rawMergedText = enrichedExt.raw_merged_text || buildRawMergedText(rawObj || rawItem, enrichedExt);
+  const contentHash = enrichedExt.content_hash || computeContentHash(enrichedExt);
 
   return {
-    ...ext,
-    district_name: district || ext.district_name || '',
+    ...enrichedExt,
+    district_name: district || enrichedExt.district_name || '',
     location_display: locationDisplay,
     official_status: officialStatus,
     event_summary: eventSummary,
     disaster_category: disasterCategory,
     specific_type: specificType,
     situation_detail: situationDetail,
-    trapped: cleanText(ext.trapped || extracted.trapped, 300),
-    injured: cleanText(ext.injured || extracted.injured, 300),
-    hazardous_materials: cleanText(ext.hazardous_materials || extracted.hazardous_materials, 500),
+    trapped: cleanText(enrichedExt.trapped || extracted.trapped, 300),
+    injured: cleanText(enrichedExt.injured || extracted.injured, 300),
+    hazardous_materials: cleanText(enrichedExt.hazardous_materials || extracted.hazardous_materials, 500),
     dispatched_forces: dispatchedForces,
     dispatch_summary: dispatchSummary,
     contacts,
     fact_highlights: factHighlights,
     raw_merged_text: rawMergedText,
     content_hash: contentHash,
-    ai_status: ext.ai_status || 'fallback',
-    ai_model: ext.ai_model || '',
-    ai_organized_at: ext.ai_organized_at || null,
+    ai_status: enrichedExt.ai_status || 'fallback',
+    ai_model: enrichedExt.ai_model || '',
+    ai_organized_at: enrichedExt.ai_organized_at || null,
   };
 }
 
@@ -909,6 +966,25 @@ const ORGANIZE_SYSTEM_PROMPT = `你是消防救援指挥中心的警情信息重
    - fact_highlights：0~3条简短高价值补充标签（如 ["四层民房","有人员被困"]），不要与 event_summary 或 location_display 重复。
    - dispatched_forces：数组，每项 {"station_name":"","vehicle_count":null,"personnel_count":null}；只有原文或出动字段明确且唯一指向某队站数量时才填整数，否则填 null，禁止凭空平分车辆数。`;
 
+function sanitizePromptTextForLlm(rawMergedText, fallback = {}) {
+  let sanitized = String(rawMergedText || '');
+  // 1. 剔除“报警联系: 姓名 电话”及类似整行
+  sanitized = sanitized.replace(/^(?:报警联系|报警人|联系方式|联系电话|报警电话)[:：].*$/gmi, '');
+  // 2. 剔除已知报警人姓名与电话
+  const names = [fallback.alarm_person_name, fallback.alarmPersonName].filter(Boolean);
+  for (const name of names) {
+    if (name && name.length >= 2) sanitized = sanitized.split(name).join('');
+  }
+  const phones = [fallback.alarm_person_phone, fallback.alarmPersonPhone, fallback.alarm_phone, fallback.alarmPhone].filter(Boolean);
+  for (const phone of phones) {
+    if (phone && phone.length >= 7) sanitized = sanitized.split(phone).join('');
+  }
+  // 3. 正则脱敏文本中残留的 11 位中国大陆手机号码及固定电话
+  sanitized = sanitized.replace(/(?:\+?86[- ]?)?1[3-9]\d{9}\b/g, '[已脱敏]');
+  sanitized = sanitized.replace(/0\d{2,3}-?\d{7,8}\b/g, '[已脱敏]');
+  return sanitized.split('\n').filter((l) => l.trim().length > 0).join('\n');
+}
+
 async function organizeWithDeepSeek({
   apiKey,
   baseUrl = 'https://api.deepseek.com',
@@ -923,6 +999,7 @@ async function organizeWithDeepSeek({
   }
 
   try {
+    const sanitizedPrompt = sanitizePromptTextForLlm(rawMergedText, fallback);
     const endpoint = `${String(baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')}/chat/completions`;
     const res = await fetchImpl(endpoint, {
       method: 'POST',
@@ -937,7 +1014,7 @@ async function organizeWithDeepSeek({
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: ORGANIZE_SYSTEM_PROMPT },
-          { role: 'user', content: `请整理以下原始派警全量信息：\n\n${rawMergedText}` },
+          { role: 'user', content: `请整理以下原始派警全量信息：\n\n${sanitizedPrompt}` },
         ],
       }),
       signal: AbortSignal.timeout(timeoutMs),
@@ -1074,6 +1151,17 @@ function createExternalIncidentOrganizer({
   const memoryStore = new Map();
   const inFlightAi = new Map();
 
+  function normalizeStoredRow(row) {
+    if (!row || typeof row !== 'object') return row;
+    return {
+      ...row,
+      raw_payload: parseJsonObjectSafe(row.raw_payload) || {},
+      dispatched_forces: parseJsonArraySafe(row.dispatched_forces),
+      fact_highlights: parseJsonArraySafe(row.fact_highlights),
+      contacts: parseJsonArraySafe(row.contacts),
+    };
+  }
+
   async function loadExistingRows(externalIds) {
     const ids = [...new Set(externalIds.filter(Boolean))];
     const map = new Map();
@@ -1085,7 +1173,7 @@ function createExternalIncidentOrganizer({
           filters: { external_id: { op: 'in', value: ids } },
         });
         for (const row of rows) {
-          map.set(row.external_id, row);
+          map.set(row.external_id, normalizeStoredRow(row));
         }
         return map;
       } catch (err) {
@@ -1094,7 +1182,7 @@ function createExternalIncidentOrganizer({
     }
 
     for (const id of ids) {
-      if (memoryStore.has(id)) map.set(id, memoryStore.get(id));
+      if (memoryStore.has(id)) map.set(id, normalizeStoredRow(memoryStore.get(id)));
     }
     return map;
   }
@@ -1269,6 +1357,32 @@ function createExternalIncidentOrganizer({
     return map.get(String(externalId)) || null;
   }
 
+  async function getStoredIncidentByNumber(incidentNumber) {
+    const num = String(incidentNumber || '').trim();
+    if (!num) return null;
+    if (syncSupported() && store) {
+      try {
+        const rows = await store.select('external_incidents', {
+          filters: { incident_number: num },
+          order: 'register_time.desc',
+          limit: 1,
+        });
+        if (rows.length > 0) return normalizeStoredRow(rows[0]);
+      } catch (err) {
+        logger.warn(`[ExternalOrganizer] getStoredIncidentByNumber DB fallback: ${err?.message || String(err)}`);
+      }
+    }
+    let matched = null;
+    for (const row of memoryStore.values()) {
+      if (String(row?.incident_number || '').trim() === num) {
+        if (!matched || (Number(row.register_time) || 0) >= (Number(matched.register_time) || 0)) {
+          matched = row;
+        }
+      }
+    }
+    return matched ? normalizeStoredRow(matched) : null;
+  }
+
   function resetForTests() {
     memoryStore.clear();
     inFlightAi.clear();
@@ -1277,6 +1391,7 @@ function createExternalIncidentOrganizer({
   return {
     syncIncidents,
     getStoredIncident,
+    getStoredIncidentByNumber,
     saveIncident: (item, now = Date.now()) => saveRow(item, now),
     resetForTests,
   };
@@ -1302,6 +1417,7 @@ module.exports = {
   computeContentHash,
   buildRuleFallbackStructured,
   organizeWithDeepSeek,
+  sanitizePromptTextForLlm,
   rowToNormalizedPatch,
   createExternalIncidentOrganizer,
   formatBeijingIso,

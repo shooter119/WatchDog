@@ -78,9 +78,9 @@ void main() {
         status: 'active',
         createdAt: 1000,
         lastActivityAt: 1000,
-        info: {'location': '龙游县湖镇镇竺溪桥', 'address': '备用地址'},
+        info: {'location': '示例县示例镇示例桥', 'address': '备用地址'},
       );
-      expect(TacticalBriefEngine.extractLocation(incWithLoc), '龙游县湖镇镇竺溪桥');
+      expect(TacticalBriefEngine.extractLocation(incWithLoc), '示例县示例镇示例桥');
 
       const incWithAddr = Incident(
         id: '2',
@@ -173,12 +173,12 @@ void main() {
       const rescueIncident = Incident(
         id: 'r1',
         number: '20261108002',
-        title: '湖镇镇竺溪桥抢险救援',
+        title: '示例镇示例桥抢险救援',
         status: 'active',
         createdAt: 1000,
         lastActivityAt: 2000,
         info: {
-          'location': '龙游县湖镇镇竺溪桥',
+          'location': '示例县示例镇示例桥',
           'specific_type': '抢险救援',
           'situation': '抢险救援',
         },
@@ -188,7 +188,7 @@ void main() {
         const IncidentForce(
           id: 'f1',
           incidentId: 'r1',
-          stationName: '龙翔路站',
+          stationName: '示例路站',
           vehicleCount: 2,
           personnelCount: 12,
           version: 1,
@@ -222,8 +222,8 @@ void main() {
         generatedAt: now,
       );
 
-      expect(brief, contains('【抢险救援现场速报】湖镇镇竺溪桥抢险救援（13:20）'));
-      expect(brief, contains('事发地点：龙游县湖镇镇竺溪桥'));
+      expect(brief, contains('【抢险救援现场速报】示例镇示例桥抢险救援（13:20）'));
+      expect(brief, contains('事发地点：示例县示例镇示例桥'));
       expect(brief, contains('【核心要事】已成功搜救出1名被困人员；【警示】东侧建筑有倒塌风险'));
       expect(brief, contains('一、到场力量与救援展开'));
       expect(brief, contains('二、现场险情与风险控制'));

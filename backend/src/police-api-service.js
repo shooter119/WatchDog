@@ -12,20 +12,51 @@ const {
   buildRuleFallbackStructured,
 } = require('./external-incident-organizer');
 
-const DEFAULT_QUERYLIST_URL = 'http://220.189.211.80:10480/ds-mit-web/rest/mit/fire/v1.0/disater/querylist';
-const DEFAULT_HOMEINFO_URL = 'http://220.189.211.80:10480/ds-mit-web/rest/mit/fire/v1.0/home/homeinfo';
-const DEFAULT_UPSTREAM_URL = process.env.POLICE_API_QUERYLIST_URL || process.env.POLICE_API_ORGLIST_URL || DEFAULT_QUERYLIST_URL;
-const DEFAULT_SCOPE_SQUADRON_ID = process.env.POLICE_API_SCOPE_SQUADRON_ID || '1f2ce829f50c446bb8b21e816c3ba7f2';
+const DEFAULT_QUERYLIST_URL = process.env.POLICE_API_QUERYLIST_URL || process.env.POLICE_API_ORGLIST_URL || '';
+const DEFAULT_HOMEINFO_URL = process.env.POLICE_API_HOMEINFO_URL || '';
+const DEFAULT_UPSTREAM_URL = DEFAULT_QUERYLIST_URL;
+const DEFAULT_SCOPE_SQUADRON_ID = process.env.POLICE_API_SCOPE_SQUADRON_ID || '';
 const CACHE_TTL_MS = 60 * 1000; // 1 分钟短时缓存
+const MIN_REFRESH_INTERVAL_MS = 5 * 1000; // 5 秒防击穿冷却
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
 let testHomeInfoUrl = null;
 
-// 衢州市行政区与支队匹配关键字
-const QUZHOU_KEYWORDS = ['衢州', '柯城', '衢江', '江山', '龙游', '常山', '开化'];
+function getQueryListUrl() {
+  return process.env.POLICE_API_QUERYLIST_URL || process.env.POLICE_API_ORGLIST_URL || DEFAULT_QUERYLIST_URL;
+}
 
-// 浙江省除衢州外的其他地市，用于排除跨市异地演练/拉动警单
-const OTHER_ZHEJIANG_CITIES = ['杭州', '宁波', '温州', '嘉兴', '湖州', '绍兴', '金华', '舟山', '台州', '丽水'];
+function getHomeInfoUrl() {
+  return testHomeInfoUrl || process.env.POLICE_API_HOMEINFO_URL || DEFAULT_HOMEINFO_URL;
+}
+
+function getScopeSquadronId() {
+  return process.env.POLICE_API_SCOPE_SQUADRON_ID || DEFAULT_SCOPE_SQUADRON_ID;
+}
+
+function getRegionKeywords() {
+  const envKw = process.env.POLICE_API_REGION_KEYWORDS;
+  if (!envKw) return [];
+  try {
+    if (envKw.startsWith('[') && envKw.endsWith(']')) {
+      const parsed = JSON.parse(envKw);
+      if (Array.isArray(parsed)) return parsed.map((s) => String(s).trim()).filter(Boolean);
+    }
+  } catch (_) {}
+  return envKw.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function getExcludeCities() {
+  const envExc = process.env.POLICE_API_EXCLUDE_CITIES;
+  if (!envExc) return [];
+  try {
+    if (envExc.startsWith('[') && envExc.endsWith(']')) {
+      const parsed = JSON.parse(envExc);
+      if (Array.isArray(parsed)) return parsed.map((s) => String(s).trim()).filter(Boolean);
+    }
+  } catch (_) {}
+  return envExc.split(',').map((s) => s.trim()).filter(Boolean);
+}
 
 let memoryCache = {
   data: [],
@@ -33,7 +64,7 @@ let memoryCache = {
 };
 let inFlightPromise = null;
 
-function isQuzhouIncident(item) {
+function isJurisdictionIncident(item, opts = {}) {
   if (!item) return false;
   const detachment = String(item.detachmentOrgName || '').trim();
   const brigade = String(item.brigadeOrganizationName || '').trim();
@@ -41,22 +72,33 @@ function isQuzhouIncident(item) {
   const squadron = String(item.squadronOrganizationName || '').trim();
   const address = String(item.crimeAddress || '').trim();
 
-  // 1. 组织归属：支队、大队、站或行政区必须属于衢州管辖
-  const belongsToQuzhou = detachment.includes('衢州') ||
-    QUZHOU_KEYWORDS.some((kw) => detachment.includes(kw) || brigade.includes(kw) || district.includes(kw) || squadron.includes(kw));
+  const regionKeywords = Array.isArray(opts.regionKeywords) ? opts.regionKeywords : getRegionKeywords();
+  const excludeCities = Array.isArray(opts.excludeCities) ? opts.excludeCities : getExcludeCities();
 
-  if (!belongsToQuzhou) return false;
+  if (regionKeywords.length > 0) {
+    const belongsToRegion = regionKeywords.some((kw) =>
+      detachment.includes(kw) || brigade.includes(kw) || district.includes(kw) || squadron.includes(kw),
+    );
+    if (!belongsToRegion) return false;
 
-  // 2. 事发地址校验：若明确包含浙江其他地市名称且不含衢州各县市关键字，判定为异地拉动演练，予以排除
-  const hasOtherCity = OTHER_ZHEJIANG_CITIES.some((city) => address.includes(city));
-  const hasQuzhouLocal = QUZHOU_KEYWORDS.some((kw) => address.includes(kw));
-  if (hasOtherCity && !hasQuzhouLocal) {
-    return false;
+    if (excludeCities.length > 0) {
+      const hasOtherCity = excludeCities.some((city) => address.includes(city));
+      const hasRegionLocal = regionKeywords.some((kw) => address.includes(kw));
+      if (hasOtherCity && !hasRegionLocal) {
+        return false;
+      }
+      if ((address.includes('拉动') || address.includes('演练')) && hasOtherCity) {
+        return false;
+      }
+    }
+    return true;
   }
 
-  // 3. 包含（拉动）/演练且地址明确不在衢州本地的，排除
-  if ((address.includes('拉动') || address.includes('演练')) && hasOtherCity) {
-    return false;
+  if (excludeCities.length > 0) {
+    const hasOtherCity = excludeCities.some((city) => address.includes(city));
+    if (hasOtherCity && (address.includes('拉动') || address.includes('演练'))) {
+      return false;
+    }
   }
 
   return true;
@@ -172,8 +214,14 @@ function peekCachedIncidents() {
   return Array.isArray(memoryCache.data) ? memoryCache.data.slice() : [];
 }
 
-async function fetchFromUpstream(url = DEFAULT_UPSTREAM_URL) {
-  const allQuzhou = [];
+async function fetchFromUpstream(url = getQueryListUrl()) {
+  const targetUrl = url || getQueryListUrl();
+  if (!targetUrl) {
+    logger.info('[PoliceApiService] Upstream querylist URL not configured, returning empty list');
+    return [];
+  }
+
+  const allIncidents = [];
   const now = Date.now();
   const cutoffTime = now - THREE_DAYS_MS;
   const pageSize = 100;
@@ -183,14 +231,14 @@ async function fetchFromUpstream(url = DEFAULT_UPSTREAM_URL) {
     const body = JSON.stringify({
       whetherPage: true,
       scopeType: 1,
-      scopeSquadronId: DEFAULT_SCOPE_SQUADRON_ID,
+      scopeSquadronId: getScopeSquadronId(),
       squadronIds: [],
       startTime: String(cutoffTime),
       endTime: String(now),
       pagination: { page, size: pageSize },
     });
 
-    const response = await fetch(url, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -215,14 +263,13 @@ async function fetchFromUpstream(url = DEFAULT_UPSTREAM_URL) {
     let reachedOlderData = false;
     for (const item of list) {
       const regTime = Number(item.registerIncidentTime) || 0;
-      // 保留衢州市、最近三天内且已调派力量的警情
-      if (isQuzhouIncident(item)) {
+      if (isJurisdictionIncident(item)) {
         if (regTime >= cutoffTime) {
           if (isDispatchedIncident(item)) {
-            allQuzhou.push(normalizeExternalIncident(item));
+            allIncidents.push(normalizeExternalIncident(item));
           }
         } else {
-          // 由于上游通常按立案时间倒序排列，若遇到早于3天的衢州警情，可提前结束
+          // 由于上游通常按立案时间倒序排列，若遇到早于3天的警情，可提前结束
           reachedOlderData = true;
         }
       }
@@ -236,15 +283,25 @@ async function fetchFromUpstream(url = DEFAULT_UPSTREAM_URL) {
   }
 
   // 按接警时间倒序排序
-  allQuzhou.sort((a, b) => b.register_time - a.register_time);
-  return allQuzhou;
+  allIncidents.sort((a, b) => b.register_time - a.register_time);
+  return allIncidents;
 }
 
-async function getQuzhouIncidents({ forceRefresh = false, upstreamUrl = DEFAULT_UPSTREAM_URL } = {}) {
+async function getExternalIncidents({ forceRefresh = false, upstreamUrl } = {}) {
+  const targetUrl = upstreamUrl || getQueryListUrl();
+  if (!targetUrl) {
+    return {
+      list: [],
+      fetchedAt: 0,
+      cacheHit: false,
+    };
+  }
+
   const now = Date.now();
   const isCacheValid = !forceRefresh && (now - memoryCache.fetchedAt < CACHE_TTL_MS) && memoryCache.data.length > 0;
+  const isCoolingDown = forceRefresh && (now - memoryCache.fetchedAt < MIN_REFRESH_INTERVAL_MS) && memoryCache.data.length > 0;
 
-  if (isCacheValid) {
+  if (isCacheValid || isCoolingDown) {
     return {
       list: memoryCache.data,
       fetchedAt: memoryCache.fetchedAt,
@@ -263,12 +320,12 @@ async function getQuzhouIncidents({ forceRefresh = false, upstreamUrl = DEFAULT_
 
   inFlightPromise = (async () => {
     try {
-      const list = await fetchFromUpstream(upstreamUrl);
+      const list = await fetchFromUpstream(targetUrl);
       memoryCache = {
         data: list,
         fetchedAt: Date.now(),
       };
-      logger.info(`[PoliceApiService] Refreshed Quzhou incidents: ${list.length} items`);
+      logger.info(`[PoliceApiService] Refreshed external incidents: ${list.length} items`);
       return list;
     } catch (err) {
       logger.error(`[PoliceApiService] Failed to fetch upstream police incidents: ${err.message}`);
@@ -294,13 +351,12 @@ async function fetchIncidentHomeInfo(externalId, { homeInfoUrl, timeoutMs = 2500
   const id = String(externalId || '').trim();
   if (!id) return null;
 
-  const configuredUrl = homeInfoUrl || testHomeInfoUrl || process.env.POLICE_API_HOMEINFO_URL || '';
-  // 测试环境未注入 mock URL 时短路返回，避免离线/CI 发起外网请求导致超时
-  if (process.env.NODE_ENV === 'test' && !configuredUrl) {
+  const configuredUrl = homeInfoUrl || testHomeInfoUrl || process.env.POLICE_API_HOMEINFO_URL || DEFAULT_HOMEINFO_URL;
+  if (!configuredUrl) {
     return null;
   }
 
-  const baseUrl = configuredUrl || DEFAULT_HOMEINFO_URL;
+  const baseUrl = configuredUrl;
   const requestUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}incidentID=${encodeURIComponent(id)}`;
 
   try {
@@ -339,10 +395,11 @@ function _resetCacheForTest() {
 }
 
 module.exports = {
-  getQuzhouIncidents,
+  getExternalIncidents,
+  getQueryListUrl,
   fetchIncidentHomeInfo,
   peekCachedIncidents,
-  isQuzhouIncident,
+  isJurisdictionIncident,
   isDispatchedIncident,
   normalizeExternalIncident,
   resolveDistrict,
@@ -359,4 +416,6 @@ module.exports = {
   DEFAULT_QUERYLIST_URL,
   DEFAULT_HOMEINFO_URL,
   DEFAULT_UPSTREAM_URL,
+  DEFAULT_SCOPE_SQUADRON_ID,
+  MIN_REFRESH_INTERVAL_MS,
 };

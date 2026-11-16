@@ -5,9 +5,11 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:convert/convert.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart';
 
+import 'resilient_dns.dart';
 import 'settings.dart';
 import 'storage_service.dart';
 
@@ -91,7 +93,8 @@ class LocalAsrService {
     String? modelBaseUrl,
   }) : _supportDirectoryProvider =
            supportDirectoryProvider ?? getApplicationSupportDirectory,
-       _httpClientFactory = httpClientFactory ?? (() => http.Client()),
+       _httpClientFactory =
+           httpClientFactory ?? (() => IOClient(createResilientHttpClient())),
        _availableStorageBytesProvider =
            availableStorageBytesProvider ?? StorageService.availableBytes,
        _modelBaseUrlOverride = modelBaseUrl?.trim().replaceFirst(

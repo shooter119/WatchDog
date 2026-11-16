@@ -20,11 +20,11 @@ void main() {
   final claimedExternal = ExternalIncident(
     externalId: 'ext-claimed-1',
     incidentNumber: '2026110712345601',
-    detachmentName: '衢州支队',
-    brigadeName: '柯城大队',
-    districtName: '柯城区',
+    detachmentName: '示例市支队',
+    brigadeName: '示例区大队',
+    districtName: '示例区',
     incidentType: '火灾扑救',
-    crimeAddress: '柯城区新桥街88号',
+    crimeAddress: '示例区文化街88号',
     registerTime: 1786177100000,
     claimed: true,
     claimedIncidentId: 'claimed-local-id',
@@ -33,11 +33,11 @@ void main() {
   final unclaimedExternal = ExternalIncident(
     externalId: 'ext-unclaimed-2',
     incidentNumber: '2026110712345602',
-    detachmentName: '衢州支队',
-    brigadeName: '龙游大队',
-    districtName: '龙游县',
+    detachmentName: '示例市支队',
+    brigadeName: '示例县大队',
+    districtName: '示例县',
     incidentType: '抢险救援',
-    crimeAddress: '龙游县荣昌广场',
+    crimeAddress: '示例县示范广场',
     registerTime: 1786177200000,
     claimed: false,
   );
@@ -85,18 +85,18 @@ void main() {
 
     // 验证官方已认领警情保留第3层【处置中】提示与辖区标签
     expect(find.text('处置中'), findsOneWidget);
-    expect(find.text('柯城区'), findsOneWidget);
-    expect(find.text('柯城区新桥街88号'), findsOneWidget);
+    expect(find.text('示例区'), findsOneWidget);
+    expect(find.text('示例区文化街88号'), findsOneWidget);
 
     // 验证官方未认领警情无【处置中】并展示属地
-    expect(find.text('龙游县荣昌广场'), findsOneWidget);
-    expect(find.text('龙游县'), findsOneWidget);
+    expect(find.text('示例县示范广场'), findsOneWidget);
+    expect(find.text('示例县'), findsOneWidget);
 
     // 验证底部新建警情按钮
     expect(find.text('新建警情'), findsOneWidget);
 
     // 点击未认领外部警情卡片触发认领建档
-    await tester.tap(find.text('龙游县荣昌广场'));
+    await tester.tap(find.text('示例县示范广场'));
     await tester.pumpAndSettle();
     expect(claimedIncident?.externalId, 'ext-unclaimed-2');
 
@@ -134,33 +134,33 @@ void main() {
 
     // 初始三条全在
     expect(find.text('南区综合演练现场'), findsOneWidget);
-    expect(find.text('柯城区新桥街88号'), findsOneWidget);
-    expect(find.text('龙游县荣昌广场'), findsOneWidget);
+    expect(find.text('示例区文化街88号'), findsOneWidget);
+    expect(find.text('示例县示范广场'), findsOneWidget);
 
     // 输入搜索关键词
-    await tester.enterText(find.byType(TextField).first, '荣昌');
+    await tester.enterText(find.byType(TextField).first, '示范');
     await tester.pumpAndSettle();
 
     // 仅剩命中项
     expect(find.text('南区综合演练现场'), findsNothing);
-    expect(find.text('柯城区新桥街88号'), findsNothing);
-    expect(find.text('龙游县荣昌广场'), findsOneWidget);
+    expect(find.text('示例区文化街88号'), findsNothing);
+    expect(find.text('示例县示范广场'), findsOneWidget);
 
     // 点击清除按钮恢复
     await tester.tap(find.byIcon(Icons.clear));
     await tester.pumpAndSettle();
 
     expect(find.text('南区综合演练现场'), findsOneWidget);
-    expect(find.text('柯城区新桥街88号'), findsOneWidget);
-    expect(find.text('龙游县荣昌广场'), findsOneWidget);
+    expect(find.text('示例区文化街88号'), findsOneWidget);
+    expect(find.text('示例县示范广场'), findsOneWidget);
   });
 
-  testWidgets('按用户大队（如龙游县消防救援大队）强隔离展示警情列表', (tester) async {
+  testWidgets('按用户大队（如示例县消防救援大队）强隔离展示警情列表', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: IncidentSelectionOverlay(
-            userUnitName: '龙游县消防救援大队',
+            userUnitName: '示例县消防救援大队',
             activeIncidents: [customIncident],
             externalIncidents: [claimedExternal, unclaimedExternal],
             loading: false,
@@ -174,10 +174,10 @@ void main() {
 
     // 自建警情属于当前单位，显示
     expect(find.text('南区综合演练现场'), findsOneWidget);
-    // 龙游警情属于本大队，显示
-    expect(find.text('龙游县荣昌广场'), findsOneWidget);
-    // 柯城区警情非本大队，强隔离过滤不展示
-    expect(find.text('柯城区新桥街88号'), findsNothing);
+    // 示例县警情属于本大队，显示
+    expect(find.text('示例县示范广场'), findsOneWidget);
+    // 示例区警情非本大队，强隔离过滤不展示
+    expect(find.text('示例区文化街88号'), findsNothing);
   });
 
   testWidgets('重构后优先突出事件主标题、三分类徽标与条件出动力量且搜索栏仅保留刷新按钮', (

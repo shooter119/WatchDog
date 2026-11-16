@@ -698,7 +698,7 @@ function normalizeNaturalVillage(address) {
   });
 }
 
-/** 提取地址中的乡镇/片区前置限定词（如「航埠殿前村4村」中的「航埠」）。 */
+/** 提取地址中的乡镇/片区前置限定词（如「示例镇示范村4村」中的「示例镇」）。 */
 function extractPrefixWord(address) {
   const clean = strOrEmpty(address);
   if (!clean) return '';
@@ -855,7 +855,7 @@ async function lookupRouteTraffic({
     const cleanCity = strOrEmpty(city).slice(0, 80);
     let effectiveCity = cleanCity || unitJurisdiction?.city || '';
     const unitDistrict = unitJurisdiction?.district || '';
-    // 若 cleanCity 是区县名（如「龙游县」），而 unitJurisdiction 具备地级市（如「衢州市」），规范化为地级市供高德匹配
+    // 若 cleanCity 是区县名（如「示例县」），而 unitJurisdiction 具备地级市（如「示例市」），规范化为地级市供高德匹配
     if (unitJurisdiction?.city && cleanCity && (cleanCity.endsWith('县') || cleanCity.endsWith('区'))) {
       effectiveCity = unitJurisdiction.city;
     }
@@ -870,7 +870,7 @@ async function lookupRouteTraffic({
     let primaryGeocode = geoStore.get(geocodeKey, now);
     if (!primaryGeocode) {
       const cityParam = effectiveCity ? `&city=${encodeURIComponent(effectiveCity)}` : '';
-      // 优先尝试带属地前缀检索（如「龙游县莲湖雅苑2栋3单元」），强效防止同名小区漂移至外省
+      // 优先尝试带属地前缀检索（如「示例县示范小区2栋3单元」），强效防止同名小区漂移至外省
       let searchAddress = cleanAddress;
       if (needsPrefix) {
         searchAddress = `${targetDistrict}${cleanAddress}`;
@@ -892,7 +892,7 @@ async function lookupRouteTraffic({
       if (primaryGeocode) geoStore.set(geocodeKey, primaryGeocode, now);
     }
 
-    // 检查地理编码结果是否出现跨市或前缀丢失（例如输入包含「航埠」，结果却跳到「临海市」且无「航埠」）
+    // 检查地理编码结果是否出现跨市或前缀丢失（例如输入包含「示范镇」，结果却跳到「异地市」且无「示范镇」）
     let isPrimaryValid = Boolean(primaryGeocode);
     if (primaryGeocode) {
       const fullText = `${primaryGeocode.formattedAddress}${primaryGeocode.province}${primaryGeocode.city}${primaryGeocode.district}`;
