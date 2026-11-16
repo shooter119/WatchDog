@@ -125,7 +125,7 @@ class _NotesPageState extends State<NotesPage> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         IconButton(
-          tooltip: '战况速报',
+          tooltip: '警情上报',
           icon: const Icon(Icons.description_outlined, size: 22),
           onPressed: () => showTacticalBriefSheet(
             context,

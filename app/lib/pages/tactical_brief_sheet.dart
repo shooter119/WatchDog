@@ -5,7 +5,7 @@ import '../services/tactical_brief_engine.dart';
 import '../state/app_controller.dart';
 import '../theme/app_widgets.dart';
 
-/// 弹出通讯员战况速报底部模态抽屉
+/// 弹出通讯员警情上报底部模态抽屉
 Future<void> showTacticalBriefSheet(
   BuildContext context, {
   required AppController controller,
@@ -19,7 +19,7 @@ Future<void> showTacticalBriefSheet(
   );
 }
 
-/// 通讯员现场战况速报生成与一键复制面板
+/// 通讯员警情上报生成与一键复制面板
 class TacticalBriefSheet extends StatefulWidget {
   final AppController controller;
 
@@ -97,7 +97,7 @@ class _TacticalBriefSheetState extends State<TacticalBriefSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '现场战况速报',
+                          '警情上报',
                           style: AppTextStyles.h2.copyWith(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -165,7 +165,7 @@ class _TacticalBriefSheetState extends State<TacticalBriefSheet> {
                       size: 20,
                     ),
                     label: Text(
-                      _copied ? '已复制到剪贴板' : '一键复制速报全文',
+                      _copied ? '已复制到剪贴板' : '一键复制上报全文',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -180,7 +180,7 @@ class _TacticalBriefSheetState extends State<TacticalBriefSheet> {
 
                       messenger.showSnackBar(
                         SnackBar(
-                          content: const Text('已复制标准化战况，可直接切换至政务微信/政务钉群粘贴发送'),
+                          content: const Text('已复制标准化警情上报，可直接切换至政务微信/政务钉群粘贴发送'),
                           behavior: SnackBarBehavior.floating,
                           duration: const Duration(seconds: 3),
                           backgroundColor: AppColors.safe,

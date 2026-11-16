@@ -180,7 +180,7 @@ void main() {
     expect(find.text('柯城区新桥街88号'), findsNothing);
   });
 
-  testWidgets('重构后优先突出事件主标题、三分类徽标与条件出动力量且支持 AI 一键重整', (
+  testWidgets('重构后优先突出事件主标题、三分类徽标与条件出动力量且搜索栏仅保留刷新按钮', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1080, 1920);
@@ -190,7 +190,7 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    var reorganizeCalled = false;
+    var refreshCalled = false;
     final aiIncident = ExternalIncident(
       externalId: 'ext-ai-1',
       incidentNumber: '20261114001',
@@ -245,8 +245,8 @@ void main() {
             loading: false,
             onSelect: (_) async {},
             onCreate: () async {},
-            onReorganizeExternal: () async {
-              reorganizeCalled = true;
+            onRefreshExternal: ({bool forceRefresh = false}) async {
+              refreshCalled = true;
             },
           ),
         ),
@@ -276,10 +276,28 @@ void main() {
       findsNothing,
     );
 
-    // 3. 点击 AI 一键重整按钮
-    await tester.tap(find.byKey(const Key('external-reorganize-btn')));
+    // 3. 搜索栏不再存在 AI 一键重整按钮，最右侧仅保留刷新派警列表按钮并可正常触发刷新
+    expect(find.byKey(const Key('external-reorganize-btn')), findsNothing);
+    expect(find.byTooltip('AI重新整理警情'), findsNothing);
+    final searchRow = find
+        .ancestor(
+          of: find.byType(TextField).first,
+          matching: find.byType(Row),
+        )
+        .first;
+    expect(
+      find.descendant(of: searchRow, matching: find.byType(IconButton)),
+      findsOneWidget,
+    );
+    final refreshBtn = find.byTooltip('刷新派警列表');
+    expect(refreshBtn, findsOneWidget);
+    expect(
+      tester.getCenter(refreshBtn).dx,
+      greaterThan(tester.getCenter(find.byType(TextField).first).dx),
+    );
+    await tester.tap(refreshBtn);
     await tester.pumpAndSettle();
-    expect(reorganizeCalled, isTrue);
+    expect(refreshCalled, isTrue);
   });
 
   group('接警描述清洗、全文检索与跨区增援展示', () {
@@ -803,7 +821,6 @@ void main() {
                   loading: false,
                   onSelect: (_) async {},
                   onCreate: () async {},
-                  onReorganizeExternal: () async {},
                 ),
               ),
             ),

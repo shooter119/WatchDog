@@ -3562,14 +3562,14 @@ class HomePageState extends State<HomePage> {
           children: [
             Expanded(
               child: _fieldTool(
-                '战况速报',
+                '警情上报',
                 '一键生成公文简报',
                 Icons.description_outlined,
                 () => showTacticalBriefSheet(
                   context,
                   controller: widget.controller,
                 ),
-                keyId: '战况速报',
+                keyId: '警情上报',
               ),
             ),
             const SizedBox(width: AppSpacing.s2),
@@ -4242,38 +4242,66 @@ class _TaskBarState extends State<_TaskBar> {
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                     border: Border.all(color: AppColors.border),
                   ),
-                  child: Row(
-                    children: [
-                      _IncidentAction(
-                        label: '登记力量',
-                        icon: Icons.group_add_outlined,
-                        onTap: widget.onAddForce,
-                      ),
-                      SizedBox(
-                        height: 22,
-                        child: VerticalDivider(
-                          width: 1,
-                          color: AppColors.border,
-                        ),
-                      ),
-                      _IncidentAction(
-                        label: '信息导入',
-                        icon: Icons.upload_file_outlined,
-                        onTap: widget.onImportInfo,
-                      ),
-                      SizedBox(
-                        height: 22,
-                        child: VerticalDivider(
-                          width: 1,
-                          color: AppColors.border,
-                        ),
-                      ),
-                      _IncidentAction(
-                        label: '警情调整',
-                        icon: Icons.tune,
-                        onTap: widget.onAdjustIncident,
-                      ),
-                    ],
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final textScaler = MediaQuery.textScalerOf(context);
+                      final textDirection = Directionality.of(context);
+                      final labelStyle = AppTextStyles.label.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      );
+                      var maxLabelWidth = 0.0;
+                      for (final label in const ['登记力量', '信息导入', '警情调整']) {
+                        final painter = TextPainter(
+                          text: TextSpan(text: label, style: labelStyle),
+                          textScaler: textScaler,
+                          textDirection: textDirection,
+                          maxLines: 1,
+                        )..layout();
+                        maxLabelWidth = max(maxLabelWidth, painter.width);
+                        painter.dispose();
+                      }
+                      final cellWidth = (constraints.maxWidth - 2.0) / 3.0;
+                      final stackVertically =
+                          !constraints.maxWidth.isFinite ||
+                          (maxLabelWidth + 38.0 > cellWidth);
+                      return Row(
+                        children: [
+                          _IncidentAction(
+                            label: '登记力量',
+                            icon: Icons.group_add_outlined,
+                            stacked: stackVertically,
+                            onTap: widget.onAddForce,
+                          ),
+                          SizedBox(
+                            height: stackVertically ? 30 : 22,
+                            child: VerticalDivider(
+                              width: 1,
+                              color: AppColors.border,
+                            ),
+                          ),
+                          _IncidentAction(
+                            label: '信息导入',
+                            icon: Icons.upload_file_outlined,
+                            stacked: stackVertically,
+                            onTap: widget.onImportInfo,
+                          ),
+                          SizedBox(
+                            height: stackVertically ? 30 : 22,
+                            child: VerticalDivider(
+                              width: 1,
+                              color: AppColors.border,
+                            ),
+                          ),
+                          _IncidentAction(
+                            label: '警情调整',
+                            icon: Icons.tune,
+                            stacked: stackVertically,
+                            onTap: widget.onAdjustIncident,
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
                 const SizedBox(height: AppSpacing.s2),
@@ -4490,41 +4518,68 @@ class _IncidentAction extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
+  final bool stacked;
+
   const _IncidentAction({
     required this.label,
     required this.icon,
     required this.onTap,
+    this.stacked = false,
   });
+
   @override
-  Widget build(BuildContext context) => Expanded(
-    child: TextButton(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        foregroundColor: AppColors.textPrimary,
-        minimumSize: const Size(0, 48),
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s1),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-        ),
+  Widget build(BuildContext context) {
+    final labelStyle = AppTextStyles.label.copyWith(
+      color: AppColors.textPrimary,
+      fontWeight: FontWeight.w700,
+    );
+    final labelBox = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        label,
+        maxLines: 1,
+        softWrap: false,
+        style: labelStyle,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 16, color: AppColors.textPrimary),
-          const SizedBox(width: AppSpacing.s1),
-          Flexible(
-            child: Text(
-              label,
-              style: AppTextStyles.label.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+    );
+    return Expanded(
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.textPrimary,
+          minimumSize: Size(0, stacked ? 56 : 48),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.standard,
+          padding: EdgeInsets.symmetric(
+            horizontal: stacked ? 4 : 6,
+            vertical: stacked ? 6 : 4,
           ),
-        ],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+        ),
+        child: stacked
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 18, color: AppColors.textPrimary),
+                  const SizedBox(height: 4),
+                  labelBox,
+                ],
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 16, color: AppColors.textPrimary),
+                  const SizedBox(width: 4),
+                  Flexible(child: labelBox),
+                ],
+              ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ForceRow extends StatelessWidget {

@@ -19,13 +19,11 @@ class IncidentSelectionOverlay extends StatefulWidget {
   final List<ExternalIncident> externalIncidents;
   final bool loading;
   final bool externalLoading;
-  final bool externalReorganizing;
   final VoidCallback? onEnterWithoutIncident;
   final Future<void> Function(Incident incident) onSelect;
   final Future<void> Function() onCreate;
   final Future<void> Function(ExternalIncident incident)? onClaimExternal;
   final Future<void> Function({bool forceRefresh})? onRefreshExternal;
-  final Future<void> Function()? onReorganizeExternal;
   final Future<void> Function(
     String unitName,
     String realName,
@@ -50,12 +48,10 @@ class IncidentSelectionOverlay extends StatefulWidget {
     this.externalIncidents = const [],
     required this.loading,
     this.externalLoading = false,
-    this.externalReorganizing = false,
     required this.onSelect,
     required this.onCreate,
     this.onClaimExternal,
     this.onRefreshExternal,
-    this.onReorganizeExternal,
     this.onAuthenticate,
     this.onEnterGuestMode,
     this.onApply,
@@ -196,15 +192,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
     if (_busy) return;
     try {
       await widget.onRefreshExternal?.call(forceRefresh: true);
-    } catch (error) {
-      if (mounted) setState(() => _error = '$error');
-    }
-  }
-
-  Future<void> _reorganizeExternal() async {
-    if (_busy) return;
-    try {
-      await widget.onReorganizeExternal?.call();
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
     }
@@ -1374,7 +1361,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
   }
 
   Widget _buildSearchBar() {
-    final busyOrLoading = _busy || widget.externalLoading || widget.externalReorganizing;
+    final busyOrLoading = _busy || widget.externalLoading;
     final actionIconStyle = IconButton.styleFrom(
       backgroundColor: AppColors.surfaceSubtle,
       foregroundColor: AppColors.textPrimary,
@@ -1443,25 +1430,6 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
             ),
           ),
         ),
-        if (widget.onReorganizeExternal != null) ...[
-          const SizedBox(width: 8),
-          IconButton.filledTonal(
-            key: const Key('external-reorganize-btn'),
-            tooltip: 'AI重新整理警情',
-            icon: widget.externalReorganizing
-                ? SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.actionPrimary,
-                    ),
-                  )
-                : const Icon(Icons.auto_awesome_outlined, size: 20),
-            onPressed: busyOrLoading ? null : _reorganizeExternal,
-            style: actionIconStyle,
-          ),
-        ],
         const SizedBox(width: 8),
         IconButton.filledTonal(
           tooltip: '刷新派警列表',
@@ -1752,7 +1720,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       ),
                     ),
                   ],
-                  if (widget.externalLoading || widget.externalReorganizing) ...[
+                  if (widget.externalLoading) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
                       child: Row(
@@ -1767,9 +1735,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            widget.externalReorganizing
-                                ? '正在通过 AI 整编警情…'
-                                : '正在获取已调派警情…',
+                            '正在获取已调派警情…',
                             style: TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,

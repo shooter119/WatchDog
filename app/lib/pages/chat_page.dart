@@ -914,6 +914,20 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
   }
 
+  double _composerBottom(bool keyboardOpen) =>
+      keyboardOpen ? AppSpacing.s2 : widget.bottomNavClearance + AppSpacing.s2;
+
+  /// 计算底部滚动避让间距，使末行内容完整避开悬浮按钮或悬浮输入条。
+  double _scrollBottomPadding(bool keyboardOpen) {
+    if (!_textMode) {
+      return max(
+        88.0,
+        widget.bottomNavClearance + AppSpacing.s3 + 48.0 + AppSpacing.s4,
+      );
+    }
+    return _composerBottom(keyboardOpen) + 124.0 + AppSpacing.s3;
+  }
+
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
@@ -923,9 +937,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
     final busy = _sending || _visionBusy || _clearing;
     final floatBottom = widget.bottomNavClearance + AppSpacing.s3;
-    final composerBottom = keyboardOpen
-        ? AppSpacing.s2
-        : widget.bottomNavClearance + AppSpacing.s2;
+    final composerBottom = _composerBottom(keyboardOpen);
 
     return KeyedSubtree(
       key: ValueKey(AppColors.palette.id),
@@ -1295,7 +1307,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               AppSpacing.s4,
               AppSpacing.s3,
               AppSpacing.s4,
-              80 + widget.bottomNavClearance,
+              _scrollBottomPadding(View.of(context).viewInsets.bottom > 0),
             ),
             itemCount: _messages.length,
             itemBuilder: (context, i) {
@@ -1367,7 +1379,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         AppSpacing.s4,
         AppSpacing.s1,
         AppSpacing.s4,
-        80 + widget.bottomNavClearance,
+        _scrollBottomPadding(View.of(context).viewInsets.bottom > 0),
       ),
       children: [
         Padding(
@@ -1397,8 +1409,6 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: AppSpacing.s3),
-              _VisionCallout(onTap: _pickVisionImage),
               Padding(
                 padding: const EdgeInsets.only(
                   top: AppSpacing.s3,
@@ -1772,78 +1782,7 @@ class _ThinkingBubble extends StatelessWidget {
   }
 }
 
-/// 视觉动作卡：暖橙强调底 + 实心相机徽标，与下方白底预设提问卡明显区分。
-class _VisionCallout extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _VisionCallout({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    Theme.of(context);
-    return AppCard(
-      key: const Key('chat-vision-callout'),
-      onTap: onTap,
-      color: AppColors.surfaceSubtle,
-      side: BorderSide(color: AppColors.border, width: 1),
-      radius: AppRadius.md,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.s3,
-        vertical: AppSpacing.s2 + 2,
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: AppColors.actionPrimary,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              child: Icon(
-                Icons.camera_alt_rounded,
-                size: 20,
-                color: AppColors.onPrimary,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s3),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '拍照分析现场',
-                    style: AppTextStyles.label.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  Text(
-                    '识别危化标牌、装备与环境风险',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s2),
-            Icon(
-              Icons.chevron_right_rounded,
-              size: 20,
-              color: AppColors.textSecondary,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 预设提问轻量列表行：三条等高防截断，右侧用提问引导箭头与拍照动作卡区分。
+/// 预设提问轻量列表行：三条等高防截断，右侧显示提问引导箭头。
 class _SampleQuestion extends StatelessWidget {
   final String text;
   final IconData icon;

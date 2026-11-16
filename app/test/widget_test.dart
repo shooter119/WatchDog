@@ -2688,8 +2688,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final visionSize = tester.getSize(find.byKey(const Key('chat-vision-callout')));
-      expect(visionSize.height, greaterThanOrEqualTo(48));
+      expect(find.byKey(const Key('chat-vision-callout')), findsNothing);
+      expect(find.text('拍照分析现场'), findsNothing);
+      expect(find.text('识别危化标牌、装备与环境风险'), findsNothing);
+      expect(find.byKey(const Key('chat-vision-button')), findsOneWidget);
       double? sampleHeight;
       for (final question in [
         '气瓶压力下降太快怎么办？',
@@ -2701,8 +2703,6 @@ void main() {
         sampleHeight ??= h;
         expect(h, sampleHeight);
       }
-      expect(find.text('拍照分析现场'), findsOneWidget);
-      expect(find.text('识别危化标牌、装备与环境风险'), findsOneWidget);
       expect(find.byIcon(Icons.gas_meter_outlined), findsOneWidget);
       expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
       expect(find.byIcon(Icons.blinds_closed_outlined), findsOneWidget);
@@ -3006,6 +3006,210 @@ void main() {
       expect(find.textContaining('停止剧烈活动'), findsOneWidget);
       expect(find.textContaining('关键'), findsNothing);
       expect(find.textContaining('我想进一步确认：当前压力表读数多少？'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('典型手机屏欢迎页带警情背景胶囊时无需滚动且不被底部浮钮遮挡', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final c = _FakeController(
+        currentIncident: const Incident(
+          id: 'inc-chat-geo',
+          number: '2026-11-16-01',
+          title: '示例厂房火情',
+          info: {'location': '示例路 100 号'},
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(
+              controller: c,
+              audioService: _FakeAudio(),
+              bottomNavClearance: 14.0,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('chat-incident-context-pill')), findsOneWidget);
+      final welcomeScroll = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(welcomeScroll.position.pixels, 0.0);
+      expect(welcomeScroll.position.maxScrollExtent, 0.0);
+
+      final toggleTop = tester
+          .getRect(find.byKey(const Key('chat-mode-toggle')))
+          .top;
+      final visionTop = tester
+          .getRect(find.byKey(const Key('chat-vision-button')))
+          .top;
+      final floatTop = toggleTop < visionTop ? toggleTop : visionTop;
+
+      for (final question in [
+        '气瓶压力下降太快怎么办？',
+        '浓烟中看不清路怎么办？',
+        '破拆卷帘门有哪些注意事项？',
+      ]) {
+        final rect = tester.getRect(
+          find.byKey(Key('chat-sample-question-$question')),
+        );
+        expect(rect.bottom, lessThan(floatTop));
+      }
+      final footnoteRect = tester.getRect(
+        find.byKey(const Key('chat-disclaimer-footnote')),
+      );
+      expect(footnoteRect.bottom, lessThan(floatTop));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('较矮视口下欢迎区与对话列表滚到底部后内容底部仍高于悬浮控件顶部', (tester) async {
+      tester.view.physicalSize = const Size(390, 440);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      final welcomeController = _FakeController(
+        currentIncident: const Incident(
+          id: 'inc-short-welcome',
+          number: '2026-11-16-02',
+          title: '示例仓库火情',
+          info: {'location': '示例街 200 号'},
+          status: 'active',
+          createdAt: 1,
+          lastActivityAt: 1,
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(
+              key: const ValueKey('chat-short-welcome'),
+              controller: welcomeController,
+              audioService: _FakeAudio(),
+              bottomNavClearance: 14.0,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final welcomeScroll = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(welcomeScroll.position.maxScrollExtent, greaterThan(0));
+      welcomeScroll.position.jumpTo(welcomeScroll.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      final welcomeToggleTop = tester
+          .getRect(find.byKey(const Key('chat-mode-toggle')))
+          .top;
+      final welcomeVisionTop = tester
+          .getRect(find.byKey(const Key('chat-vision-button')))
+          .top;
+      final welcomeFloatTop = welcomeToggleTop < welcomeVisionTop
+          ? welcomeToggleTop
+          : welcomeVisionTop;
+      final footnoteRect = tester.getRect(
+        find.byKey(const Key('chat-disclaimer-footnote')),
+      );
+      expect(footnoteRect.bottom, lessThan(welcomeFloatTop));
+      expect(
+        welcomeFloatTop - footnoteRect.bottom,
+        greaterThanOrEqualTo(16.0),
+      );
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final historyApi = _FakeApi(
+        chatHistory: [
+          for (var i = 0; i < 5; i++)
+            ChatMessage(
+              id: 'm-$i',
+              role: i.isEven ? 'user' : 'assistant',
+              content: i.isEven ? '现场第 ${i + 1} 个提问' : '第 ${i + 1} 条答复建议',
+              createdAt: now - (6 - i) * 60000,
+            ),
+          ChatMessage(
+            id: 'm-last',
+            role: 'assistant',
+            content: '最后一条答复：请先核实压力并有序撤离。',
+            createdAt: now - 10000,
+          ),
+        ],
+      );
+      final chatController = _FakeController()..api = historyApi;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildAppTheme(),
+          home: Scaffold(
+            body: ChatPage(
+              key: const ValueKey('chat-short-messages'),
+              controller: chatController,
+              audioService: _FakeAudio(),
+              bottomNavClearance: 14.0,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final chatScroll = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      expect(chatScroll.position.maxScrollExtent, greaterThan(0));
+      for (var i = 0; i < 2; i++) {
+        chatScroll.position.jumpTo(chatScroll.position.maxScrollExtent);
+        await tester.pumpAndSettle();
+      }
+
+      expect(find.byKey(const ValueKey('chat-copy-m-last')), findsOneWidget);
+      final msgToggleTop = tester
+          .getRect(find.byKey(const Key('chat-mode-toggle')))
+          .top;
+      final msgVisionTop = tester
+          .getRect(find.byKey(const Key('chat-vision-button')))
+          .top;
+      final msgFloatTop = msgToggleTop < msgVisionTop
+          ? msgToggleTop
+          : msgVisionTop;
+      final lastCopyRect = tester.getRect(
+        find.byKey(const ValueKey('chat-copy-m-last')),
+      );
+      expect(lastCopyRect.bottom, lessThan(msgFloatTop));
+
+      await tester.tap(find.byKey(const Key('chat-mode-toggle')));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 2; i++) {
+        chatScroll.position.jumpTo(chatScroll.position.maxScrollExtent);
+        await tester.pumpAndSettle();
+      }
+      final composerTop = tester
+          .getRect(find.byKey(const Key('chat-text-composer')))
+          .top;
+      final lastCopyInTextMode = tester.getRect(
+        find.byKey(const ValueKey('chat-copy-m-last')),
+      );
+      expect(lastCopyInTextMode.bottom, lessThan(composerTop));
       expect(tester.takeException(), isNull);
     });
   });
