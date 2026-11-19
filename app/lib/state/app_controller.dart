@@ -161,6 +161,7 @@ class AppController extends ChangeNotifier {
   List<Incident> activeIncidents = [];
   List<ExternalIncident> externalIncidents = [];
   bool externalIncidentsLoading = false;
+  Future<void>? _externalIncidentsInFlight;
   bool externalReorganizing = false;
   List<IncidentForce> forces = [];
   bool _authenticated = false;
@@ -205,6 +206,8 @@ class AppController extends ChangeNotifier {
     offlineReviewCount = 0;
     adminCapability = null;
     externalIncidents = [];
+    externalIncidentsLoading = false;
+    _externalIncidentsInFlight = null;
     _clearMemberReview();
     _adminCapabilityTimer?.cancel();
     _protectedDataRevoked = true;
@@ -443,6 +446,7 @@ class AppController extends ChangeNotifier {
 
   void _startAuthenticatedServices() {
     if (_disposed || !_authenticated || _syncStarted) return;
+    unawaited(_restoreCachedExternalIncidents());
     _startSessionRefreshTimer();
     _adminCapabilityTimer?.cancel();
     _adminCapabilityTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -1390,10 +1394,23 @@ class AppController extends ChangeNotifier {
       onSnapshot: _applySyncSnapshot,
       onEvent: _applySyncEvent,
       onState: _handleSyncState,
+      onStaleIncident: _handleStaleBootstrapIncident,
       clientFactory: _syncClientFactory,
     );
     _syncCoordinator = coordinator;
     await coordinator.start(incidentId: incidentId.isEmpty ? null : incidentId);
+  }
+
+  void _handleStaleBootstrapIncident(String staleIncidentId) {
+    if (_disposed) return;
+    if (currentIncident?.id == staleIncidentId) {
+      currentIncident = null;
+      entries = [];
+      notes = [];
+      forces = [];
+    }
+    unawaited(Settings.setCurrentIncidentId(''));
+    _notify();
   }
 
   void _handleSyncState(SyncConnectionState state, Object? error) {
@@ -2503,22 +2520,107 @@ class AppController extends ChangeNotifier {
     return incident;
   }
 
-  Future<void> fetchExternalIncidents({bool forceRefresh = false}) async {
-    if (needsAuthentication) return;
-    await _ensureApiReady();
-    final a = api;
-    if (a == null) return;
-    externalIncidentsLoading = true;
-    _notify();
-    try {
-      final list = await a.fetchExternalIncidents(refresh: forceRefresh);
-      externalIncidents = list;
-    } catch (error) {
-      debugPrint('WatchDog fetchExternalIncidents failed: $error');
-    } finally {
-      externalIncidentsLoading = false;
-      _notify();
+  static const int _externalIncidentsCacheMaxAgeMs = 3 * 24 * 60 * 60 * 1000;
+
+  Future<void> _restoreCachedExternalIncidents({ApiClient? targetApi}) async {
+    if (_disposed || needsAuthentication || externalIncidents.isNotEmpty) {
+      return;
     }
+    final a = targetApi ?? api;
+    if (a == null || a.cacheScope.isEmpty) return;
+    final epoch = _protectedDataEpoch;
+    final generation = _sessionGeneration;
+    try {
+      final cached = await ScopedJsonCache.read(
+        a.cacheScope,
+        'external_incidents',
+      );
+      if (_disposed ||
+          needsAuthentication ||
+          !identical(api, a) ||
+          epoch != _protectedDataEpoch ||
+          generation != _sessionGeneration ||
+          externalIncidents.isNotEmpty) {
+        return;
+      }
+      if (cached is! Map) return;
+      final savedAt = (cached['saved_at'] as num?)?.toInt() ?? 0;
+      if (savedAt > 0 && _nowMs() - savedAt > _externalIncidentsCacheMaxAgeMs) {
+        return;
+      }
+      final rawList = cached['list'];
+      if (rawList is! List || rawList.isEmpty) return;
+      final restored = rawList
+          .whereType<Map>()
+          .map((item) => ExternalIncident.fromJson(Map<String, dynamic>.from(item)))
+          .where((item) => item.externalId.isNotEmpty)
+          .toList();
+      if (restored.isEmpty) return;
+      externalIncidents = restored;
+      _notify();
+    } catch (_) {
+      // 本地缓存损坏时静默忽略，交由后续网络刷新覆盖
+    }
+  }
+
+  Future<void> fetchExternalIncidents({bool forceRefresh = false}) async {
+    if (_disposed || needsAuthentication) return;
+    if (!forceRefresh && _externalIncidentsInFlight != null) {
+      return _externalIncidentsInFlight!;
+    }
+    late final Future<void> task;
+    task = () async {
+      await _ensureApiReady();
+      final a = api;
+      if (_disposed || needsAuthentication || a == null) return;
+      final epoch = _protectedDataEpoch;
+      final generation = _sessionGeneration;
+      if (externalIncidents.isEmpty) {
+        await _restoreCachedExternalIncidents(targetApi: a);
+      }
+      if (_disposed ||
+          needsAuthentication ||
+          !identical(api, a) ||
+          epoch != _protectedDataEpoch ||
+          generation != _sessionGeneration) {
+        return;
+      }
+      externalIncidentsLoading = true;
+      _notify();
+      try {
+        final list = await a.fetchExternalIncidents(refresh: forceRefresh);
+        if (_disposed ||
+            needsAuthentication ||
+            !identical(api, a) ||
+            epoch != _protectedDataEpoch ||
+            generation != _sessionGeneration) {
+          return;
+        }
+        externalIncidents = list;
+        if (a.cacheScope.isNotEmpty) {
+          unawaited(
+            ScopedJsonCache.write(a.cacheScope, 'external_incidents', {
+              'saved_at': _nowMs(),
+              'list': list.map((e) => e.toJson()).toList(),
+            }),
+          );
+        }
+      } catch (error) {
+        debugPrint('WatchDog fetchExternalIncidents failed: $error');
+      } finally {
+        if (identical(_externalIncidentsInFlight, task)) {
+          _externalIncidentsInFlight = null;
+        }
+        if (!_disposed &&
+            epoch == _protectedDataEpoch &&
+            generation == _sessionGeneration) {
+          externalIncidentsLoading = false;
+          _notify();
+        }
+      }
+    }();
+    _externalIncidentsInFlight = task;
+    return task;
   }
 
   Future<void> reorganizeExternalIncidents() async {

@@ -1,10 +1,16 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// App-private cache keyed by server, unit and user; never keyed by credentials.
 class ScopedJsonCache {
   static Future<void> _tail = Future<void>.value();
+
+  @visibleForTesting
+  static void resetForTest() {
+    _tail = Future<void>.value();
+  }
   static String _key(String scope, String kind) =>
       'incident_cache_${sha256.convert(utf8.encode('$scope|$kind'))}';
   static Future<void> write(String scope, String kind, Object value) {

@@ -292,13 +292,13 @@ class ResilientDnsResolver {
       _lookupSystemAddresses(String key) async {
     SocketException? firstSocketException;
 
-    // Stage 1: 系统双栈查询（2.5s 超时，IPv4 排前）。
+    // Stage 1: 系统双栈查询（2.5s 超时，公网 IPv4 排前）。
     try {
       final stage1 = await _systemLookup(
         key,
         type: InternetAddressType.any,
       ).timeout(_systemLookupTimeout);
-      final sorted = _sortAndDedupe(stage1);
+      final sorted = _prioritizePublicAndSort(stage1);
       if (sorted.isNotEmpty) {
         return (addresses: sorted, error: null);
       }
@@ -315,7 +315,7 @@ class ResilientDnsResolver {
         key,
         type: InternetAddressType.IPv4,
       ).timeout(_systemLookupTimeout);
-      final sorted = _sortAndDedupe(stage2);
+      final sorted = _prioritizePublicAndSort(stage2);
       if (sorted.isNotEmpty) {
         return (addresses: sorted, error: null);
       }
@@ -750,6 +750,40 @@ HttpClient createResilientHttpClient({
 
       final initialCandidates = await dns.resolve(uri.host);
       if (cancelled) throw const SocketException('Connection cancelled');
+
+      // 系统 DNS 仅返回 TUN Fake-IP（198.18.0.0/15）时，先通过 DoH/LKG 解析公网 IP 直连，
+      // 避免先硬连 Fake-IP 干等 5s TCP + 6s TLS 超时；仅在公网兜底不可用时才回退尝试 Fake-IP。
+      final onlyFakeIps =
+          initialCandidates.isNotEmpty &&
+          initialCandidates.every(ResilientDnsResolver.isFakeIp);
+      if (onlyFakeIps) {
+        final fakeIpSet = initialCandidates.map((a) => a.address).toSet();
+        try {
+          final directCandidates = await dns.resolveFallback(
+            uri.host,
+            excludeAddresses: fakeIpSet,
+          );
+          if (cancelled) throw const SocketException('Connection cancelled');
+          final directSocket = await tryCandidates(
+            directCandidates,
+            trackFallbackNeed: false,
+          );
+          if (directSocket != null) return directSocket;
+        } catch (error) {
+          if (cancelled) throw const SocketException('Connection cancelled');
+          lastError ??= error;
+        }
+
+        final fakeFallbackSocket = await tryCandidates(
+          initialCandidates,
+          trackFallbackNeed: false,
+        );
+        if (fakeFallbackSocket != null) return fakeFallbackSocket;
+
+        if (lastError != null) throw lastError!;
+        throw SocketException('Failed to connect to ${uri.host}:$port');
+      }
+
       final firstSocket = await tryCandidates(
         initialCandidates,
         trackFallbackNeed: true,

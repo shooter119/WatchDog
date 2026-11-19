@@ -937,5 +937,81 @@ void main() {
       expect(emptyTitle.style?.color, AppPalette.nightTactical.textPrimary);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('冷启动双加载态收口为单一进度指示且加载期不闪烁空态占位', (tester) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      // 1) loading + externalLoading 同时为 true：全屏严格仅 1 个转圈，且不显示空态
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: IncidentSelectionOverlay(
+              activeIncidents: const [],
+              externalIncidents: const [],
+              loading: true,
+              externalLoading: true,
+              onSelect: (_) async {},
+              onCreate: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byKey(const Key('incident-selection-loading')), findsOneWidget);
+      expect(find.text('正在拉取警情列表…'), findsOneWidget);
+      expect(
+        find.byKey(const Key('incident-selection-loading-placeholder')),
+        findsOneWidget,
+      );
+      expect(find.text('当前没有进行中的警情'), findsNothing);
+
+      // 2) 仅 externalLoading 为 true：仍仅 1 个转圈（刷新按钮不叠第二个转圈），不显示空态
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: IncidentSelectionOverlay(
+              activeIncidents: const [],
+              externalIncidents: const [],
+              loading: false,
+              externalLoading: true,
+              onSelect: (_) async {},
+              onCreate: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('正在获取已调派警情…'), findsOneWidget);
+      expect(find.text('当前没有进行中的警情'), findsNothing);
+
+      // 3) 加载全部完成后仍为空：转圈消失并正常展示空态
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: IncidentSelectionOverlay(
+              activeIncidents: const [],
+              externalIncidents: const [],
+              loading: false,
+              externalLoading: false,
+              onSelect: (_) async {},
+              onCreate: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('当前没有进行中的警情'), findsOneWidget);
+    });
   });
 }

@@ -1433,16 +1433,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
         const SizedBox(width: 8),
         IconButton.filledTonal(
           tooltip: '刷新派警列表',
-          icon: widget.externalLoading
-              ? SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.actionPrimary,
-                  ),
-                )
-              : const Icon(Icons.refresh, size: 20),
+          icon: const Icon(Icons.refresh, size: 20),
           onPressed: busyOrLoading ? null : _refreshExternal,
           style: actionIconStyle,
         ),
@@ -1669,6 +1660,13 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
       );
     }
 
+    final isAnyLoading = widget.loading || widget.externalLoading;
+    final loadingLabel = widget.loading && widget.externalLoading
+        ? '正在拉取警情列表…'
+        : widget.loading
+        ? '正在同步现有警情…'
+        : '正在获取已调派警情…';
+
     return Semantics(
       container: true,
       scopesRoute: true,
@@ -1685,9 +1683,15 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _buildFullScreenHeader(context),
-                  if (widget.loading) ...[
+                  if (isAnyLoading)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
+                      key: const Key('incident-selection-loading'),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.s4,
+                        AppSpacing.s2,
+                        AppSpacing.s4,
+                        0,
+                      ),
                       child: Row(
                         children: [
                           SizedBox(
@@ -1700,7 +1704,7 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            '正在同步现有警情…',
+                            loadingLabel,
                             style: TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,
@@ -1709,44 +1713,27 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                         ],
                       ),
                     ),
-                  ],
-                  if (_error != null) ...[
+                  if (_error != null)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.s4,
+                        AppSpacing.s2,
+                        AppSpacing.s4,
+                        0,
+                      ),
                       child: AppNotice(
                         key: const Key('incident-selection-error'),
                         kind: AppNoticeKind.error,
                         text: _error!,
                       ),
                     ),
-                  ],
-                  if (widget.externalLoading) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s2, AppSpacing.s4, 0),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.actionPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '正在获取已调派警情…',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(AppSpacing.s4, AppSpacing.s3, AppSpacing.s4, AppSpacing.s2),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.s4,
+                      AppSpacing.s3,
+                      AppSpacing.s4,
+                      AppSpacing.s2,
+                    ),
                     child: _buildSearchBar(),
                   ),
                   Expanded(
@@ -1754,6 +1741,9 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                       builder: (context) {
                         final items = _buildUnifiedIncidentItems();
                         if (items.isEmpty) {
+                          if (isAnyLoading && _searchKeyword.trim().isEmpty) {
+                            return const _LoadingIncidentState();
+                          }
                           return const _EmptyIncidentState();
                         }
                         return ListView.separated(
@@ -1784,6 +1774,48 @@ class _IncidentSelectionOverlayState extends State<IncidentSelectionOverlay>
                     child: ColoredBox(color: Colors.transparent),
                   ),
                 ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingIncidentState extends StatelessWidget {
+  const _LoadingIncidentState();
+
+  @override
+  Widget build(BuildContext context) {
+    Theme.of(context);
+    return Center(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s5),
+          child: Column(
+            key: const Key('incident-selection-loading-placeholder'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.cloud_sync_outlined,
+                size: 56,
+                color: AppColors.textTertiary.withValues(alpha: 0.75),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '正在拉取警情信息',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '同步完成后将自动展示最新派警与进行中警情',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
             ],
           ),
         ),

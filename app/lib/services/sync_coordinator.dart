@@ -28,6 +28,7 @@ class SyncCoordinator {
   final void Function(Map<String, dynamic> snapshot) onSnapshot;
   final void Function(SyncEvent event) onEvent;
   final void Function(SyncConnectionState state, Object? error) onState;
+  final void Function(String staleIncidentId)? onStaleIncident;
   final SyncReducer reducer;
   final SyncClientFactory clientFactory;
 
@@ -49,6 +50,7 @@ class SyncCoordinator {
     required this.onSnapshot,
     required this.onEvent,
     required this.onState,
+    this.onStaleIncident,
     SyncReducer? reducer,
     SyncClientFactory? clientFactory,
   }) : reducer = reducer ?? SyncReducer(),
@@ -183,7 +185,22 @@ class SyncCoordinator {
     _busy = true;
     onState(SyncConnectionState.bootstrapping, null);
     try {
-      final snapshot = await api.fetchSyncBootstrap(forIncidentId: _incidentId);
+      Map<String, dynamic> snapshot;
+      try {
+        snapshot = await api.fetchSyncBootstrap(forIncidentId: _incidentId);
+      } on ApiException catch (error) {
+        final staleId = _incidentId;
+        if (staleId != null &&
+            error.statusCode == 404 &&
+            error.code == 'INCIDENT_NOT_FOUND') {
+          if (_stopped || generation != _bootstrapGeneration) return;
+          _incidentId = null;
+          onStaleIncident?.call(staleId);
+          snapshot = await api.fetchSyncBootstrap(forIncidentId: null);
+        } else {
+          rethrow;
+        }
+      }
       if (_stopped || generation != _bootstrapGeneration) return;
       _bootstrapped = true;
       final cursors = snapshot['cursors'] is Map

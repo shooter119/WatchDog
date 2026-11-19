@@ -1137,5 +1137,77 @@ void main() {
       await resolver.resolve('api.example.com');
       expect(lookups, 2);
     }));
+
+    test('系统仅返回 Fake-IP 时跳过 Fake-IP 直接使用 DoH 公网 IP 建连，无超时黑洞', () => _withRealHttp(() async {
+      final tls = _createTempTlsContexts('api.example.com');
+      addTearDown(() => tls.dir.deleteSync(recursive: true));
+
+      final httpsServer = await HttpServer.bindSecure(
+        InternetAddress.loopbackIPv4,
+        0,
+        tls.serverContext,
+      );
+      final httpsSub = httpsServer.listen((request) async {
+        await request.drain<void>();
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..write('direct-doh-fast-ok');
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await httpsSub.cancel();
+        await httpsServer.close(force: true);
+      });
+
+      final resolver = ResilientDnsResolver(
+        systemLookup: (host, {type = InternetAddressType.any}) async => [
+          InternetAddress('198.18.0.53'),
+        ],
+        dohLookup: (host) async => [InternetAddress('93.184.216.34')],
+        delay: _instantDelay,
+      );
+
+      var fakeIpDialCount = 0;
+      var publicIpDialCount = 0;
+      final parentIoOverrides = IOOverrides.current ?? _DefaultIoOverrides();
+      await IOOverrides.runZoned(() async {
+        final client = IOClient(
+          createResilientHttpClient(
+            resolver: resolver,
+            tlsContext: tls.clientContext,
+          ),
+        );
+        addTearDown(client.close);
+
+        final res = await client.get(
+          Uri.parse('https://api.example.com:${httpsServer.port}/ping'),
+        );
+        expect(res.statusCode, 200);
+        expect(res.body, 'direct-doh-fast-ok');
+      }, socketStartConnect: (host, port, {sourceAddress, sourcePort = 0}) {
+        final target = host is InternetAddress ? host.address : host.toString();
+        if (target == '198.18.0.53') {
+          fakeIpDialCount++;
+        } else if (target == '93.184.216.34') {
+          publicIpDialCount++;
+          return IOOverrides.runWithIOOverrides(
+            () => Socket.startConnect(InternetAddress.loopbackIPv4, httpsServer.port),
+            parentIoOverrides,
+          );
+        }
+        return IOOverrides.runWithIOOverrides(
+          () => Socket.startConnect(
+            host,
+            port,
+            sourceAddress: sourceAddress,
+            sourcePort: sourcePort,
+          ),
+          parentIoOverrides,
+        );
+      });
+
+      expect(fakeIpDialCount, 0, reason: '存在 DoH 公网 IP 时不应先硬连 Fake-IP 等待超时');
+      expect(publicIpDialCount, 1);
+    }));
   });
 }

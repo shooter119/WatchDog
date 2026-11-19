@@ -1187,8 +1187,8 @@ function createExternalIncidentOrganizer({
     return map;
   }
 
-  async function saveRow(item, now = Date.now()) {
-    const row = {
+  function buildDbRow(item, now = Date.now()) {
+    return {
       external_id: String(item.external_id || ''),
       incident_number: String(item.incident_number || ''),
       raw_payload: JSON.stringify(item.raw_payload || {}),
@@ -1223,22 +1223,42 @@ function createExternalIncidentOrganizer({
       scraped_at: now,
       updated_at: now,
     };
+  }
 
-    memoryStore.set(row.external_id, {
-      ...row,
-      dispatched_forces: item.dispatched_forces || [],
-      fact_highlights: item.fact_highlights || [],
-      contacts: item.contacts || [],
-      raw_payload: item.raw_payload || {},
-    });
+  async function saveRowsBatch(items = [], now = Date.now()) {
+    if (!Array.isArray(items) || items.length === 0) return;
+    // 同批按 external_id 去重，避免 PostgreSQL ON CONFLICT DO UPDATE 同键二次更新报错（SQLSTATE 21000）
+    const deduped = new Map();
+    for (const item of items) {
+      if (!item || !item.external_id) continue;
+      const row = buildDbRow(item, now);
+      deduped.set(row.external_id, row);
+      memoryStore.set(row.external_id, {
+        ...row,
+        dispatched_forces: item.dispatched_forces || [],
+        fact_highlights: item.fact_highlights || [],
+        contacts: item.contacts || [],
+        raw_payload: item.raw_payload || {},
+      });
+    }
+    const rows = [...deduped.values()];
+    if (rows.length === 0) return;
 
     if (syncSupported() && store) {
-      try {
-        await store.upsert('external_incidents', [row], { onConflict: 'external_id' });
-      } catch (err) {
-        logger.warn(`[ExternalOrganizer] saveRow DB fallback: ${err?.message || String(err)}`);
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const chunk = rows.slice(i, i + BATCH_SIZE);
+        try {
+          await store.upsert('external_incidents', chunk, { onConflict: 'external_id' });
+        } catch (err) {
+          logger.warn(`[ExternalOrganizer] saveRowsBatch DB fallback: ${err?.message || String(err)}`);
+        }
       }
     }
+  }
+
+  async function saveRow(item, now = Date.now()) {
+    await saveRowsBatch([item], now);
   }
 
   function scheduleAiOrganize(candidate, llm) {
@@ -1299,6 +1319,7 @@ function createExternalIncidentOrganizer({
 
     const results = [];
     const needAi = [];
+    const rowsToPersist = [];
 
     for (const fallback of fallbacks) {
       const existing = existingMap.get(fallback.external_id);
@@ -1310,7 +1331,7 @@ function createExternalIncidentOrganizer({
       if (cacheValid) {
         const merged = rowToNormalizedPatch(existing, fallback);
         if (existing.official_status !== fallback.official_status) {
-          await saveRow(merged, now);
+          rowsToPersist.push(merged);
         }
         results.push(merged);
         continue;
@@ -1320,12 +1341,16 @@ function createExternalIncidentOrganizer({
         ...fallback,
         ai_status: hasAi ? 'pending' : 'fallback',
       };
-      await saveRow(initialItem, now);
+      rowsToPersist.push(initialItem);
       results.push(initialItem);
 
       if (hasAi) {
         needAi.push(initialItem);
       }
+    }
+
+    if (rowsToPersist.length > 0) {
+      await saveRowsBatch(rowsToPersist, now);
     }
 
     if (needAi.length > 0) {
@@ -1349,6 +1374,40 @@ function createExternalIncidentOrganizer({
     }
 
     return results;
+  }
+
+  async function listRecentStoredIncidents({ sinceMs = 0, limit = 200 } = {}) {
+    const safeSince = Number(sinceMs) || 0;
+    const safeLimit = Math.max(1, Math.min(500, Math.floor(Number(limit) || 200)));
+    if (syncSupported() && store) {
+      try {
+        const rows = await store.select('external_incidents', {
+          filters: safeSince > 0 ? { register_time: { op: 'gte', value: safeSince } } : {},
+          order: 'register_time.desc',
+          limit: safeLimit,
+        });
+        return rows.map((row) => {
+          const normalized = normalizeStoredRow(row);
+          return {
+            ...normalized,
+            incident_status: normalized.official_status || normalized.incident_status || '',
+          };
+        });
+      } catch (err) {
+        logger.warn(`[ExternalOrganizer] listRecentStoredIncidents DB fallback: ${err?.message || String(err)}`);
+      }
+    }
+    return [...memoryStore.values()]
+      .filter((row) => (Number(row?.register_time) || 0) >= safeSince)
+      .sort((a, b) => (Number(b?.register_time) || 0) - (Number(a?.register_time) || 0))
+      .slice(0, safeLimit)
+      .map((row) => {
+        const normalized = normalizeStoredRow(row);
+        return {
+          ...normalized,
+          incident_status: normalized.official_status || normalized.incident_status || '',
+        };
+      });
   }
 
   async function getStoredIncident(externalId) {
@@ -1390,6 +1449,7 @@ function createExternalIncidentOrganizer({
 
   return {
     syncIncidents,
+    listRecentStoredIncidents,
     getStoredIncident,
     getStoredIncidentByNumber,
     saveIncident: (item, now = Date.now()) => saveRow(item, now),

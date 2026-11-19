@@ -263,14 +263,14 @@ async function fetchFromUpstream(url = getQueryListUrl()) {
     let reachedOlderData = false;
     for (const item of list) {
       const regTime = Number(item.registerIncidentTime) || 0;
-      if (isJurisdictionIncident(item)) {
-        if (regTime >= cutoffTime) {
-          if (isDispatchedIncident(item)) {
-            allIncidents.push(normalizeExternalIncident(item));
-          }
-        } else {
-          // 由于上游通常按立案时间倒序排列，若遇到早于3天的警情，可提前结束
-          reachedOlderData = true;
+      if (regTime > 0 && regTime < cutoffTime) {
+        // 由于上游按立案时间倒序排列，只要遇到早于 3 天的有效记录（无论是否本辖区）即可提前结束翻页
+        reachedOlderData = true;
+        continue;
+      }
+      if (isJurisdictionIncident(item) && regTime >= cutoffTime) {
+        if (isDispatchedIncident(item)) {
+          allIncidents.push(normalizeExternalIncident(item));
         }
       }
     }
@@ -287,37 +287,17 @@ async function fetchFromUpstream(url = getQueryListUrl()) {
   return allIncidents;
 }
 
-async function getExternalIncidents({ forceRefresh = false, upstreamUrl } = {}) {
-  const targetUrl = upstreamUrl || getQueryListUrl();
-  if (!targetUrl) {
-    return {
-      list: [],
-      fetchedAt: 0,
-      cacheHit: false,
-    };
-  }
+let backgroundRefreshTimer = null;
+let backgroundInitialTimer = null;
+let defaultOnRefreshed = null;
 
-  const now = Date.now();
-  const isCacheValid = !forceRefresh && (now - memoryCache.fetchedAt < CACHE_TTL_MS) && memoryCache.data.length > 0;
-  const isCoolingDown = forceRefresh && (now - memoryCache.fetchedAt < MIN_REFRESH_INTERVAL_MS) && memoryCache.data.length > 0;
+function isConfigured() {
+  return Boolean(getQueryListUrl());
+}
 
-  if (isCacheValid || isCoolingDown) {
-    return {
-      list: memoryCache.data,
-      fetchedAt: memoryCache.fetchedAt,
-      cacheHit: true,
-    };
-  }
-
-  if (inFlightPromise) {
-    const list = await inFlightPromise;
-    return {
-      list,
-      fetchedAt: memoryCache.fetchedAt,
-      cacheHit: true,
-    };
-  }
-
+function startUpstreamRefresh(targetUrl, { onRefreshed } = {}) {
+  if (inFlightPromise) return inFlightPromise;
+  const callback = typeof onRefreshed === 'function' ? onRefreshed : defaultOnRefreshed;
   inFlightPromise = (async () => {
     try {
       const list = await fetchFromUpstream(targetUrl);
@@ -326,6 +306,11 @@ async function getExternalIncidents({ forceRefresh = false, upstreamUrl } = {}) 
         fetchedAt: Date.now(),
       };
       logger.info(`[PoliceApiService] Refreshed external incidents: ${list.length} items`);
+      if (typeof callback === 'function') {
+        Promise.resolve(callback(list)).catch((cbErr) => {
+          logger.warn(`[PoliceApiService] onRefreshed hook failed: ${cbErr?.message || String(cbErr)}`);
+        });
+      }
       return list;
     } catch (err) {
       logger.error(`[PoliceApiService] Failed to fetch upstream police incidents: ${err.message}`);
@@ -338,12 +323,130 @@ async function getExternalIncidents({ forceRefresh = false, upstreamUrl } = {}) 
       inFlightPromise = null;
     }
   })();
+  return inFlightPromise;
+}
 
-  const list = await inFlightPromise;
+function startBackgroundRefresh({
+  intervalMs = CACHE_TTL_MS,
+  initialDelayMs = 1500,
+  onRefreshed = null,
+} = {}) {
+  stopBackgroundRefresh();
+  if (typeof onRefreshed === 'function') {
+    defaultOnRefreshed = onRefreshed;
+  }
+  const targetUrl = getQueryListUrl();
+  if (!targetUrl) return false;
+
+  const trigger = () => {
+    const currentUrl = getQueryListUrl();
+    if (!currentUrl) return;
+    startUpstreamRefresh(currentUrl, { onRefreshed: defaultOnRefreshed }).catch(() => {});
+  };
+
+  if (initialDelayMs > 0) {
+    backgroundInitialTimer = setTimeout(() => {
+      backgroundInitialTimer = null;
+      trigger();
+    }, initialDelayMs);
+    backgroundInitialTimer.unref?.();
+  } else {
+    trigger();
+  }
+
+  backgroundRefreshTimer = setInterval(trigger, Math.max(MIN_REFRESH_INTERVAL_MS, Number(intervalMs) || CACHE_TTL_MS));
+  backgroundRefreshTimer.unref?.();
+  return true;
+}
+
+function stopBackgroundRefresh() {
+  if (backgroundInitialTimer) {
+    clearTimeout(backgroundInitialTimer);
+    backgroundInitialTimer = null;
+  }
+  if (backgroundRefreshTimer) {
+    clearInterval(backgroundRefreshTimer);
+    backgroundRefreshTimer = null;
+  }
+  defaultOnRefreshed = null;
+}
+
+async function getExternalIncidents({
+  forceRefresh = false,
+  upstreamUrl,
+  allowStale = !forceRefresh,
+  fallbackLoader = null,
+  onRefreshed = null,
+} = {}) {
+  const targetUrl = upstreamUrl || getQueryListUrl();
+  if (!targetUrl) {
+    return {
+      list: [],
+      fetchedAt: 0,
+      cacheHit: false,
+      stale: false,
+    };
+  }
+
+  const now = Date.now();
+  const isCacheValid = !forceRefresh && (now - memoryCache.fetchedAt < CACHE_TTL_MS) && memoryCache.data.length > 0;
+  const isCoolingDown = forceRefresh && (now - memoryCache.fetchedAt < MIN_REFRESH_INTERVAL_MS) && memoryCache.data.length > 0;
+
+  if (isCacheValid || isCoolingDown) {
+    return {
+      list: memoryCache.data,
+      fetchedAt: memoryCache.fetchedAt,
+      cacheHit: true,
+      stale: false,
+    };
+  }
+
+  // SWR：非强制刷新时，优先立刻返回旧内存缓存或近期持久化数据，并在后台异步刷新上游
+  if (allowStale && !forceRefresh) {
+    if (memoryCache.data.length > 0) {
+      startUpstreamRefresh(targetUrl, { onRefreshed }).catch(() => {});
+      return {
+        list: memoryCache.data,
+        fetchedAt: memoryCache.fetchedAt,
+        cacheHit: true,
+        stale: true,
+      };
+    }
+    if (typeof fallbackLoader === 'function') {
+      try {
+        const persisted = await fallbackLoader();
+        if (Array.isArray(persisted) && persisted.length > 0) {
+          startUpstreamRefresh(targetUrl, { onRefreshed }).catch(() => {});
+          return {
+            list: persisted,
+            fetchedAt: 0,
+            cacheHit: true,
+            stale: true,
+            fromPersistedStore: true,
+          };
+        }
+      } catch (err) {
+        logger.warn(`[PoliceApiService] fallbackLoader failed: ${err?.message || String(err)}`);
+      }
+    }
+  }
+
+  if (inFlightPromise) {
+    const list = await inFlightPromise;
+    return {
+      list,
+      fetchedAt: memoryCache.fetchedAt,
+      cacheHit: true,
+      stale: false,
+    };
+  }
+
+  const list = await startUpstreamRefresh(targetUrl, { onRefreshed });
   return {
     list,
     fetchedAt: memoryCache.fetchedAt || Date.now(),
     cacheHit: false,
+    stale: false,
   };
 }
 
@@ -388,7 +491,15 @@ function _setHomeInfoUrlForTest(url) {
   testHomeInfoUrl = url || null;
 }
 
+function _setCacheForTest({ data = [], fetchedAt = 0 } = {}) {
+  memoryCache = {
+    data: Array.isArray(data) ? data : [],
+    fetchedAt: Number(fetchedAt) || 0,
+  };
+}
+
 function _resetCacheForTest() {
+  stopBackgroundRefresh();
   memoryCache = { data: [], fetchedAt: 0 };
   inFlightPromise = null;
   testHomeInfoUrl = null;
@@ -397,6 +508,9 @@ function _resetCacheForTest() {
 module.exports = {
   getExternalIncidents,
   getQueryListUrl,
+  isConfigured,
+  startBackgroundRefresh,
+  stopBackgroundRefresh,
   fetchIncidentHomeInfo,
   peekCachedIncidents,
   isJurisdictionIncident,
@@ -412,10 +526,13 @@ module.exports = {
   buildDispatchSummary,
   sanitizeCoordinates,
   _setHomeInfoUrlForTest,
+  _setCacheForTest,
   _resetCacheForTest,
   DEFAULT_QUERYLIST_URL,
   DEFAULT_HOMEINFO_URL,
   DEFAULT_UPSTREAM_URL,
   DEFAULT_SCOPE_SQUADRON_ID,
+  CACHE_TTL_MS,
   MIN_REFRESH_INTERVAL_MS,
+  THREE_DAYS_MS,
 };

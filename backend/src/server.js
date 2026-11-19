@@ -1909,26 +1909,47 @@ app.get('/api/incidents', async (req, res, next) => {
   }
 });
 
-async function enrichAndAttachExternalClaimStatus(list, unitId, { awaitAi = false, maxAwaitMs = 2200, forceReorganizeIds = null } = {}) {
-  const organizedList = await externalIncidentOrganizer.syncIncidents(list, {
-    awaitAi,
-    maxAwaitMs,
-    forceReorganizeIds,
-  });
+async function enrichAndAttachExternalClaimStatus(list, unitId, {
+  awaitAi = false,
+  maxAwaitMs = 2200,
+  forceReorganizeIds = null,
+  skipSync = false,
+} = {}) {
+  const organizedList = skipSync
+    ? (Array.isArray(list) ? list : [])
+    : await externalIncidentOrganizer.syncIncidents(list, {
+        awaitAi,
+        maxAwaitMs,
+        forceReorganizeIds,
+      });
 
   const activeIncidents = await db.listIncidents('active', { unitId: unitId || null, limit: 100, offset: 0 });
   const claimedMap = new Map();
   const detailByIncidentId = new Map();
 
+  let batchDetailsMap = null;
+  if (syncSupported()) {
+    const syncIncidentIds = activeIncidents.filter((inc) => inc.unit_id).map((inc) => inc.id);
+    if (syncIncidentIds.length > 0) {
+      try {
+        batchDetailsMap = await require('./incident-import-repository').detailsBatch(syncIncidentIds, unitId || null);
+      } catch (err) {
+        logger.warn(`[PoliceApiService] detailsBatch failed, fallback to empty details: ${err?.message || String(err)}`);
+        batchDetailsMap = new Map();
+      }
+    }
+  }
+
   for (const incident of activeIncidents) {
     if (incident.number) claimedMap.set(String(incident.number), incident);
     if (syncSupported() && incident.unit_id) {
-      try {
-        const detail = await require('./incident-import-repository').details(incident.unit_id, incident.id);
-        detailByIncidentId.set(incident.id, detail);
-        if (detail?.data?.external_id) claimedMap.set(String(detail.data.external_id), incident);
-        if (detail?.data?.external_incident_number) claimedMap.set(String(detail.data.external_incident_number), incident);
-      } catch (_) {}
+      const row = batchDetailsMap?.get(incident.id);
+      const detail = row && (!incident.unit_id || row.unit_id === incident.unit_id)
+        ? row
+        : { incident_id: incident.id, unit_id: incident.unit_id, data: {}, version: 0 };
+      detailByIncidentId.set(incident.id, detail);
+      if (detail?.data?.external_id) claimedMap.set(String(detail.data.external_id), incident);
+      if (detail?.data?.external_incident_number) claimedMap.set(String(detail.data.external_incident_number), incident);
     } else if (localIncidentDetails.has(incident.id)) {
       const data = localIncidentDetails.get(incident.id);
       detailByIncidentId.set(incident.id, { data, version: 1 });
@@ -2010,10 +2031,21 @@ app.get('/api/external-incidents', async (req, res, next) => {
       }
     }
 
-    const upstreamResult = await policeApiService.getExternalIncidents({ forceRefresh });
+    const upstreamResult = await policeApiService.getExternalIncidents({
+      forceRefresh,
+      allowStale: !forceRefresh,
+      fallbackLoader: !forceRefresh
+        ? () => externalIncidentOrganizer.listRecentStoredIncidents({
+            sinceMs: Date.now() - policeApiService.THREE_DAYS_MS,
+            limit: 200,
+          })
+        : null,
+      onRefreshed: (list) => externalIncidentOrganizer.syncIncidents(list, { awaitAi: false }),
+    });
     const listWithClaimStatus = await enrichAndAttachExternalClaimStatus(upstreamResult.list, effectiveUnitId, {
       awaitAi: forceRefresh && Boolean(CFG.llm.apiKey),
       maxAwaitMs: 2200,
+      skipSync: Boolean(upstreamResult.fromPersistedStore),
     });
 
     const projectedList = listWithClaimStatus.map((item) => projectExternalIncident(item));
@@ -2213,7 +2245,7 @@ app.post('/api/incidents/claim-external', async (req, res, next) => {
     }
     let cached = policeApiService.peekCachedIncidents().find(matchExt) || null;
     if (!stored && !cached && policeApiService.getQueryListUrl()) {
-      const fetched = await policeApiService.getExternalIncidents({ forceRefresh: false });
+      const fetched = await policeApiService.getExternalIncidents({ forceRefresh: false, allowStale: false });
       cached = (fetched?.list || []).find(matchExt) || null;
     }
     const baseLive = cached || (stored?.raw_payload && typeof stored.raw_payload === 'object' && Object.keys(stored.raw_payload).length > 0
@@ -4647,14 +4679,27 @@ if (require.main === module) {
     logger.info(`ASR 配置: ${CFG.asr.appId ? '已配置' : '未配置 (VOLC_APP_KEY)'}`);
     logger.info(`LLM 配置: ${CFG.llm.apiKey ? `已配置 (${CFG.llm.provider})` : '未配置 (DeepSeek)'}`);
   });
+  const startExternalPrewarm = () => {
+    if (!policeApiService.isConfigured()) return;
+    const started = policeApiService.startBackgroundRefresh({
+      intervalMs: policeApiService.CACHE_TTL_MS,
+      initialDelayMs: 1500,
+      onRefreshed: (list) => externalIncidentOrganizer.syncIncidents(list, { awaitAi: false }),
+    });
+    if (started) {
+      logger.info(`[PoliceApiService] 已启动外部派警后台预热（周期 ${Math.round(policeApiService.CACHE_TTL_MS / 1000)}s）`);
+    }
+  };
   if (db.ready) {
     db.ready.then(async () => {
+      startExternalPrewarm();
       await doPurge();
       setInterval(doPurge, 24 * 3600 * 1000);
     }).catch(() => {
       // 错误已在上方记录；保持进程运行，让探活和日志接口可用于诊断。
     });
   } else {
+    startExternalPrewarm();
     doPurge().catch((error) => logger.error('启动清理任务失败', errorSummary(error)));
     setInterval(doPurge, 24 * 3600 * 1000);
   }

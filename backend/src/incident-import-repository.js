@@ -20,6 +20,18 @@ async function details(unitId, incidentId) {
   const { rows } = await store.query('SELECT * FROM incident_details WHERE incident_id=$1 AND unit_id=$2', [incidentId, unitId]);
   return rows[0] || { incident_id: incidentId, unit_id: unitId, data: {}, version: 0 };
 }
+async function detailsBatch(incidentIds, unitId = null) {
+  const ids = [...new Set((Array.isArray(incidentIds) ? incidentIds : []).map((id) => String(id || '').trim()).filter(Boolean))];
+  const map = new Map();
+  if (ids.length === 0) return map;
+  const { rows } = unitId
+    ? await store.query('SELECT * FROM incident_details WHERE unit_id=$1 AND incident_id = ANY($2::text[])', [unitId, ids])
+    : await store.query('SELECT * FROM incident_details WHERE incident_id = ANY($1::text[])', [ids]);
+  for (const row of rows) {
+    map.set(row.incident_id, row);
+  }
+  return map;
+}
 async function listStations(unitId, includeInactive = false) {
   const { rows } = await store.query(`SELECT s.*, COALESCE((SELECT json_agg(n.normalized_name ORDER BY n.normalized_name) FROM unit_station_names n WHERE n.station_id=s.id AND NOT n.is_primary), '[]'::json) AS aliases FROM unit_stations s WHERE s.unit_id=$1 ${includeInactive ? '' : 'AND s.active'} ORDER BY s.name`, [unitId]);
   return rows;
@@ -217,7 +229,7 @@ async function applyImport({ unitId, incidentId, actorId, actorName, importId, o
     return result;
   });
 }
-module.exports = { digest, incidentInUnit, details, listStations, addStation, updateStation, matchForces, readImport, publicImport, detailPatch, applyImport };
+module.exports = { digest, incidentInUnit, details, detailsBatch, listStations, addStation, updateStation, matchForces, readImport, publicImport, detailPatch, applyImport };
 
 async function updateDetails({unitId,incidentId,actorId,actorName,opId,body}) {
   if(!opId || opId.length>128) throw forceError('缺少有效操作ID');

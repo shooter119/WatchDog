@@ -15,6 +15,7 @@ import 'package:watchdog/pages/home_page.dart';
 import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
 import 'package:watchdog/services/realtime_sync_client.dart';
+import 'package:watchdog/services/scoped_json_cache.dart';
 import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/services/sync_coordinator.dart';
 import 'package:watchdog/state/app_controller.dart';
@@ -277,6 +278,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
+    ScopedJsonCache.resetForTest();
     SharedPreferences.setMockInitialValues({
       'server_url': 'https://api.fireman119.xyz',
       'real_name': '张伟',
@@ -1006,4 +1008,135 @@ void main() {
       isFalse,
     );
   });
+
+  test('冷启动本地残留失效 incident_id 触发 404 INCIDENT_NOT_FOUND 时立刻清空并无参重试成功，不卡 30s 转圈', () async {
+    SharedPreferences.setMockInitialValues({
+      'server_url': 'https://api.fireman119.xyz',
+      'real_name': '张伟',
+      'unit_id': 'unit-1',
+      'unit_name': '示例市消防救援支队',
+      'unit_code': '1001',
+      'session_token': 'session-token',
+      'session_expires_at': DateTime.now()
+          .add(const Duration(days: 7))
+          .millisecondsSinceEpoch,
+      'current_incident_id': 'deleted-stale-inc',
+    });
+
+    final seenIncidentIds = <String?>[];
+    final fakeApi = _StaleIncidentBootstrapApi(seenIncidentIds: seenIncidentIds);
+    final clients = <_FakeRealtimeClient>[];
+    final controller = createController(fakeApi, clients);
+    addTearDown(controller.dispose);
+
+    await controller.init();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(seenIncidentIds, ['deleted-stale-inc', null]);
+    expect(controller.syncing, isFalse);
+    expect(controller.syncConnectionState, SyncConnectionState.connected);
+    expect(controller.activeIncidents.length, 1);
+    expect(await Settings.currentIncidentId, isEmpty);
+  });
+
+  test('AppController 外部警情支持 ScopedJsonCache 冷启动秒级预恢复与请求去重', () async {
+    SharedPreferences.setMockInitialValues({
+      'server_url': 'https://api.fireman119.xyz',
+      'real_name': '张伟',
+      'unit_id': 'unit-1',
+      'unit_name': '示例市消防救援支队',
+      'unit_code': '1001',
+      'session_token': 'session-token',
+      'session_expires_at': DateTime.now()
+          .add(const Duration(days: 7))
+          .millisecondsSinceEpoch,
+    });
+
+    final externalGate = Completer<List<ExternalIncident>>();
+    final fakeApi = _ExternalCacheTestApi(externalGate: externalGate);
+    final clients = <_FakeRealtimeClient>[];
+    final controller = createController(fakeApi, clients);
+    addTearDown(controller.dispose);
+
+    // 预写入本地缓存快照
+    await controller.refreshConfig();
+    final scope = controller.api!.cacheScope;
+    expect(scope, isNotEmpty);
+    await ScopedJsonCache.write(scope, 'external_incidents', {
+      'saved_at': DateTime.now().millisecondsSinceEpoch,
+      'list': [
+        const ExternalIncident(
+          externalId: 'cached-ext-1',
+          incidentNumber: '20261119001',
+          crimeAddress: '示例县示例路1号',
+          eventSummary: '本地缓存秒出警情',
+          registerTime: 1786177100000,
+        ).toJson(),
+      ],
+    });
+
+    await controller.init();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    // 网络请求尚未返回前，已秒级恢复本地缓存
+    expect(controller.externalIncidents.map((e) => e.externalId), ['cached-ext-1']);
+
+    // 并发发起两次非强制刷新应合并为 1 次网络请求
+    final f1 = controller.fetchExternalIncidents(forceRefresh: false);
+    final f2 = controller.fetchExternalIncidents(forceRefresh: false);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(fakeApi.externalFetchCalls, 1);
+
+    externalGate.complete(const [
+      ExternalIncident(
+        externalId: 'fresh-ext-2',
+        incidentNumber: '20261119002',
+        crimeAddress: '示例县新建路2号',
+        eventSummary: '服务端最新警情',
+        registerTime: 1786177200000,
+      ),
+    ]);
+    await Future.wait([f1, f2]);
+
+    expect(controller.externalIncidents.map((e) => e.externalId), ['fresh-ext-2']);
+    final persisted = await ScopedJsonCache.read(scope, 'external_incidents');
+    expect(persisted, isA<Map>());
+    expect(((persisted as Map)['list'] as List).first['external_id'], 'fresh-ext-2');
+  });
+}
+
+class _StaleIncidentBootstrapApi extends _ColdStartSyncApi {
+  _StaleIncidentBootstrapApi({required this.seenIncidentIds});
+
+  final List<String?> seenIncidentIds;
+
+  @override
+  Future<Map<String, dynamic>> fetchSyncBootstrap({
+    String? forIncidentId,
+  }) async {
+    seenIncidentIds.add(forIncidentId);
+    if (forIncidentId == 'deleted-stale-inc') {
+      throw ApiException(
+        '警情不存在，请重新选择',
+        statusCode: 404,
+        code: 'INCIDENT_NOT_FOUND',
+      );
+    }
+    return buildSnapshot(forIncidentId: forIncidentId);
+  }
+}
+
+class _ExternalCacheTestApi extends _ColdStartSyncApi {
+  _ExternalCacheTestApi({required this.externalGate});
+
+  final Completer<List<ExternalIncident>> externalGate;
+  int externalFetchCalls = 0;
+
+  @override
+  Future<List<ExternalIncident>> fetchExternalIncidents({
+    bool refresh = false,
+  }) {
+    externalFetchCalls++;
+    return externalGate.future;
+  }
 }

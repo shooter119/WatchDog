@@ -1410,3 +1410,206 @@ test('LLM 提示词脱敏：剔除报警人姓名与手机号，防止第三方�
   assert.equal(promptContent.includes('010-8888999'), false);
   assert.equal(promptContent.includes('张三'), false);
 });
+
+test('fetchFromUpstream 遇非辖区超3天旧记录立即停止翻页，避免多余串行请求', async (t) => {
+  const now = Date.now();
+  const requestedPages = [];
+  const mockServer = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; });
+    req.on('end', () => {
+      const parsed = JSON.parse(raw || '{}');
+      const page = parsed?.pagination?.page || 1;
+      requestedPages.push(page);
+      const list = Array.from({ length: 100 }, (_, idx) => {
+        if (idx === 0) {
+          return {
+            id: 'recent-local-1',
+            incidentNumber: '202611190001',
+            detachmentOrgName: '示例市支队',
+            brigadeOrganizationName: '示例县大队',
+            crimeAddress: '示例县和平路1号',
+            incidentStatusName: '出动',
+            dispatchVehicle: '2',
+            registerIncidentTime: now - 10 * 60 * 1000,
+          };
+        }
+        return {
+          id: `other-city-old-${idx}`,
+          incidentNumber: `2026111000${idx}`,
+          detachmentOrgName: '异地支队',
+          crimeAddress: '异地市甲区旧街道',
+          incidentStatusName: '归队',
+          registerIncidentTime: now - 5 * 24 * 3600 * 1000,
+        };
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        errorCode: 0,
+        data: { list, pagination: { total: 500 } },
+      }));
+    });
+  });
+
+  await new Promise((resolve) => mockServer.listen(0, '127.0.0.1', resolve));
+  const mockUrl = `http://127.0.0.1:${mockServer.address().port}/querylist`;
+  t.after(() => {
+    mockServer.close();
+    policeApiService._resetCacheForTest();
+  });
+
+  policeApiService._resetCacheForTest();
+  const result = await policeApiService.getExternalIncidents({
+    forceRefresh: true,
+    upstreamUrl: mockUrl,
+  });
+
+  assert.deepEqual(requestedPages, [1], '第1页已出现超3天非辖区记录，不应继续请求第2页');
+  assert.equal(result.list.length, 1);
+  assert.equal(result.list[0].external_id, 'recent-local-1');
+});
+
+test('getExternalIncidents SWR：旧内存缓存与持久化兜底立即返回并异步后台刷新', async (t) => {
+  const now = Date.now();
+  let upstreamHits = 0;
+  let releaseUpstream;
+  const upstreamGate = new Promise((resolve) => { releaseUpstream = resolve; });
+
+  const mockServer = http.createServer(async (req, res) => {
+    upstreamHits++;
+    await upstreamGate;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      errorCode: 0,
+      data: {
+        list: [{
+          id: 'fresh-ext-2',
+          incidentNumber: '202611190002',
+          detachmentOrgName: '示例市支队',
+          brigadeOrganizationName: '示例县大队',
+          crimeAddress: '示例县新建路8号',
+          incidentStatusName: '出动',
+          dispatchVehicle: '1',
+          registerIncidentTime: now - 60 * 1000,
+        }],
+        pagination: { total: 1 },
+      },
+    }));
+  });
+
+  await new Promise((resolve) => mockServer.listen(0, '127.0.0.1', resolve));
+  const mockUrl = `http://127.0.0.1:${mockServer.address().port}/querylist`;
+  t.after(() => {
+    releaseUpstream();
+    mockServer.close();
+    policeApiService._resetCacheForTest();
+  });
+
+  // 1) 内存旧缓存超过 60s：allowStale=true 立即返回旧缓存，同时触发后台刷新
+  policeApiService._resetCacheForTest();
+  policeApiService._setCacheForTest({
+    data: [{ external_id: 'stale-mem-1', incident_number: '202611180001' }],
+    fetchedAt: now - 120 * 1000,
+  });
+
+  const t0 = Date.now();
+  const staleRes = await policeApiService.getExternalIncidents({
+    forceRefresh: false,
+    upstreamUrl: mockUrl,
+  });
+  assert.equal(staleRes.stale, true);
+  assert.equal(staleRes.cacheHit, true);
+  assert.equal(staleRes.list[0].external_id, 'stale-mem-1');
+  assert.ok(Date.now() - t0 < 200, 'SWR 命中旧缓存不应阻塞等待上游响应');
+
+  // 放行上游响应后，缓存更新为最新记录
+  releaseUpstream();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(upstreamHits, 1);
+  assert.equal(policeApiService.peekCachedIncidents()[0]?.external_id, 'fresh-ext-2');
+
+  // 2) 容器重启内存为空时，命中 fallbackLoader 立即返回持久化记录并后台刷新
+  policeApiService._resetCacheForTest();
+  const persistedRes = await policeApiService.getExternalIncidents({
+    forceRefresh: false,
+    upstreamUrl: mockUrl,
+    fallbackLoader: async () => [{ external_id: 'persisted-db-1', incident_number: '202611180099' }],
+  });
+  assert.equal(persistedRes.stale, true);
+  assert.equal(persistedRes.fromPersistedStore, true);
+  assert.equal(persistedRes.list[0].external_id, 'persisted-db-1');
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(policeApiService.peekCachedIncidents()[0]?.external_id, 'fresh-ext-2');
+});
+
+test('external-incident-organizer syncIncidents 批量 upsert 落库且支持 listRecentStoredIncidents', async () => {
+  const { createExternalIncidentOrganizer } = require('../src/external-incident-organizer');
+  const upsertCalls = [];
+  const fakeRows = new Map();
+  const fakeStore = {
+    async select(table, opts = {}) {
+      if (table !== 'external_incidents') return [];
+      let rows = [...fakeRows.values()];
+      if (opts.filters?.external_id?.op === 'in') {
+        const set = new Set(opts.filters.external_id.value);
+        rows = rows.filter((r) => set.has(r.external_id));
+      }
+      if (opts.filters?.register_time?.op === 'gte') {
+        rows = rows.filter((r) => Number(r.register_time) >= Number(opts.filters.register_time.value));
+      }
+      rows.sort((a, b) => Number(b.register_time) - Number(a.register_time));
+      return opts.limit ? rows.slice(0, opts.limit) : rows;
+    },
+    async upsert(table, rows) {
+      upsertCalls.push({ table, count: rows.length });
+      for (const row of rows) {
+        fakeRows.set(row.external_id, row);
+      }
+      return rows;
+    },
+  };
+
+  const organizer = createExternalIncidentOrganizer({
+    store: fakeStore,
+    syncSupported: () => true,
+    getLlmConfig: () => ({}),
+  });
+
+  const now = Date.now();
+  const batch = [
+    {
+      external_id: 'batch-1',
+      incident_number: '202611191001',
+      crime_address: '示例县示例路1号',
+      incident_type: '火灾扑救',
+      incident_status: '出动',
+      register_time: now - 1000,
+    },
+    {
+      external_id: 'batch-2',
+      incident_number: '202611191002',
+      crime_address: '示例县示例路2号',
+      incident_type: '抢险救援',
+      incident_status: '到场',
+      register_time: now - 2000,
+    },
+    {
+      external_id: 'batch-old',
+      incident_number: '202611101003',
+      crime_address: '示例县旧路3号',
+      incident_type: '社会救助',
+      incident_status: '归队',
+      register_time: now - 5 * 24 * 3600 * 1000,
+    },
+  ];
+
+  await organizer.syncIncidents(batch, { awaitAi: false });
+  assert.equal(upsertCalls.length, 1, '3 条新增记录应合并为单次批量 upsert');
+  assert.equal(upsertCalls[0].count, 3);
+
+  const recent = await organizer.listRecentStoredIncidents({
+    sinceMs: now - 3 * 24 * 3600 * 1000,
+    limit: 20,
+  });
+  assert.deepEqual(recent.map((r) => r.external_id), ['batch-1', 'batch-2']);
+});
