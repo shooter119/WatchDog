@@ -24,7 +24,28 @@ await check('admin_shell_and_security_headers', async () => {
   assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   assert.match(response.headers.get('content-security-policy'), /connect-src 'self' blob:/);
   assert.match(response.headers.get('cache-control'), /no-store/);
-  for (const path of ['/admin/app.js', '/admin/sites.js', '/admin/hazmats.js', '/admin/style.css', '/admin/pano.html', '/admin/pano.js', '/admin/pano.css', '/admin/lib/pannellum.js', '/admin/lib/pannellum.css', '/admin/lib/PANNELUM-LICENSE.txt']) assert.equal((await request(origin, path)).status, 200);
+  for (const path of [
+    '/admin/scan',
+    '/admin/css/main.css',
+    '/admin/css/tokens.css',
+    '/admin/css/base.css',
+    '/admin/css/layout.css',
+    '/admin/css/components.css',
+    '/admin/css/views.css',
+    '/admin/css/pano.css',
+    '/admin/js/main.js',
+    '/admin/js/core/api.js',
+    '/admin/js/core/session.js',
+    '/admin/js/views/login.js',
+    '/admin/js/views/sites/index.js',
+    '/admin/js/views/hazmats/index.js',
+    '/admin/js/views/access/index.js',
+    '/admin/pano.html',
+    '/admin/js/pano/main.js',
+    '/admin/lib/pannellum.js',
+    '/admin/lib/pannellum.css',
+    '/admin/lib/PANNELUM-LICENSE.txt',
+  ]) assert.equal((await request(origin, path)).status, 200, `${path} unavailable`);
 });
 await check('hazmat_api_protected_by_session', async () => {
   const response = await request(origin, '/api/admin/hazmats');

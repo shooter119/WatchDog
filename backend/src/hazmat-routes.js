@@ -14,6 +14,25 @@ const wrap = (handler) => (req, res, next) =>
     next(error);
   });
 
+const safeLimit = (raw, fallback, max = 100) => {
+  const n = Number.parseInt(String(raw ?? ''), 10);
+  return Math.min(Math.max(1, Number.isFinite(n) ? n : fallback), max);
+};
+const safeOffset = (raw) => {
+  const n = Number.parseInt(String(raw ?? ''), 10);
+  return Math.max(0, Number.isFinite(n) ? n : 0);
+};
+const handleUpload = (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (!err) return next();
+    const isSize = err.code === 'LIMIT_FILE_SIZE';
+    return res.status(isSize ? 413 : 400).json({
+      code: isSize ? 'HAZMAT_FILE_TOO_LARGE' : 'HAZMAT_UPLOAD_INVALID',
+      error: isSize ? '上传文件超过 10MB 大小限制' : '文件上传格式无效，请重新选择 Excel 或 CSV 文件',
+    });
+  });
+};
+
 function createHazmatAdminRouter(hazmats, auth = null) {
   const router = express.Router();
 
@@ -25,8 +44,8 @@ function createHazmatAdminRouter(hazmats, auth = null) {
 
   // 列表与检索
   router.get('/', wrap(async (req, res) => {
-    const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
-    const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
+    const limit = safeLimit(req.query.limit, 50, 100);
+    const offset = safeOffset(req.query.offset);
     const result = await hazmats.list({
       query: req.query.q || req.query.query,
       category: req.query.category,
@@ -62,7 +81,7 @@ function createHazmatAdminRouter(hazmats, auth = null) {
   // 手工录入新增
   router.post('/', wrap(async (req, res) => {
     const actorId = req.admin?.id || null;
-    const item = await hazmats.create(req.body, actorId);
+    const item = await hazmats.create(req.body || {}, actorId);
     await recordAudit(actorId, 'hazmat_created', item.id);
     res.status(201).json({ item });
   }));
@@ -70,7 +89,7 @@ function createHazmatAdminRouter(hazmats, auth = null) {
   // 编辑更新
   router.put('/:id', wrap(async (req, res) => {
     const actorId = req.admin?.id || null;
-    const item = await hazmats.update(req.params.id, req.body, actorId);
+    const item = await hazmats.update(req.params.id, req.body || {}, actorId);
     await recordAudit(actorId, 'hazmat_updated', item.id);
     res.json({ item });
   }));
@@ -84,12 +103,13 @@ function createHazmatAdminRouter(hazmats, auth = null) {
   }));
 
   // 批量导入
-  router.post('/import', upload.single('file'), wrap(async (req, res) => {
+  router.post('/import', handleUpload, wrap(async (req, res) => {
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ code: 'FILE_REQUIRED', error: '请上传有效的 Excel 或 CSV 文件' });
     }
     const actorId = req.admin?.id || null;
-    const overwrite = req.body.overwrite === 'true' || req.body.overwrite === true;
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const overwrite = body.overwrite === 'true' || body.overwrite === true;
     const result = await hazmats.importBatch(req.file.buffer, req.file.originalname, actorId, { overwrite });
     await recordAudit(actorId, 'hazmat_imported', `${result.imported}_imported`);
     res.json(result);
@@ -107,8 +127,8 @@ function createHazmatAppRouter(hazmats, options = {}) {
 
   // 移动端/现场检索
   router.get('/', wrap(async (req, res) => {
-    const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
-    const offset = Math.max(parseInt(req.query.offset || '0', 10), 0);
+    const limit = safeLimit(req.query.limit, 20, 100);
+    const offset = safeOffset(req.query.offset);
     const result = await hazmats.list({
       query: req.query.q || req.query.query,
       category: req.query.category,

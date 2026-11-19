@@ -28,15 +28,19 @@ function normalizeWaterReactivity(val, forbiddenText = '') {
   return 'normal';
 }
 
+function escapeIlike(val) {
+  return String(val || '').replace(/[\\%_]/g, '\\$&');
+}
+
 function normalizeSignColor(category = '', explicitColor = '') {
   const color = cleanString(explicitColor).toLowerCase();
   if (['red', 'blue', 'yellow', 'white', 'black_white'].includes(color)) return color;
   const cat = cleanString(category);
   if (cat.includes('4.3') || cat.includes('遇水') || cat.includes('遇湿')) return 'blue';
-  if (cat.includes('3') || cat.includes('易燃') || cat.includes('2.1')) return 'red';
-  if (cat.includes('5') || cat.includes('氧化') || cat.includes('过氧化')) return 'yellow';
-  if (cat.includes('6') || cat.includes('2.3') || cat.includes('毒')) return 'white';
+  if (cat.includes('2.3') || cat.includes('6') || cat.includes('毒')) return 'white';
   if (cat.includes('8') || cat.includes('腐蚀')) return 'black_white';
+  if (cat.includes('5') || cat.includes('氧化') || cat.includes('过氧化')) return 'yellow';
+  if (/(?:^|[^\d.])3(?:\.\d+)?(?:$|[^\d])/.test(cat) || cat.includes('2.1') || cat.includes('易燃')) return 'red';
   return '';
 }
 
@@ -67,36 +71,45 @@ function createHazardousChemicals(store) {
 
       const trimmedQ = cleanString(q);
       if (trimmedQ) {
-        params.push(`%${trimmedQ}%`);
+        params.push(`%${escapeIlike(trimmedQ)}%`);
         conditions.push(`(
-          name_cn ILIKE $${idx} OR
-          name_en ILIKE $${idx} OR
-          un_number ILIKE $${idx} OR
-          cas_number ILIKE $${idx} OR
-          array_to_string(aliases, ' ') ILIKE $${idx}
+          name_cn ILIKE $${idx} ESCAPE '\\' OR
+          name_en ILIKE $${idx} ESCAPE '\\' OR
+          un_number ILIKE $${idx} ESCAPE '\\' OR
+          cas_number ILIKE $${idx} ESCAPE '\\' OR
+          array_to_string(aliases, ' ') ILIKE $${idx} ESCAPE '\\'
         )`);
         idx++;
       }
 
-      if (cleanString(category)) {
-        params.push(`%${cleanString(category)}%`);
-        conditions.push(`danger_category ILIKE $${idx}`);
+      const trimmedCat = cleanString(category);
+      if (trimmedCat) {
+        if (/^\d$/.test(trimmedCat)) {
+          params.push(`(^|[^0-9.])${trimmedCat}(\\.[0-9]+)?([^0-9]|$)`);
+          conditions.push(`danger_category ~ $${idx}`);
+        } else {
+          params.push(`%${escapeIlike(trimmedCat)}%`);
+          conditions.push(`danger_category ILIKE $${idx} ESCAPE '\\'`);
+        }
         idx++;
       }
 
-      if (cleanString(water)) {
-        params.push(cleanString(water));
+      const trimmedWater = cleanString(water);
+      if (trimmedWater) {
+        params.push(trimmedWater);
         conditions.push(`water_reactivity = $${idx}`);
         idx++;
       }
 
+      const safeLimit = Math.min(Math.max(1, Number.isFinite(Number(limit)) ? Math.floor(Number(limit)) : 50), 100);
+      const safeOffset = Math.max(0, Number.isFinite(Number(offset)) ? Math.floor(Number(offset)) : 0);
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
       const countSql = `SELECT COUNT(*) AS total FROM hazardous_chemicals ${whereClause}`;
       const countRes = await query(countSql, params);
       const total = parseInt(countRes.rows[0]?.total || '0', 10);
 
-      const pageParams = [...params, limit, offset];
+      const pageParams = [...params, safeLimit, safeOffset];
       const dataSql = `
         SELECT * FROM hazardous_chemicals
         ${whereClause}
@@ -120,7 +133,7 @@ function createHazardousChemicals(store) {
         };
       });
 
-      return { total, items, limit, offset };
+      return { total, items, limit: safeLimit, offset: safeOffset };
     },
 
     async getById(id) {
@@ -216,9 +229,10 @@ function createHazardousChemicals(store) {
         ? normalizeWaterReactivity(data.water_reactivity, forbiddenAgents)
         : existing.water_reactivity;
       const dangerCategory = data.danger_category !== undefined ? cleanString(data.danger_category) : existing.danger_category;
+      const categoryChanged = data.danger_category !== undefined && dangerCategory !== existing.danger_category;
       const dangerSignColor = data.danger_sign_color !== undefined
         ? normalizeSignColor(dangerCategory, data.danger_sign_color)
-        : normalizeSignColor(dangerCategory, existing.danger_sign_color);
+        : normalizeSignColor(dangerCategory, categoryChanged ? '' : existing.danger_sign_color);
 
       const now = Date.now();
       const validActorId = await resolveActorId(actorId);
@@ -291,14 +305,15 @@ function createHazardousChemicals(store) {
         throw err;
       }
       const now = Date.now();
+      const validActorId = await resolveActorId(actorId);
       await query(
         'UPDATE hazardous_chemicals SET active = false, updated_by = $1, updated_at = $2 WHERE id = $3',
-        [actorId, now, id]
+        [validActorId, now, id]
       );
       return { ok: true, id };
     },
 
-    async importBatch(buffer, filename = '', actorId = null, { overwrite = false } = {}) {
+    async importBatch(buffer, filename = '', actorId = null, { overwrite = false, maxRows = 2000 } = {}) {
       let workbook;
       try {
         workbook = xlsx.read(buffer, { type: 'buffer' });
@@ -317,6 +332,12 @@ function createHazardousChemicals(store) {
       const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
       if (!rows || rows.length === 0) {
         return { totalRows: 0, imported: 0, updated: 0, skipped: 0, errors: [] };
+      }
+      if (rows.length > maxRows) {
+        const error = new Error(`单次最多导入 ${maxRows} 条记录，当前文件共 ${rows.length} 条`);
+        error.status = 400;
+        error.code = 'HAZMAT_IMPORT_TOO_MANY_ROWS';
+        throw error;
       }
 
       const columnMap = {
@@ -339,7 +360,7 @@ function createHazardousChemicals(store) {
         appearance: ['外观气味', '外观与性状', '外观', 'appearance'],
         flash_point: ['闪点', '自燃点', 'flash_point'],
         explosion_limit: ['爆炸极限', '爆炸范围', 'explosion_limit'],
-        vapor_density: ['蒸气密度', '相对蒸气密度', '气密', 'vapor_density'],
+        vapor_density: ['蒸气密度', '相对蒸气密度', '蒸汽密度', '相对蒸汽密度', '气密', 'vapor_density'],
         notes: ['备注', '注意事项', '补充说明', 'notes']
       };
 
@@ -367,6 +388,7 @@ function createHazardousChemicals(store) {
         const rawRow = rows[i];
         const rowData = extractFields(rawRow);
         const nameCn = cleanString(rowData.name_cn);
+        const unNumber = cleanString(rowData.un_number);
 
         if (!nameCn) {
           skipped++;
@@ -374,10 +396,16 @@ function createHazardousChemicals(store) {
         }
 
         try {
-          const existingRes = await query(
+          let existingRes = await query(
             'SELECT id FROM hazardous_chemicals WHERE name_cn = $1 AND active = true LIMIT 1',
             [nameCn]
           );
+          if (!existingRes.rows[0] && unNumber) {
+            existingRes = await query(
+              'SELECT id FROM hazardous_chemicals WHERE un_number = $1 AND active = true LIMIT 1',
+              [unNumber]
+            );
+          }
           const existing = existingRes.rows[0];
 
           if (existing) {
@@ -525,6 +553,7 @@ module.exports = {
   createHazardousChemicals,
   cleanString,
   cleanAliases,
+  escapeIlike,
   normalizeWaterReactivity,
   normalizeSignColor
 };

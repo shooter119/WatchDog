@@ -151,6 +151,10 @@ if (process.env.NODE_ENV === 'production') {
 // 先在 Express 层分配数 MB 内存，再由路由拒绝。
 app.use(express.json({ limit: '512kb' }));
 app.use((req, res, next) => {
+  if (req.path === '/admin' || req.path.startsWith('/admin/') || req.path === '/api/admin' || req.path.startsWith('/api/admin/')) {
+    if (req.method === 'OPTIONS') return res.status(403).end();
+    return next();
+  }
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Session-Token, X-Incident-Id, X-Api-Token, X-Device-Id, X-Unit-Id, X-Unit-Code, X-Actor-Name, X-Actor-Name-B64, X-Op-Id, X-Expected-Version, X-Management-Token, X-Sync-Client');
@@ -260,11 +264,20 @@ let keySites = null;
 let keySiteFiles = null;
 let videoResources = null;
 let hazardousChemicals = null;
-app.use('/admin', express.static(path.join(__dirname, '..', 'admin'), {
-  setHeaders: (res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'");
-  },
+const adminDir = path.join(__dirname, '..', 'admin');
+const adminSecurityHeaders = (res, filePath = '') => {
+  const isHtml = !filePath || filePath.endsWith('.html');
+  res.setHeader('Cache-Control', isHtml ? 'no-store' : 'no-cache');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' blob:; object-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+};
+app.get('/admin/scan', (req, res) => {
+  adminSecurityHeaders(res, 'scan.html');
+  res.sendFile(path.join(adminDir, 'scan.html'));
+});
+app.use('/admin', express.static(adminDir, {
+  setHeaders: (res, filePath) => adminSecurityHeaders(res, filePath),
 }));
 if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER || (process.env.NODE_ENV === 'test' ? 'sqlite' : 'postgres')).toLowerCase())) {
   authDevices = require('./auth-devices').createAuthDevices(require('./postgres-store'));
@@ -277,7 +290,14 @@ if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER ||
   videoResources = require('./video-resources').createVideoResources(require('./postgres-store'));
   hazardousChemicals = require('./hazardous-chemicals').createHazardousChemicals(require('./postgres-store'));
   const keySiteAI = require('./key-site-ai').createKeySiteAI(require('./postgres-store'), keySites, keySiteFiles, adminAuth, CFG.llm);
-  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, { sites: keySites, files: keySiteFiles, ai: keySiteAI, hazmats: hazardousChemicals }));
+  const adminOrigin = process.env.WATCHDOG_ADMIN_ORIGIN || 'https://fireman119.xyz';
+  app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, {
+    origin: adminOrigin,
+    sites: keySites,
+    files: keySiteFiles,
+    ai: keySiteAI,
+    hazmats: hazardousChemicals,
+  }));
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteFiles.startWorker(error => logger.warn(`key_site_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteAI.startWorker(error => logger.warn(`key_site_ai_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
 }

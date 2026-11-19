@@ -4,86 +4,91 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>火场智控 · 资料管理与危化品中台</title>
-  <link rel="stylesheet" href="/admin/style.css">
+  <link rel="stylesheet" href="/admin/css/main.css">
 </head>
 <body>
 
-<!-- 登录视图 -->
-<section id="login" class="login-view">
+<!-- 扫码登录视图 -->
+<section id="login" class="login-view" aria-label="管理员扫码登录">
   <div class="login-card">
     <div class="login-brand">
-      <div class="brand-icon">
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <div class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path>
         </svg>
       </div>
       <div class="brand-text">
-        <h2>火场智控 · 资料管理</h2>
-        <span class="brand-badge">控制台</span>
+        <h1>火场智控 · 管理控制台</h1>
+        <span class="brand-badge">Admin</span>
       </div>
     </div>
-    
-    <p class="login-desc">救援现场安全管控 · 数字化档案与应急中台</p>
+
+    <p class="login-desc">救援现场安全管控 · 重点单位档案与危化品处置中台</p>
+
+    <div id="login-error" class="inline-alert inline-alert-danger" role="alert" hidden></div>
 
     <div class="qr-container">
-      <div id="qr" class="qr-frame" aria-label="登录二维码"></div>
-      <p id="login-state" class="qr-status" role="status">正在生成安全令牌…</p>
+      <div class="qr-stage">
+        <div id="qr" class="qr-frame" aria-label="登录二维码"></div>
+        <div id="qr-expired" class="qr-expired-overlay" hidden>
+          <p class="qr-expired-title">二维码已失效</p>
+          <button id="qr-overlay-refresh" type="button" class="btn btn-primary btn-sm">点击重新生成</button>
+        </div>
+      </div>
+      <div class="qr-meta">
+        <p id="login-state" class="qr-status" role="status">正在生成安全登录码…</p>
+        <span id="qr-countdown" class="qr-countdown" hidden>02:00</span>
+      </div>
     </div>
 
-    <button id="refresh" class="btn btn-secondary btn-block">刷新二维码</button>
+    <button id="refresh" type="button" class="btn btn-secondary btn-block">刷新二维码</button>
 
-    <div class="login-steps">
-      <div class="step-item">
+    <ol class="login-steps">
+      <li class="step-item">
         <span class="step-num">1</span>
-        <span>打开 App「设置」</span>
-      </div>
-      <div class="step-item">
+        <span>打开火场智控 App「设置」</span>
+      </li>
+      <li class="step-item">
         <span class="step-num">2</span>
-        <span>点击身份卡「扫一扫」</span>
-      </div>
-      <div class="step-item">
+        <span>点击身份卡右上角「扫一扫」</span>
+      </li>
+      <li class="step-item">
         <span class="step-num">3</span>
-        <span>手机核对并确认登录</span>
-      </div>
-    </div>
+        <span>手机核对身份后确认登录</span>
+      </li>
+    </ol>
 
-    <p class="login-tip">二维码两分钟内有效，仅限获授权的管理员使用</p>
+    <p class="login-tip">二维码两分钟内有效，仅限已授权的平台或单位管理员登录</p>
   </div>
 </section>
 
 <!-- 已登录工作台视图 -->
 <div id="workspace" class="workspace-layout" hidden>
-  <!-- 左侧常驻侧边栏 -->
-  <aside class="sidebar">
+  <aside class="sidebar" aria-label="主导航">
     <div class="sidebar-header">
-      <div class="brand-icon">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <div class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path>
         </svg>
       </div>
       <div class="sidebar-title">
         <strong>火场智控</strong>
-        <span class="sidebar-tag">Admin</span>
+        <span class="sidebar-tag">管理中台</span>
       </div>
     </div>
 
-    <nav class="sidebar-nav" aria-label="系统导航">
-      <button id="show-sites" class="nav-item active">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <nav class="sidebar-nav" aria-label="系统功能导航">
+      <button id="show-sites" type="button" class="nav-item active" data-route="sites">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect>
           <path d="M9 22v-4h6v4"></path>
-          <path d="M8 6h.01"></path>
-          <path d="M16 6h.01"></path>
-          <path d="M8 10h.01"></path>
-          <path d="M16 10h.01"></path>
-          <path d="M8 14h.01"></path>
-          <path d="M16 14h.01"></path>
+          <path d="M8 6h.01M16 6h.01M8 10h.01M16 10h.01M8 14h.01M16 14h.01"></path>
         </svg>
         <span>重点单位资料</span>
       </button>
 
-      <button id="show-panos" class="nav-item">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button id="show-panos" type="button" class="nav-item" data-route="panos">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="10"></circle>
           <line x1="2" y1="12" x2="22" y2="12"></line>
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
@@ -91,19 +96,17 @@
         <span>360° 全景漫游</span>
       </button>
 
-      <button id="show-hazmats" class="nav-item">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M10 2v7.31"></path>
-          <path d="M14 9.3V2"></path>
-          <path d="M8.5 2h7"></path>
+      <button id="show-hazmats" type="button" class="nav-item" data-route="hazmats">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10 2v7.31M14 9.3V2M8.5 2h7"></path>
           <path d="M14 9.3a6.5 6.5 0 1 1-4 0"></path>
           <path d="M5.52 16h12.96"></path>
         </svg>
         <span>危化品速查库</span>
       </button>
 
-      <button id="show-permissions" class="nav-item" hidden>
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button id="show-permissions" type="button" class="nav-item" data-route="access" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
         </svg>
         <span>后台授权与审计</span>
@@ -111,24 +114,27 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div class="system-status">
-        <span class="status-dot"></span>
-        <span class="system-ver">WatchDog v1.13</span>
+      <button id="toggle-theme" type="button" class="theme-toggle" title="切换白昼/暗夜指挥室主题">
+        <span id="theme-icon" aria-hidden="true">☀</span>
+        <span id="theme-label">白昼指挥</span>
+      </button>
+      <div class="system-status" id="conn-status" title="后台会话连接状态">
+        <span class="status-dot" id="conn-dot"></span>
+        <span id="conn-text" class="system-ver">会话正常</span>
       </div>
     </div>
   </aside>
 
-  <!-- 主操作区域 -->
   <div class="main-wrapper">
-    <!-- 顶部栏 -->
     <header class="topbar">
       <div class="topbar-left">
         <h1 id="page-title" class="topbar-title">重点单位资料</h1>
+        <span id="dirty-indicator" class="pill pill-caution" hidden>有未保存更改</span>
       </div>
 
       <div class="topbar-right">
         <div class="user-chip">
-          <span class="user-avatar" id="user-avatar">官</span>
+          <span class="user-avatar" id="user-avatar" aria-hidden="true">管</span>
           <div class="user-meta">
             <span id="welcome" class="user-name"></span>
             <span id="identity" class="user-role"></span>
@@ -136,62 +142,31 @@
         </div>
 
         <div class="topbar-actions">
-          <button id="logout" class="btn btn-subtle btn-sm">退出会话</button>
-          <button id="logout-all" class="btn btn-subtle btn-sm text-muted">全退</button>
+          <button id="logout" type="button" class="btn btn-subtle btn-sm">退出会话</button>
+          <button id="logout-all" type="button" class="btn btn-subtle btn-sm text-muted">全部下线</button>
         </div>
       </div>
     </header>
 
-    <!-- 工作区主体内容 -->
+    <div id="network-banner" class="network-banner" role="status" hidden>
+      <span>与服务器连接暂时中断，您的页面编辑已保留，恢复连接后将自动同步。</span>
+      <button id="network-retry" type="button" class="btn btn-secondary btn-xs">立即重试</button>
+    </div>
+
     <main class="content-body">
-      <!-- 重点单位容器 -->
-      <section id="site-manager"></section>
-
-      <!-- 危化品容器 -->
-      <section id="hazmat-manager" hidden></section>
-
-      <!-- 权限与审计容器 -->
-      <section id="platform" hidden>
-        <div class="panel-section">
-          <div class="section-head">
-            <div>
-              <h2>后台授权管理</h2>
-              <p class="muted">单位管理角色与独立后台授权分离。开通前请核实指战员姓名及所属单位。</p>
-            </div>
-            <div class="toolbar-actions">
-              <label class="inline-filter">
-                <span>组织</span>
-                <select id="member-unit" class="select-sm">
-                  <option value="">全部组织</option>
-                </select>
-              </label>
-              <button id="load-members" class="btn btn-secondary btn-sm">刷新成员列表</button>
-            </div>
-          </div>
-          <div id="members" class="members-grid"></div>
-        </div>
-
-        <div class="panel-section">
-          <div class="section-head">
-            <div>
-              <h2>管理操作审计</h2>
-              <p class="muted">全量不可篡改的平台关键管理操作日志记录。</p>
-            </div>
-            <button id="load-audit" class="btn btn-subtle btn-sm">加载最新日志</button>
-          </div>
-          <div id="audit" class="audit-stream"></div>
-        </div>
-      </section>
+      <section id="site-manager" aria-label="重点单位资料"></section>
+      <section id="hazmat-manager" aria-label="危化品速查库" hidden></section>
+      <section id="platform" aria-label="后台授权与审计" hidden></section>
     </main>
   </div>
 </div>
 
-<!-- 全局悬浮消息提示 -->
-<div id="toast" class="toast-notice" hidden role="status"></div>
-<p id="error" class="error-banner" role="alert" hidden></p>
+<!-- 全局通知栈 -->
+<div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
-<script src="/admin/app.js" defer></script>
-<script src="/admin/sites.js" defer></script>
-<script src="/admin/hazmats.js" defer></script>
+<!-- 全局弹层与抽屉挂载根 -->
+<div id="overlay-root"></div>
+
+<script type="module" src="/admin/js/main.js"></script>
 </body>
 </html>

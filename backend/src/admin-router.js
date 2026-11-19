@@ -13,30 +13,46 @@ const wrap = (handler) => (req, res, next) => Promise.resolve(handler(req, res))
   next(error);
 });
 
+const safeBody = (req) => (req.body && typeof req.body === 'object' ? req.body : {});
+
 function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, files, ai, hazmats } = {}) {
   const router = express.Router();
-  const limiter = new MinuteRateLimiter();
+  const challengeLimiter = new MinuteRateLimiter();
+  const claimLimiter = new MinuteRateLimiter();
+  const normalizedOrigin = String(origin || 'https://fireman119.xyz').replace(/\/+$/, '');
   router.use((req, res, next) => {
     res.set('Cache-Control', 'no-store');
     // No cross-origin credential sharing for this independent authentication surface.
     res.removeHeader('Access-Control-Allow-Origin');
-    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.get('Origin') !== origin) {
-      return res.status(403).json({ code: 'ADMIN_ORIGIN_INVALID' });
+    res.removeHeader('Access-Control-Allow-Methods');
+    res.removeHeader('Access-Control-Allow-Headers');
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.get('Origin') !== normalizedOrigin) {
+      return res.status(403).json({ code: 'ADMIN_ORIGIN_INVALID', error: 'ADMIN_ORIGIN_INVALID' });
     }
-    if (req.path.startsWith('/login/') && limiter.isLimited(req.ip, 90)) {
-      return res.status(429).json({ code: 'ADMIN_RATE_LIMITED' });
+    if (req.path === '/login/challenges' && challengeLimiter.isLimited(req.ip, 30)) {
+      return res.status(429).json({ code: 'ADMIN_RATE_LIMITED', error: 'ADMIN_RATE_LIMITED' });
+    }
+    if (req.path === '/login/claim' && claimLimiter.isLimited(req.ip, 240)) {
+      return res.status(429).json({ code: 'ADMIN_RATE_LIMITED', error: 'ADMIN_RATE_LIMITED' });
     }
     next();
   });
   router.post('/login/challenges', wrap(async (req, res) => {
     const challenge = await auth.challenge();
+    const expiresInMs = Math.max(0, challenge.expiresAt - Date.now());
     res.cookie(BROWSER, challenge.browser, { ...cookieOptions, maxAge: 120000 });
-    const qrPayload = `https://fireman119.xyz/admin/scan#${challenge.id}.${challenge.scan}`;
-    res.json({ id: challenge.id, expiresAt: challenge.expiresAt,
-      qrPayload, qrImage: await require('qrcode').toDataURL(qrPayload, { width: 320, margin: 3 }) });
+    const qrPayload = `${normalizedOrigin}/admin/scan#${challenge.id}.${challenge.scan}`;
+    res.json({
+      id: challenge.id,
+      expiresAt: challenge.expiresAt,
+      expiresInMs,
+      qrPayload,
+      qrImage: await require('qrcode').toDataURL(qrPayload, { width: 320, margin: 3 }),
+    });
   }));
   router.post('/login/claim', wrap(async (req, res) => {
-    const result = await auth.claim(req.body.id, cookie(req, BROWSER));
+    const body = safeBody(req);
+    const result = await auth.claim(body.id, cookie(req, BROWSER));
     if (!result) return res.status(202).json({ state: 'pending' });
     res.cookie(SESSION, result.token, { ...cookieOptions, maxAge: 8 * 3600000 });
     res.clearCookie(BROWSER, cookieOptions);
@@ -46,17 +62,19 @@ function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, fil
     auth.session(cookie(req, SESSION), req.get('X-CSRF-Token'), !['GET', 'HEAD'].includes(req.method), req.path !== '/me' && req.get('X-Admin-Poll') !== '1')
       .then((member) => { req.admin = member; next(); })
       .catch((error) => error.status
-        ? res.status(error.status).json({ code: error.code }) : next(error));
+        ? res.status(error.status).json({ code: error.code, error: error.code }) : next(error));
   });
   router.get('/me', (req, res) => res.json({ member: req.admin,
     csrf: require('./admin-auth').hash(`csrf:${cookie(req, SESSION)}`) }));
   router.post('/logout', wrap(async (req, res) => {
-    await auth.logout(cookie(req, SESSION), req.body.all === true);
+    const body = safeBody(req);
+    await auth.logout(cookie(req, SESSION), body.all === true);
     res.clearCookie(SESSION, cookieOptions);
     res.json({ ok: true });
   }));
   router.put('/grants/:memberId', wrap(async (req, res) => {
-    await auth.setGrant(req.admin.id, req.params.memberId, req.body.role);
+    const body = safeBody(req);
+    await auth.setGrant(req.admin.id, req.params.memberId, body.role);
     res.json({ ok: true });
   }));
   router.get('/members', wrap(async (req, res) => res.json({
@@ -74,13 +92,14 @@ function createAdminAppRouter(auth) {
   const limiter = new MinuteRateLimiter();
   router.use((req, res, next) => {
     res.set('Cache-Control', 'no-store');
-    if (!req.auth?.memberId) return res.status(401).json({ code: 'SESSION_REQUIRED' });
-    if (limiter.isLimited(req.auth.memberId, 30)) return res.status(429).json({ code: 'ADMIN_RATE_LIMITED' });
+    if (!req.auth?.memberId) return res.status(401).json({ code: 'SESSION_REQUIRED', error: 'SESSION_REQUIRED' });
+    if (limiter.isLimited(req.auth.memberId, 30)) return res.status(429).json({ code: 'ADMIN_RATE_LIMITED', error: 'ADMIN_RATE_LIMITED' });
     next();
   });
   router.get('/capability', wrap(async (req, res) => res.json({ member: await auth.identity(req.auth.memberId) || null })));
   router.post('/confirm', wrap(async (req, res) => {
-    await auth.confirm(req.body.id, req.body.scan, req.auth.memberId, req.body.cancel === true);
+    const body = safeBody(req);
+    await auth.confirm(body.id, body.scan, req.auth.memberId, body.cancel === true);
     res.json({ ok: true });
   }));
   return router;

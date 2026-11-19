@@ -79,21 +79,29 @@ function createAdminAuth(store, now = Date.now, { onGrantChanged } = {}) {
     });
   }
   async function session(token, csrf, write = false, touch = true) {
+    if (!token) fail('ADMIN_SESSION_INVALID', 401);
+    const tokenHash = hash(token);
     const record = (await query(`SELECT * FROM admin_sessions WHERE token_hash=$1 AND revoked_at IS NULL
-      AND created_at>$2 AND last_seen_at>$3`, [hash(token), now() - 8 * 3600000, now() - 30 * 60000]))[0];
+      AND created_at>$2 AND last_seen_at>$3`, [tokenHash, now() - 8 * 3600000, now() - 30 * 60000]))[0];
     if (!record) fail('ADMIN_SESSION_INVALID', 401);
     const member = await identity(record.member_id);
     if (!member) {
       await query('UPDATE admin_sessions SET revoked_at=$2 WHERE member_id=$1 AND revoked_at IS NULL', [record.member_id, now()]);
       fail('ADMIN_SESSION_INVALID', 401);
     }
-    if (write && hash(csrf) !== record.csrf_hash) fail('ADMIN_CSRF_INVALID');
-    if (touch) await query('UPDATE admin_sessions SET last_seen_at=$2 WHERE token_hash=$1', [hash(token), now()]);
+    if (write) {
+      const suppliedBuf = Buffer.from(hash(csrf), 'utf8');
+      const expectedBuf = Buffer.from(String(record.csrf_hash || ''), 'utf8');
+      if (suppliedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(suppliedBuf, expectedBuf)) {
+        fail('ADMIN_CSRF_INVALID');
+      }
+    }
+    if (touch) await query('UPDATE admin_sessions SET last_seen_at=$2 WHERE token_hash=$1', [tokenHash, now()]);
     return member;
   }
   async function logout(token, all = false) {
     return store.transaction(async () => {
-      const member = await session(token);
+      const member = await session(token, undefined, false, false);
       await query(all ? 'UPDATE admin_sessions SET revoked_at=$2 WHERE member_id=$1 AND revoked_at IS NULL'
         : 'UPDATE admin_sessions SET revoked_at=$2 WHERE token_hash=$1', [all ? member.id : hash(token), now()]);
       await audit(member.id, all ? 'logout_all' : 'logout');
