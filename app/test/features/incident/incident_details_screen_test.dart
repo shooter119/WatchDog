@@ -1,0 +1,274 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:watchdog/core/network/network.dart';
+import 'package:watchdog/design_system/design_system.dart';
+import 'package:watchdog/features/incident/data/incident_import_repository.dart';
+import 'package:watchdog/features/incident/data/models/incident.dart';
+import 'package:watchdog/features/incident/ui/incident_details_screen.dart';
+
+class _FakeImportRepository extends IncidentImportRepository {
+  _FakeImportRepository()
+    : super(ApiHttpTransport(const ApiConfig(baseUrl: 'http://127.0.0.1', incidentId: 'inc-details')));
+
+  Map<String, dynamic> detailPayload = <String, dynamic>{
+    'data': <String, dynamic>{
+      'original_category': '一级抢险救援',
+      'location': '示例区示范街道重点单位北门',
+      'situation': '现场有人员被困，救援通道已展开。',
+      'contacts': <Map<String, dynamic>>[
+        <String, dynamic>{'role': '值班员', 'name': '张三', 'phone': '13800138000'},
+        <String, dynamic>{'role': '物业', 'name': '李四', 'phone': '138****8001'},
+      ],
+      'risks': <String>['建筑外墙玻璃存在高空坠落风险'],
+    },
+    'version': 2,
+    'imports': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'source': 'text',
+        'actor_name': '张三',
+        'pages': <Map<String, dynamic>>[
+          <String, dynamic>{'index': 1, 'raw_text': '119接警单正文记录'},
+        ],
+      },
+    ],
+    'observations': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'id': 'obs-1',
+        'captured_at': 1762329600000,
+        'source_type': 'video',
+        'transcript': '三楼东侧窗口有一名老人被困，正在升梯救援',
+      },
+    ],
+  };
+
+  Map<String, dynamic>? lastUpdatedData;
+  int? lastUpdatedVersion;
+
+  @override
+  Future<Map<String, dynamic>> fetchIncidentDetails() async =>
+      Map<String, dynamic>.from(detailPayload);
+
+  @override
+  Future<Map<String, dynamic>> updateIncidentDetails(
+    Map<String, dynamic> data,
+    int version,
+    String opId,
+  ) async {
+    lastUpdatedData = Map<String, dynamic>.from(data);
+    lastUpdatedVersion = version;
+    detailPayload = <String, dynamic>{
+      ...detailPayload,
+      'data': <String, dynamic>{
+        ...(detailPayload['data'] as Map<String, dynamic>),
+        ...data,
+      },
+      'version': version + 1,
+    };
+    return <String, dynamic>{'ok': true, 'version': version + 1};
+  }
+}
+
+const Incident _incident = Incident(
+  id: 'inc-details',
+  number: '测试警情',
+  title: '示范街道抢险救援',
+  status: 'active',
+  createdAt: 1,
+  lastActivityAt: 1,
+);
+
+Widget _wrap(
+  Widget child, {
+  Brightness brightness = Brightness.light,
+  double textScale = 1.0,
+}) {
+  return MaterialApp(
+    theme: buildCommandTheme(brightness),
+    builder: (BuildContext context, Widget? w) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        textScaler: TextScaler.linear(textScale),
+        disableAnimations: true,
+      ),
+      child: w!,
+    ),
+    home: child,
+  );
+}
+
+void main() {
+  group('IncidentDetailsScreen', () {
+    testWidgets('展示联系方式完整号码并可点击拨号，脱敏号码不显示拨打钮', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final dialed = <Uri>[];
+      await tester.pumpWidget(
+        _wrap(
+          IncidentDetailsScreen(
+            incident: _incident,
+            importRepository: _FakeImportRepository(),
+            phoneLauncher: (Uri uri) async {
+              dialed.add(uri);
+              return true;
+            },
+          ),
+          textScale: 1.3,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('岗位人员与联系方式'), findsOneWidget);
+      expect(find.text('13800138000'), findsOneWidget);
+      expect(find.text('138****8001'), findsOneWidget);
+      expect(find.text('拨打'), findsOneWidget);
+
+      await tester.tap(find.text('13800138000'));
+      await tester.pump();
+      expect(dialed, <Uri>[Uri(scheme: 'tel', path: '13800138000')]);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('展示现场情况、录像语音记录与导入历史并可展开查阅', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          IncidentDetailsScreen(
+            incident: _incident,
+            importRepository: _FakeImportRepository(),
+            keySiteSlot: const SurfaceCard(
+              key: Key('injected-key-site-slot'),
+              child: Text('重点单位槽位'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('injected-key-site-slot')), findsOneWidget);
+      expect(find.text('现场有人员被困，救援通道已展开。'), findsOneWidget);
+
+      await tester.scrollUntilVisible(find.text('录像语音记录 (1)'), 200);
+      await tester.ensureVisible(find.text('录像语音记录 (1)'));
+      await tester.pumpAndSettle();
+      expect(find.text('录像语音记录 (1)'), findsOneWidget);
+      await tester.tap(find.text('录像语音记录 (1)'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('三楼东侧窗口有一名老人被困'), findsOneWidget);
+      expect(find.textContaining('· 录像语音'), findsOneWidget);
+
+      await tester.scrollUntilVisible(
+        find.text('文字导入记录'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('文字导入记录'), findsOneWidget);
+    });
+
+    testWidgets('编辑警情资料通过 CommandSheet 提交并携带乐观锁版本号', (
+      WidgetTester tester,
+    ) async {
+      final repo = _FakeImportRepository();
+      var updatedCount = 0;
+
+      await tester.pumpWidget(
+        _wrap(
+          IncidentDetailsScreen(
+            incident: _incident,
+            importRepository: repo,
+            onDetailsUpdated: () => updatedCount++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('incident-details-edit-btn')));
+      await tester.pumpAndSettle();
+      expect(find.text('修改警情资料'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('incident-detail-field-location')),
+        '示例区新路99号',
+      );
+      await tester.tap(find.byKey(const Key('incident-details-edit-save-btn')));
+      await tester.pumpAndSettle();
+
+      expect(repo.lastUpdatedVersion, 2);
+      expect(repo.lastUpdatedData?['location'], '示例区新路99号');
+      expect(updatedCount, 1);
+      expect(find.text('示例区新路99号'), findsOneWidget);
+    });
+
+    testWidgets('活动警情底部退出与归档按钮需经 CommandSheet 二次确认', (
+      WidgetTester tester,
+    ) async {
+      var exits = 0;
+      var archives = 0;
+
+      await tester.pumpWidget(
+        _wrap(
+          IncidentDetailsScreen(
+            incident: _incident,
+            importRepository: _FakeImportRepository(),
+            onExitIncident: () async => exits++,
+            onArchiveIncident: () async => archives++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('details-exit-incident')),
+        200,
+      );
+      await tester.tap(find.byKey(const Key('details-exit-incident')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(exits, 0);
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('details-archive-incident')),
+        200,
+      );
+      await tester.tap(find.byKey(const Key('details-archive-incident')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('incident-archive-confirm-btn')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('incident-archive-confirm-btn')));
+      await tester.pumpAndSettle();
+      expect(archives, 1);
+    });
+
+    testWidgets('单机游客模式无 importRepository 时本地渲染 incident.info', (
+      WidgetTester tester,
+    ) async {
+      const localIncident = Incident(
+        id: 'guest-inc',
+        number: '单机测试警情',
+        title: '示例镇仓库火情',
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+        info: <String, dynamic>{
+          'location': '示例县示例镇示例村',
+          'situation': '演练场景处置',
+        },
+      );
+
+      await tester.pumpWidget(
+        _wrap(const IncidentDetailsScreen(incident: localIncident)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('示例镇仓库火情'), findsOneWidget);
+      expect(find.text('示例县示例镇示例村'), findsOneWidget);
+      expect(find.text('演练场景处置'), findsOneWidget);
+      expect(find.byKey(const Key('incident-details-edit-btn')), findsNothing);
+    });
+  });
+}

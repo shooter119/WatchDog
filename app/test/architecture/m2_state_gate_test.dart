@@ -23,6 +23,10 @@ const Set<String> _featureStateForbiddenDirs = <String>{
 
 const Set<String> _shellCleanFiles = <String>{
   'app/shell/command_app_shell.dart',
+  'app/shell/command_home_assembly.dart',
+  'app/shell/command_home_incident_actions.dart',
+  'app/shell/field_tools_gateways.dart',
+  'app/shell/field_tools_router.dart',
   'app/shell/shell_voice_bridge.dart',
   'app/shell/guest_banner_bar.dart',
   'app/shell/shell_nav_bar.dart',
@@ -31,7 +35,11 @@ const Set<String> _shellCleanFiles = <String>{
   'app/shell/shell_voice_coordinator.dart',
 };
 
-const Set<String> _shellCleanForbiddenDirs = <String>{'theme', 'pages'};
+const Set<String> _shellCleanForbiddenDirs = <String>{
+  'theme',
+  'pages',
+  'widgets',
+};
 
 class _Directive {
   const _Directive({required this.kind, required this.uri, required this.line});

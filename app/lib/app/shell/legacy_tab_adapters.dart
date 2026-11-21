@@ -1,27 +1,28 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../../api/api_client.dart';
 import '../../design_system/design_system.dart';
+import '../../features/video/ui/video_playback_surface.dart';
 import '../../models/models.dart';
-import '../../pages/home_page.dart';
-import '../../pages/incident_details_page.dart';
+import '../../pages/incident_import_page.dart';
 import '../../pages/incident_selection_overlay.dart';
-import '../../pages/notes_page.dart';
 import '../../pages/settings_page.dart';
-import '../../pages/video_playback_surface.dart';
+import '../../pages/video_resource_admin_page.dart';
+import '../../pages/watermark_settings_page.dart';
 import '../../services/video_playback_session.dart';
 import '../../state/app_controller.dart';
+import 'command_home_assembly.dart';
 import 'shell_copilot_adapter.dart';
 import 'shell_monitor_adapter.dart';
 import 'shell_voice_bridge.dart';
 import 'shell_voice_coordinator.dart';
 
-/// 新外壳 4 个 Tab 及过渡期浮层的可注入覆写槽位。
+/// 新外壳 4 个 Tab 及浮层的可注入覆写槽位。
 ///
-/// - M3a~M3g 逐里程碑把新 DS v3.0 页面注入对应槽位，无需改动 `CommandAppShell`；
-/// - 单元测试可注入轻量桩组件，避免拉起全量既有页面依赖。
+/// - M3a~M3e 已完成 Tab 0/1/2 及全套现场工具/视频/PiP 替换；M3f~M3g 替换 Tab 3 与启动引导；
+/// - 单元测试可注入轻量桩组件，避免拉起全量页面依赖。
 @immutable
 class ShellTabOverrides {
   const ShellTabOverrides({
@@ -48,41 +49,78 @@ class ShellTabOverrides {
   /// 未认证/未选警情门禁浮层覆写构造器（M3g 替换为新全屏流程）。
   final WidgetBuilder? startupGateBuilder;
 
-  /// 悬浮视频小窗覆写构造器（M3e 替换为新视频模块）。
+  /// 悬浮视频小窗覆写构造器。
   final WidgetBuilder? floatingVideoBuilder;
 }
 
-/// M2 过渡期 4-Tab 适配器（M4 整体切换并清退旧页面后删除）。
+/// 过渡期 4-Tab 装配与 M3f/M3g 旧页隔离适配层（M4 整体清退旧页面后删除）。
 ///
-/// 集中隔离对既有 `pages/` 的全部引用，使 `command_app_shell.dart` 与
-/// `shell_voice_bridge.dart` 保持零旧页面、零旧主题依赖。
+/// 集中隔离对尚未替换的旧 `pages/`（Tab 3 设置、启动门禁、水印设置、视频源管理、
+/// 警情导入）的全部引用，保证 `command_app_shell.dart`、`command_home_assembly.dart`
+/// 与 `field_tools_router.dart` 保持零旧页面、零旧主题、零旧组件依赖。
 class LegacyTabAdapters {
   LegacyTabAdapters({
     required this.controller,
     required this.voiceBridge,
     required this.videoPlayback,
+    required this.homeAssembly,
     required this.monitorAdapter,
     required this.copilotAdapter,
     required this.voiceCoordinator,
     required this.onSelectTab,
-    required this.onOpenNotes,
+    required this.onShowMessage,
     this.overrides = const ShellTabOverrides(),
   });
-
-  /// 过渡期指挥台顶部「火场日志」入口语义 Key。
-  static const Key openNotesButtonKey = Key('shell-open-notes-btn');
 
   final AppController controller;
   final ShellVoiceBridge voiceBridge;
   final VideoPlaybackSession videoPlayback;
+  final CommandHomeAssembly homeAssembly;
   final ShellMonitorAdapter monitorAdapter;
   final ShellCopilotAdapter copilotAdapter;
   final ShellVoiceCoordinator voiceCoordinator;
   final ValueChanged<int> onSelectTab;
-  final VoidCallback onOpenNotes;
+  final ShellVoiceMessageCallback onShowMessage;
   final ShellTabOverrides overrides;
 
-  final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
+  /// M3f 过渡期桥接：打开旧版水印设置页。
+  static Future<void> openLegacyWatermarkSettings(BuildContext context) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const WatermarkSettingsPage()),
+    );
+  }
+
+  /// M3f 过渡期桥接：打开旧版视频监控源管理页。
+  static Future<void> openLegacyVideoResourceAdmin(
+    BuildContext context,
+    AppController controller,
+  ) {
+    final api = controller.api;
+    if (api == null) return Future<void>.value();
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => VideoResourceAdminPage(api: api)),
+    );
+  }
+
+  /// M3g 过渡期桥接：打开旧版警情资料导入页。
+  static Future<bool?> openLegacyIncidentImport(
+    BuildContext context,
+    AppController controller, {
+    bool chooseSourceOnOpen = false,
+  }) {
+    final api = controller.api;
+    final incident = controller.currentIncident;
+    if (api == null || incident == null) return Future<bool?>.value(null);
+    return Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => IncidentImportPage(
+          api: api,
+          incident: incident,
+          chooseSourceOnOpen: chooseSourceOnOpen,
+        ),
+      ),
+    );
+  }
 
   /// 生成供 `ShellVoiceBridge` 使用的全局语音与智能辅助语音执行槽位。
   ShellVoiceSlot createVoiceSlot() {
@@ -111,40 +149,7 @@ class LegacyTabAdapters {
   Widget _buildCommandTab(BuildContext context) {
     final override = overrides.commandTabBuilder;
     if (override != null) return override(context);
-
-    final home = HomePage(
-      key: _homeKey,
-      controller: controller,
-      autoRecord: voiceBridge.pendingAutoRecord,
-      onAutoRecordConsumed: voiceBridge.consumePendingAutoRecord,
-      onRecordingChanged: voiceBridge.setCommandRecording,
-      onProcessingChanged: voiceBridge.setCommandProcessing,
-      onNoteIntent: (String text) => unawaited(voiceBridge.routeNoteIntent(text)),
-      onAskIntent: voiceBridge.routeAskIntent,
-      onEntryConfirmed: voiceBridge.routeEntryConfirmed,
-      videoPlayback: videoPlayback,
-      onVideoFloating: () => onSelectTab(ShellVoiceBridge.commandTabIndex),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        SafeArea(
-          bottom: false,
-          child: _TransitionalNotesEntryBar(
-            noteCount: controller.notes.length,
-            onTap: onOpenNotes,
-          ),
-        ),
-        Expanded(
-          child: MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: home,
-          ),
-        ),
-      ],
-    );
+    return homeAssembly.buildCommandHomePage(context);
   }
 
   Widget _buildMonitorTab(BuildContext context) {
@@ -172,7 +177,7 @@ class LegacyTabAdapters {
     return SettingsPage(controller: controller);
   }
 
-  /// 构建认证/选警情启动门禁浮层（默认复用既有 `IncidentSelectionOverlay`）。
+  /// 构建认证/选警情启动门禁浮层（M3g 前暂用 `IncidentSelectionOverlay`）。
   Widget buildStartupGate(BuildContext context) {
     final override = overrides.startupGateBuilder;
     if (override != null) return override(context);
@@ -190,9 +195,14 @@ class LegacyTabAdapters {
       externalLoading: controller.externalIncidentsLoading,
       onRefreshExternal: ({bool forceRefresh = false}) =>
           controller.fetchExternalIncidents(forceRefresh: forceRefresh),
-      onClaimExternal: (ExternalIncident ext) =>
-          _homeKey.currentState?.claimExternalIncidentFromGate(ext) ??
-          controller.claimExternalIncident(ext),
+      onClaimExternal: (ExternalIncident ext) async {
+        try {
+          await controller.claimExternalIncident(ext);
+        } catch (error) {
+          onShowMessage('认领建档失败：$error', duration: const Duration(seconds: 3));
+          rethrow;
+        }
+      },
       onAuthenticate: (String unitName, String name, String code) =>
           controller.authenticate(
             unitName: unitName,
@@ -216,165 +226,76 @@ class LegacyTabAdapters {
         applyReason: applyReason,
       ),
       onSelect: (Incident incident) =>
-          _homeKey.currentState?.selectIncidentFromGate(incident) ??
           controller.selectIncident(incident.id, knownIncident: incident),
-      onCreate: () =>
-          _homeKey.currentState?.createIncidentFromGate() ??
-          controller.createIncident(),
+      onCreate: () => _createIncidentFromGate(context),
     );
   }
 
-  /// 构建悬浮视频小窗。
+  Future<void> _createIncidentFromGate(BuildContext context) async {
+    try {
+      await controller.createIncident();
+    } on IncidentCreateConflictException catch (conflict) {
+      if (!context.mounted) return;
+      final join = await showCommandSheet<bool>(
+        context: context,
+        title: '已有刚创建的警情',
+        builder: (BuildContext ctx) => Text(
+          '${conflict.existing.displayName}\n\n${conflict.message}',
+          style: ctx.ds.typography.body.copyWith(
+            color: ctx.ds.colors.textSecondary,
+          ),
+        ),
+        actionsBuilder: (BuildContext ctx) => <Widget>[
+          CommandButton(
+            label: '暂不加入',
+            variant: CommandButtonVariant.secondary,
+            size: CommandButtonSize.large,
+            onPressed: () => Navigator.of(ctx).pop(false),
+          ),
+          CommandButton(
+            label: '加入现有警情',
+            variant: CommandButtonVariant.primary,
+            size: CommandButtonSize.large,
+            onPressed: () => Navigator.of(ctx).pop(true),
+          ),
+        ],
+      );
+      if (join != true) return;
+      try {
+        await controller.selectIncident(
+          conflict.existing.id,
+          knownIncident: conflict.existing,
+        );
+      } catch (joinError) {
+        onShowMessage('加入警情失败：$joinError', duration: const Duration(seconds: 3));
+      }
+    }
+  }
+
+  /// 构建 DS v3.0 应用内悬浮视频小窗。
   Widget buildFloatingVideo(
     BuildContext context, {
     required VoidCallback onFullscreen,
   }) {
     final override = overrides.floatingVideoBuilder;
     if (override != null) return override(context);
-    return FloatingVideoWindow(
+    return FloatingVideoOverlay(
       session: videoPlayback,
       onFullscreen: onFullscreen,
     );
   }
 
-  /// 构建全屏视频播放路由。
+  /// 构建 DS v3.0 全屏视频播放路由。
   Route<void> buildFullscreenVideoRoute() {
     return MaterialPageRoute<void>(
-      builder: (_) => VideoFullscreenPage(session: videoPlayback),
+      builder: (_) => VideoFullscreenScreen(session: videoPlayback),
     );
   }
 
-  /// 构建过渡期火场日志二级页面路由（M3c 将日志时间线整合进指挥台后移除）。
-  Route<void> buildNotesRoute() {
-    return MaterialPageRoute<void>(
-      builder: (_) => _TransitionalNotesScreen(controller: controller),
-    );
-  }
+  /// 构建 DS v3.0 火场日志时间线二级页面路由。
+  Route<void> buildNotesRoute() => homeAssembly.buildNotesRoute();
 
-  /// 构建过渡期警情背景资料二级页面路由（供智能辅助警情胶囊跳转，M3c 后替换）。
-  Route<void>? buildIncidentDetailsRoute() {
-    final api = controller.api;
-    final incident = controller.currentIncident;
-    if (api == null || incident == null) return null;
-    return MaterialPageRoute<void>(
-      builder: (_) => IncidentDetailsPage(
-        api: api,
-        incident: incident,
-        controller: controller,
-      ),
-    );
-  }
-}
-
-/// 过渡期指挥台顶部火场日志入口条（完全采用 Design System v3.0 语义 Token）。
-class _TransitionalNotesEntryBar extends StatelessWidget {
-  const _TransitionalNotesEntryBar({
-    required this.noteCount,
-    required this.onTap,
-  });
-
-  final int noteCount;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    final colors = ds.colors;
-    final typo = ds.typography;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        DsSpacing.md,
-        DsSpacing.sm,
-        DsSpacing.md,
-        DsSpacing.xs,
-      ),
-      child: Material(
-        color: colors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: DsRadius.borderMd,
-          side: BorderSide(color: colors.border, width: 1),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          key: LegacyTabAdapters.openNotesButtonKey,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            onTap();
-          },
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: DsSizes.touchTarget),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: DsSpacing.md,
-                vertical: DsSpacing.sm,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  Icon(
-                    Icons.event_note_outlined,
-                    size: DsSizes.iconMd,
-                    color: colors.brandText,
-                  ),
-                  const SizedBox(width: DsSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      '火场日志',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: typo.body.copyWith(
-                        color: colors.textPrimary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: DsSpacing.sm),
-                  Text(
-                    '$noteCount 条',
-                    style: typo.captionTabular.copyWith(
-                      color: colors.textSecondary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: DsSpacing.xs),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: DsSizes.iconMd,
-                    color: colors.textSecondary,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 过渡期火场日志二级页面容器。
-class _TransitionalNotesScreen extends StatelessWidget {
-  const _TransitionalNotesScreen({required this.controller});
-
-  final AppController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    return Scaffold(
-      backgroundColor: ds.colors.canvas,
-      appBar: AppBar(title: const Text('火场日志')),
-      body: AnimatedBuilder(
-        animation: controller,
-        builder: (BuildContext context, _) {
-          return MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: NotesPage(controller: controller),
-          );
-        },
-      ),
-    );
-  }
+  /// 构建 DS v3.0 警情详情二级页面路由（供智能辅助警情胶囊跳转）。
+  Route<void>? buildIncidentDetailsRoute() =>
+      homeAssembly.buildIncidentDetailsRoute();
 }

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../design_system/design_system.dart';
 import '../../features/copilot/state/copilot_store.dart';
+import '../../features/video/ui/pip_shell.dart';
 import '../../features/voice/state/voice_intent_router.dart';
 import '../../features/voice/state/voice_session_store.dart';
 import '../../services/audio_service.dart';
@@ -15,7 +16,7 @@ import '../../services/system_pip.dart';
 import '../../services/theme_controller.dart';
 import '../../services/video_playback_session.dart';
 import '../../state/app_controller.dart';
-import '../../widgets/pip_shell.dart';
+import 'command_home_assembly.dart';
 import 'guest_banner_bar.dart';
 import 'legacy_tab_adapters.dart';
 import 'shell_copilot_adapter.dart';
@@ -28,7 +29,7 @@ import 'shell_voice_coordinator.dart';
 /// Design System v3.0 新外壳根组件（4 Tab + 中置 64dp 语音指令键）。
 ///
 /// 继承既有 `main.dart` 全部关键机制：昼白/暗曜主题瞬切、`WidgetsBindingObserver`
-/// 恢复同步与视频 Surface 重挂、`SystemPip` 切换 `PipShell`、悬浮视频小窗与全屏、
+/// 恢复同步与视频 Surface 重挂、`SystemPip` 切换 [CommandPipShell]、悬浮视频小窗与全屏、
 /// `PopScope` 启动门禁锁、[GuestBannerBar] 游客横幅及 0-indexed 4 Tab `IndexedStack`。
 class CommandAppShell extends StatefulWidget {
   const CommandAppShell({
@@ -87,6 +88,7 @@ class _CommandAppShellState extends State<CommandAppShell>
   late VideoPlaybackSession _videoPlayback;
   late bool _ownsVideoPlayback;
   late ShellVoiceBridge _voiceBridge;
+  late CommandHomeAssembly _homeAssembly;
   late ShellMonitorAdapter _monitorAdapter;
   late ShellCopilotAdapter _copilotAdapter;
   late ShellVoiceCoordinator _voiceCoordinator;
@@ -97,27 +99,24 @@ class _CommandAppShellState extends State<CommandAppShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-
     _ownsVideoPlayback = widget.videoPlayback == null;
-    _videoPlayback = widget.videoPlayback ?? VideoPlaybackSession();
-    _videoPlayback.addListener(_syncSystemPip);
-
+    _videoPlayback = (widget.videoPlayback ?? VideoPlaybackSession())
+      ..addListener(_syncSystemPip);
     widget.controller.setPipActive(SystemPip.isActive.value);
     SystemPip.isActive.addListener(_handlePipActiveChanged);
     DiagnosticLogService.instance.setPage(_pageName(_tab));
-
     _voiceBridge = _createVoiceBridge();
+    _homeAssembly = _createHomeAssembly();
     _monitorAdapter = _createMonitorAdapter();
     _copilotAdapter = _createCopilotAdapter();
     _voiceCoordinator = _createVoiceCoordinator();
     _adapters = _createAdapters();
     _voiceBridge.updateSlot(widget.voiceSlot ?? _adapters.createVoiceSlot());
-
     if (widget.enableStartupSideEffects) {
       unawaited(
-        ForegroundKeepAlive.init().catchError((Object error, StackTrace _) {
-          debugPrint('ForegroundKeepAlive init failed: $error');
-        }),
+        ForegroundKeepAlive.init().catchError(
+          (Object e, StackTrace _) => debugPrint('ForegroundKeepAlive failed: $e'),
+        ),
       );
       unawaited(widget.controller.init());
       unawaited(widget.controller.checkUpdateSilently());
@@ -127,7 +126,8 @@ class _CommandAppShellState extends State<CommandAppShell>
   @override
   void didUpdateWidget(covariant CommandAppShell oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.videoPlayback, widget.videoPlayback)) {
+    final videoChanged = !identical(oldWidget.videoPlayback, widget.videoPlayback);
+    if (videoChanged) {
       _videoPlayback.removeListener(_syncSystemPip);
       if (_ownsVideoPlayback) _videoPlayback.dispose();
       _ownsVideoPlayback = widget.videoPlayback == null;
@@ -142,6 +142,11 @@ class _CommandAppShellState extends State<CommandAppShell>
       _monitorAdapter.dispose();
       _monitorAdapter = _createMonitorAdapter();
       widget.controller.setPipActive(SystemPip.isActive.value);
+    }
+
+    if (controllerChanged || videoChanged) {
+      _homeAssembly.dispose();
+      _homeAssembly = _createHomeAssembly();
     }
 
     final copilotChanged =
@@ -164,9 +169,9 @@ class _CommandAppShellState extends State<CommandAppShell>
 
     final adaptersChanged =
         controllerChanged ||
+        videoChanged ||
         copilotChanged ||
         voiceChanged ||
-        !identical(oldWidget.videoPlayback, widget.videoPlayback) ||
         oldWidget.tabOverrides != widget.tabOverrides ||
         oldWidget.commandTabBuilder != widget.commandTabBuilder ||
         oldWidget.monitorTabBuilder != widget.monitorTabBuilder ||
@@ -190,6 +195,7 @@ class _CommandAppShellState extends State<CommandAppShell>
     _voiceCoordinator.dispose();
     _copilotAdapter.dispose();
     _monitorAdapter.dispose();
+    _homeAssembly.dispose();
     _voiceBridge.dispose();
     if (widget.disposeController) widget.controller.dispose();
     super.dispose();
@@ -201,6 +207,24 @@ class _CommandAppShellState extends State<CommandAppShell>
     onShowMessage: _showSnackMessage,
     onNoteSaved: _openNotesPage,
     initialTab: _tab,
+  );
+
+  CommandHomeAssembly _createHomeAssembly() => CommandHomeAssembly(
+    controller: widget.controller,
+    videoPlayback: _videoPlayback,
+    onVideoFloating: () => _selectTab(ShellVoiceBridge.commandTabIndex),
+    onOpenMonitor: () => _selectTab(ShellVoiceBridge.monitorTabIndex),
+    onOpenNotes: _openNotesPage,
+    onOpenWatermarkSettings: LegacyTabAdapters.openLegacyWatermarkSettings,
+    onOpenVideoResourceAdmin: (ctx) =>
+        LegacyTabAdapters.openLegacyVideoResourceAdmin(ctx, widget.controller),
+    onOpenIncidentImport: (ctx, {bool chooseSourceOnOpen = false}) =>
+        LegacyTabAdapters.openLegacyIncidentImport(
+          ctx,
+          widget.controller,
+          chooseSourceOnOpen: chooseSourceOnOpen,
+        ),
+    onShowMessage: _showSnackMessage,
   );
 
   ShellMonitorAdapter _createMonitorAdapter() =>
@@ -230,11 +254,12 @@ class _CommandAppShellState extends State<CommandAppShell>
       controller: widget.controller,
       voiceBridge: _voiceBridge,
       videoPlayback: _videoPlayback,
+      homeAssembly: _homeAssembly,
       monitorAdapter: _monitorAdapter,
       copilotAdapter: _copilotAdapter,
       voiceCoordinator: _voiceCoordinator,
       onSelectTab: _selectTab,
-      onOpenNotes: _openNotesPage,
+      onShowMessage: _showSnackMessage,
       overrides: ShellTabOverrides(
         commandTabBuilder: widget.commandTabBuilder ?? base?.commandTabBuilder,
         monitorTabBuilder: widget.monitorTabBuilder ?? base?.monitorTabBuilder,
@@ -299,16 +324,14 @@ class _CommandAppShellState extends State<CommandAppShell>
   }
 
   void _openNotesPage() {
-    if (!mounted) return;
-    _navigatorKey.currentState?.push<void>(_adapters.buildNotesRoute());
+    if (mounted) {
+      _navigatorKey.currentState?.push<void>(_adapters.buildNotesRoute());
+    }
   }
 
   void _openIncidentDetails() {
-    if (!mounted) return;
-    final route = _adapters.buildIncidentDetailsRoute();
-    if (route != null) {
-      _navigatorKey.currentState?.push<void>(route);
-    }
+    final route = mounted ? _adapters.buildIncidentDetailsRoute() : null;
+    if (route != null) _navigatorKey.currentState?.push<void>(route);
   }
 
   Future<void> _fullscreenFloatingVideo(BuildContext context) async {
@@ -318,34 +341,33 @@ class _CommandAppShellState extends State<CommandAppShell>
     }
     _videoPlayback.enterFullscreen();
     await Navigator.of(context).push<void>(_adapters.buildFullscreenVideoRoute());
-    if (!mounted || !_videoPlayback.hasResource) return;
-    _videoPlayback.enterFloating();
+    if (mounted && _videoPlayback.hasResource) _videoPlayback.enterFloating();
   }
 
   bool _hasBoardAlert() {
     final cfg = widget.controller.calcConfig;
-    return widget.controller.entries.any((entry) {
-      if (!entry.isActive) return false;
-      final status = entry.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
-      return status == 'alarm' || status == 'timeout';
+    return widget.controller.entries.any((e) {
+      if (!e.isActive) return false;
+      final s = e.statusAt(warnMin: cfg.warnMin, alarmMin: cfg.alarmMin);
+      return s == 'alarm' || s == 'timeout';
     });
   }
 
   List<CommandNavTab> _buildNavTabs() {
-    final tabs = CommandNavBar.defaultTabs;
+    final t = CommandNavBar.defaultTabs;
     return <CommandNavTab>[
-      tabs[0],
+      t[0],
       CommandNavTab(
-        label: tabs[1].label,
-        icon: tabs[1].icon,
-        activeIcon: tabs[1].activeIcon,
+        label: t[1].label,
+        icon: t[1].icon,
+        activeIcon: t[1].activeIcon,
         hasAlert: _hasBoardAlert(),
       ),
-      tabs[2],
+      t[2],
       CommandNavTab(
-        label: tabs[3].label,
-        icon: tabs[3].icon,
-        activeIcon: tabs[3].activeIcon,
+        label: t[3].label,
+        icon: t[3].icon,
+        activeIcon: t[3].activeIcon,
         badgeCount: widget.controller.pendingMemberCount,
       ),
     ];
@@ -374,16 +396,13 @@ class _CommandAppShellState extends State<CommandAppShell>
                     : SystemUiOverlayStyle.dark,
                 child: ValueListenableBuilder<bool>(
                   valueListenable: SystemPip.isActive,
-                  builder: (BuildContext context, bool inPip, _) => inPip
-                      ? PipShell(key: ShellKeys.pipHost, session: _videoPlayback)
+                  builder: (_, bool inPip, _) => inPip
+                      ? CommandPipShell(key: ShellKeys.pipHost, session: _videoPlayback)
                       : (child ?? const SizedBox.shrink()),
                 ),
               );
             },
-            home: KeyedSubtree(
-              key: ValueKey<String>(themeId),
-              child: _buildHome(),
-            ),
+            home: KeyedSubtree(key: ValueKey<String>(themeId), child: _buildHome()),
           );
         },
       ),
@@ -396,17 +415,14 @@ class _CommandAppShellState extends State<CommandAppShell>
       builder: (BuildContext context, _) {
         final controller = widget.controller;
         final pages = _adapters.buildTabs(context);
-        final startupGateLocked =
+        final locked =
             controller.needsAuthentication || controller.needsIncidentSelection;
-
         final Widget tabStack = IndexedStack(index: _tab, children: pages);
-        final Widget bodyContent = controller.isGuest
+        final Widget body = controller.isGuest
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  GuestBannerBar(
-                    onConvert: () => unawaited(controller.leaveUnit()),
-                  ),
+                  GuestBannerBar(onConvert: () => unawaited(controller.leaveUnit())),
                   Expanded(
                     child: MediaQuery.removePadding(
                       context: context,
@@ -418,31 +434,33 @@ class _CommandAppShellState extends State<CommandAppShell>
               )
             : tabStack;
 
-        final Widget appScaffold = Scaffold(
-          backgroundColor: context.ds.colors.canvas,
-          body: bodyContent,
-          bottomNavigationBar: ExcludeSemantics(
-            excluding: startupGateLocked,
-            child: IgnorePointer(
-              ignoring: startupGateLocked,
-              child: ShellCommandNavBar(
-                tabs: _buildNavTabs(),
-                selectedIndex: _tab,
-                voiceBridge: _voiceBridge,
-                onSelectTab: _selectTab,
-              ),
-            ),
-          ),
-        );
-
         return PopScope(
-          canPop: !startupGateLocked,
+          canPop: !locked,
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
-              appScaffold,
-              if (!startupGateLocked) _buildGlobalVoiceOverlay(),
-              if (startupGateLocked)
+              Scaffold(
+                backgroundColor: context.ds.colors.canvas,
+                body: body,
+                bottomNavigationBar: ExcludeSemantics(
+                  excluding: locked,
+                  child: IgnorePointer(
+                    ignoring: locked,
+                    child: ShellCommandNavBar(
+                      tabs: _buildNavTabs(),
+                      selectedIndex: _tab,
+                      voiceBridge: _voiceBridge,
+                      onSelectTab: _selectTab,
+                    ),
+                  ),
+                ),
+              ),
+              if (!locked)
+                ListenableBuilder(
+                  listenable: _voiceCoordinator,
+                  builder: (ctx, _) => _voiceCoordinator.buildOverlay(ctx),
+                ),
+              if (locked)
                 KeyedSubtree(
                   key: ShellKeys.startupGate,
                   child: _adapters.buildStartupGate(context),
@@ -454,11 +472,6 @@ class _CommandAppShellState extends State<CommandAppShell>
       },
     );
   }
-
-  Widget _buildGlobalVoiceOverlay() => ListenableBuilder(
-    listenable: _voiceCoordinator,
-    builder: (BuildContext context, _) => _voiceCoordinator.buildOverlay(context),
-  );
 
   Widget _buildFloatingVideoOverlay() => ListenableBuilder(
     listenable: _videoPlayback,

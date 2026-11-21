@@ -7,6 +7,7 @@ import 'package:watchdog/app/shell/command_app_shell.dart';
 import 'package:watchdog/app/shell/shell_keys.dart';
 import 'package:watchdog/app/shell/shell_voice_bridge.dart';
 import 'package:watchdog/design_system/design_system.dart';
+import 'package:watchdog/features/video/ui/pip_shell.dart';
 import 'package:watchdog/main.dart';
 import 'package:watchdog/models/models.dart';
 import 'package:watchdog/models/video_resources.dart';
@@ -15,7 +16,6 @@ import 'package:watchdog/services/theme_controller.dart';
 import 'package:watchdog/services/video_playback_session.dart';
 import 'package:watchdog/state/app_controller.dart';
 import 'package:watchdog/theme/app_palette.dart';
-import 'package:watchdog/widgets/pip_shell.dart';
 
 const VideoResource _kTestVideo = VideoResource(
   id: 'shell-test-cam',
@@ -274,7 +274,7 @@ void main() {
       expect(find.byKey(ShellKeys.guestBanner), findsNothing);
     });
 
-    testWidgets('SystemPip 激活时切换至 PipShell(ShellKeys.pipHost) 并同步控制器状态', (
+    testWidgets('SystemPip 激活时切换至 CommandPipShell(ShellKeys.pipHost) 并同步控制器状态', (
       tester,
     ) async {
       final controller = _ShellFakeController();
@@ -293,7 +293,7 @@ void main() {
       SystemPip.isActive.value = true;
       await tester.pump();
       expect(find.byKey(ShellKeys.pipHost), findsOneWidget);
-      expect(find.byType(PipShell), findsOneWidget);
+      expect(find.byType(CommandPipShell), findsOneWidget);
       expect(find.byKey(ShellKeys.navBar), findsNothing);
       expect(controller.pipStates.last, isTrue);
 
