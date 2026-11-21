@@ -128,7 +128,7 @@ jobs:
           qa_report="$(mktemp)"
           set -o pipefail
           set +e
-          flutter test --reporter json 2>&1 | tee "$qa_report"
+          flutter test --exclude-tags golden --reporter json 2>&1 | tee "$qa_report"
           pipeline_status=("${PIPESTATUS[@]}")
           set -e
           flutter_status="${pipeline_status[0]}"

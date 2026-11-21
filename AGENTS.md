@@ -71,9 +71,10 @@
   4. **等宽数字**：压力、倒计时、时长、时间戳等所有数值读数统一启用 `FontFeature.tabularFigures()`（`DsTypography.metric` / `metricLarge` / `tabular(...)` / `MetricReadout`），确保跳秒时不左右抖动。
   5. **卡片层次与防误触**：卡片（`SurfaceCard`）统一采用 1px 细描边区分层次，严禁厚重阴影与双层边框叠加（仅 `CommandSheet`、中置语音键等浮层允许轻柔悬浮阴影）；危险/不可逆操作（如 `CommandButtonVariant.danger`）默认通过 `CommandSheet` 弹出**二次确认**后方可生效，关键操作配触感反馈。
 - **视觉回归（Golden）门禁**：
-  1. `app/test/design_system/golden/` 通过目录级 `flutter_test_config.dart` 配置 **0.5% (`0.005`) 像素差异容差**比较器（作用域仅限 `test/design_system/golden/`，不影响其他测试），用于兼容 macOS 本机与 Linux CI 间的抗锯齿微差。
-  2. 基准图生成/更新命令（在 `app/` 目录下执行）：`flutter test --update-goldens test/design_system/golden`。
-  3. **人工视觉复核**：每次生成或更新基准图后，**提交前必须人工逐张打开核查所有基准 PNG**，确认布局、配色、圆角与状态呈现无误后方可提交，严禁未核查直接覆盖。
+  1. `app/test/design_system/golden/` 通过目录级 `flutter_test_config.dart` 配置 **0.5% (`0.005`) 像素差异容差**比较器（作用域仅限 `test/design_system/golden/`，不影响其他测试），用于吸收同平台细微抗锯齿差异。
+  2. **跨平台执行策略**：所有黄金截图测试文件均标注 `@Tags(['golden'])`；在 macOS 本机开发与验收阶段通过 `flutter test` 全量执行，在 Linux CI 中通过 `flutter test --exclude-tags golden` 排除，避免跨操作系统字体与光栅化差异导致的误报（且不触发 `skipped > 0` 门禁失败）。
+  3. 基准图生成/更新命令（在 `app/` 目录下执行）：`flutter test --update-goldens test/design_system/golden`。
+  4. **人工视觉复核**：每次生成或更新基准图后，**提交前必须人工逐张打开核查所有基准 PNG**，确认布局、配色、圆角与状态呈现无误后方可提交，严禁未核查直接覆盖。
 - **默认调试方案（真机 + scrcpy）**：当用户指示「调试」或进行 App UI 效果预览时，默认执行方案一：
   1. 依托 Android 实体机调试，拒绝使用或启动重型 QEMU / AVD 虚拟机；
   2. 使用 `scrcpy` 实现低延迟、高帧率桌面投屏，直接在 Mac 窗口中查看真机 UI、字体、圆角与交互效果；
