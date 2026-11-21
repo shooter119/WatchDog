@@ -1181,6 +1181,21 @@ class ApiClient {
     return RouteTrafficInfo.fromJson(Map<String, dynamic>.from(body));
   }
 
+  /// 获取首页「现场地图」高德 JS API 2.0 引导配置与短期安全代理票据。
+  Future<SceneMapBootstrap> fetchSceneMapBootstrap() async {
+    final res = await _client
+        .get(_uri('/api/scene-map/bootstrap'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = _decodeJson(res, fallback: '获取现场地图配置失败');
+    if (res.statusCode != 200) {
+      throw _apiException(res, body: body, fallback: '获取现场地图配置失败');
+    }
+    if (body is! Map) {
+      throw _responseShapeException(res, '现场地图配置响应格式异常');
+    }
+    return SceneMapBootstrap.fromJson(Map<String, dynamic>.from(body));
+  }
+
 
   /// 拉取智能体问答历史（旧→新，供聊天室恢复上下文）
   Future<List<ChatMessage>> fetchChatMessages() async {

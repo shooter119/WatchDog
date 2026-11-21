@@ -41,16 +41,35 @@ class WatchdogCameraPlugin(
     private val methodChannel = MethodChannel(messenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(messenger, EVENT_CHANNEL)
     private val locationChannel = MethodChannel(messenger, LOCATION_CHANNEL)
+    private val locationEventChannel = EventChannel(messenger, LOCATION_EVENT_CHANNEL)
     private val mediaChannel = MethodChannel(messenger, MEDIA_CHANNEL)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private var eventSink: EventChannel.EventSink? = null
+    private var stopLocationWatch: (() -> Unit)? = null
     private var activeView: CameraPreviewView? = null
 
     fun register() {
-        // 队徽资源在原生侧解码，注入 Application 上下文即可，不持有 Activity
+        // 水印相机：队徽资源在原生侧解码，注入 Application 上下文即可，不持有 Activity
         WatermarkOverlay.install(context)
         eventChannel.setStreamHandler(this)
+        locationEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                stopLocationWatch?.invoke()
+                stopLocationWatch = null
+                if (events == null) return
+                stopLocationWatch = LocationHelper.watch(context) { fix ->
+                    mainHandler.post {
+                        events.success(fix.toMap())
+                    }
+                }
+            }
+
+            override fun onCancel(arguments: Any?) {
+                stopLocationWatch?.invoke()
+                stopLocationWatch = null
+            }
+        })
         locationChannel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "hasPermission" -> result.success(LocationHelper.hasPermission(context))
@@ -249,6 +268,9 @@ class WatchdogCameraPlugin(
     }
 
     fun disposePlugin() {
+        stopLocationWatch?.invoke()
+        stopLocationWatch = null
+        locationEventChannel.setStreamHandler(null)
         eventChannel.setStreamHandler(null)
         methodChannel.setMethodCallHandler(null)
         locationChannel.setMethodCallHandler(null)
@@ -501,6 +523,7 @@ class WatchdogCameraPlugin(
         const val EVENT_CHANNEL = "watchdog/camera_events"
         const val VIEW_TYPE = "watchdog/camera_view"
         const val LOCATION_CHANNEL = "watchdog/location"
+        const val LOCATION_EVENT_CHANNEL = "watchdog/location_events"
         const val MEDIA_CHANNEL = "watchdog/media"
         private const val PERMISSION_REQUEST_CODE = 4711
         private const val GALLERY_PERMISSION_REQUEST_CODE = 4712

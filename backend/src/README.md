@@ -13,6 +13,7 @@
     - `POST /api/notes`：火场随手记与战术环节事件
     - `POST /api/chat`：辅助问答「水元素」（流式生成、危化品联网检索、视觉分析）
     - `GET /api/weather/route`：高德路况与目的地天气规划
+    - `GET /api/scene-map/bootstrap` / `GET /api/amap-proxy/:ticket/_AMapService/*`：高德 JS API 2.0 现场卫星地图引导与 `jscode` 安全代理
     - `GET /api/maps` / `GET /api/maps/:unitId/:mapId/*`：重点单位正射影像瓦片服务
     - `GET /ws`：WebSocket 现场警情事件实时广播通道
 - **PostgreSQL 仓储与事务**: [`postgres-store.js`](./postgres-store.js), [`db-postgres.js`](./db-postgres.js)

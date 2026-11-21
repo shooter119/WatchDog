@@ -20,7 +20,13 @@ before(async () => {
   base = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => new Promise((r) => server.close(r)));
+function closeServerNow(srv) {
+  if (!srv) return Promise.resolve();
+  srv.closeAllConnections?.();
+  return new Promise((r) => srv.close(() => r()));
+}
+
+after(() => closeServerNow(server));
 
 test('辖区警情过滤逻辑', () => {
   const opts = {
@@ -167,6 +173,7 @@ test('HTTP GET /api/external-incidents 接口返回与认领状态标记', async
   const mockUrl = `http://127.0.0.1:${port}/mock-orglist`;
 
   t.after(() => {
+    mockUpstreamServer.closeAllConnections?.();
     mockUpstreamServer.close();
     policeApiService._resetCacheForTest();
   });
@@ -440,6 +447,7 @@ test('认领官方警情独立透传 incident_status 且刷新缓存后实时反
   await new Promise((resolve) => mockUpstream.listen(0, '127.0.0.1', resolve));
   const upstreamUrl = `http://127.0.0.1:${mockUpstream.address().port}/orglist`;
   t.after(() => {
+    mockUpstream.closeAllConnections?.();
     mockUpstream.close();
     policeApiService._resetCacheForTest();
   });
@@ -614,6 +622,7 @@ test('querylist 请求体参数与扩展字段映射', async (t) => {
   const originalScope = process.env.POLICE_API_SCOPE_SQUADRON_ID;
   process.env.POLICE_API_SCOPE_SQUADRON_ID = 'test-scope-squadron-id';
   t.after(() => {
+    mockQueryServer.closeAllConnections?.();
     mockQueryServer.close();
     policeApiService._resetCacheForTest();
     if (originalScope !== undefined) {
@@ -868,6 +877,7 @@ test('fetchIncidentHomeInfo 短路保护与 POST /api/incidents/claim-external �
   await new Promise((resolve) => mockHomeServer.listen(0, '127.0.0.1', resolve));
   const port = mockHomeServer.address().port;
   t.after(() => {
+    mockHomeServer.closeAllConnections?.();
     mockHomeServer.close();
     policeApiService._resetCacheForTest();
   });
@@ -1130,6 +1140,7 @@ test('强制刷新限流（10次/分）与 5s 缓存冷却防击穿', async () =
     });
     assert.equal(normalRes.status, 200);
   } finally {
+    mockServer.closeAllConnections?.();
     mockServer.close();
     if (oldUrl) process.env.POLICE_API_QUERYLIST_URL = oldUrl;
     else delete process.env.POLICE_API_QUERYLIST_URL;
@@ -1224,6 +1235,7 @@ test('外部警情出参最小化裁剪与敏感电话姓名脱敏', async () =>
     assert.equal('detachment_id' in reorgTarget, false);
     assert.equal(reorgTarget.alarm_person_phone, '138****5678');
   } finally {
+    mockServer.closeAllConnections?.();
     mockServer.close();
     if (oldUrl) process.env.POLICE_API_QUERYLIST_URL = oldUrl;
     else delete process.env.POLICE_API_QUERYLIST_URL;
@@ -1454,6 +1466,7 @@ test('fetchFromUpstream 遇非辖区超3天旧记录立即停止翻页，避免�
   await new Promise((resolve) => mockServer.listen(0, '127.0.0.1', resolve));
   const mockUrl = `http://127.0.0.1:${mockServer.address().port}/querylist`;
   t.after(() => {
+    mockServer.closeAllConnections?.();
     mockServer.close();
     policeApiService._resetCacheForTest();
   });
@@ -1501,6 +1514,7 @@ test('getExternalIncidents SWR：旧内存缓存与持久化兜底立即返回�
   const mockUrl = `http://127.0.0.1:${mockServer.address().port}/querylist`;
   t.after(() => {
     releaseUpstream();
+    mockServer.closeAllConnections?.();
     mockServer.close();
     policeApiService._resetCacheForTest();
   });

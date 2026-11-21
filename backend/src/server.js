@@ -17,6 +17,7 @@ const { MinuteRateLimiter } = require('./rate-limiter');
 const { nameSuggestions } = require('./name-match');
 const { GENERIC_ASR_TERMS } = require('./org-seed');
 const weather = require('./weather');
+const { createAmapJsService } = require('./amap-js-proxy');
 const policeApiService = require('./police-api-service');
 const {
   createExternalIncidentOrganizer,
@@ -119,11 +120,17 @@ const CFG = {
     warnMin: Number(process.env.WARN_MIN || 10),
     alarmMin: Number(process.env.ALARM_MIN || 5),
   },
-  // 高德 Web 服务：仅用于水印相机的地址与天气，Key 不下发到客户端
+  // 高德 Web 服务（水印相机地址与天气、路况）与 JS API 2.0（现场卫星地图安全代理），Key/Secret 不直接暴露或下发。
   amap: {
     key: process.env.AMAP_KEY || '',
+    jsKey: String(process.env.AMAP_JS_KEY || '').trim(),
+    jsSecret: String(process.env.AMAP_JS_SECRET || '').trim(),
   },
 };
+
+const amapJsService = createAmapJsService({
+  getConfig: () => CFG.amap,
+});
 
 const LLM_ALLOWED_HOSTS = parseAllowedHosts(
   process.env.WATCHDOG_LLM_ALLOWED_HOSTS || 'api.deepseek.com',
@@ -301,6 +308,10 @@ if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER ||
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteFiles.startWorker(error => logger.warn(`key_site_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteAI.startWorker(error => logger.warn(`key_site_ai_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
 }
+// 高德 JS API 2.0 `_AMapService` 代理：WebView 内脚本无法携带自定义会话头，
+// 挂载于全局会话中间件之前，并在路由内部强制校验短期 HMAC 签名票据。
+app.use('/api/amap-proxy', amapJsService.proxyRouter);
+
 app.use(async (req, res, next) => {
   if (req.path === '/api/health' || req.path === '/api/auth/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/apply') return next();
   if (SESSION_AUTH_REQUIRED) {
@@ -1300,6 +1311,9 @@ app.get('/api/route-traffic', async (req, res) => {
     res.status(502).json({ error: '路况与天气服务暂时不可用', code: 'AMAP_UPSTREAM_FAILED' });
   }
 });
+
+// 首页「现场地图」高德 JS API 2.0 引导与短期安全代理票据。
+app.get('/api/scene-map/bootstrap', (req, res) => amapJsService.handleBootstrap(req, res));
 
 const authFailureBuckets = new Map();
 const AUTH_FAILURE_LIMIT = 5;

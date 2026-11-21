@@ -14,6 +14,8 @@ import android.view.WindowManager
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import com.firewatch.watchdog.camera.WatchdogCameraPlugin
+import com.firewatch.watchdog.map.WatchdogMapPlugin
+import com.firewatch.watchdog.map.WatchdogMapViewFactory
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -39,6 +41,10 @@ class MainActivity : FlutterActivity() {
         flutterEngine.platformViewsController.registry.registerViewFactory(
             WatchdogCameraPlugin.VIEW_TYPE,
             camera.PreviewFactory(),
+        )
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            WatchdogMapPlugin.VIEW_TYPE,
+            WatchdogMapViewFactory(flutterEngine.dartExecutor.binaryMessenger),
         )
         cameraPlugin = camera
 

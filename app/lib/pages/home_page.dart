@@ -18,7 +18,7 @@ import 'route_traffic_page.dart';
 import 'tactical_brief_sheet.dart';
 import 'video_resources_page.dart';
 import 'hazmat_page.dart';
-import 'orthomap_page.dart';
+import 'scene_map_page.dart';
 import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
@@ -3612,13 +3612,13 @@ class HomePageState extends State<HomePage> {
             Expanded(
               child: _fieldTool(
                 '现场地图',
-                '正射影像与标绘',
+                '实时定位与卫星图',
                 Icons.map_outlined,
                 () => Navigator.push<void>(
                   context,
                   MaterialPageRoute(
                     builder: (_) =>
-                        OrthomapPage(controller: widget.controller),
+                        SceneMapPage(controller: widget.controller),
                   ),
                 ),
                 keyId: '现场地图',

@@ -135,6 +135,7 @@ class LocationFix {
   final double accuracyMeters;
   final String provider;
   final int ageMs;
+  final double? bearingDegrees;
 
   const LocationFix({
     required this.lat,
@@ -142,6 +143,7 @@ class LocationFix {
     required this.accuracyMeters,
     required this.provider,
     required this.ageMs,
+    this.bearingDegrees,
   });
 
   static LocationFix? fromMap(Object? raw) {
@@ -149,12 +151,16 @@ class LocationFix {
     final lat = (raw['lat'] as num?)?.toDouble();
     final lon = (raw['lon'] as num?)?.toDouble();
     if (lat == null || lon == null) return null;
+    final rawBearing = (raw['bearing'] as num?)?.toDouble();
     return LocationFix(
       lat: lat,
       lon: lon,
       accuracyMeters: (raw['accuracy'] as num?)?.toDouble() ?? -1,
       provider: (raw['provider'] as String?) ?? 'unknown',
       ageMs: (raw['ageMs'] as num?)?.toInt() ?? 0,
+      bearingDegrees: rawBearing != null && rawBearing.isFinite
+          ? rawBearing
+          : null,
     );
   }
 }
@@ -167,6 +173,9 @@ class CameraBridge {
   static const MethodChannel _channel = MethodChannel('watchdog/camera');
   static const MethodChannel _locationChannel = MethodChannel(
     'watchdog/location',
+  );
+  static const EventChannel _locationEvents = EventChannel(
+    'watchdog/location_events',
   );
   static const MethodChannel _mediaChannel = MethodChannel('watchdog/media');
   static const EventChannel _events = EventChannel('watchdog/camera_events');
@@ -406,6 +415,16 @@ class CameraBridge {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 连续定位事件流；进入实时地图页面订阅，取消订阅时原生自动停止硬件定位。
+  static Stream<LocationFix> watchLocation() {
+    if (!isSupported) return const Stream.empty();
+    return _locationEvents
+        .receiveBroadcastStream()
+        .map(LocationFix.fromMap)
+        .where((fix) => fix != null)
+        .cast<LocationFix>();
   }
 }
 
