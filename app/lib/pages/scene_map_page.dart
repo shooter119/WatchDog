@@ -15,13 +15,14 @@ import '../theme/app_widgets.dart';
 
 /// 现场卫星地图图层模式（默认：卫星+路网）。
 enum SceneMapLayerMode {
-  hybrid('hybrid', '卫星+路网'),
-  satellite('satellite', '纯卫星'),
-  standard('standard', '标准图');
+  hybrid('hybrid', '混合', '卫星+路网'),
+  satellite('satellite', '卫星', '纯卫星'),
+  standard('standard', '标准', '标准图');
 
   final String jsValue;
+  final String shortLabel;
   final String label;
-  const SceneMapLayerMode(this.jsValue, this.label);
+  const SceneMapLayerMode(this.jsValue, this.shortLabel, this.label);
 }
 
 /// 地图交互桥接控制器（方便测试观察脚本注入与图层/视角指令下发）。
@@ -111,6 +112,332 @@ class SceneMapGateway {
 String _safeJsonEncode(Object? value) =>
     jsonEncode(value).replaceAll('</', '<\\/');
 
+const String _sharedOverlayCss = '''
+    .wd-my-wrap {
+      position: relative;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #marker-layer .wd-my-wrap {
+      position: absolute;
+      margin-left: -15px;
+      margin-top: -15px;
+    }
+    .wd-my-heading {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 0;
+      height: 0;
+      margin-left: -5px;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-bottom: 9px solid #2563EB;
+      transform-origin: 5px 15px;
+      display: none;
+    }
+    .wd-my-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #2563EB;
+      border: 3px solid #FFFFFF;
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+    }
+    .wd-incident-anchor {
+      position: relative;
+      width: 0;
+      height: 0;
+      overflow: visible;
+      pointer-events: none;
+    }
+    #marker-layer .wd-incident-anchor {
+      position: absolute;
+    }
+    .wd-incident-halo {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 28px;
+      height: 28px;
+      margin-left: -14px;
+      margin-top: -14px;
+      border-radius: 50%;
+      background: rgba(220, 38, 38, 0.22);
+      border: 2px solid rgba(220, 38, 38, 0.92);
+      box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.78);
+    }
+    .wd-incident-core {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 12px;
+      height: 12px;
+      margin-left: -6px;
+      margin-top: -6px;
+      border-radius: 50%;
+      background: #DC2626;
+      border: 2.5px solid #FFFFFF;
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.52);
+    }
+    .wd-incident-bubble {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform: translate(-50%, calc(-100% - 7px));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      pointer-events: none;
+    }
+    .wd-incident-card {
+      width: max-content;
+      max-width: 158px;
+      padding: 5px 9px;
+      border-radius: 10px;
+      background: #DC2626;
+      color: #FFFFFF;
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.42);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.28;
+    }
+    .wd-incident-text {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      white-space: normal;
+      word-break: break-all;
+      text-align: center;
+    }
+    .wd-incident-stem {
+      display: block;
+      margin-top: -2px;
+      line-height: 0;
+      filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.32));
+    }
+    .wd-offscreen-guide {
+      position: absolute;
+      z-index: 140;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(220, 38, 38, 0.96);
+      color: #FFFFFF;
+      border: 2px solid #FFFFFF;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.38);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+      pointer-events: auto;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+    }
+    .wd-offscreen-arrow {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .wd-offscreen-label {
+      line-height: 1.2;
+    }
+''';
+
+const String _sharedPinAndGuideJs = r'''
+      function shortPinLabel(raw, maxChars) {
+        var limit = typeof maxChars === 'number' && maxChars >= 2 ? maxChars : 18;
+        var text = String(raw || '').trim().replace(/\s+/g, ' ');
+        text = text.replace(/^[\s,，、.。;；:：\-–—/|·]+/, '').trim();
+        if (!text) return '事发地点';
+        var steps = [
+          /^[^\s\d,，。、;；:：\-/()（）省市县区]{1,12}?(?:特别行政区|自治区|省)/,
+          /^[^\s\d,，。、;；:：\-/()（）省市县区]{1,12}?(?:自治州|地区|市(?!区)|盟)/,
+          /^[^\s\d,，。、;；:：\-/()（）省县区]{1,12}?(?:自治县|自治旗|县|区|旗)/
+        ];
+        for (var i = 0; i < steps.length; i++) {
+          var m = text.match(steps[i]);
+          if (m) {
+            if (i === 2 && /(?:小区|社区|园区|开发区|景区|港区|校区|库区|营区|厂区|矿区)$/.test(m[0])) continue;
+            var rest = text.slice(m[0].length).replace(/^[\s,，、.。;；:：\-–—\/|·]+/, '').trim();
+            if (rest.length >= 2) {
+              text = rest;
+            }
+          }
+        }
+        if (text.length > limit) {
+          text = text.slice(0, limit - 1) + '…';
+        }
+        return text || '事发地点';
+      }
+
+      function createIncidentDom(title) {
+        var anchor = document.createElement('div');
+        anchor.className = 'wd-incident-anchor';
+
+        var halo = document.createElement('div');
+        halo.className = 'wd-incident-halo';
+
+        var core = document.createElement('div');
+        core.className = 'wd-incident-core';
+
+        var bubble = document.createElement('div');
+        bubble.className = 'wd-incident-bubble';
+
+        var card = document.createElement('div');
+        card.className = 'wd-incident-card';
+        var textSpan = document.createElement('span');
+        textSpan.className = 'wd-incident-text';
+        textSpan.textContent = shortPinLabel(title || '事发地点', 18);
+        card.appendChild(textSpan);
+
+        var stemWrap = document.createElement('div');
+        stemWrap.className = 'wd-incident-stem';
+        stemWrap.innerHTML = '<svg width="18" height="10" viewBox="0 0 18 10" aria-hidden="true"><path d="M1 0 L9 9 L17 0 Z" fill="#DC2626" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round"/><path d="M2.2 0 L15.8 0 L9 7.2 Z" fill="#DC2626"/></svg>';
+
+        bubble.appendChild(card);
+        bubble.appendChild(stemWrap);
+        anchor.appendChild(halo);
+        anchor.appendChild(core);
+        anchor.appendChild(bubble);
+        return anchor;
+      }
+
+      function haversineMeters(lon1, lat1, lon2, lat2) {
+        var rad = Math.PI / 180;
+        var dLat = (lat2 - lat1) * rad;
+        var dLon = (lon2 - lon1) * rad;
+        var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+      }
+
+      function formatDistLabel(meters) {
+        if (typeof meters !== 'number' || !isFinite(meters) || meters < 0) return '';
+        if (meters < 1000) return Math.round(meters) + ' m';
+        return (meters / 1000).toFixed(1) + ' km';
+      }
+
+      function bindOffscreenGuideInteractions(guideEl) {
+        if (!guideEl) return;
+        if (!guideEl._wdReady) {
+          guideEl._wdReady = true;
+          guideEl.innerHTML = '<span class="wd-offscreen-arrow"><svg width="15" height="15" viewBox="0 0 18 18" aria-hidden="true"><path d="M2 3 L16 9 L2 15 L5.6 9 Z" fill="#FFFFFF"/></svg></span><span class="wd-offscreen-label">事发地</span>';
+          guideEl.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
+          guideEl.addEventListener('touchmove', function(e) { e.stopPropagation(); }, { passive: true });
+          guideEl.addEventListener('touchend', function(e) { e.stopPropagation(); }, { passive: true });
+          guideEl.addEventListener('click', function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            if (window.watchdogMap && window.watchdogMap.focusIncident) {
+              window.watchdogMap.focusIncident();
+            }
+            notifyBridge('focusIncidentFromGuide', {});
+          });
+        }
+      }
+
+      function updateOffscreenGuide(guideEl, container, state, toScreenFn, getCenterLonLatFn) {
+        if (!guideEl || !container) return;
+        if (!state || !state.incident) {
+          guideEl.style.display = 'none';
+          return;
+        }
+        var incScreen = toScreenFn(state.incident.lon, state.incident.lat);
+        if (!incScreen || !isFinite(incScreen.x) || !isFinite(incScreen.y)) {
+          guideEl.style.display = 'none';
+          return;
+        }
+        var w = container.clientWidth || window.innerWidth || 360;
+        var h = container.clientHeight || window.innerHeight || 640;
+        var safeLeft = Math.min(14, w * 0.05);
+        var safeTop = Math.min(58, h * 0.16);
+        var safeRight = Math.max(safeLeft + 80, w - 14);
+        var safeBottom = Math.max(safeTop + 60, h - 204);
+
+        var padRightCheck = Math.max(safeLeft + 44, w - 76);
+        if (incScreen.x >= safeLeft && incScreen.x <= padRightCheck &&
+            incScreen.y >= safeTop && incScreen.y <= safeBottom) {
+          guideEl.style.display = 'none';
+          return;
+        }
+
+        bindOffscreenGuideInteractions(guideEl);
+        var cx = (safeLeft + safeRight) / 2;
+        var cy = (safeTop + safeBottom) / 2;
+        var refX = cx;
+        var refY = cy;
+        var myScreen = state.my ? toScreenFn(state.my.lon, state.my.lat) : null;
+        if (myScreen && isFinite(myScreen.x) && isFinite(myScreen.y) &&
+            myScreen.x >= safeLeft && myScreen.x <= safeRight &&
+            myScreen.y >= safeTop && myScreen.y <= safeBottom) {
+          refX = myScreen.x;
+          refY = myScreen.y;
+        }
+
+        var dx = incScreen.x - refX;
+        var dy = incScreen.y - refY;
+        if (Math.hypot(dx, dy) < 1) {
+          dx = 1;
+          dy = 0;
+        }
+
+        var halfW = Math.min(68, (safeRight - safeLeft) * 0.4);
+        var halfH = Math.min(20, (safeBottom - safeTop) * 0.35);
+        var minX = Math.min(refX, safeLeft + halfW);
+        var maxX = Math.max(refX, safeRight - halfW);
+        var minY = Math.min(refY, safeTop + halfH);
+        var maxY = Math.max(refY, safeBottom - halfH);
+
+        var tx = dx > 0 ? (maxX - refX) / dx : (dx < 0 ? (minX - refX) / dx : 1e9);
+        var ty = dy > 0 ? (maxY - refY) / dy : (dy < 0 ? (minY - refY) / dy : 1e9);
+        var t = Math.min(tx, ty);
+        if (!isFinite(t) || t < 0) t = 0;
+        var gx = Math.max(minX, Math.min(maxX, refX + dx * t));
+        var gy = Math.max(minY, Math.min(maxY, refY + dy * t));
+
+        var btnZoneLeft = w - 76 - halfW;
+        if (gx > btnZoneLeft && gy > h - 390) {
+          gx = Math.max(minX, btnZoneLeft);
+        }
+
+        var deg = Math.atan2(dy, dx) * 180 / Math.PI;
+
+        var refLonLat = state.my
+          ? { lon: state.my.lon, lat: state.my.lat }
+          : (getCenterLonLatFn ? getCenterLonLatFn() : null);
+        var distText = '';
+        if (refLonLat && isFinite(refLonLat.lon) && isFinite(refLonLat.lat)) {
+          distText = formatDistLabel(
+            haversineMeters(refLonLat.lon, refLonLat.lat, state.incident.lon, state.incident.lat)
+          );
+        }
+
+        var arrowEl = guideEl.querySelector('.wd-offscreen-arrow');
+        var labelEl = guideEl.querySelector('.wd-offscreen-label');
+        if (arrowEl) {
+          arrowEl.style.transform = 'rotate(' + deg.toFixed(1) + 'deg)';
+        }
+        if (labelEl) {
+          labelEl.textContent = distText ? '事发地 · ' + distText : '事发地';
+        }
+        guideEl.style.left = gx.toFixed(1) + 'px';
+        guideEl.style.top = gy.toFixed(1) + 'px';
+        guideEl.style.display = 'inline-flex';
+      }
+''';
+
 /// 生成现场卫星地图 HTML（当服务端配置 `jsKey` 时走高德 JS API 2.0；未配置 Key 时自动降级内置高德瓦片引擎）。
 @visibleForTesting
 String buildSceneMapHtml({
@@ -144,7 +471,7 @@ window._AMapSecurityConfig = {
       ? '[${initialIncidentGcj.lon.toStringAsFixed(6)}, ${initialIncidentGcj.lat.toStringAsFixed(6)}]'
       : '[116.397428, 39.90923]';
   final initialZoom = (initialMyGcj != null || initialIncidentGcj != null)
-      ? 17
+      ? 16
       : 5;
 
   final myJson = initialMyGcj == null
@@ -178,60 +505,12 @@ window._AMapSecurityConfig = {
       background: #0F172A;
       font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
     }
-    .wd-my-wrap {
-      position: relative;
-      width: 30px;
-      height: 30px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .wd-my-heading {
-      position: absolute;
-      top: 0;
-      left: 50%;
-      width: 0;
-      height: 0;
-      margin-left: -5px;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-bottom: 9px solid #2563EB;
-      transform-origin: 5px 15px;
-      display: none;
-    }
-    .wd-my-dot {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: #2563EB;
-      border: 3px solid #FFFFFF;
-      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
-    }
-    .wd-incident-pin {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 9px;
-      border-radius: 999px;
-      background: #DC2626;
-      color: #FFFFFF;
-      border: 2px solid #FFFFFF;
-      font-size: 12px;
-      font-weight: 700;
-      white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-    }
-    .wd-incident-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #FFFFFF;
-      flex-shrink: 0;
-    }
+$_sharedOverlayCss
   </style>
 </head>
 <body>
   <div id="map-container"></div>
+  <div id="wd-offscreen-guide" class="wd-offscreen-guide" role="button" aria-label="定位事发地点"></div>
   $securityBlock
   <script>
     function notifyBridge(type, data) {
@@ -247,7 +526,7 @@ window._AMapSecurityConfig = {
     };
   </script>
   <script
-    src="https://webapi.amap.com/maps?v=2.0&key=$encodedKey&plugin=AMap.Scale"
+    src="https://webapi.amap.com/maps?v=2.0&key=$encodedKey"
     onerror="window.onAmapScriptError()"
   ></script>
   <script>
@@ -257,12 +536,17 @@ window._AMapSecurityConfig = {
         return;
       }
 
+      var containerEl = document.getElementById('map-container');
+      var guideEl = document.getElementById('wd-offscreen-guide');
+
       var state = {
         layerMode: ${_safeJsonEncode(initialLayer.jsValue)},
         my: $myJson,
         incident: $incidentJson,
         hasCenteredMy: ${initialMyGcj != null ? 'true' : 'false'}
       };
+
+$_sharedPinAndGuideJs
 
       var map = new AMap.Map('map-container', {
         zoom: $initialZoom,
@@ -275,7 +559,6 @@ window._AMapSecurityConfig = {
 
       var satelliteLayer = new AMap.TileLayer.Satellite({ zIndex: 1 });
       var roadNetLayer = new AMap.TileLayer.RoadNet({ zIndex: 2 });
-      map.addControl(new AMap.Scale());
 
       var myMarker = null;
       var myCircle = null;
@@ -296,12 +579,28 @@ window._AMapSecurityConfig = {
         }
       }
 
-      function escapeHtml(text) {
-        return String(text || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;');
+      function refreshGuide() {
+        updateOffscreenGuide(
+          guideEl,
+          containerEl,
+          state,
+          function(lon, lat) {
+            var px = map.lngLatToContainer([lon, lat]);
+            if (!px) return null;
+            return {
+              x: typeof px.getX === 'function' ? px.getX() : px.x,
+              y: typeof px.getY === 'function' ? px.getY() : px.y
+            };
+          },
+          function() {
+            var c = map.getCenter();
+            if (!c) return null;
+            return {
+              lon: typeof c.getLng === 'function' ? c.getLng() : c.lng,
+              lat: typeof c.getLat === 'function' ? c.getLat() : c.lat
+            };
+          }
+        );
       }
 
       function createMyDom(bearing) {
@@ -336,10 +635,14 @@ window._AMapSecurityConfig = {
           linkLine = new AMap.Polyline({
             path: path,
             strokeColor: '#DC2626',
-            strokeWeight: 3,
-            strokeOpacity: 0.85,
+            strokeWeight: 5,
+            strokeOpacity: 0.92,
             strokeStyle: 'dashed',
             strokeDasharray: [10, 6],
+            isOutline: true,
+            outlineColor: '#FFFFFF',
+            borderWeight: 1.5,
+            showDir: true,
             zIndex: 50
           });
           linkLine.setMap(map);
@@ -393,6 +696,7 @@ window._AMapSecurityConfig = {
           }
         }
         syncLinkLine();
+        refreshGuide();
       }
 
       function renderIncident() {
@@ -402,34 +706,41 @@ window._AMapSecurityConfig = {
             incidentMarker = null;
           }
           syncLinkLine();
+          refreshGuide();
           return;
         }
         var pos = [state.incident.lon, state.incident.lat];
-        var label = escapeHtml(state.incident.title || '事发地点');
-        var html = '<div class="wd-incident-pin"><span class="wd-incident-dot"></span><span>' + label + '</span></div>';
+        var dom = createIncidentDom(state.incident.title || '事发地点');
         if (!incidentMarker) {
           incidentMarker = new AMap.Marker({
             position: pos,
-            content: html,
-            anchor: 'bottom-center',
+            content: dom,
+            anchor: 'top-left',
+            offset: new AMap.Pixel(0, 0),
             zIndex: 110
           });
           incidentMarker.setMap(map);
         } else {
           incidentMarker.setPosition(pos);
-          incidentMarker.setContent(html);
+          incidentMarker.setContent(dom);
         }
         syncLinkLine();
+        refreshGuide();
       }
 
       applyLayerMode(state.layerMode);
       if (state.my) renderMy(false);
       if (state.incident) renderIncident();
+      refreshGuide();
 
       map.on('dragstart', function() {
         notifyBridge('userDragged', {});
       });
+      map.on('mapmove', refreshGuide);
+      map.on('zoomchange', refreshGuide);
+      map.on('resize', refreshGuide);
       map.on('complete', function() {
+        refreshGuide();
         notifyBridge('mapReady', {});
       });
 
@@ -491,8 +802,8 @@ String _buildRasterFallbackMapHtml({
   final initialLat = initialMyGcj?.lat ?? initialIncidentGcj?.lat ?? 39.90923;
   final initialLon = initialMyGcj?.lon ?? initialIncidentGcj?.lon ?? 116.397428;
   final initialZoom = (initialMyGcj != null || initialIncidentGcj != null)
-      ? 17
-      : 5;
+      ? 16.4
+      : 5.0;
 
   final myJson = initialMyGcj == null
       ? 'null'
@@ -536,89 +847,19 @@ String _buildRasterFallbackMapHtml({
       pointer-events: none;
       overflow: hidden;
     }
+    #tile-layer { z-index: 1; }
+    #overlay-svg { z-index: 10; }
+    #marker-layer { z-index: 20; }
     .wd-tile {
       position: absolute;
       image-rendering: auto;
       pointer-events: none;
       border: 0;
     }
-    #wd-scale-wrap {
-      position: absolute;
-      left: 12px;
-      top: 76px;
-      z-index: 200;
-      pointer-events: none;
-      display: inline-flex;
-      flex-direction: column;
-      align-items: flex-start;
-      padding: 4px 8px;
-      border-radius: 8px;
-      background: rgba(15, 23, 42, 0.72);
-      color: #F8FAFC;
-      font-size: 11px;
-      font-weight: 700;
+    .wd-tile-sat {
+      filter: contrast(1.06) saturate(1.05);
     }
-    #wd-scale-line {
-      height: 5px;
-      margin-top: 2px;
-      border: 1.5px solid #F8FAFC;
-      border-top: 0;
-      box-sizing: border-box;
-    }
-    .wd-my-wrap {
-      position: absolute;
-      width: 30px;
-      height: 30px;
-      margin-left: -15px;
-      margin-top: -15px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .wd-my-heading {
-      position: absolute;
-      top: 0;
-      left: 50%;
-      width: 0;
-      height: 0;
-      margin-left: -5px;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-bottom: 9px solid #2563EB;
-      transform-origin: 5px 15px;
-      display: none;
-    }
-    .wd-my-dot {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: #2563EB;
-      border: 3px solid #FFFFFF;
-      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
-    }
-    .wd-incident-pin {
-      position: absolute;
-      transform: translate(-50%, -100%);
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 9px;
-      border-radius: 999px;
-      background: #DC2626;
-      color: #FFFFFF;
-      border: 2px solid #FFFFFF;
-      font-size: 12px;
-      font-weight: 700;
-      white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-    }
-    .wd-incident-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #FFFFFF;
-      flex-shrink: 0;
-    }
+$_sharedOverlayCss
   </style>
 </head>
 <body>
@@ -626,11 +867,8 @@ String _buildRasterFallbackMapHtml({
     <div id="tile-layer"></div>
     <svg id="overlay-svg"></svg>
     <div id="marker-layer"></div>
-    <div id="wd-scale-wrap">
-      <span id="wd-scale-label">100 m</span>
-      <div id="wd-scale-line" style="width: 64px;"></div>
-    </div>
   </div>
+  <div id="wd-offscreen-guide" class="wd-offscreen-guide" role="button" aria-label="定位事发地点"></div>
   <script>
     function notifyBridge(type, data) {
       try {
@@ -645,8 +883,11 @@ String _buildRasterFallbackMapHtml({
       var tileLayer = document.getElementById('tile-layer');
       var overlaySvg = document.getElementById('overlay-svg');
       var markerLayer = document.getElementById('marker-layer');
-      var scaleLabel = document.getElementById('wd-scale-label');
-      var scaleLine = document.getElementById('wd-scale-line');
+      var guideEl = document.getElementById('wd-offscreen-guide');
+
+      var dpr = Math.min(3.2, Math.max(1, window.devicePixelRatio || 1));
+      var retinaOffset = Math.log(dpr) / Math.LN2;
+      var maxZoom = dpr >= 2 ? 17.0 : 18.0;
 
       var state = {
         layerMode: ${_safeJsonEncode(initialLayer.jsValue)},
@@ -658,9 +899,11 @@ String _buildRasterFallbackMapHtml({
         hasCenteredMy: ${initialMyGcj != null ? 'true' : 'false'}
       };
 
+$_sharedPinAndGuideJs
+
       var tileCache = Object.create(null);
       var tileOrder = [];
-      var maxCacheSize = 140;
+      var maxCacheSize = 320;
       var renderScheduled = false;
 
       function clampLat(lat) {
@@ -714,7 +957,7 @@ String _buildRasterFallbackMapHtml({
         var img = tileCache[key];
         if (!img) {
           img = document.createElement('img');
-          img.className = 'wd-tile';
+          img.className = kind === 'sat' ? 'wd-tile wd-tile-sat' : 'wd-tile';
           img.decoding = 'async';
           img.referrerPolicy = 'no-referrer';
           img.draggable = false;
@@ -737,9 +980,8 @@ String _buildRasterFallbackMapHtml({
       function renderTiles() {
         var w = container.clientWidth || 360;
         var h = container.clientHeight || 640;
-        var tz = Math.max(3, Math.min(18, Math.round(state.zoom)));
+        var tz = Math.max(3, Math.min(18, Math.round(state.zoom + retinaOffset)));
         var factor = Math.pow(2, state.zoom - tz);
-        var tilePx = 256 * factor;
         var maxIndex = Math.pow(2, tz);
         var c = lonLatToWorld(state.centerLon, state.centerLat, tz);
 
@@ -748,10 +990,10 @@ String _buildRasterFallbackMapHtml({
         var topWorld = c.y - (h / 2) / factor;
         var bottomWorld = c.y + (h / 2) / factor;
 
-        var minTx = Math.floor(leftWorld / 256) - 1;
-        var maxTx = Math.floor(rightWorld / 256) + 1;
-        var minTy = Math.max(0, Math.floor(topWorld / 256) - 1);
-        var maxTy = Math.min(maxIndex - 1, Math.floor(bottomWorld / 256) + 1);
+        var minTx = Math.floor(leftWorld / 256);
+        var maxTx = Math.floor(rightWorld / 256);
+        var minTy = Math.max(0, Math.floor(topWorld / 256));
+        var maxTy = Math.min(maxIndex - 1, Math.floor(bottomWorld / 256));
 
         var kinds = state.layerMode === 'hybrid'
           ? ['sat', 'road']
@@ -812,23 +1054,37 @@ String _buildRasterFallbackMapHtml({
           svgHtml += '<circle cx="' + myScreen.x.toFixed(1) + '" cy="' + myScreen.y.toFixed(1) + '" r="' + radiusPx.toFixed(1) + '" fill="rgba(37,99,235,0.14)" stroke="rgba(37,99,235,0.45)" stroke-width="1"/>';
         }
         if (myScreen && incScreen) {
-          svgHtml += '<line x1="' + myScreen.x.toFixed(1) + '" y1="' + myScreen.y.toFixed(1) + '" x2="' + incScreen.x.toFixed(1) + '" y2="' + incScreen.y.toFixed(1) + '" stroke="#DC2626" stroke-width="3" stroke-opacity="0.88" stroke-dasharray="10,6" stroke-linecap="round"/>';
+          var dx = incScreen.x - myScreen.x;
+          var dy = incScreen.y - myScreen.y;
+          var segLen = Math.hypot(dx, dy);
+          if (segLen > 12) {
+            var trimEnd = segLen > 34 ? 15 : 0;
+            var ux = dx / segLen;
+            var uy = dy / segLen;
+            var drawLen = Math.max(0, Math.min(segLen - trimEnd, 2400));
+            var ex = myScreen.x + ux * drawLen;
+            var ey = myScreen.y + uy * drawLen;
+            svgHtml += '<defs><marker id="wd-dest-arrow" viewBox="0 0 12 12" refX="9" refY="6" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M1 1.5 L10.5 6 L1 10.5 L3.2 6 Z" fill="#DC2626" stroke="#FFFFFF" stroke-width="1.2" stroke-linejoin="round"/></marker></defs>';
+            svgHtml += '<line x1="' + myScreen.x.toFixed(1) + '" y1="' + myScreen.y.toFixed(1) + '" x2="' + ex.toFixed(1) + '" y2="' + ey.toFixed(1) + '" stroke="#FFFFFF" stroke-width="6" stroke-opacity="0.78" stroke-dasharray="10,7" stroke-linecap="round"/>';
+            var markerAttr = drawLen >= segLen - trimEnd - 0.5 ? ' marker-end="url(#wd-dest-arrow)"' : '';
+            svgHtml += '<line x1="' + myScreen.x.toFixed(1) + '" y1="' + myScreen.y.toFixed(1) + '" x2="' + ex.toFixed(1) + '" y2="' + ey.toFixed(1) + '" stroke="#DC2626" stroke-width="3.5" stroke-opacity="0.96" stroke-dasharray="10,7" stroke-linecap="round"' + markerAttr + '/>';
+            if (segLen > 120) {
+              var chevronDist = segLen <= 320 ? segLen * 0.52 : Math.min(segLen * 0.45, 115);
+              var midX = myScreen.x + ux * chevronDist;
+              var midY = myScreen.y + uy * chevronDist;
+              var ang = Math.atan2(dy, dx) * 180 / Math.PI;
+              svgHtml += '<g transform="translate(' + midX.toFixed(1) + ' ' + midY.toFixed(1) + ') rotate(' + ang.toFixed(1) + ')"><path d="M-8,-6.5 L9,0 L-8,6.5 L-3.8,0 Z" fill="#DC2626" stroke="#FFFFFF" stroke-width="1.8" stroke-linejoin="round"/></g>';
+            }
+          }
         }
         overlaySvg.innerHTML = svgHtml;
 
         markerLayer.innerHTML = '';
         if (incScreen) {
-          var incEl = document.createElement('div');
-          incEl.className = 'wd-incident-pin';
+          var incEl = createIncidentDom((state.incident && state.incident.title) || '事发地点');
           incEl.style.left = incScreen.x.toFixed(1) + 'px';
           incEl.style.top = incScreen.y.toFixed(1) + 'px';
           incEl.style.zIndex = '110';
-          var incDot = document.createElement('span');
-          incDot.className = 'wd-incident-dot';
-          var incTxt = document.createElement('span');
-          incTxt.textContent = (state.incident && state.incident.title) || '事发地点';
-          incEl.appendChild(incDot);
-          incEl.appendChild(incTxt);
           markerLayer.appendChild(incEl);
         }
         if (myScreen) {
@@ -850,18 +1106,13 @@ String _buildRasterFallbackMapHtml({
           markerLayer.appendChild(myEl);
         }
 
-        var steps = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000];
-        var chosen = steps[0];
-        var pxWidth = 60;
-        for (var i = 0; i < steps.length; i++) {
-          var candidatePx = mpp > 0 ? (steps[i] / mpp) : 60;
-          chosen = steps[i];
-          pxWidth = candidatePx;
-          if (candidatePx >= 52) break;
-        }
-        pxWidth = Math.max(36, Math.min(120, Math.round(pxWidth)));
-        scaleLabel.textContent = chosen >= 1000 ? (chosen / 1000) + ' km' : chosen + ' m';
-        scaleLine.style.width = pxWidth + 'px';
+        updateOffscreenGuide(
+          guideEl,
+          container,
+          state,
+          toScreen,
+          function() { return { lon: state.centerLon, lat: state.centerLat }; }
+        );
       }
 
       function renderNow() {
@@ -948,7 +1199,7 @@ String _buildRasterFallbackMapHtml({
           } else {
             panByPixels(midX - lastPinchMidX, midY - lastPinchMidY);
             var deltaZoom = Math.log(dist / pinchStartDist) / Math.LN2;
-            state.zoom = Math.max(3, Math.min(18, pinchStartZoom + deltaZoom));
+            state.zoom = Math.max(3, Math.min(maxZoom, pinchStartZoom + deltaZoom));
           }
           lastPinchMidX = midX;
           lastPinchMidY = midY;
@@ -964,7 +1215,7 @@ String _buildRasterFallbackMapHtml({
             Math.abs(lastTouchX - lastTapX) < 32 &&
             Math.abs(lastTouchY - lastTapY) < 32
           ) {
-            state.zoom = Math.min(18, Math.round(state.zoom) + 1);
+            state.zoom = Math.min(maxZoom, state.zoom + 0.8);
             scheduleRender();
             lastTapAt = 0;
           } else {
@@ -999,7 +1250,7 @@ String _buildRasterFallbackMapHtml({
             state.hasCenteredMy = true;
             state.centerLon = lon;
             state.centerLat = lat;
-            if (state.zoom < 15) state.zoom = 17;
+            if (state.zoom < 15) state.zoom = 16.4;
           }
           scheduleRender();
         },
@@ -1011,20 +1262,20 @@ String _buildRasterFallbackMapHtml({
           if (!state.my) return;
           state.centerLon = state.my.lon;
           state.centerLat = state.my.lat;
-          if (state.zoom < 16) state.zoom = 17;
+          if (state.zoom < 15.8) state.zoom = 16.4;
           scheduleRender();
         },
         focusIncident: function() {
           if (!state.incident) return;
           state.centerLon = state.incident.lon;
           state.centerLat = state.incident.lat;
-          if (state.zoom < 15) state.zoom = 16;
+          if (state.zoom < 15.5) state.zoom = 16.2;
           scheduleRender();
         },
         fitBoth: function() {
           if (state.my && state.incident) {
             var w = Math.max(120, (container.clientWidth || 360) - 120);
-            var h = Math.max(120, (container.clientHeight || 640) - 320);
+            var h = Math.max(120, (container.clientHeight || 640) - 340);
             var bestZoom = 5;
             for (var z = 17; z >= 3; z--) {
               var p1 = lonLatToWorld(state.my.lon, state.my.lat, z);
@@ -1036,7 +1287,7 @@ String _buildRasterFallbackMapHtml({
             }
             var w1 = lonLatToWorld(state.my.lon, state.my.lat, bestZoom);
             var w2 = lonLatToWorld(state.incident.lon, state.incident.lat, bestZoom);
-            var mid = worldToLonLat((w1.x + w2.x) / 2, (w1.y + w2.y) / 2, bestZoom);
+            var mid = worldToLonLat((w1.x + w2.x) / 2, (w1.y + w2.y) / 2 + 52, bestZoom);
             state.zoom = bestZoom;
             state.centerLon = mid.lon;
             state.centerLat = mid.lat;
@@ -1429,14 +1680,17 @@ class _SceneMapPageState extends State<SceneMapPage>
     }
   }
 
+  String _incidentPinTitle() {
+    final raw = (_incidentDisplayLocation ?? '').trim();
+    if (raw.isEmpty) return '事发地点';
+    final shortened = ChinaCoord.shortenPinLabel(raw);
+    return shortened.isNotEmpty ? shortened : raw;
+  }
+
   void _pushIncidentToMap() {
     final gcj = _incidentGcj;
     if (!_htmlLoaded || gcj == null) return;
-    final title = _safeJsonEncode(
-      (_incidentDisplayLocation ?? '').trim().isNotEmpty
-          ? _incidentDisplayLocation!.trim()
-          : '事发地点',
-    );
+    final title = _safeJsonEncode(_incidentPinTitle());
     unawaited(
       _surfaceController.evalJs(
         'window.watchdogMap && window.watchdogMap.updateIncident(${gcj.lon}, ${gcj.lat}, $title);',
@@ -1475,9 +1729,7 @@ class _SceneMapPageState extends State<SceneMapPage>
           : (
               lat: _incidentGcj!.lat,
               lon: _incidentGcj!.lon,
-              title: (_incidentDisplayLocation ?? '').trim().isNotEmpty
-                  ? _incidentDisplayLocation!.trim()
-                  : '事发地点',
+              title: _incidentPinTitle(),
             ),
     );
     _htmlLoaded = true;
@@ -1604,7 +1856,7 @@ class _SceneMapPageState extends State<SceneMapPage>
 
   void _handleBridgeEvent(String type, Map<String, dynamic> data) {
     if (!mounted) return;
-    if (type == 'userDragged') {
+    if (type == 'userDragged' || type == 'focusIncidentFromGuide') {
       if (_followMe) setState(() => _followMe = false);
     } else if (type == 'scriptError' || type == 'loadError') {
       final msg = data['message']?.toString().trim();
@@ -1649,6 +1901,13 @@ class _SceneMapPageState extends State<SceneMapPage>
     return ChinaCoord.distanceMeters(me.lat, me.lon, dest.lat, dest.lon);
   }
 
+  double? get _bearingToIncidentDegrees {
+    final me = _myGcj;
+    final dest = _incidentGcj;
+    if (me == null || dest == null) return null;
+    return ChinaCoord.bearingDegrees(me.lat, me.lon, dest.lat, dest.lon);
+  }
+
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
@@ -1674,7 +1933,7 @@ class _SceneMapPageState extends State<SceneMapPage>
             Positioned(
               left: AppSpacing.s3,
               right: AppSpacing.s3,
-              top: AppSpacing.s3,
+              top: AppSpacing.s2,
               child: _buildTopOverlay(),
             ),
             Positioned(
@@ -1815,19 +2074,16 @@ class _SceneMapPageState extends State<SceneMapPage>
       children: [
         if (mapReadyForLayers)
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: Alignment.centerRight,
             child: AppCard(
-              radius: AppRadius.md,
-              padding: const EdgeInsets.all(AppSpacing.s1),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final mode in SceneMapLayerMode.values)
-                      _layerChip(mode),
-                  ],
-                ),
+              radius: AppRadius.pill,
+              padding: const EdgeInsets.all(2.5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final mode in SceneMapLayerMode.values)
+                    _layerChip(mode),
+                ],
               ),
             ),
           ),
@@ -1850,32 +2106,23 @@ class _SceneMapPageState extends State<SceneMapPage>
 
   Widget _layerChip(SceneMapLayerMode mode) {
     final selected = _layerMode == mode;
-    return Padding(
-      padding: const EdgeInsets.only(right: AppSpacing.s1),
+    return Tooltip(
+      message: mode.label,
       child: Material(
         color: selected ? AppColors.actionPrimary : Colors.transparent,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
         child: InkWell(
           key: Key('scene-map-layer-${mode.jsValue}'),
-          borderRadius: BorderRadius.circular(AppRadius.sm),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
           onTap: () => _onLayerChanged(mode),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.s3,
-                vertical: AppSpacing.s2,
-              ),
-              child: Center(
-                child: Text(
-                  mode.label,
-                  style: AppTextStyles.label.copyWith(
-                    color: selected
-                        ? AppColors.onPrimary
-                        : AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            child: Text(
+              mode.shortLabel,
+              style: AppTextStyles.caption.copyWith(
+                height: 1.15,
+                color: selected ? AppColors.onPrimary : AppColors.textSecondary,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
               ),
             ),
           ),
@@ -1989,6 +2236,12 @@ class _SceneMapPageState extends State<SceneMapPage>
         ? '±${fix.accuracyMeters.toStringAsFixed(0)} m'
         : null;
     final distanceMeters = _distanceToIncidentMeters;
+    final bearingDegrees = _bearingToIncidentDegrees;
+    final incidentSubtitle = distanceMeters == null
+        ? null
+        : (bearingDegrees == null
+              ? '直线距离 ${ChinaCoord.formatDistance(distanceMeters)}'
+              : '${ChinaCoord.cardinalDirection(bearingDegrees)} · 直线距离 ${ChinaCoord.formatDistance(distanceMeters)}');
     final incidentName = widget.controller.currentIncident?.displayName ?? '';
 
     return AppCard(
@@ -2066,36 +2319,54 @@ class _SceneMapPageState extends State<SceneMapPage>
             const SizedBox(height: AppSpacing.s2),
             Row(
               children: [
-                Icon(
-                  Icons.local_fire_department_rounded,
-                  size: 18,
-                  color: AppColors.alarm,
-                ),
-                const SizedBox(width: AppSpacing.s2),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _incidentDisplayLocation ?? incidentName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.label.copyWith(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (distanceMeters != null)
-                        Text(
-                          '直线距离 ${ChinaCoord.formatDistance(distanceMeters)}',
-                          style: AppTextStyles.caption.copyWith(
-                            color: AppColors.alarmText,
-                            fontWeight: FontWeight.w700,
-                            fontFeatures: const [FontFeature.tabularFigures()],
+                  child: InkWell(
+                    key: const Key('scene-map-telemetry-incident'),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    onTap: _incidentGcj != null ? _focusIncident : null,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.local_fire_department_rounded,
+                            size: 18,
+                            color: AppColors.alarm,
                           ),
-                        ),
-                    ],
+                          const SizedBox(width: AppSpacing.s2),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _incidentDisplayLocation ?? incidentName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.label.copyWith(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (incidentSubtitle != null)
+                                  Text(
+                                    incidentSubtitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.alarmText,
+                                      fontWeight: FontWeight.w700,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
                 if (_incidentGcj != null) ...[

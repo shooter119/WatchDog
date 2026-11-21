@@ -12,6 +12,19 @@ class ChinaCoord {
   static const double _ee = 0.00669342162296594323; // 第一偏心率平方
   static const double _earthRadiusM = 6371000.0;
 
+  static final RegExp _provincePrefixRe = RegExp(
+    r'^[^\s\d,，。、;；:：\-/()（）省市县区]{1,12}?(?:特别行政区|自治区|省)',
+  );
+  static final RegExp _cityPrefixRe = RegExp(
+    r'^[^\s\d,，。、;；:：\-/()（）省市县区]{1,12}?(?:自治州|地区|市(?!区)|盟)',
+  );
+  static final RegExp _countyPrefixRe = RegExp(
+    r'^[^\s\d,，。、;；:：\-/()（）省县区]{1,12}?(?:自治县|自治旗|县|(?<![小社园发景港校库营厂矿])区|旗)',
+  );
+  static final RegExp _leadingTrimPunctRe = RegExp(
+    r'^[\s,，、.。;；:：\-–—/|·]+',
+  );
+
   /// 判断坐标是否大致处于中国陆地/近海范围内；境外不做偏移。
   static bool isOutOfChina(double lat, double lon) {
     if (!lat.isFinite || !lon.isFinite) return true;
@@ -62,6 +75,83 @@ class ChinaCoord {
     }
     final km = meters / 1000.0;
     return '${km.toStringAsFixed(1)} km';
+  }
+
+  /// 计算从 `(lat1, lon1)` 到 `(lat2, lon2)` 的球面初始方位角，归一化返回 `[0, 360)` 度。
+  ///
+  /// 正北为 `0°`、正东 `90°`、正南 `180°`、正西 `270°`；任一坐标非有限值或两点重合时返回 `0.0`。
+  static double bearingDegrees(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    if (!lat1.isFinite || !lon1.isFinite || !lat2.isFinite || !lon2.isFinite) {
+      return 0.0;
+    }
+    if ((lat2 - lat1).abs() < 1e-9 && (lon2 - lon1).abs() < 1e-9) {
+      return 0.0;
+    }
+    final phi1 = _degToRad(lat1);
+    final phi2 = _degToRad(lat2);
+    final dLambda = _degToRad(lon2 - lon1);
+    final y = math.sin(dLambda) * math.cos(phi2);
+    final x =
+        math.cos(phi1) * math.sin(phi2) -
+        math.sin(phi1) * math.cos(phi2) * math.cos(dLambda);
+    var deg = math.atan2(y, x) * 180.0 / _pi;
+    deg = ((deg % 360.0) + 360.0) % 360.0;
+    if (!deg.isFinite || deg >= 360.0 || deg == 0.0) return 0.0;
+    return deg;
+  }
+
+  /// 将方位角归一化到 `[0, 360)` 并按每 45° 扇区映射为 8 方位中文名称。
+  static String cardinalDirection(double bearingDeg) {
+    if (!bearingDeg.isFinite) return '正北';
+    const directions = [
+      '正北',
+      '东北',
+      '正东',
+      '东南',
+      '正南',
+      '西南',
+      '正西',
+      '西北',
+    ];
+    var normalized = ((bearingDeg % 360.0) + 360.0) % 360.0;
+    if (normalized >= 360.0) normalized = 0.0;
+    final index = ((normalized + 22.5) ~/ 45.0) % 8;
+    return directions[index];
+  }
+
+  /// 生成地图气泡紧凑短标签：折叠空白、尝试剥离前置省市区县层级并按上限截断。
+  ///
+  /// 示例：`'示例省示例市示例县示范路88号'` → `'示范路88号'`。
+  static String shortenPinLabel(String raw, {int maxChars = 18}) {
+    var text = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+    text = text.replaceFirst(_leadingTrimPunctRe, '').trim();
+    if (text.isEmpty || maxChars <= 0) return '';
+
+    for (final prefixRe in [
+      _provincePrefixRe,
+      _cityPrefixRe,
+      _countyPrefixRe,
+    ]) {
+      final match = prefixRe.firstMatch(text);
+      if (match != null) {
+        final rest = text
+            .substring(match.end)
+            .replaceFirst(_leadingTrimPunctRe, '')
+            .trim();
+        if (rest.length >= 2) {
+          text = rest;
+        }
+      }
+    }
+
+    if (text.length <= maxChars) return text;
+    if (maxChars == 1) return text.substring(0, 1);
+    return '${text.substring(0, maxChars - 1)}…';
   }
 
   static double _degToRad(double deg) => deg * _pi / 180.0;

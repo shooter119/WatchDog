@@ -65,6 +65,42 @@ void main() {
       expect(ChinaCoord.formatDistance(1850), '1.9 km');
       expect(ChinaCoord.formatDistance(-1), '--');
     });
+
+    test('bearingDegrees、cardinalDirection 与 shortenPinLabel 计算准确且安全', () {
+      expect(ChinaCoord.bearingDegrees(30.0, 120.0, 31.0, 120.0), closeTo(0.0, 0.1));
+      expect(ChinaCoord.bearingDegrees(0.0, 120.0, 0.0, 121.0), closeTo(90.0, 0.1));
+      expect(ChinaCoord.bearingDegrees(30.0, 120.0, 29.0, 120.0), closeTo(180.0, 0.1));
+      expect(ChinaCoord.bearingDegrees(0.0, 120.0, 0.0, 119.0), closeTo(270.0, 0.1));
+      expect(ChinaCoord.bearingDegrees(30.0, 120.0, 30.0, 120.0), 0.0);
+      expect(ChinaCoord.bearingDegrees(double.nan, 120.0, 30.0, 120.0), 0.0);
+
+      expect(ChinaCoord.cardinalDirection(0), '正北');
+      expect(ChinaCoord.cardinalDirection(350), '正北');
+      expect(ChinaCoord.cardinalDirection(45), '东北');
+      expect(ChinaCoord.cardinalDirection(90), '正东');
+      expect(ChinaCoord.cardinalDirection(135), '东南');
+      expect(ChinaCoord.cardinalDirection(180), '正南');
+      expect(ChinaCoord.cardinalDirection(225), '西南');
+      expect(ChinaCoord.cardinalDirection(270), '正西');
+      expect(ChinaCoord.cardinalDirection(315), '西北');
+      expect(ChinaCoord.cardinalDirection(double.infinity), '正北');
+
+      expect(
+        ChinaCoord.shortenPinLabel('  示例省示例市示例县示范大道88号  '),
+        '示范大道88号',
+      );
+      expect(ChinaCoord.shortenPinLabel('示例县'), '示例县');
+      expect(ChinaCoord.shortenPinLabel('示例小区3栋'), '示例小区3栋');
+      expect(ChinaCoord.shortenPinLabel('示例县示范开发区示范路25号'), '示范开发区示范路25号');
+      expect(
+        ChinaCoord.shortenPinLabel(
+          '示范乡镇工业园区一二三四五六七八九十路999号',
+          maxChars: 12,
+        ),
+        '示范乡镇工业园区一二三…',
+      );
+      expect(ChinaCoord.shortenPinLabel('   '), '');
+    });
   });
 
   group('SceneMapBootstrap 与 HTML 生成', () {
@@ -84,7 +120,7 @@ void main() {
       );
     });
 
-    test('buildSceneMapHtml 注入 _AMapSecurityConfig、默认卫星+路网并防闭合脚本标签', () {
+    test('buildSceneMapHtml 注入 _AMapSecurityConfig、靶心箭头与屏外指引并防闭合脚本标签', () {
       final html = buildSceneMapHtml(
         jsKey: 'demo-key&1',
         serviceHost: 'https://api.example.test/api/amap-proxy/t/_AMapService',
@@ -107,18 +143,35 @@ void main() {
       expect(html, contains('new AMap.TileLayer.Satellite'));
       expect(html, contains('new AMap.TileLayer.RoadNet'));
       expect(html, contains('"hybrid"'));
+      expect(html, contains('wd-incident-halo'));
+      expect(html, contains('wd-incident-core'));
+      expect(html, contains('wd-incident-stem'));
+      expect(html, contains('wd-offscreen-guide'));
+      expect(html, contains('focusIncidentFromGuide'));
+      expect(html, contains('showDir: true'));
+      expect(html, isNot(contains('AMap.Scale')));
       expect(html, isNot(contains('示例镇</script>')));
 
-      // 无 JS Key 时自动降级内置高德瓦片滑块地图引擎
+      // 无 JS Key 时自动降级内置高德瓦片滑块地图引擎（含 HiDPI 视网膜分级、靶心箭头与屏外指引）
       final fallbackHtml = buildSceneMapHtml(
         jsKey: '',
         initialLayer: SceneMapLayerMode.hybrid,
         initialMyGcj: (lat: 29.501, lon: 119.302, accuracy: 12, bearing: 45),
+        initialIncidentGcj: (lat: 29.512, lon: 119.315, title: '示例省示例市示例县示范路88号'),
       );
       expect(fallbackHtml, contains('appmaptile?style=6'));
       expect(fallbackHtml, contains('appmaptile?style=8'));
       expect(fallbackHtml, contains('webrd0'));
+      expect(fallbackHtml, contains('retinaOffset'));
       expect(fallbackHtml, contains('window.watchdogMap'));
+      expect(fallbackHtml, contains('#overlay-svg { z-index: 10; }'));
+      expect(fallbackHtml, contains('wd-incident-halo'));
+      expect(fallbackHtml, contains('wd-incident-core'));
+      expect(fallbackHtml, contains('wd-incident-stem'));
+      expect(fallbackHtml, contains('wd-dest-arrow'));
+      expect(fallbackHtml, contains('wd-offscreen-guide'));
+      expect(fallbackHtml, contains('focusIncidentFromGuide'));
+      expect(fallbackHtml, isNot(contains('wd-scale-wrap')));
       expect(fallbackHtml, isNot(contains('webapi.amap.com/maps?v=2.0')));
     });
   });
@@ -231,7 +284,8 @@ void main() {
       expect(find.text('±15 m'), findsOneWidget);
       expect(find.textContaining('WGS84 29.500000, 119.300000'), findsOneWidget);
       expect(find.text('示例省示例市示例县示例镇人民路88号'), findsOneWidget);
-      expect(find.textContaining('直线距离'), findsOneWidget);
+      expect(find.textContaining(' · 直线距离 '), findsOneWidget);
+      expect(capturedSurface?.lastLoadedHtml, contains('示例镇人民路88号'));
       expect(regeoCalls, 1);
 
       // 2. 切换图层：「纯卫星」与「标准图」
@@ -267,7 +321,7 @@ void main() {
       expect(find.text('示例省示例市示例县示范大道99号'), findsOneWidget);
       expect(regeoCalls, 2);
 
-      // 4. 用户拖拽地图关闭自动跟随；点击视角按钮
+      // 4. 用户拖拽或从边缘指引跳转关闭自动跟随；点击视角按钮及底部事发地卡片
       capturedBridge?.call('userDragged', {});
       await tester.pump();
       await tester.tap(find.byKey(const Key('scene-map-focus-incident')));
@@ -286,6 +340,33 @@ void main() {
       expect(
         capturedSurface!.evaluatedScripts.last,
         contains('focusMyLocation()'),
+      );
+
+      // 点击屏外方向指引跳到事发地时同步关闭自动跟随
+      capturedBridge?.call('focusIncidentFromGuide', {});
+      await tester.pump();
+      locStream.add(
+        const LocationFix(
+          lat: 29.505100,
+          lon: 119.305100,
+          accuracyMeters: 8,
+          provider: 'gps',
+          ageMs: 50,
+          bearingDegrees: 180,
+        ),
+      );
+      await tester.pump();
+      expect(
+        capturedSurface!.evaluatedScripts.last,
+        contains(', false);'),
+      );
+
+      // 点击底部遥测卡事发地文本也可直接聚焦事发地
+      await tester.tap(find.byKey(const Key('scene-map-telemetry-incident')));
+      await tester.pump();
+      expect(
+        capturedSurface!.evaluatedScripts.last,
+        contains('focusIncident()'),
       );
 
       // 5. 一键导航：Android 优先拉起原生高德，失败时自动回退网页版高德导航
