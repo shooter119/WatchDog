@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-
+import '../../core/diagnostics/app_logger.dart';
 import '../../core/network/network.dart';
 import '../../core/sync/sync_store.dart';
 import '../../features/auth/data/auth_repository.dart';
@@ -76,7 +75,7 @@ void dispatchSyncConnectionState({
   );
   if (shouldLog) {
     OpLogService.instance.record('realtime-sync', 'sync_retry', '$error', level: 'warn');
-    debugPrint('WatchDog realtime sync retry: $error');
+    AppLogger.error('WatchDog realtime sync retry', tag: 'sync', error: error);
   }
   (reportLifecycle ?? ForegroundKeepAlive.reportMainLifecycle)(
     inForeground: inForeground,
@@ -407,7 +406,7 @@ Future<void> executeLegacySyncPull({
             hasCustomDrainer: offlineQueueDrainer != null,
           );
         } catch (error) {
-          debugPrint('WatchDog offline projection failed: $error');
+          AppLogger.error('WatchDog offline projection failed', tag: 'sync', error: error);
         }
       }
     }
@@ -447,7 +446,7 @@ Future<void> executeLegacySyncPull({
     if (shouldLog) {
       OpLogService.instance.record('sync', 'sync_retry', '$error', level: 'warn');
     }
-    debugPrint('WatchDog sync failed: $error');
+    AppLogger.error('WatchDog sync failed', tag: 'sync', error: error);
   } finally {
     syncStore.endLegacySync(opToken, notify: true);
     incidentStore.setActiveIncidents(incidentStore.activeIncidents);

@@ -33,6 +33,7 @@ const Set<String> _shellCleanFiles = <String>{
   'app/shell/shell_voice_bridge.dart',
   'app/shell/guest_banner_bar.dart',
   'app/shell/shell_nav_bar.dart',
+  'app/shell/shell_tab_adapters.dart',
   'app/shell/shell_monitor_adapter.dart',
   'app/shell/shell_copilot_adapter.dart',
   'app/shell/shell_voice_coordinator.dart',
@@ -312,12 +313,17 @@ void main() {
       expect(violations, isEmpty, reason: '存在 Store 层反向依赖违例:\n${violations.join('\n')}');
     });
 
-    test('(c) app/lib/app/ 下所有 Dart 文件行数 <= 500 行', () {
-      final appFiles = _listDartFiles(Directory('${libDir.path}/app'));
-      expect(appFiles, isNotEmpty);
+    test('(c) app/lib/{app,core,features,state}/ 下所有 Dart 文件行数 <= 500 行', () {
+      final boundedFiles = <File>[
+        ..._listDartFiles(Directory('${libDir.path}/app')),
+        ..._listDartFiles(Directory('${libDir.path}/core')),
+        ..._listDartFiles(Directory('${libDir.path}/features')),
+        ..._listDartFiles(Directory('${libDir.path}/state')),
+      ];
+      expect(boundedFiles, isNotEmpty);
 
       final violations = <String>[];
-      for (final file in appFiles) {
+      for (final file in boundedFiles) {
         final rel = _relFromLib(libDir, file);
         final lines = file.readAsLinesSync().length;
         if (lines > _maxAppModuleLines) {
@@ -325,7 +331,7 @@ void main() {
         }
       }
 
-      expect(violations, isEmpty, reason: '存在 app/ 行数超标文件:\n${violations.join('\n')}');
+      expect(violations, isEmpty, reason: '存在行数超标文件:\n${violations.join('\n')}');
     });
 
     test('(d) 新外壳洁净文件零旧 theme/、pages/、widgets/ 依赖且 app/ 全域零 pages/ 依赖', () {
@@ -391,13 +397,13 @@ void main() {
 
       final withBridge = <File>[
         ...scopedFiles,
-        File('${libDir.path}/state/app_controller.dart'),
+        ..._listDartFiles(Directory('${libDir.path}/state')),
       ];
       final bridgeCycles = _findCycles(buildGraph(withBridge));
       expect(
         bridgeCycles,
         isEmpty,
-        reason: '纳入 state/app_controller.dart 后发现循环依赖:\n${bridgeCycles.join('\n')}',
+        reason: '纳入 state/ 后发现循环依赖:\n${bridgeCycles.join('\n')}',
       );
     });
   });

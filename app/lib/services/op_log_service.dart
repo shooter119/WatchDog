@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../core/diagnostics/log_sanitizer.dart';
 
 /// 一条操作日志（语音录入全链路中的一步）
 class OpLogEntry {
@@ -164,36 +165,35 @@ class OpLogService {
   }
 
   /// 操作日志会在用户可见的日志页展示，也可能上传到服务端；不把语音原文、
-  /// 问答正文或随手记正文写入诊断链路。保留长度和摘要足够定位同一请求。
+  /// 问答正文或随手记正文写入诊断链路。保留长度和摘要足够定位同一请求；
+  /// 鉴权凭据与单位验证码一律经 `LogSanitizer` 直接脱敏，不输出可逆哈希。
   Map<String, dynamic>? _safeData(Map<String, dynamic>? data) {
     if (data == null) return null;
     final safe = <String, dynamic>{};
     for (final entry in data.entries) {
       final key = entry.key;
       final value = entry.value;
-      final normalizedKey = key
-          .replaceAllMapped(RegExp(r'[A-Z]'), (m) => '_${m[0]}')
-          .toLowerCase();
-      final sensitive = RegExp(
-        r'(^|_)(text|content|message|raw|token|authorization|access_token|password|secret|error|stack)(_|$)',
+      if (LogSanitizer.isSensitiveKey(key)) {
+        safe[key] = value == null ? null : LogSanitizer.redacted;
+        continue;
+      }
+      final normalizedKey = LogSanitizer.normalizeKey(key);
+      final isDigestContent = RegExp(
+        r'(^|_)(text|content|message|raw|error|stack)(_|$)',
       ).hasMatch(normalizedKey);
-      if (sensitive && value is String) {
+      if (isDigestContent && value is String) {
         safe['${key}_length'] = value.length;
         safe['${key}_sha256'] = sha256.convert(utf8.encode(value)).toString();
-      } else if (sensitive) {
-        safe[key] = '[REDACTED]';
+      } else if (isDigestContent) {
+        safe[key] = LogSanitizer.redacted;
       } else if (value is Map) {
-        safe[key] = _safeData(Map<String, dynamic>.from(value));
+        final normalizedMap = <String, dynamic>{};
+        value.forEach((k, v) {
+          normalizedMap[k.toString()] = v;
+        });
+        safe[key] = _safeData(normalizedMap);
       } else if (value is List) {
-        safe[key] = value
-            .map((item) {
-              if (item is Map) {
-                return _safeData(Map<String, dynamic>.from(item));
-              }
-              if (item is String) return _redact(item);
-              return item;
-            })
-            .toList(growable: false);
+        safe[key] = _safeList(value);
       } else if (value is String) {
         safe[key] = _redact(value);
       } else {
@@ -203,20 +203,24 @@ class OpLogService {
     return safe;
   }
 
-  static String _redact(String value) {
-    var clean = value;
-    clean = clean.replaceAllMapped(
-      RegExp(
-        r'(api[_-]?token|authorization|access[_-]?token|password|secret)(\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+',
-        caseSensitive: false,
-      ),
-      (match) => '${match.group(1)}${match.group(2)}[REDACTED]',
-    );
-    return clean.replaceAll(
-      RegExp(r'\bbearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false),
-      'Bearer [REDACTED]',
-    );
+  List<dynamic> _safeList(List<dynamic> items) {
+    return items
+        .map((item) {
+          if (item is Map) {
+            final normalizedMap = <String, dynamic>{};
+            item.forEach((k, v) {
+              normalizedMap[k.toString()] = v;
+            });
+            return _safeData(normalizedMap);
+          }
+          if (item is List) return _safeList(item);
+          if (item is String) return _redact(item);
+          return item;
+        })
+        .toList(growable: false);
   }
+
+  static String _redact(String value) => LogSanitizer.redactText(value);
 
   /// 设置同步开关：关闭时丢弃待上传缓冲（本地日志保留）
   Future<void> setSyncEnabled(bool enabled) async {
@@ -241,7 +245,7 @@ class OpLogService {
       _lastSyncedAt = DateTime.now().millisecondsSinceEpoch;
       _lastSyncError = null;
     } catch (e) {
-      _lastSyncError = '$e';
+      _lastSyncError = _redact('$e');
     } finally {
       _uploading = false;
     }

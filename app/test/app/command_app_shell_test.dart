@@ -15,7 +15,6 @@ import 'package:watchdog/services/system_pip.dart';
 import 'package:watchdog/services/theme_controller.dart';
 import 'package:watchdog/services/video_playback_session.dart';
 import 'package:watchdog/state/app_controller.dart';
-import 'package:watchdog/theme/app_palette.dart';
 
 const VideoResource _kTestVideo = VideoResource(
   id: 'shell-test-cam',
@@ -155,21 +154,14 @@ void main() {
     SystemPip.resetForTesting();
   });
 
-  group('WatchDogApp 开关分流与默认兼容', () {
-    testWidgets('默认 useNewShell=false 保持既有旧外壳，useNewShell=true 挂载 CommandAppShell 且默认 Tab 0', (
+  group('WatchDogApp 默认新外壳验证', () {
+    testWidgets('默认唯一挂载 CommandAppShell 且默认落在 Tab 0（指挥台）', (
       tester,
     ) async {
-      final legacyController = _ShellFakeController();
-      await tester.pumpWidget(WatchDogApp(controller: legacyController));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('bottom-nav-surface')), findsOneWidget);
-      expect(find.byKey(ShellKeys.root), findsNothing);
-
       final newShellController = _ShellFakeController();
       addTearDown(newShellController.dispose);
       await tester.pumpWidget(
-        WatchDogApp(controller: newShellController, useNewShell: true),
+        WatchDogApp(controller: newShellController),
       );
       await tester.pumpAndSettle();
 
@@ -420,7 +412,7 @@ void main() {
       expect(convertSize.height, greaterThanOrEqualTo(DsSizes.touchTarget));
 
       // 切换暗曜主题复检零溢出。
-      ThemeController.instance.select(AppPalette.nightTactical);
+      ThemeController.instance.select(AppThemePreference.night);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });

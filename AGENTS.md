@@ -33,11 +33,11 @@
 - 提交信息简洁中文，符合仓库现有风格。
 - 临时调试文件（含密钥等）不入库。
 - 设计任务的辅助文件、UI 风格规范、个人介绍网站和过程资料仅保存在本地，不进入公开代码仓库；正式运行资源按用途放入 App 资产目录。
-- **README 同步核查**：每次改动完成后核查 README 是否有必要更新（品牌、功能、架构、入口变化都算）；README 有实质内容变更时，App 内「关于我们」页（`app/lib/pages/about_page.dart`）必须同步更新，反之亦然。
+- **README 同步核查**：每次改动完成后核查 README 是否有必要更新（品牌、功能、架构、入口变化都算）；README 有实质内容变更时，App 内「关于我们」页（`app/lib/features/settings/ui/about_page.dart`）必须同步更新，反之亦然。
 - 提交前必须通过验证（见下），构建/测试失败不允许提交。
 - **后端代码（backend/src/、deploy/）有修改时，先完成本地验证；由研发流程在本地验证通过后执行部署与数据库迁移。** 当前线上部署使用 VPS Docker Compose；在本地测试全绿（后端 npm test 322、App flutter analyze 0 警告 + flutter test 471，CI 门禁基线分别为 300 / 444）且确认接口兼容后，可执行 VPS 部署与迁移，并在部署完成后完成线上健康检查与路由验收。
   本机文档转换用例（key-sites）需要 `soffice`（LibreOffice）与 `pdfinfo`/`pdftoppm`（poppler）在 PATH 上，否则这 14 条必然失败；发版脚本只在这两个组件缺失、且失败用例与已知清单逐条一致时放行，否则一律判为真实失败。
-- **版本号与发版由用户决定**：用户要求发版时，依据改动规模判断升级幅度（小优化/修复 → 补丁 +0.0.1；新功能 → 次版本 +0.1.0；重大重构/首个稳定版 → 主版本 +1.0.0），`+` 号后构建号必须递增。同步更新 `app/pubspec.yaml` 的 `version:` 与 `app/lib/pages/settings_page.dart` 的 `appVersion` 常量。
+- **版本号与发版由用户决定**：用户要求发版时，依据改动规模判断升级幅度（小优化/修复 → 补丁 +0.0.1；新功能 → 次版本 +0.1.0；重大重构/首个稳定版 → 主版本 +1.0.0），`+` 号后构建号必须递增。同步更新 `app/pubspec.yaml` 的 `version:` 与 `app/lib/app/app_version.dart` 的 `appVersion` 常量。
 - **发版流程**：验证通过后按用户要求 commit + push，再 `git tag v<版本号>+<构建号>` + `git push origin <tag>`；当前公开仓库不再包含正式 APK 发布 workflow，签名构建与发布需按私有流程执行。
 - 发版前兜底检查：`git status` 确认改动已全部提交；`git diff HEAD` 确认版本号常量与要打的 tag 一致。
 - **CI 触发注意**：GitHub 对**已存在 tag 的 force push 不触发 workflow**。若需用新提交更新已发布版本，必须先删远端 tag（`git push origin :refs/tags/<tag>`）再重新创建并 push。
@@ -57,13 +57,10 @@
 
 ## UI 与 App 调试规范
 
-- **唯一 UI 设计规范（Design System v3.0）**：本地 `fire-rescue-safety-app-ui-spec-v3.0.md` 与代码实现 `app/lib/design_system/`（`DsTheme` / `buildCommandTheme`、Tokens 与 12 个标准组件）是所有新代码与新页面的**唯一 UI 规范标准**。
-  1. **单入口与主题读取**：业务代码与新页面仅允许通过 `design_system.dart` 单一出口引入（如 `import '../design_system/design_system.dart';` 或 `package:watchdog/design_system/design_system.dart`），并统一通过 `context.ds` 读取语义色彩（`context.ds.colors`）与字阶（`context.ds.typography`）；严禁 `app/lib/design_system/` 反向引入 `pages/`、`state/`、`services/`、`api/`、`models/`、`theme/`、`widgets/` 或引用旧主题符号（由 `app/test/design_system/ds_isolation_gate_test.dart` 静态门禁守护）。
-  2. **调试预览隔离**：`DsPreviewPage` 与原型页面仅在 `app/lib/pages/component_gallery_page.dart` 中通过 `kDebugMode` 守卫暴露，正式包编译时整段剔除。
-- **旧版主题过渡期维护（`app/lib/theme/`）**：既有 `app/lib/theme/`（`app_palette.dart`、`app_widgets.dart`、`app_theme.dart` 中的 `AppColors`、`AppCard`、`AppBanner`、`AppNotice`、`SectionTitle`、`StatusBadge`、`CountdownText` 等）降级为**过渡期维护**——仅允许修复既有页面缺陷，**严禁在新代码或新页面中新增用法**，待 M4 整体切换并完成旧页面替换后统一移除。在 M3 对应页面重做完成前，既有页面仍遵守：
-  1. **严禁手写带阴影与边框叠加的 Container**：既有业务卡片继续复用 `AppCard`（`AppRadius.lg = 16`），横幅复用 `AppBanner` / `AppNotice`，标题复用 `SectionTitle`，杜绝双层边框或彩色边框叠加阴影导致的重影；
-  2. **严禁固定矮高度挤压文字**：`StatusBadge` 与 `CountdownText` 保持自适应最小高度与紧凑行高，严禁截断或压扁字形；
-  3. **主页与看板职责分明**：既有主页「现场监控」仅展示单行在场人数与最高风险胶囊，点击跳看板；详细人员空呼压力与倒计时统一在看板页展示（维持至 M3 对应页面重写）。
+- **唯一 UI 设计规范（Design System v3.0）**：本地 `fire-rescue-safety-app-ui-spec-v3.0.md` 与代码实现 `app/lib/design_system/`（`DsTheme` / `buildCommandTheme`、Tokens 与标准组件库）是全仓**唯一 UI 规范标准**（旧版 `app/lib/theme/`、`app/lib/pages/`、`app/lib/widgets/` 已在 M4 彻底清退，由 `app/test/theme_static_gate_test.dart` 与 `app/test/architecture/` 静态门禁守护）。
+  1. **单入口与主题读取**：业务代码仅允许通过 `design_system.dart` 单一出口引入（如 `import '../design_system/design_system.dart';` 或 `package:watchdog/design_system/design_system.dart`），并统一通过 `context.ds` 读取语义色彩（`context.ds.colors`）与字阶（`context.ds.typography`）；严禁将 `context.ds`/`DsColors` 写入 `static final`；严禁 `app/lib/design_system/` 反向引入业务层或状态层（由 `app/test/design_system/ds_isolation_gate_test.dart` 静态门禁守护）。
+  2. **调试预览隔离**：`DsPreviewPage` 与原型页面仅在 `app/lib/features/settings/ui/component_gallery_page.dart` 中通过 `kDebugMode` 守卫暴露，正式包编译时整段剔除。
+  3. **主题模式与无损切换**：`ThemeController` 仅维护 `AppThemePreference`（`daylight` / `night-tactical` / `system`），`CommandAppShell` 通过 `MaterialApp(theme: ..., darkTheme: ..., themeMode: ...)` 无损切换昼白/暗曜/跟随系统（不销毁页面树，保留滚动位置与草稿）；历史 `warm-sand` 启动时自动平滑迁移至 `daylight` 并仅提示一次。
 - **现场可用性硬指标（新 UI 强制门禁）**：
   1. **触控热区**：常规交互触控目标 ≥ 48dp（`DsSizes.touchTarget`）；**进出场、报压、确认等主操作与紧急操作 ≥ 56dp**（`DsSizes.primaryAction`）；底部中置语音指令键直径 **64dp**（`DsSizes.voiceButton`）且向上凸出 **12dp**（`DsSizes.voiceProtrusion`）。
   2. **大字号零溢出**：在 360dp 窄屏与系统 **130% 字号**缩放下，全部组件与页面必须保持零溢出、不截断、不重叠（由 `app/test/design_system/ds_text_scale_test.dart` 守护）。
@@ -110,15 +107,19 @@ backend/                 Node.js 后端（Express + ws + pg PostgreSQL 17，端�
   src/logger.js          统一日志
   test/                  node:test 单测（302 个用例，CI 门禁基线 300）
 app/                     Flutter 客户端（正式版 com.firewatch.watchdog「火场智控」，测试版 com.firewatch.watchdog.debug「火场智控·测试」）
-  lib/pages/             home(语音处置) / board(看板) / notes(火场日志) / chat(辅助问答/视觉) / roster(名单热词) / settings / archived_incidents / entry_detail / op_log / stats
-  lib/api/api_client.dart 全部接口调用（X-Incident-Id / X-Device-Id / X-Op-Id / 短期会话 Token）
-  lib/state/app_controller.dart 实时同步、当前警情、现场数据、每秒阈值检查、TTS/通知调度、离线队列调度
+  lib/main.dart          纯启动入口（≤ 200 行），唯一挂载 CommandAppShell
+  lib/app/               AppBootstrap / app_version.dart / CommandAppShell（4 Tab + 中置 64dp 语音键）/ 跨域编排器
+  lib/core/              网络传输 / SSE / AppLogger & LogSanitizer / SyncStore / PhoneText
+  lib/design_system/     Design System v3.0 Tokens、DsTheme 与标准组件库（design_system.dart 单入口）
+  lib/features/          按业务域划分的 12 个功能模块（command_home / monitor / voice / notes / copilot / incident / auth / roster / settings / map / key_sites / hazmat / water_sources / video / media）
+  lib/api/api_client.dart 接口兼容门面（X-Incident-Id / X-Device-Id / X-Op-Id / 短期会话 Token）
+  lib/state/             按业务域 URI part 分片组织的 AppController（每文件 ≤ 500 行）
   lib/services/sync_coordinator.dart bootstrap、重连、补拉和 30 秒校准
   lib/services/sync_reducer.dart 事件去重、游标连续性和词库快照转换
   lib/services/realtime_sync_client.dart 单设备 WebSocket、鉴权和心跳
   lib/services/offline_queue.dart 本地 SQLite 现场操作队列（进退场/压力/随手记，联网幂等补传）
   lib/services/local_asr_service.dart sherpa-onnx 本地离线语音识别与降噪
-  lib/services/          audio / tts / alarm / screen_on / settings / op_log / diagnostic_log
+  lib/services/          audio / tts / alarm / screen_on / settings / theme_controller / op_log / diagnostic_log
   test/                  widget 测试 + 姓名解析测试（471 个用例，CI 门禁基线 444）
 deploy/                  部署脚本与配置（VPS Docker Compose + Caddy + 模型分发）
 ```

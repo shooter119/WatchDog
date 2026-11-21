@@ -2,21 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:watchdog/api/api_client.dart';
-import 'package:watchdog/models/models.dart';
-import 'package:watchdog/pages/chat_page.dart';
-import 'package:watchdog/pages/home_page.dart';
-import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
 import 'package:watchdog/services/realtime_asr_service.dart';
-import 'package:watchdog/state/app_controller.dart';
-import 'package:watchdog/theme/app_theme.dart';
 
 class _RealHttpOverrides extends HttpOverrides {
   @override
@@ -120,92 +113,6 @@ class _FakeAudioRecorder implements AudioRecorder {
   RecordIos? get ios => null;
 }
 
-class _FakeAudioService extends AudioService {
-  @override
-  Future<bool> hasPermission() async => true;
-
-  @override
-  Future<void> start() async {}
-
-  @override
-  Stream<double> amplitudeStream() => const Stream.empty();
-
-  @override
-  Future<Uint8List> stop() async => Uint8List(0);
-
-  @override
-  Future<void> dispose() async {}
-}
-
-class _FallbackTestApi extends ApiClient {
-  _FallbackTestApi({this.transcribeReply = '张三20兆帕'})
-    : super(baseUrl: 'http://test', incidentId: 'inc-1');
-
-  final String transcribeReply;
-  final List<Uint8List> transcribedPayloads = <Uint8List>[];
-  int parseCalls = 0;
-  int chatStreamCalls = 0;
-
-  @override
-  Future<String> transcribe(Uint8List audioBytes, {String? opId}) async {
-    transcribedPayloads.add(audioBytes);
-    return transcribeReply;
-  }
-
-  @override
-  Future<ParseResult> parse(String text, {String? opId}) async {
-    parseCalls++;
-    return ParseResult(
-      action: 'enter',
-      intent: VoiceIntent.entry,
-      people: [ParsePerson(name: '张三', pressureMpa: 20)],
-    );
-  }
-
-  @override
-  Future<List<ChatMessage>> fetchChatMessages() async => const [];
-
-  @override
-  Future<void> sendLogs(List<Map<String, dynamic>> logs) async {}
-
-  @override
-  Future<String> sendChatMessageStream(
-    String message, {
-    required void Function(String delta) onChunk,
-    String? opId,
-    List<ChatMessage> history = const [],
-  }) async {
-    chatStreamCalls++;
-    final reply = '已收到：$message';
-    onChunk(reply);
-    return reply;
-  }
-}
-
-class _FallbackTestController extends AppController {
-  _FallbackTestController({required ApiClient api}) : super() {
-    this.api = api;
-    asrCloudEnabled = true;
-    parseCloudEnabled = true;
-    firefighters = [Firefighter(id: 'f-1', name: '张三')];
-    currentIncident = Incident(
-      id: 'inc-1',
-      number: '2026-01',
-      status: 'active',
-      createdAt: 1,
-      lastActivityAt: 1,
-    );
-  }
-
-  @override
-  void startSync() {}
-
-  @override
-  Future<void> sync() async {}
-
-  @override
-  Future<List<ChatMessage>> fetchChatHistory() async => const [];
-}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -465,163 +372,6 @@ void main() {
         }, (error, stack) => zoneErrors.add(error));
 
         expect(zoneErrors, isEmpty);
-      },
-    );
-  });
-
-  group('HomePage 与 ChatPage 实时流超时/失败自动回退批量转写', () {
-    testWidgets(
-      'HomePage 实时 WebSocket 挂起时按下立即进入录音态，松手自动回退批量识别',
-      timeout: const Timeout(Duration(seconds: 15)),
-      (tester) async {
-        final api = _FallbackTestApi(transcribeReply: '张三20兆帕');
-        final controller = _FallbackTestController(api: api);
-        addTearDown(() {
-          controller.dispose();
-          api.dispose();
-        });
-        final recorder = _FakeAudioRecorder();
-        final hangingSocket = Completer<WebSocket>();
-        final recordingStates = <bool>[];
-
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: HomePage(
-                controller: controller,
-                audioService: _FakeAudioService(),
-                onRecordingChanged: recordingStates.add,
-                realtimeAsrFactory: (a, onText) => RealtimeAsrService(
-                  api: a,
-                  onText: onText,
-                  recorder: recorder,
-                  socketFactory:
-                      (
-                        url, {
-                        headers,
-                        compression = CompressionOptions.compressionDefault,
-                      }) => hangingSocket.future,
-                ),
-              ),
-            ),
-          ),
-        );
-        await tester.pump();
-
-        final state = tester.state<HomePageState>(find.byType(HomePage));
-        await state.beginRecording();
-        await tester.pump();
-
-        // WebSocket 仍未就绪，但页面已瞬时进入录音态。
-        expect(hangingSocket.isCompleted, isFalse);
-        expect(recordingStates, [true]);
-        expect(find.byKey(const Key('home-recording-limit')), findsOneWidget);
-
-        recorder.emitPcm(List<int>.filled(1600, 9));
-        await tester.pump();
-
-        var finished = false;
-        final finishFuture = state.finishRecording().whenComplete(() {
-          finished = true;
-        });
-        hangingSocket.completeError(
-          const SocketException('aborted after stop'),
-        );
-        for (var i = 0; i < 20 && !finished; i++) {
-          await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-          await tester.pump(const Duration(milliseconds: 10));
-        }
-        expect(finished, isTrue);
-        await finishFuture;
-        await tester.pump();
-
-        expect(recordingStates, [true, false]);
-        expect(api.transcribedPayloads, hasLength(1));
-        expect(api.transcribedPayloads.single.length, 44 + 1600);
-        expect(api.parseCalls, 1);
-        expect(find.text('张三'), findsOneWidget);
-        expect(tester.takeException(), isNull);
-      },
-    );
-
-    testWidgets(
-      'ChatPage 实时 WebSocket 挂起时按下立即进入录音态，松手自动回退批量识别并提问',
-      timeout: const Timeout(Duration(seconds: 15)),
-      (tester) async {
-        final api = _FallbackTestApi(transcribeReply: '高倍数泡沫怎么使用？');
-        final controller = _FallbackTestController(api: api);
-        addTearDown(() {
-          controller.dispose();
-          api.dispose();
-        });
-        final recorder = _FakeAudioRecorder();
-        final hangingSocket = Completer<WebSocket>();
-        final recordingStates = <bool>[];
-
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: ChatPage(
-                controller: controller,
-                audioService: _FakeAudioService(),
-                onRecordingChanged: recordingStates.add,
-                realtimeAsrFactory: (a, onText) => RealtimeAsrService(
-                  api: a,
-                  onText: onText,
-                  recorder: recorder,
-                  socketFactory:
-                      (
-                        url, {
-                        headers,
-                        compression = CompressionOptions.compressionDefault,
-                      }) => hangingSocket.future,
-                ),
-              ),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        final state = tester.state<ChatPageState>(find.byType(ChatPage));
-        await state.beginRecording();
-        await tester.pump();
-
-        expect(hangingSocket.isCompleted, isFalse);
-        expect(recordingStates, [true]);
-        expect(find.byKey(const Key('chat-recording-limit')), findsOneWidget);
-
-        recorder.emitPcm(List<int>.filled(1600, 6));
-        await tester.pump();
-
-        var chatFinished = false;
-        final chatFinishFuture = state.finishRecording().whenComplete(() {
-          chatFinished = true;
-        });
-        hangingSocket.completeError(
-          const SocketException('aborted after stop'),
-        );
-        for (var i = 0; i < 20 && !chatFinished; i++) {
-          await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-          await tester.pump(const Duration(milliseconds: 10));
-        }
-        expect(chatFinished, isTrue);
-        await chatFinishFuture;
-        for (var i = 0; i < 5; i++) {
-          await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-          await tester.pump(const Duration(milliseconds: 10));
-        }
-        await tester.pump(const Duration(milliseconds: 1200));
-        await tester.pump();
-
-        expect(recordingStates, [true, false]);
-        expect(api.transcribedPayloads, hasLength(1));
-        expect(api.transcribedPayloads.single.length, 44 + 1600);
-        expect(api.chatStreamCalls, 1);
-        expect(find.text('高倍数泡沫怎么使用？'), findsOneWidget);
-        expect(find.text('已收到：高倍数泡沫怎么使用？'), findsOneWidget);
-        expect(tester.takeException(), isNull);
       },
     );
   });

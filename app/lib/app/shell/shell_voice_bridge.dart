@@ -14,10 +14,7 @@ typedef DsVoiceButtonState = DsVoiceState;
 typedef ShellVoiceMessageCallback =
     void Function(String message, {Duration duration});
 
-/// 全局语音执行槽位。
-///
-/// M2 过渡期由 `LegacyTabAdapters` 桥接至既有 `HomePage` / `ChatPage`；
-/// M3b 上线全局 `VoiceSessionStore` 后可直接替换本槽位，无需重写 `CommandAppShell`。
+/// 全局语音执行槽位（由外壳装配 [ShellTabAdapters] 提供至 [CommandAppShell]）。
 @immutable
 class ShellVoiceSlot {
   const ShellVoiceSlot({

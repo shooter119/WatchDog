@@ -33,18 +33,6 @@ class DsAppearancePreset {
       swatchBorder: Color(0xFFDCE3EC),
     ),
     DsAppearancePreset(
-      id: 'warm-sand',
-      label: '暖砂',
-      subtitle: '柔和护眼',
-      swatches: <Color>[
-        Color(0xFFF5F1E8),
-        Color(0xFFEDE6D8),
-        Color(0xFFB44C32),
-        Color(0xFFD97706),
-      ],
-      swatchBorder: Color(0xFFD8CEBC),
-    ),
-    DsAppearancePreset(
       id: 'night-tactical',
       label: '暗曜',
       subtitle: '夜间低眩光',
@@ -55,6 +43,18 @@ class DsAppearancePreset {
         Color(0xFFFFB000),
       ],
       swatchBorder: Color(0xFF263344),
+    ),
+    DsAppearancePreset(
+      id: 'system',
+      label: '跟随系统',
+      subtitle: '随系统切换',
+      swatches: <Color>[
+        Color(0xFFF4F6F9),
+        Color(0xFF0B0F14),
+        Color(0xFF1D4ED8),
+        Color(0xFFFFB000),
+      ],
+      swatchBorder: Color(0xFF94A3B8),
     ),
   ];
 }

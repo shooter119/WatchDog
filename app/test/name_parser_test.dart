@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:watchdog/pages/roster_page.dart';
+import 'package:watchdog/features/roster/ui/roster_batch_import_sheet.dart';
 
 void main() {
   group('extractNamesFromPaste', () {

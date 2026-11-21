@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watchdog/design_system/design_system.dart';
-import 'package:watchdog/pages/component_gallery_page.dart';
-import 'package:watchdog/theme/app_theme.dart';
+import 'package:watchdog/features/settings/ui/component_gallery_page.dart';
 
 void _setNarrowViewport(
   WidgetTester tester, {
@@ -654,7 +653,7 @@ void main() {
             ),
             child: MaterialApp(
               debugShowCheckedModeBanner: false,
-              theme: buildAppTheme(),
+              theme: buildCommandTheme(Brightness.light),
               home: const DsPreviewPage(liveTick: false),
             ),
           ),
@@ -726,7 +725,7 @@ void main() {
             ),
             child: MaterialApp(
               debugShowCheckedModeBanner: false,
-              theme: buildAppTheme(),
+              theme: buildCommandTheme(Brightness.light),
               home: const ComponentGalleryPage(),
             ),
           ),

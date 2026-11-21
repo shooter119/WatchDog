@@ -312,6 +312,113 @@ void main() {
     }
   });
 
+  group('警情三大类语义色对比度（灭火/抢险/救助：文本 ≥ 4.5，图形 ≥ 3.0）', () {
+    for (final (name, c) in palettes) {
+      test('$name fire/rescue/aid 文本、图标与徽章前景对比度达标', () {
+        for (final category in DsIncidentCategory.values) {
+          final (
+            String label,
+            Color fill,
+            Color onFill,
+            Color iconAndText,
+            Color pillBg,
+          ) = switch (category) {
+            DsIncidentCategory.fire => (
+              'fire(灭火)',
+              c.statusColors(DsStatus.alarm).fill,
+              c.statusColors(DsStatus.alarm).onFill,
+              c.statusColors(DsStatus.alarm).text,
+              c.statusColors(DsStatus.alarm).pillBg,
+            ),
+            DsIncidentCategory.rescue => (
+              'rescue(抢险)',
+              c.statusColors(DsStatus.caution).fill,
+              c.statusColors(DsStatus.caution).onFill,
+              c.statusColors(DsStatus.caution).text,
+              c.statusColors(DsStatus.caution).pillBg,
+            ),
+            DsIncidentCategory.aid => (
+              'aid(救助)',
+              c.brand,
+              c.onBrand,
+              c.brandText,
+              c.brand.withValues(alpha: 0.12),
+            ),
+          };
+
+          final surfacePillBg = Color.alphaBlend(pillBg, c.surface);
+          final canvasPillBg = Color.alphaBlend(pillBg, c.canvas);
+
+          // 图形/图标通道 ≥ 3.0:1（对齐 WCAG 2.1 非文本图形对比度）
+          _expectContrast(
+            '$name $label icon / surface (图形)',
+            iconAndText,
+            c.surface,
+            3.0,
+          );
+          _expectContrast(
+            '$name $label icon / canvas (图形)',
+            iconAndText,
+            c.canvas,
+            3.0,
+          );
+          _expectContrast(
+            '$name $label icon / pill @surface (图形)',
+            iconAndText,
+            surfacePillBg,
+            3.0,
+          );
+          _expectContrast(
+            '$name $label icon / pill @canvas (图形)',
+            iconAndText,
+            canvasPillBg,
+            3.0,
+          );
+
+          // 文本通道 ≥ 4.5:1（在主底色、卡片表面、弱底色及卡片/底色上的 12% 淡底胶囊均达标）
+          _expectContrast(
+            '$name $label text / surface',
+            iconAndText,
+            c.surface,
+            4.5,
+          );
+          _expectContrast(
+            '$name $label text / canvas',
+            iconAndText,
+            c.canvas,
+            4.5,
+          );
+          _expectContrast(
+            '$name $label text / surfaceMuted',
+            iconAndText,
+            c.surfaceMuted,
+            4.5,
+          );
+          _expectContrast(
+            '$name $label text / pill @surface',
+            iconAndText,
+            surfacePillBg,
+            4.5,
+          );
+          _expectContrast(
+            '$name $label text / pill @canvas',
+            iconAndText,
+            canvasPillBg,
+            4.5,
+          );
+
+          // 选中态实心胶囊前景/填充 ≥ 4.5:1
+          _expectContrast(
+            '$name $label onFill / fill',
+            onFill,
+            fill,
+            4.5,
+          );
+        }
+      });
+    }
+  });
+
   group('DsTheme、buildCommandTheme 与基础 Token 契约', () {
     test('buildCommandTheme 构建双主题 M3 配置与字体回退链', () {
       for (final brightness in Brightness.values) {

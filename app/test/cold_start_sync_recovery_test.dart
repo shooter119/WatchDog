@@ -8,23 +8,26 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:watchdog/api/api_client.dart';
+import 'package:watchdog/app/shell/command_app_shell.dart';
+import 'package:watchdog/app/shell/shell_keys.dart';
+import 'package:watchdog/design_system/design_system.dart';
 import 'package:watchdog/models/admin_login.dart';
 import 'package:watchdog/models/models.dart';
-import 'package:watchdog/pages/board_page.dart';
-import 'package:watchdog/pages/home_page.dart';
-import 'package:watchdog/services/audio_service.dart';
 import 'package:watchdog/services/op_log_service.dart';
 import 'package:watchdog/services/realtime_sync_client.dart';
 import 'package:watchdog/services/scoped_json_cache.dart';
 import 'package:watchdog/services/settings.dart';
 import 'package:watchdog/services/sync_coordinator.dart';
 import 'package:watchdog/state/app_controller.dart';
-import 'package:watchdog/theme/app_theme.dart';
-import 'package:watchdog/theme/app_widgets.dart';
 
-class _FakeAudioService extends AudioService {
-  @override
-  Future<void> dispose() async {}
+CommandAppShell _buildShell(AppController controller) {
+  return CommandAppShell(
+    controller: controller,
+    enableStartupSideEffects: false,
+    copilotTabBuilder: (_) => const SizedBox.shrink(),
+    mineTabBuilder: (_) => const SizedBox.shrink(),
+    startupGateBuilder: (_) => const SizedBox.shrink(),
+  );
 }
 
 class _FakeRealtimeClient extends RealtimeClient {
@@ -377,31 +380,19 @@ void main() {
         expect(controller.connectionLost, isFalse);
         expect(controller.syncConnectionState, SyncConnectionState.reconnecting);
 
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: ListenableBuilder(
-                listenable: controller,
-                builder: (_, __) => HomePage(
-                  controller: controller,
-                  audioService: _FakeAudioService(),
-                ),
-              ),
-            ),
-          ),
-        );
+        controller.enterWithoutIncident();
+        await tester.pumpWidget(_buildShell(controller));
         await tester.pump();
 
-        expect(find.text('同步中'), findsOneWidget);
+        expect(find.text('重连中'), findsWidgets);
         expect(find.text('同步失败'), findsNothing);
         expect(find.textContaining('ClientException'), findsNothing);
         expect(find.textContaining('SocketException'), findsNothing);
         expect(find.textContaining('Failed host lookup'), findsNothing);
         expect(find.textContaining('网络已中断'), findsNothing);
 
-        // 点击首页连接胶囊打开详情弹窗，确认无“同步异常”字样且状态为“状态：同步中”
-        await tester.tap(find.byType(ConnectionStatus));
+        // 点击指挥台连接胶囊打开详情抽屉，确认无“同步异常”字样且状态为“状态：同步中”
+        await tester.tap(find.byType(ConnectionPill).first);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
@@ -411,29 +402,19 @@ void main() {
         expect(find.textContaining('ClientException'), findsNothing);
         expect(find.textContaining('SocketException'), findsNothing);
 
-        // 关闭弹窗并切换到 BoardPage 检查断网续传期间同样只展示“同步中”，不弹断线横幅
+        // 点击立即重试同步关闭抽屉，并切到「现场监控」Tab 复检断网续传期间仍为“重连中”
         await tester.tap(find.text('立即重试同步'));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: ListenableBuilder(
-                listenable: controller,
-                builder: (_, __) => BoardPage(controller: controller),
-              ),
-            ),
-          ),
-        );
+        await tester.tap(find.byKey(ShellKeys.tabMonitor));
         await tester.pump();
 
-        expect(find.text('同步中'), findsOneWidget);
+        expect(find.text('重连中'), findsWidgets);
         expect(find.text('同步失败'), findsNothing);
         expect(find.textContaining('网络已中断'), findsNothing);
         expect(find.textContaining('ClientException'), findsNothing);
 
-        // 超过 30s 阈值仍未同步成功时，退出“同步中”并转为“已中断”，看板展示断线横幅
+        // 超过 30s 阈值仍未同步成功时，退出“重连中”并转为“离线”，监控页展示断线横幅
         api.bootstrapError = http.ClientException(
           "SocketException: Failed host lookup: 'api.fireman119.xyz'",
         );
@@ -441,25 +422,12 @@ void main() {
         expect(controller.connectionLost, isTrue);
         expect(controller.syncing, isFalse);
         expect(controller.syncError, isNull);
-        expect(find.text('已中断'), findsOneWidget);
-        expect(find.text('同步中'), findsNothing);
-        expect(find.textContaining('网络已中断'), findsOneWidget);
+        expect(find.text('离线'), findsWidgets);
+        expect(find.text('重连中'), findsNothing);
+        expect(find.textContaining('网络已中断'), findsWidgets);
 
-        // 恢复网络后切回 HomePage，调用 refreshNow() 必须重新执行 fetchSyncBootstrap 而非死锁在 checkpoint
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: ListenableBuilder(
-                listenable: controller,
-                builder: (_, __) => HomePage(
-                  controller: controller,
-                  audioService: _FakeAudioService(),
-                ),
-              ),
-            ),
-          ),
-        );
+        // 切回指挥台，恢复网络后调用 refreshNow() 必须重新执行 fetchSyncBootstrap 而非死锁在 checkpoint
+        await tester.tap(find.byKey(ShellKeys.tabCommand));
         await tester.pump();
 
         api.bootstrapError = null;
@@ -479,8 +447,8 @@ void main() {
         expect(controller.connectionLost, isFalse);
         expect(controller.firefighters.map((f) => f.name), containsAll(['张伟', '李娜']));
         expect(api.firefightersCalls, firefightersBeforeRecovery);
-        expect(find.text('已连接'), findsOneWidget);
-        expect(find.text('同步中'), findsNothing);
+        expect(find.text('在线'), findsWidgets);
+        expect(find.text('重连中'), findsNothing);
         expect(
           OpLogService.instance.logs.any((entry) => entry.stage == 'sync_retry'),
           isTrue,
@@ -676,20 +644,8 @@ void main() {
         await tester.pump();
         expect(controller.syncConnectionState, SyncConnectionState.connected);
 
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: ListenableBuilder(
-                listenable: controller,
-                builder: (_, __) => HomePage(
-                  controller: controller,
-                  audioService: _FakeAudioService(),
-                ),
-              ),
-            ),
-          ),
-        );
+        controller.enterWithoutIncident();
+        await tester.pumpWidget(_buildShell(controller));
         await tester.pump();
 
         final created = await controller.createIncident();
@@ -703,10 +659,10 @@ void main() {
         expect(clients.last.connected, isTrue);
         expect(controller.syncConnectionState, SyncConnectionState.connected);
         expect(controller.syncing, isFalse);
-        expect(find.text('已连接'), findsOneWidget);
-        expect(find.text('同步中'), findsNothing);
+        expect(find.text('在线'), findsWidgets);
+        expect(find.text('重连中'), findsNothing);
 
-        // 并发触发两次 refreshConfig 后，新协调器仍被保留且连接恢复为「已连接」
+        // 并发触发两次 refreshConfig 后，新协调器仍被保留且连接恢复为「在线」
         await Future.wait([
           controller.refreshConfig(),
           controller.refreshConfig(),
@@ -719,8 +675,8 @@ void main() {
         expect(controller.syncConnectionState, SyncConnectionState.connected);
         expect(controller.syncing, isFalse);
         expect(controller.connectionLost, isFalse);
-        expect(find.text('已连接'), findsOneWidget);
-        expect(find.text('同步中'), findsNothing);
+        expect(find.text('在线'), findsWidgets);
+        expect(find.text('重连中'), findsNothing);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         controller.dispose();
@@ -762,22 +718,10 @@ void main() {
         expect(controller.syncConnectionState, SyncConnectionState.connected);
         expect(controller.syncing, isFalse);
 
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: ListenableBuilder(
-                listenable: controller,
-                builder: (_, __) => HomePage(
-                  controller: controller,
-                  audioService: _FakeAudioService(),
-                ),
-              ),
-            ),
-          ),
-        );
+        controller.enterWithoutIncident();
+        await tester.pumpWidget(_buildShell(controller));
         await tester.pump();
-        expect(find.text('已连接'), findsOneWidget);
+        expect(find.text('在线'), findsWidgets);
 
         // 先在线空闲超过 30s，验证被动掉线时从掉线时刻起算 30s 平滑阈值
         await tester.pump(const Duration(seconds: 35));
@@ -787,22 +731,22 @@ void main() {
         clients.last.simulateDrop();
         await tester.pump();
 
-        // 30s 内后台重连期间保持「已连接」，不切回「同步中」也不报「已中断」
+        // 30s 内后台重连期间保持「在线」，不切回「重连中」也不报「离线」
         await tester.pump(const Duration(seconds: 15));
         expect(controller.syncing, isFalse);
         expect(controller.connectionLost, isFalse);
-        expect(find.text('已连接'), findsOneWidget);
-        expect(find.text('同步中'), findsNothing);
-        expect(find.text('已中断'), findsNothing);
+        expect(find.text('在线'), findsWidgets);
+        expect(find.text('重连中'), findsNothing);
+        expect(find.text('离线'), findsNothing);
 
-        // 超过 30s 未恢复后，自动转为「已中断」
+        // 超过 30s 未恢复后，自动转为「离线」
         await tester.pump(const Duration(seconds: 17));
         expect(controller.connectionLost, isTrue);
         expect(controller.syncing, isFalse);
-        expect(find.text('已中断'), findsOneWidget);
-        expect(find.text('同步中'), findsNothing);
+        expect(find.text('离线'), findsWidgets);
+        expect(find.text('重连中'), findsNothing);
 
-        // 恢复网络并调用 refreshNow() 强制重连恢复「已连接」
+        // 恢复网络并调用 refreshNow() 强制重连恢复「在线」
         api.bootstrapError = null;
         await controller.refreshNow();
         await tester.pump();
@@ -811,8 +755,8 @@ void main() {
         expect(controller.syncConnectionState, SyncConnectionState.connected);
         expect(controller.connectionLost, isFalse);
         expect(controller.syncing, isFalse);
-        expect(find.text('已连接'), findsOneWidget);
-        expect(find.text('已中断'), findsNothing);
+        expect(find.text('在线'), findsWidgets);
+        expect(find.text('离线'), findsNothing);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         controller.dispose();
@@ -863,29 +807,17 @@ void main() {
         expect(clients.first.connected, isFalse);
         expect(controller.syncConnectionState, SyncConnectionState.connecting);
 
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: ListenableBuilder(
-                listenable: controller,
-                builder: (_, __) => HomePage(
-                  controller: controller,
-                  audioService: _FakeAudioService(),
-                ),
-              ),
-            ),
-          ),
-        );
+        controller.enterWithoutIncident();
+        await tester.pumpWidget(_buildShell(controller));
         await tester.pump();
 
-        // connect 持续挂起超 30s 后转为「已中断」
+        // connect 持续挂起超 30s 后转为「离线」
         await tester.pump(const Duration(seconds: 31));
         expect(controller.connectionLost, isTrue);
         expect(controller.syncing, isFalse);
-        expect(find.text('已中断'), findsOneWidget);
+        expect(find.text('离线'), findsWidgets);
 
-        // 调用 refreshNow() 必须立即打断挂起的连接并建连恢复「已连接」
+        // 调用 refreshNow() 必须立即打断挂起的连接并建连恢复「在线」
         await controller.refreshNow();
         await tester.pump();
 
@@ -895,7 +827,7 @@ void main() {
         expect(controller.syncConnectionState, SyncConnectionState.connected);
         expect(controller.connectionLost, isFalse);
         expect(controller.syncing, isFalse);
-        expect(find.text('已连接'), findsOneWidget);
+        expect(find.text('在线'), findsWidgets);
 
         // 即使旧代次挂起的 connect 随后抛错，也不得污染新连接状态
         hangingGate.completeError(const SocketException('late hang failure'));

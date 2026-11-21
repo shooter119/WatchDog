@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/diagnostics/app_logger.dart';
 import '../../core/sync/sync_store.dart';
 import '../../features/monitor/data/models/entry.dart';
 import '../../features/monitor/state/alert_clock_store.dart';
@@ -198,7 +199,7 @@ class _ControllerMonitorStore extends MonitorStore {
           category: 'entry',
         );
       } catch (error) {
-        debugPrint('ShellMonitorAdapter pressure note failed: $error');
+        AppLogger.error('ShellMonitorAdapter pressure note failed', tag: 'monitor', error: error);
       }
     }
     return updated;

@@ -1,0 +1,6 @@
+{
+  "WATCHDOG_API_BASE_URL": "https://api.example.com",
+  "WATCHDOG_ASR_WS_BASE_URL": "https://api.example.com",
+  "WATCHDOG_MODEL_BASE_URL": "https://api.example.com/models",
+  "WATCHDOG_ALLOW_CUSTOM_SERVER": false
+}

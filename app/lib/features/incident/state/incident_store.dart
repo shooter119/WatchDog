@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/diagnostics/app_logger.dart';
 import '../../../services/scoped_json_cache.dart';
 import '../data/models/external_incident.dart';
 import '../data/models/incident.dart';
@@ -407,7 +408,7 @@ class IncidentStore extends ChangeNotifier {
             );
           }
         } catch (error) {
-          debugPrint('WatchDog fetchExternalIncidents failed: $error');
+          AppLogger.error('WatchDog fetchExternalIncidents failed', tag: 'incident', error: error);
         } finally {
           if (sameEpoch()) {
             _externalIncidentsLoading = false;
@@ -458,7 +459,7 @@ class IncidentStore extends ChangeNotifier {
         );
       }
     } catch (error) {
-      debugPrint('WatchDog reorganizeExternalIncidents failed: $error');
+      AppLogger.error('WatchDog reorganizeExternalIncidents failed', tag: 'incident', error: error);
       rethrow;
     } finally {
       final wasReorganizing = _externalReorganizing;

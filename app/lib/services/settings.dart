@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../theme/app_palette.dart';
 import 'secure_store.dart';
 
 class Settings {
@@ -94,6 +93,7 @@ class Settings {
   static const _kPendingAppPhone = 'pending_app_phone';
   static const _kPendingAppSubmittedAt = 'pending_app_submitted_at';
   static const _kAppTheme = 'app_theme';
+  static const _kWarmSandMigratedNoticeShown = 'app_theme_warm_sand_migrated_v1';
   static const _kIncidentCardExpandedMap = 'incident_card_expanded_v1';
 
   static bool _isLocalHost(String host) => const {
@@ -397,6 +397,16 @@ class Settings {
     }
   }
 
+  static String _normalizeAppThemeId(String? raw) => switch (raw) {
+    'night-tactical' => 'night-tactical',
+    'system' => 'system',
+    _ => 'daylight',
+  };
+
+  /// 读取本机原始外观主题 ID（不触发归一化写回，供启动期一次性迁移判定使用）。
+  static Future<String?> get rawAppThemeId async =>
+      (await SharedPreferences.getInstance()).getString(_kAppTheme);
+
   /// 当前设备的外观配色；属于设备级体验偏好：
   ///
   /// - **不进入** [syncKeys]/[toSyncMap]：后端 `USER_SETTING_KEYS` 白名单不含
@@ -406,14 +416,26 @@ class Settings {
   static Future<String> get appThemeId async {
     final sp = await SharedPreferences.getInstance();
     final raw = sp.getString(_kAppTheme);
-    final id = AppPalette.byId(raw).id;
+    final id = _normalizeAppThemeId(raw);
     if (raw != id) await sp.setString(_kAppTheme, id);
     return id;
   }
 
   static Future<void> setAppThemeId(String id) async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setString(_kAppTheme, AppPalette.byId(id).id);
+    await sp.setString(_kAppTheme, _normalizeAppThemeId(id));
+  }
+
+  /// 「暖砂 → 昼白」一次性迁移提示是否已展示（仅本机生效，不进入 [syncKeys]）。
+  static Future<bool> get warmSandMigratedNoticeShown async =>
+      (await SharedPreferences.getInstance()).getBool(
+        _kWarmSandMigratedNoticeShown,
+      ) ??
+      false;
+
+  static Future<void> setWarmSandMigratedNoticeShown(bool shown) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool(_kWarmSandMigratedNoticeShown, shown);
   }
 
   static Future<String> get unitName async {

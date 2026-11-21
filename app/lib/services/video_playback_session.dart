@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../core/diagnostics/app_logger.dart';
 import '../models/video_resources.dart';
 
 enum VideoPlaybackStatus { idle, connecting, playing, failed }
@@ -265,7 +266,7 @@ class VideoPlaybackSession extends ChangeNotifier {
     if (!hasResource) return;
     _lastError = error.toString();
     if (kDebugMode) {
-      debugPrint('video-session: ${_redactUrl(_lastError!)}');
+      AppLogger.log('video-session: ${_redactUrl(_lastError!)}', tag: 'video');
     }
 
     if (_isBenignError(_lastError!)) return;
@@ -341,7 +342,7 @@ class VideoPlaybackSession extends ChangeNotifier {
 
   void _debugPresentation() {
     if (kDebugMode) {
-      debugPrint('video-session: presentation=${_presentation.name}');
+      AppLogger.log('video-session: presentation=${_presentation.name}', tag: 'video');
     }
   }
 

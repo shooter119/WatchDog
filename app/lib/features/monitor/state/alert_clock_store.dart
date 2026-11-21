@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/diagnostics/app_logger.dart';
 import '../../../services/alarm_service.dart';
 import '../../../services/tts_service.dart';
 import '../data/models/calc_config.dart';
@@ -94,12 +95,12 @@ class AlertClockStore extends ChangeNotifier {
       _alarmReady = true;
     } catch (error) {
       _alarmReady = false;
-      debugPrint('AlertClockStore alarm.init failed: $error');
+      AppLogger.error('AlertClockStore alarm.init failed', tag: 'alert', error: error);
     }
     try {
       await tts.init();
     } catch (error) {
-      debugPrint('AlertClockStore tts.init failed: $error');
+      AppLogger.error('AlertClockStore tts.init failed', tag: 'alert', error: error);
     }
   }
 
@@ -281,7 +282,7 @@ class AlertClockStore extends ChangeNotifier {
     try {
       await alarm.startAlarmLoop();
     } catch (error) {
-      debugPrint('AlertClockStore startAlarmLoop failed: $error');
+      AppLogger.error('AlertClockStore startAlarmLoop failed', tag: 'alert', error: error);
     }
   }
 
@@ -289,7 +290,7 @@ class AlertClockStore extends ChangeNotifier {
     try {
       await alarm.stopAlarm();
     } catch (error) {
-      debugPrint('AlertClockStore stopAlarm failed: $error');
+      AppLogger.error('AlertClockStore stopAlarm failed', tag: 'alert', error: error);
     }
   }
 

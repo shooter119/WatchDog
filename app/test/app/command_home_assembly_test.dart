@@ -21,7 +21,6 @@ import 'package:watchdog/services/system_pip.dart';
 import 'package:watchdog/services/theme_controller.dart';
 import 'package:watchdog/services/video_playback_session.dart';
 import 'package:watchdog/state/app_controller.dart';
-import 'package:watchdog/theme/app_palette.dart';
 
 class _AssemblyFakeController extends AppController {
   _AssemblyFakeController({
@@ -322,7 +321,7 @@ void main() {
       expect(find.byType(FloatingVideoOverlay), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      ThemeController.instance.select(AppPalette.nightTactical);
+      ThemeController.instance.select(AppThemePreference.night);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });

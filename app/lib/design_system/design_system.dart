@@ -1,8 +1,10 @@
+export 'components/assistant_avatar.dart';
 export 'components/command_button.dart';
 export 'components/command_nav_bar.dart';
 export 'components/command_scaffold.dart';
 export 'components/command_sheet.dart';
 export 'components/connection_pill.dart';
+export 'components/fire_control_logo.dart';
 export 'components/incident_header.dart';
 export 'components/metric_readout.dart';
 export 'components/state_placeholder.dart';

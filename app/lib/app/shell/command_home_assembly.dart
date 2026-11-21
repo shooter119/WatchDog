@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/sync/sync_store.dart';
 import '../../design_system/design_system.dart';
 import '../../features/command_home/ui/command_home_page.dart';
 import '../../features/command_home/ui/sheets/connection_detail_sheet.dart';
@@ -89,10 +88,6 @@ class CommandHomeAssembly {
     if (controller.isGuest) return DsConnectionState.online;
     if (controller.syncing) return DsConnectionState.reconnecting;
     if (controller.connectionLost) return DsConnectionState.offline;
-    if (controller.syncConnectionState != SyncConnectionState.connected &&
-        controller.syncConnectionState != SyncConnectionState.stopped) {
-      return DsConnectionState.reconnecting;
-    }
     return DsConnectionState.online;
   }
 

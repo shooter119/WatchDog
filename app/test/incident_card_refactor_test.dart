@@ -1,173 +1,32 @@
-import 'dart:typed_data';
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-import 'package:watchdog/api/api_client.dart';
+import 'package:watchdog/design_system/design_system.dart';
+import 'package:watchdog/features/incident/ui/widgets/incident_category_style.dart';
 import 'package:watchdog/models/models.dart';
-import 'package:watchdog/pages/home_page.dart';
-import 'package:watchdog/services/audio_service.dart';
-import 'package:watchdog/services/theme_controller.dart';
-import 'package:watchdog/state/app_controller.dart';
-import 'package:watchdog/theme/app_palette.dart';
-import 'package:watchdog/theme/app_theme.dart';
-import 'package:watchdog/theme/app_widgets.dart';
-import 'package:watchdog/widgets/incident_category_badge.dart';
-
-class _TestAudio extends AudioService {
-  @override
-  Future<bool> hasPermission() async => true;
-
-  @override
-  Future<void> start() async {}
-
-  @override
-  Stream<double> amplitudeStream() => const Stream.empty();
-
-  @override
-  Future<Uint8List> stop() async => Uint8List(0);
-
-  @override
-  Future<void> dispose() async {}
-}
-
-class _TestAdjustApi extends ApiClient {
-  _TestAdjustApi({Map<String, dynamic>? initialData})
-    : detailData = Map<String, dynamic>.from(
-        initialData ?? {'original_category': '一级火灾扑救'},
-      ),
-      super(baseUrl: 'http://test', incidentId: 'i-adjust');
-
-  Map<String, dynamic> detailData;
-  Map<String, dynamic>? updatedData;
-  int detailsVersion = 1;
-
-  @override
-  ApiClient forIncident(String id) => this;
-
-  @override
-  Future<Map<String, dynamic>> fetchIncidentDetails() async => {
-    'data': Map<String, dynamic>.from(detailData),
-    'version': detailsVersion,
-  };
-
-  @override
-  Future<Map<String, dynamic>> updateIncidentDetails(
-    Map<String, dynamic> data,
-    int version,
-    String opId,
-  ) async {
-    updatedData = Map<String, dynamic>.from(data);
-    detailData = Map<String, dynamic>.from(data);
-    detailsVersion++;
-    return {'ok': true, 'version': detailsVersion};
-  }
-
-  @override
-  Future<Incident> fetchIncident(String id) async => Incident(
-    id: id,
-    number: '2026-11-13-09',
-    status: 'active',
-    createdAt: 1,
-    lastActivityAt: 1,
-    info: Map<String, dynamic>.from(detailData),
-  );
-
-  @override
-  Future<List<IncidentForce>> fetchIncidentForces({
-    String? forIncidentId,
-  }) async => const [];
-}
-
-class _TestController extends AppController {
-  _TestController({
-    Incident? incident,
-    List<IncidentForce> forces = const [],
-  }) : super() {
-    currentIncident = incident;
-    this.forces = forces;
-    asrCloudEnabled = true;
-    parseCloudEnabled = true;
-  }
-
-  @override
-  bool get needsAuthentication => false;
-
-  @override
-  void startSync() {}
-
-  @override
-  Future<void> sync() async {}
-}
-
-Future<void> _pumpHome(WidgetTester tester, _TestController controller) async {
-  await tester.pumpWidget(
-    MaterialApp(
-      theme: buildAppTheme(),
-      home: Scaffold(
-        body: AnimatedBuilder(
-          animation: controller,
-          builder: (_, __) =>
-              HomePage(controller: controller, audioService: _TestAudio()),
-        ),
-      ),
-    ),
-  );
-  await tester.pump();
-}
 
 void main() {
-  setUp(() {
-    SharedPreferences.setMockInitialValues({});
-    ThemeController.instance.resetForTest();
-  });
-
-  tearDown(() {
-    ThemeController.instance.resetForTest();
-  });
-
   group('警情三类分类与图标', () {
     test('classify 按主类别与关键词归入灭火/抢险/救助且空白默认灭火', () {
-      expect(IncidentCategory.classify(), IncidentCategory.fire);
+      expect(IncidentCategoryStyle.classify(), DsIncidentCategory.fire);
       expect(
-        IncidentCategory.classify(category: '一级火灾扑救'),
-        IncidentCategory.fire,
+        IncidentCategoryStyle.classify(category: '一级火灾扑救'),
+        DsIncidentCategory.fire,
       );
       expect(
-        IncidentCategory.classify(category: '二级抢险救援'),
-        IncidentCategory.rescue,
+        IncidentCategoryStyle.classify(category: '二级抢险救援'),
+        DsIncidentCategory.rescue,
       );
       expect(
-        IncidentCategory.classify(category: '社会救助'),
-        IncidentCategory.aid,
+        IncidentCategoryStyle.classify(category: '社会救助'),
+        DsIncidentCategory.aid,
       );
       expect(
-        IncidentCategory.classify(situation: '电梯困人请求开锁协助'),
-        IncidentCategory.aid,
+        IncidentCategoryStyle.classify(situation: '电梯困人请求开锁协助'),
+        DsIncidentCategory.aid,
       );
       expect(
-        IncidentCategory.classify(situation: '高速路段货车侧翻漏油'),
-        IncidentCategory.rescue,
+        IncidentCategoryStyle.classify(situation: '高速路段货车侧翻漏油'),
+        DsIncidentCategory.rescue,
       );
-    });
-
-    testWidgets('三类 Badge 渲染正确 Key 与自定义矢量画板', (tester) async {
-      for (final category in IncidentCategory.values) {
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Scaffold(
-              body: IncidentCategoryBadge(
-                key: Key('badge-${category.name}'),
-                category: category,
-              ),
-            ),
-          ),
-        );
-        expect(find.byKey(Key('badge-${category.name}')), findsOneWidget);
-        expect(find.byType(CustomPaint), findsWidgets);
-      }
     });
   });
 
@@ -190,8 +49,8 @@ void main() {
         lastActivityAt: todayCreatedAt,
       );
 
-      final data = IncidentCardData.fromIncident(incident, now: now);
-      expect(data.category, IncidentCategory.fire);
+      final data = IncidentCardViewModel.fromIncident(incident, now: now);
+      expect(data.category, DsIncidentCategory.fire);
       expect(data.locationText, '示例县示范路18号');
       expect(data.hasRealLocation, isTrue);
       expect(data.eventTitle, '示范小区居民楼冒烟');
@@ -211,7 +70,7 @@ void main() {
       final lastYearMs = DateTime(2025, 12, 31, 23, 59).millisecondsSinceEpoch;
 
       expect(
-        IncidentCardData.formatIncidentTime(
+        IncidentCardViewModel.formatIncidentTime(
           Incident(
             id: 't1',
             number: 'n',
@@ -224,7 +83,7 @@ void main() {
         '昨日 08:09',
       );
       expect(
-        IncidentCardData.formatIncidentTime(
+        IncidentCardViewModel.formatIncidentTime(
           Incident(
             id: 't2',
             number: 'n',
@@ -237,7 +96,7 @@ void main() {
         '05-04 21:07',
       );
       expect(
-        IncidentCardData.formatIncidentTime(
+        IncidentCardViewModel.formatIncidentTime(
           Incident(
             id: 't3',
             number: 'n',
@@ -250,7 +109,7 @@ void main() {
         '2025-12-31 23:59',
       );
       expect(
-        IncidentCardData.formatIncidentTime(
+        IncidentCardViewModel.formatIncidentTime(
           const Incident(
             id: 't4',
             number: 'n',
@@ -261,228 +120,6 @@ void main() {
           now: now,
         ),
         '时间待补充',
-      );
-    });
-  });
-
-  group('终态冲突治理与首页卡片渲染', () {
-    testWidgets('终态归队/已结案隐藏力量待登记，出动状态显示力量待登记', (tester) async {
-      final terminalController = _TestController(
-        incident: const Incident(
-          id: 'inc-term',
-          number: '2026-11-13-03',
-          title: '示范商场火警',
-          info: {
-            'location': '示范路88号',
-            'original_category': '一级火灾扑救',
-            'incident_status': '归队',
-          },
-          status: 'active',
-          createdAt: 1,
-          lastActivityAt: 1,
-        ),
-      );
-      await _pumpHome(tester, terminalController);
-
-      expect(find.text('示范商场火警'), findsOneWidget);
-      expect(find.byKey(const Key('incident-collapse-pill')), findsOneWidget);
-      expect(find.text('力量待登记'), findsNothing);
-
-      await tester.tap(find.byKey(const Key('toggle-incident-card')));
-      await tester.pumpAndSettle();
-      expect(find.text('官方状态: 归队'), findsOneWidget);
-      expect(find.text('力量待登记'), findsNothing);
-
-      final activeController = _TestController(
-        incident: const Incident(
-          id: 'inc-active',
-          number: '2026-11-13-04',
-          title: '示范仓库火警',
-          info: {
-            'location': '示范路99号',
-            'original_category': '一级火灾扑救',
-            'incident_status': '出动',
-          },
-          status: 'active',
-          createdAt: 1,
-          lastActivityAt: 1,
-        ),
-      );
-      await _pumpHome(tester, activeController);
-      await tester.tap(find.byKey(const Key('toggle-incident-card')));
-      await tester.pumpAndSettle();
-      expect(find.text('官方状态: 出动'), findsOneWidget);
-      expect(find.text('力量待登记'), findsOneWidget);
-    });
-
-    testWidgets('已登记参战力量时始终展示队伍数量胶囊', (tester) async {
-      final controller = _TestController(
-        incident: const Incident(
-          id: 'inc-force',
-          number: '2026-11-13-05',
-          title: '示范厂房抢险',
-          info: {
-            'location': '示例工业园3号',
-            'original_category': '二级抢险救援',
-            'incident_status': '归队',
-          },
-          status: 'active',
-          createdAt: 1,
-          lastActivityAt: 1,
-        ),
-        forces: const [
-          IncidentForce(
-            id: 'f1',
-            incidentId: 'inc-force',
-            stationName: '示例路站',
-            personnelCount: 6,
-            vehicleCount: 2,
-            createdAt: 1,
-            updatedAt: 1,
-            version: 1,
-          ),
-        ],
-      );
-      await _pumpHome(tester, controller);
-      await tester.tap(find.byKey(const Key('toggle-incident-card')));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const Key('incident-category-badge-rescue')),
-        findsOneWidget,
-      );
-      expect(find.text('1支队伍'), findsNWidgets(2));
-      expect(find.text('力量待登记'), findsNothing);
-    });
-  });
-
-  group('警情调整三类芯片联动与防孤字排版', () {
-    testWidgets('警情调整弹窗切换灭火/抢险/救助芯片联动刷新级别选项并保存', (tester) async {
-      final api = _TestAdjustApi(
-        initialData: {'original_category': '一级火灾扑救'},
-      );
-      final controller = _TestController(
-        incident: const Incident(
-          id: 'i-adjust',
-          number: '2026-11-13-09',
-          status: 'active',
-          createdAt: 1,
-          lastActivityAt: 1,
-          info: {'original_category': '一级火灾扑救'},
-        ),
-      )..api = api;
-
-      await _pumpHome(tester, controller);
-      await tester.tap(find.byKey(const Key('toggle-incident-card')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('警情调整'));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(const Key('incident-category-chip-aid')));
-      await tester.pumpAndSettle();
-      expect(find.text('二级社会救助'), findsOneWidget);
-
-      await tester.tap(find.text('二级社会救助'));
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('incident-level-save')));
-      await tester.pumpAndSettle();
-
-      expect(api.updatedData?['original_category'], '二级社会救助');
-      expect(api.updatedData?['level'], '二级社会救助');
-      expect(
-        find.byKey(const Key('incident-category-badge-aid')),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('AntiOrphanText 在 320dp 窄屏不遗留单字尾行且不篡改文本', (tester) async {
-      const sample = '示例县示例镇示例示范新村三组十二号';
-      final style = AppTextStyles.caption.copyWith(fontSize: 13);
-
-      // 动态寻找会让原始排版产生单字尾行的临界宽度
-      double? orphanWidth;
-      for (var w = 260.0; w >= 120.0; w -= 1.0) {
-        final painter = TextPainter(
-          text: TextSpan(text: sample, style: style),
-          textDirection: TextDirection.ltr,
-          maxLines: 2,
-        )..layout(maxWidth: w);
-        final metrics = painter.computeLineMetrics();
-        if (metrics.length == 2) {
-          final pos = painter.getPositionForOffset(
-            Offset(0, metrics.last.baseline),
-          );
-          final range = painter.getLineBoundary(pos);
-          final lastLine = sample
-              .substring(
-                range.start.clamp(0, sample.length),
-                range.end.clamp(0, sample.length),
-              )
-              .trim();
-          if (lastLine.runes.length == 1) {
-            orphanWidth = w;
-            break;
-          }
-        }
-      }
-      expect(orphanWidth, isNotNull);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: buildAppTheme(),
-          home: Scaffold(
-            body: Center(
-              child: SizedBox(
-                width: orphanWidth,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: AntiOrphanText(
-                    text: sample,
-                    style: style,
-                    maxLines: 2,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      final textFinder = find.text(sample);
-      final textWidget = tester.widget<Text>(textFinder);
-      expect(textWidget.data, sample);
-      expect(tester.getSize(textFinder).width, lessThan(orphanWidth!));
-      expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('daylight 与 warmSand 双主题切换时三类语义色动态响应', (tester) async {
-      Future<Color> pumpAndReadFireColor() async {
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: buildAppTheme(),
-            home: Builder(
-              builder: (_) => Container(
-                key: const Key('color-probe'),
-                color: IncidentCategory.fire.iconColor,
-              ),
-            ),
-          ),
-        );
-        final container = tester.widget<Container>(
-          find.byKey(const Key('color-probe')),
-        );
-        return container.color!;
-      }
-
-      expect(
-        await pumpAndReadFireColor(),
-        AppPalette.daylight.incidentFire,
-      );
-
-      ThemeController.instance.select(AppPalette.warmSand);
-      expect(
-        await pumpAndReadFireColor(),
-        AppPalette.warmSand.incidentFire,
       );
     });
   });
@@ -549,74 +186,9 @@ void main() {
       expect(roundTrip.effectiveLocation, '示例县和平街9号');
     });
 
-    testWidgets('首页折叠态在有出动力量时紧凑展示并在无力量时不占位', (tester) async {
-      final emptyController = _TestController(
-        incident: const Incident(
-          id: 'inc-no-force',
-          number: '2026-11-14-01',
-          title: '沿街商铺烟道冒烟',
-          info: {
-            'location': '示例县示范路10号',
-            'original_category': '火灾扑救',
-          },
-          status: 'active',
-          createdAt: 1786177140000,
-          lastActivityAt: 1786177140000,
-        ),
-      );
-      await _pumpHome(tester, emptyController);
-      expect(find.byKey(const Key('incident-collapsed-forces')), findsNothing);
-      final collapsedHeight = tester
-          .getSize(find.byKey(const Key('incident-card')))
-          .height;
-      expect(collapsedHeight, lessThan(120));
-
-      final withForceController = _TestController(
-        incident: const Incident(
-          id: 'inc-with-force',
-          number: '2026-11-14-02',
-          title: '居民楼厨房起火',
-          info: {
-            'location': '示例县示范路20号',
-            'original_category': '火灾扑救',
-          },
-          status: 'active',
-          createdAt: 1786177140000,
-          lastActivityAt: 1786177140000,
-        ),
-        forces: const [
-          IncidentForce(
-            id: 'f-sync-1',
-            incidentId: 'inc-with-force',
-            stationName: '示例路站',
-            vehicleCount: 3,
-            personnelCount: 0,
-            vehicleCountKnown: true,
-            personnelCountKnown: false,
-            createdAt: 1,
-            updatedAt: 1,
-            version: 1,
-          ),
-        ],
-      );
-      await _pumpHome(tester, withForceController);
-      expect(
-        find.byKey(const Key('incident-collapsed-forces')),
-        findsOneWidget,
-      );
-      expect(find.text('示例路站 3车'), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('toggle-incident-card')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('incident-collapsed-forces')), findsNothing);
-      expect(find.text('参战力量'), findsOneWidget);
-      expect(find.textContaining('示例路站'), findsOneWidget);
-    });
-
     test('4级地址兜底链有效解析 location -> address -> location_display -> crime_address', () {
       final now = DateTime(2026, 11, 13, 10, 0);
 
-      // 1. location 存在
       final inc1 = Incident(
         id: 'inc-1',
         number: '1',
@@ -626,9 +198,8 @@ void main() {
         info: const {'location': '示范路1号'},
       );
       expect(inc1.effectiveLocation, '示范路1号');
-      expect(IncidentCardData.fromIncident(inc1, now: now).locationText, '示范路1号');
+      expect(IncidentCardViewModel.fromIncident(inc1, now: now).locationText, '示范路1号');
 
-      // 2. location 缺失，address 生效
       final inc2 = Incident(
         id: 'inc-2',
         number: '2',
@@ -638,9 +209,8 @@ void main() {
         info: const {'address': '示范路2号'},
       );
       expect(inc2.effectiveLocation, '示范路2号');
-      expect(IncidentCardData.fromIncident(inc2, now: now).locationText, '示范路2号');
+      expect(IncidentCardViewModel.fromIncident(inc2, now: now).locationText, '示范路2号');
 
-      // 3. location 和 address 缺失，location_display 生效
       final inc3 = Incident(
         id: 'inc-3',
         number: '3',
@@ -650,9 +220,8 @@ void main() {
         info: const {'location_display': '示范路3号'},
       );
       expect(inc3.effectiveLocation, '示范路3号');
-      expect(IncidentCardData.fromIncident(inc3, now: now).locationText, '示范路3号');
+      expect(IncidentCardViewModel.fromIncident(inc3, now: now).locationText, '示范路3号');
 
-      // 4. 前三者缺失，crime_address 生效
       final inc4 = Incident(
         id: 'inc-4',
         number: '4',
@@ -662,9 +231,8 @@ void main() {
         info: const {'crime_address': '示范路4号'},
       );
       expect(inc4.effectiveLocation, '示范路4号');
-      expect(IncidentCardData.fromIncident(inc4, now: now).locationText, '示范路4号');
+      expect(IncidentCardViewModel.fromIncident(inc4, now: now).locationText, '示范路4号');
 
-      // 5. 全部缺失或为 '地点待补充'/'null'
       final inc5 = Incident(
         id: 'inc-5',
         number: '5',
@@ -674,7 +242,7 @@ void main() {
         info: const {'location': '地点待补充', 'address': 'null'},
       );
       expect(inc5.effectiveLocation, '');
-      expect(IncidentCardData.fromIncident(inc5, now: now).locationText, '地点待补充');
+      expect(IncidentCardViewModel.fromIncident(inc5, now: now).locationText, '地点待补充');
     });
   });
 }

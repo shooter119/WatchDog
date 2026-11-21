@@ -802,11 +802,13 @@ void main() {
       expect(violations, isEmpty, reason: '存在分层隔离违例:\n${violations.join('\n')}');
     });
 
-    test('4. 单文件行数预算（core/、features/*/data/、api/*.dart <= 500 行；models.dart <= 60 行）', () {
+    test('4. 单文件行数预算（app/、core/、features/、state/、api/*.dart <= 500 行；main.dart <= 200 行；models.dart <= 60 行）', () {
       final violations = <String>[];
       final boundedFiles = <File>[
+        ..._listDartFiles(Directory('${libDir.path}/app')),
         ..._listDartFiles(Directory('${libDir.path}/core')),
         ..._listDartFiles(Directory('${libDir.path}/features')),
+        ..._listDartFiles(Directory('${libDir.path}/state')),
         ..._listDartFiles(Directory('${libDir.path}/api')),
       ];
       expect(boundedFiles, isNotEmpty);
@@ -817,6 +819,12 @@ void main() {
         if (lineCount > _maxModuleLines) {
           violations.add('lib/$rel 行数 $lineCount 超出上限 $_maxModuleLines');
         }
+      }
+
+      final mainFile = File('${libDir.path}/main.dart');
+      final mainLines = mainFile.readAsLinesSync().length;
+      if (mainLines > 200) {
+        violations.add('lib/main.dart 行数 $mainLines 超出上限 200');
       }
 
       final modelsBarrel = File('${libDir.path}/models/models.dart');

@@ -1,7 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+
+import '../core/diagnostics/app_logger.dart';
 
 class TtsService {
   final FlutterTts _tts = FlutterTts();
@@ -55,7 +56,7 @@ class TtsService {
       _ready = false;
       // 初始化失败不能让主流程崩溃，但保留日志便于定位设备 TTS 配置问题。
       // 下一次 speak 会再次尝试初始化，允许用户安装/启用语音引擎后即时恢复。
-      debugPrint('TtsService init failed: $e');
+      AppLogger.error('TtsService init failed', tag: 'tts', error: e);
     }
   }
 
@@ -73,11 +74,11 @@ class TtsService {
       final result = await _tts.speak(text, focus: true);
       if (result is num && result == 0) {
         _ready = false;
-        debugPrint('TtsService speak rejected by system TTS engine');
+        AppLogger.log('TtsService speak rejected by system TTS engine', tag: 'tts');
       }
     } catch (e) {
       _ready = false;
-      debugPrint('TtsService speak failed: $e');
+      AppLogger.error('TtsService speak failed', tag: 'tts', error: e);
     }
   }
 

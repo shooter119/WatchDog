@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-
+import '../../core/diagnostics/app_logger.dart';
 import '../../core/network/network.dart';
 import '../../core/sync/sync_store.dart';
 import '../../features/auth/state/session_store.dart';
@@ -201,7 +200,7 @@ class SessionOrchestrator {
     _sessionRefreshTimer = Timer.periodic(_config.sessionRefreshInterval, (_) {
       unawaited(
         refreshSession().catchError((Object error, StackTrace _) {
-          if (!isApiAuthenticationFailure(error)) debugPrint('WatchDog session refresh failed: $error');
+          if (!isApiAuthenticationFailure(error)) AppLogger.error('WatchDog session refresh failed', tag: 'auth', error: error);
         }),
       );
     });
@@ -223,7 +222,7 @@ class SessionOrchestrator {
       await refreshSession();
     } catch (error) {
       if (!isApiAuthenticationFailure(error) && error is! StateError) {
-        debugPrint('WatchDog resume session check failed: $error');
+        AppLogger.error('WatchDog resume session check failed', tag: 'auth', error: error);
       }
     }
     if (!_disposed &&

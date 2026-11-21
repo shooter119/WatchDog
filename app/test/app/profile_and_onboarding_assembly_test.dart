@@ -26,7 +26,6 @@ import 'package:watchdog/models/models.dart';
 import 'package:watchdog/services/system_pip.dart';
 import 'package:watchdog/services/theme_controller.dart';
 import 'package:watchdog/state/app_controller.dart';
-import 'package:watchdog/theme/app_palette.dart';
 
 class _WiringFakeController extends AppController {
   _WiringFakeController({
@@ -236,7 +235,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(nightFinder);
       await tester.pumpAndSettle();
-      expect(ThemeController.instance.currentId, AppPalette.nightTactical.id);
+      expect(ThemeController.instance.currentId, AppThemePreference.night.id);
       // 5. 连接与维护 -> DS v3.0 关于项目
       await openAndVerify<AboutPage>(find.text('关于项目'));
 
@@ -420,7 +419,7 @@ void main() {
       expect(find.byType(UnitAuthPage), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      ThemeController.instance.select(AppPalette.nightTactical);
+      ThemeController.instance.select(AppThemePreference.night);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });

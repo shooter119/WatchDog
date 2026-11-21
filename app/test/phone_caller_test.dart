@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:watchdog/core/ui/phone_text.dart';
+import 'package:watchdog/design_system/design_system.dart';
 import 'package:watchdog/services/phone_caller.dart';
-import 'package:watchdog/widgets/phone_text.dart';
 
 void main() {
   group('PhoneCaller 基础服务测试', () {
@@ -40,8 +41,9 @@ void main() {
   group('PhoneText 部件渲染与交互测试', () {
     testWidgets('无号码文本正常渲染为纯 Text', (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
+        MaterialApp(
+          theme: buildCommandTheme(Brightness.light),
+          home: const Scaffold(
             body: PhoneText('现场一切正常，无需支援'),
           ),
         ),
@@ -56,6 +58,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          theme: buildCommandTheme(Brightness.light),
           home: Scaffold(
             body: PhoneText(
               '请联系现场负责人小张 13912345678 尽快对接',

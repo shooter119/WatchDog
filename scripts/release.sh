@@ -16,8 +16,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION_FILE="app/lib/app/app_version.dart"
 APK_DIR_REL="app/build/app/outputs/flutter-apk"
 APK_PREFIX="watchdog"
+SYMBOLS_ROOT="${WATCHDOG_SYMBOLS_DIR:-$HOME/WatchDog-symbols}"
+DEFAULT_DEFINES_FILE="${HOME}/.config/watchdog/release-defines.json"
 
 # OTA 主机与目录，可用环境变量覆盖
 OTA_HOST="${OTA_HOST:-ali}"
@@ -33,6 +36,8 @@ VERSION=""
 BUILD=""
 NOTES=""
 NOTES_FILE=""
+DEFINES_FILE=""
+DEFINES_FILE_EXPLICIT=0
 DO_GH=0
 DRY_RUN=0
 SKIP_GATES=0
@@ -149,6 +154,7 @@ usage() {
   --build <n>           可选，构建号；默认取「已有 tag 与 pubspec 中较大者 +1」
   --notes <text>        更新说明（GitHub Release 与 changelog 共用）
   --notes-file <path>   从文件读更新说明（优先级高于 --notes）
+  --defines-file <path> 可选，Flutter 编译期常量 JSON（默认探测 ~/.config/watchdog/release-defines.json）
   --github-release      同时创建 GitHub Release
   --skip-gates          跳过 analyze/test/后端测试（不建议）
   --skip-upload         跳过 OTA 上传与公网校验（只构建）
@@ -159,7 +165,8 @@ usage() {
 
 环境变量：
   OTA_HOST（默认 ali）、OTA_DIR（默认 /opt/watchdog/ota）、
-  PUBLIC_BASE（默认 https://fireman119.xyz）
+  PUBLIC_BASE（默认 https://fireman119.xyz）、
+  WATCHDOG_SYMBOLS_DIR（默认 ~/WatchDog-symbols，存放混淆符号，严禁位于仓库内）
 EOF
 }
 
@@ -169,6 +176,7 @@ while [[ $# -gt 0 ]]; do
     --build) BUILD="${2:-}"; shift 2 ;;
     --notes) NOTES="${2:-}"; shift 2 ;;
     --notes-file) NOTES_FILE="${2:-}"; shift 2 ;;
+    --defines-file) DEFINES_FILE="${2:-}"; DEFINES_FILE_EXPLICIT=1; shift 2 ;;
     --github-release) DO_GH=1; shift ;;
     --skip-gates) SKIP_GATES=1; shift ;;
     --skip-upload) SKIP_UPLOAD=1; shift ;;
@@ -189,14 +197,41 @@ if [[ -n "$NOTES_FILE" ]]; then
 fi
 [[ -n "$NOTES" ]] || die "缺少更新说明：请用 --notes 或 --notes-file"
 
+if (( DEFINES_FILE_EXPLICIT )); then
+  [[ -n "$DEFINES_FILE" && -f "$DEFINES_FILE" ]] || die "找不到编译定义文件：${DEFINES_FILE}"
+  DEFINES_FILE="$(python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$DEFINES_FILE")"
+elif [[ -f "$DEFAULT_DEFINES_FILE" ]]; then
+  DEFINES_FILE="$(python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$DEFAULT_DEFINES_FILE")"
+fi
+
+SYMBOLS_ROOT="$(python3 -c 'import os, sys; print(os.path.realpath(os.path.expanduser(sys.argv[1])))' "$SYMBOLS_ROOT")"
+REPO_REAL="$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$REPO_ROOT")"
+if [[ "$SYMBOLS_ROOT" == "$REPO_REAL" || "$SYMBOLS_ROOT" == "${REPO_REAL}/"* ]]; then
+  die "调试符号目录不能位于代码仓库内（严禁入库）：${SYMBOLS_ROOT}"
+fi
+
 cd "$REPO_ROOT"
 
 step "检查工作区"
-[[ -z "$(git status --porcelain)" ]] || die "工作区有未提交改动，先提交或还原再发版"
-info "工作区干净"
+if [[ -n "$(git status --porcelain)" ]]; then
+  if (( DRY_RUN )); then
+    warn "工作区有未提交改动（dry-run 仅预览计划，正式发版需先提交或还原）"
+  else
+    die "工作区有未提交改动，先提交或还原再发版"
+  fi
+else
+  info "工作区干净"
+fi
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-[[ "$BRANCH" == "main" ]] || die "当前分支是 $BRANCH，发版必须在 main 上"
-info "当前分支：main"
+if [[ "$BRANCH" != "main" ]]; then
+  if (( DRY_RUN )); then
+    warn "当前分支是 ${BRANCH}（dry-run 仅预览计划，正式发版必须在 main 上）"
+  else
+    die "当前分支是 $BRANCH，发版必须在 main 上"
+  fi
+else
+  info "当前分支：main"
+fi
 
 step "计算构建号"
 CUR_PUBSPEC="$(sed -n 's/^version: //p' app/pubspec.yaml | head -1)"
@@ -212,6 +247,7 @@ if [[ -z "$BUILD" ]]; then
 fi
 [[ "$BUILD" =~ ^[0-9]+$ ]] || die "构建号必须是数字，收到：$BUILD"
 TAG="v${VERSION}+${BUILD}"
+SYMBOLS_DIR="${SYMBOLS_ROOT}/${TAG}"
 VERSION_CODE=$((2000 + BUILD))
 APK_NAME="${APK_PREFIX}-${VERSION}+${BUILD}-arm64-v8a.apk"
 APK_URL="${PUBLIC_BASE}/ota/versions/${APK_NAME}"
@@ -230,8 +266,15 @@ info "tag ${TAG} 可用"
 
 if (( DRY_RUN )); then
   step "dry-run 结束"
-  info "将更新 app/pubspec.yaml 与 app/lib/pages/settings_page.dart 的版本号为 ${VERSION}+${BUILD}"
+  info "将更新 app/pubspec.yaml 与 ${VERSION_FILE} 的版本号为 ${VERSION}+${BUILD}"
   info "将提交并推送 main 与 tag ${TAG}"
+  info "将执行：flutter build apk --release --no-pub --target-platform android-arm64 --split-per-abi --obfuscate --split-debug-info=${SYMBOLS_DIR}${DEFINES_FILE:+ --dart-define-from-file=${DEFINES_FILE}}"
+  info "将校验 ${SYMBOLS_DIR}/*.symbols 非空并写入 ${SYMBOLS_DIR}/sha256sums.txt（权限 700，仓库外归档）"
+  if [[ -n "$DEFINES_FILE" ]]; then
+    info "将注入编译定义文件：${DEFINES_FILE}"
+  else
+    info "未检测到编译定义文件（默认探测 ${DEFAULT_DEFINES_FILE}），使用代码内默认值"
+  fi
   info "将构建 ${APK_NAME} 并上传到 ${OTA_HOST}:${OTA_DIR}/versions/"
   info "将更新 ${PUBLIC_BASE}/ota/latest.json 并做公网校验"
   info "将同步官网 ${WEBSITE_DIR} → ${OTA_HOST}:${WEBSITE_REMOTE_DIR} 并重建 website 容器"
@@ -302,25 +345,55 @@ else
 fi
 
 step "写入版本号"
+[[ -f "$VERSION_FILE" ]] || die "找不到版本常量文件：${VERSION_FILE}"
 sed -i '' -E "s/^version: .*/version: ${VERSION}+${BUILD}/" app/pubspec.yaml
-sed -i '' -E "s/^const appVersion = '.*';/const appVersion = '${VERSION}+${BUILD}';/" app/lib/pages/settings_page.dart
-grep -n '^version:' app/pubspec.yaml
-grep -n '^const appVersion' app/lib/pages/settings_page.dart
+sed -i '' -E "s/^const (String )?appVersion = '.*';/const String appVersion = '${VERSION}+${BUILD}';/" "$VERSION_FILE"
+grep -n "^version: ${VERSION}+${BUILD}$" app/pubspec.yaml \
+  || die "更新 app/pubspec.yaml 版本号失败"
+grep -n "^const String appVersion = '${VERSION}+${BUILD}';" "$VERSION_FILE" \
+  || die "更新 ${VERSION_FILE} 中的 appVersion 失败"
 
 step "提交、打 tag 并单次推送"
-git add app/pubspec.yaml app/lib/pages/settings_page.dart
+git add app/pubspec.yaml "$VERSION_FILE"
 git commit -m "chore: 版本号升至 ${VERSION}+${BUILD}"
 git tag -a "$TAG" -m "$TAG"
 git push origin main "$TAG"
 
-step "构建 release APK（arm64 split）"
+step "构建 release APK（arm64 split + 代码混淆与私有符号归档）"
 if [[ -d app/build ]]; then
   find app/build -name "* [0-9].*" -delete 2>/dev/null || true
 fi
-( cd app && env -u GIT_CONFIG_COUNT flutter build apk --release --no-pub \
-    --target-platform android-arm64 --split-per-abi 2>&1 | tail -3 )
+mkdir -p "$SYMBOLS_ROOT" "$SYMBOLS_DIR"
+chmod 700 "$SYMBOLS_ROOT" "$SYMBOLS_DIR"
+FLUTTER_BUILD_ARGS=(
+  build apk --release --no-pub
+  --target-platform android-arm64
+  --split-per-abi
+  --obfuscate
+  "--split-debug-info=${SYMBOLS_DIR}"
+)
+if [[ -n "$DEFINES_FILE" ]]; then
+  FLUTTER_BUILD_ARGS+=("--dart-define-from-file=${DEFINES_FILE}")
+  info "注入编译定义文件：${DEFINES_FILE}"
+fi
+( cd app && env -u GIT_CONFIG_COUNT flutter "${FLUTTER_BUILD_ARGS[@]}" 2>&1 | tail -5 )
 APK_PATH="${APK_DIR_REL}/app-arm64-v8a-release.apk"
 [[ -f "$APK_PATH" ]] || die "构建产物不存在：$APK_PATH"
+
+SYMBOL_FILES=()
+while IFS= read -r sym; do
+  SYMBOL_FILES+=("$sym")
+done < <(find "$SYMBOLS_DIR" -maxdepth 2 -type f -name '*.symbols' | LC_ALL=C sort)
+(( ${#SYMBOL_FILES[@]} > 0 )) || die "未生成混淆调试符号（*.symbols）：${SYMBOLS_DIR}"
+for sym in "${SYMBOL_FILES[@]}"; do
+  [[ -s "$sym" ]] || die "混淆调试符号文件为空：${sym}"
+done
+(
+  cd "$SYMBOLS_DIR"
+  find . -maxdepth 2 -type f -name '*.symbols' | sed 's|^\./||' | LC_ALL=C sort | xargs shasum -a 256 > sha256sums.txt
+)
+chmod 600 "${SYMBOLS_DIR}/sha256sums.txt"
+info "混淆调试符号已归档：${SYMBOLS_DIR}（${#SYMBOL_FILES[@]} 个 .symbols 文件，已写入 sha256sums.txt）"
 
 step "校验 APK"
 "$AAPT2" dump badging "$APK_PATH" > "${WORK_DIR}/badging.txt" 2>/dev/null
@@ -487,6 +560,7 @@ fi
 step "发版完成"
 info "版本：${VERSION}+${BUILD}（tag ${TAG}）"
 info "APK：${APK_URL}"
+info "符号：${SYMBOLS_DIR}（sha256sums.txt 已生成）"
 info "清单：${PUBLIC_BASE}/ota/latest.json"
 cat <<EOF
 

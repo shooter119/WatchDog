@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 
 import '../api/api_client.dart';
+import '../core/diagnostics/app_logger.dart';
 import 'audio_service.dart';
 import 'resilient_dns.dart';
 
@@ -93,8 +94,9 @@ class RealtimeAsrService {
         return;
       }
       _audioSub = stream.listen(_onAudio, onError: _onCaptureError);
-      debugPrint(
+      AppLogger.log(
         'Realtime ASR capture ready chunks=$_audioChunks bytes=$_audioBytes opId=${opId ?? '-'}',
+        tag: 'asr',
       );
       // 本地麦克风就绪后立即返回让页面进入录音态，WebSocket 在后台异步建连并
       // 冲刷缓冲音频，避免弱网/冷启动握手阻塞导致松手被误判取消。
@@ -149,8 +151,9 @@ class RealtimeAsrService {
   Future<WebSocket> _connectSocket(List<Uri> uris, {String? opId}) async {
     Object? lastError;
     for (final uri in uris) {
-      debugPrint(
+      AppLogger.log(
         'Realtime ASR connect host=${uri.host} path=${uri.path} opId=${opId ?? '-'}',
+        tag: 'asr',
       );
       try {
         final socket = await _socketFactory(
@@ -158,14 +161,17 @@ class RealtimeAsrService {
           headers: api.realtimeAsrHeaders(opId: opId),
           compression: CompressionOptions.compressionDefault,
         ).timeout(const Duration(seconds: 12));
-        debugPrint(
+        AppLogger.log(
           'Realtime ASR websocket open host=${uri.host} opId=${opId ?? '-'}',
+          tag: 'asr',
         );
         return socket;
       } catch (error) {
         lastError = error;
-        debugPrint(
-          'Realtime ASR websocket connect failed host=${uri.host} error=$error',
+        AppLogger.error(
+          'Realtime ASR websocket connect failed host=${uri.host}',
+          tag: 'asr',
+          error: error,
         );
       }
     }
@@ -187,7 +193,10 @@ class RealtimeAsrService {
     _audioBytes += chunk.length;
     _audioChunks++;
     if (_audioChunks == 1 || _audioChunks % 50 == 0) {
-      debugPrint('Realtime ASR audio chunks=$_audioChunks bytes=$_audioBytes');
+      AppLogger.log(
+        'Realtime ASR audio chunks=$_audioChunks bytes=$_audioBytes',
+        tag: 'asr',
+      );
     }
     if (_socketError != null) {
       _pending.clear();
@@ -241,17 +250,20 @@ class RealtimeAsrService {
         _resultCount++;
         _lastText = text;
         if (type == 'final') _hasFinal = true;
-        debugPrint(
+        AppLogger.log(
           'Realtime ASR result type=$type chars=${text.length} count=$_resultCount',
+          tag: 'asr',
         );
         onText?.call(text, finalText: type == 'final');
       } else if (type == 'ready') {
-        debugPrint(
+        AppLogger.log(
           'Realtime ASR server ready hotwords=${value['hotwordCount'] ?? '-'}',
+          tag: 'asr',
         );
       } else if (type == 'error') {
-        debugPrint(
+        AppLogger.error(
           'Realtime ASR server error: ${value['code'] ?? '-'} ${value['message'] ?? ''}',
+          tag: 'asr',
         );
         _onSocketError(StateError(value['message']?.toString() ?? '实时识别失败'));
       } else if (type == 'done' && !(_done?.isCompleted ?? true)) {
@@ -270,14 +282,22 @@ class RealtimeAsrService {
   void _onSocketError(Object error, [StackTrace? stack]) {
     _socketError ??= error;
     _pending.clear();
-    debugPrint('Realtime ASR socket error: $error');
+    AppLogger.error(
+      'Realtime ASR socket error',
+      tag: 'asr',
+      error: error,
+      stackTrace: stack,
+    );
     // 录音期间用户尚未 await _done.future；若此处调用 completeError 会在无监听器
     // 时向 Zone 抛出未捕获异步错误。记录 _socketError 后正常 complete 即可。
     if (!(_done?.isCompleted ?? true)) _done!.complete();
   }
 
   void _onSocketDone() {
-    debugPrint('Realtime ASR websocket done stopping=$_stopping');
+    AppLogger.log(
+      'Realtime ASR websocket done stopping=$_stopping',
+      tag: 'asr',
+    );
     // stop() 会先完成结果并重置状态，底层 WebSocket 的 onDone 可能在
     // reset 之后才异步到达；这属于正常收口，不能再伪造“连接已断开”。
     if (_stopping || _done == null || _hasFinal || _done!.isCompleted) {
@@ -318,8 +338,9 @@ class RealtimeAsrService {
       text: _lastText,
       wavBytes: _toWav(_audio.takeBytes()),
     );
-    debugPrint(
+    AppLogger.log(
       'Realtime ASR stop bytes=$_audioBytes chunks=$_audioChunks results=$_resultCount final=$_hasFinal',
+      tag: 'asr',
     );
     _reset();
     if (error != null) throw RealtimeAsrException(error, result);

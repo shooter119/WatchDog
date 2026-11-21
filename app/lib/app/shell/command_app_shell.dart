@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/diagnostics/app_logger.dart';
 import '../../design_system/design_system.dart';
 import '../../features/copilot/state/copilot_store.dart';
 import '../../features/incident/data/models/incident.dart';
@@ -19,13 +20,13 @@ import '../../services/video_playback_session.dart';
 import '../../state/app_controller.dart';
 import 'command_home_assembly.dart';
 import 'guest_banner_bar.dart';
-import 'legacy_tab_adapters.dart';
 import 'onboarding_assembly.dart';
 import 'profile_hub_assembly.dart';
 import 'shell_copilot_adapter.dart';
 import 'shell_keys.dart';
 import 'shell_monitor_adapter.dart';
 import 'shell_nav_bar.dart';
+import 'shell_tab_adapters.dart';
 import 'shell_voice_bridge.dart';
 import 'shell_voice_coordinator.dart';
 
@@ -97,8 +98,9 @@ class _CommandAppShellState extends State<CommandAppShell>
   late CommandHomeAssembly _homeAssembly;
   late ShellCopilotAdapter _copilotAdapter;
   late ShellVoiceCoordinator _voiceCoordinator;
-  late LegacyTabAdapters _adapters;
+  late ShellTabAdapters _adapters;
   int _tab = ShellVoiceBridge.commandTabIndex;
+  bool _warmSandNoticeScheduled = false;
 
   @override
   void initState() {
@@ -120,7 +122,7 @@ class _CommandAppShellState extends State<CommandAppShell>
     _voiceBridge.updateSlot(widget.voiceSlot ?? _adapters.createVoiceSlot());
     if (widget.enableStartupSideEffects) {
       unawaited(ForegroundKeepAlive.init().catchError(
-        (Object e, StackTrace _) => debugPrint('ForegroundKeepAlive failed: $e'),
+        (Object e, StackTrace s) => AppLogger.error('ForegroundKeepAlive failed', tag: 'shell', error: e, stackTrace: s),
       ));
       unawaited(widget.controller.init());
       unawaited(widget.controller.checkUpdateSilently());
@@ -220,7 +222,7 @@ class _CommandAppShellState extends State<CommandAppShell>
     controller: widget.controller,
     monitorAdapter: _monitorAdapter,
     buildIncidentDetailsRoute: ([Incident? target]) => _homeAssembly.buildIncidentDetailsRoute(target),
-    onSelectThemeId: LegacyTabAdapters.selectThemeById,
+    onSelectThemeId: ThemeController.instance.selectById,
   );
 
   CommandHomeAssembly _createHomeAssembly() => CommandHomeAssembly(
@@ -255,9 +257,9 @@ class _CommandAppShellState extends State<CommandAppShell>
     routerOverride: widget.voiceIntentRouter,
   );
 
-  LegacyTabAdapters _createAdapters() {
+  ShellTabAdapters _createAdapters() {
     final base = widget.tabOverrides;
-    return LegacyTabAdapters(
+    return ShellTabAdapters(
       controller: widget.controller,
       voiceBridge: _voiceBridge,
       videoPlayback: _videoPlayback,
@@ -356,6 +358,17 @@ class _CommandAppShellState extends State<CommandAppShell>
     ];
   }
 
+  void _scheduleWarmSandMigrationNotice() {
+    if (_warmSandNoticeScheduled) return;
+    _warmSandNoticeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _warmSandNoticeScheduled = false;
+      if (!mounted || !ThemeController.instance.warmSandMigratedPending) return;
+      _showSnackMessage('原「暖砂」配色已平滑升级为「昼白」，可在「我的 → 界面外观」随时切换', duration: const Duration(seconds: 4));
+      unawaited(ThemeController.instance.consumeWarmSandMigrationNotice());
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return KeyedSubtree(
@@ -363,20 +376,21 @@ class _CommandAppShellState extends State<CommandAppShell>
       child: ListenableBuilder(
         listenable: ThemeController.instance,
         builder: (BuildContext context, _) {
-          final brightness = ThemeController.instance.current.brightness;
-          final themeId = ThemeController.instance.currentId;
+          final themeController = ThemeController.instance;
+          if (themeController.warmSandMigratedPending) _scheduleWarmSandMigrationNotice();
           return MaterialApp(
             title: kDebugMode ? '火场智控·测试' : '火场智控',
             navigatorKey: _navigatorKey,
             scaffoldMessengerKey: _messengerKey,
             debugShowCheckedModeBanner: false,
-            theme: buildCommandTheme(brightness),
+            theme: buildCommandTheme(Brightness.light),
+            darkTheme: buildCommandTheme(Brightness.dark),
+            themeMode: themeController.themeMode,
             themeAnimationDuration: Duration.zero,
             builder: (BuildContext context, Widget? child) {
+              final dark = Theme.of(context).brightness == Brightness.dark;
               return AnnotatedRegion<SystemUiOverlayStyle>(
-                value: brightness == Brightness.dark
-                    ? SystemUiOverlayStyle.light
-                    : SystemUiOverlayStyle.dark,
+                value: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
                 child: ValueListenableBuilder<bool>(
                   valueListenable: SystemPip.isActive,
                   builder: (_, bool inPip, _) => inPip
@@ -385,7 +399,7 @@ class _CommandAppShellState extends State<CommandAppShell>
                 ),
               );
             },
-            home: KeyedSubtree(key: ValueKey<String>(themeId), child: _buildHome()),
+            home: _buildHome(),
           );
         },
       ),

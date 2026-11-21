@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:watchdog/design_system/design_system.dart';
+import 'package:watchdog/features/video/ui/pip_shell.dart';
+import 'package:watchdog/features/video/ui/video_playback_surface.dart';
 import 'package:watchdog/models/video_resources.dart';
-import 'package:watchdog/pages/video_playback_surface.dart';
 import 'package:watchdog/services/system_pip.dart';
 import 'package:watchdog/services/video_playback_session.dart';
-import 'package:watchdog/widgets/pip_shell.dart';
 
 const _testResource = VideoResource(
   id: 'pip-camera-1',
@@ -139,18 +140,23 @@ void main() {
     expect(calls, isEmpty);
   });
 
-  testWidgets('PipShell 仅渲染 16:9 视频区域，不包含底部导航文案', (tester) async {
+  testWidgets('CommandPipShell 仅渲染 16:9 视频区域，不包含底部导航文案', (tester) async {
     final session = VideoPlaybackSession.forTesting(resource: _testResource);
     addTearDown(session.dispose);
 
-    await tester.pumpWidget(PipShell(session: session));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildCommandTheme(Brightness.dark),
+        home: CommandPipShell(session: session),
+      ),
+    );
     await tester.pump();
 
     expect(find.byType(VideoPlaybackSurface), findsOneWidget);
     expect(find.byType(AspectRatio), findsOneWidget);
-    expect(find.text('看板'), findsNothing);
-    expect(find.text('设置'), findsNothing);
-    expect(find.text('日志'), findsNothing);
-    expect(find.text('辅助'), findsNothing);
+    expect(find.text('现场监控'), findsNothing);
+    expect(find.text('我的'), findsNothing);
+    expect(find.text('指挥台'), findsNothing);
+    expect(find.text('智能辅助'), findsNothing);
   });
 }

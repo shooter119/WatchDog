@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../core/diagnostics/log_sanitizer.dart';
 import 'op_log_service.dart';
 
 /// 后台诊断日志：捕获 Flutter/Dart 未处理异常，滚动保存在本机并择机上报。
@@ -166,7 +167,10 @@ class DiagnosticLogService {
         'context': _truncate(_redact(context), maxContextChars),
       if (library != null && library.trim().isNotEmpty)
         'library': _truncate(_redact(library), maxContextChars),
-      if (breadcrumbs.isNotEmpty) 'breadcrumbs': breadcrumbs,
+      if (breadcrumbs.isNotEmpty)
+        'breadcrumbs': breadcrumbs
+            .map((item) => LogSanitizer.redactMap(item))
+            .toList(growable: false),
     };
     return {
       'ts': ts,
@@ -349,20 +353,5 @@ class DiagnosticLogService {
   static String _truncate(String value, int maxChars) =>
       value.length <= maxChars ? value : '${value.substring(0, maxChars)}…';
 
-  static String _redact(String value) {
-    var clean = value;
-    final secretPattern = RegExp(
-      r'(api[_-]?token|authorization|access[_-]?token|password|secret)(\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+',
-      caseSensitive: false,
-    );
-    clean = clean.replaceAllMapped(secretPattern, (match) {
-      return '${match.group(1)}${match.group(2)}[REDACTED]';
-    });
-    // 异常文本常只有“Bearer <token>”而没有键名，也必须在最终落盘前清理。
-    clean = clean.replaceAll(
-      RegExp(r'\bbearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false),
-      'Bearer [REDACTED]',
-    );
-    return clean;
-  }
+  static String _redact(String value) => LogSanitizer.redactText(value);
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/diagnostics/app_logger.dart';
 import '../../../core/network/api_exceptions.dart';
 import '../../../services/offline_queue.dart';
 import '../../../services/op_log_service.dart';
@@ -372,7 +373,7 @@ class MonitorStore extends ChangeNotifier {
           category: 'entry',
         );
       } catch (logErr) {
-        debugPrint('MonitorStore pressure note failed: $logErr');
+        AppLogger.error('MonitorStore pressure note failed', tag: 'monitor', error: logErr);
       }
     }
     return updated;
