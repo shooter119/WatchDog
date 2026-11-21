@@ -1229,6 +1229,7 @@ class ApiClient {
           body: jsonEncode({
             'message': modelMessage,
             'history_incident_id': incidentId,
+            'follow_ups_protocol': 'v2',
             if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
           }),
         )
@@ -1272,6 +1273,7 @@ class ApiClient {
           req.body = jsonEncode({
             'message': modelMessage,
             'history_incident_id': incidentId,
+            'follow_ups_protocol': 'v2',
             'stream': 1,
             if (history.isNotEmpty) 'history': _chatHistoryPayload(history),
           });

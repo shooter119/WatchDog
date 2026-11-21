@@ -39,8 +39,15 @@ const REVISE_SYSTEM_PROMPT = `你是消防救援现场语音识别文本修正�
 4. 文本过短或无法判断错误时，原样返回
 5. 只输出 JSON：{"corrected": "修正后的文本"}`;
 
+function chatCompletionThinkingBody(model) {
+  const normalized = String(model || '').trim().toLowerCase();
+  if (normalized.includes('reasoner')) return {};
+  return { thinking: { type: 'disabled' } };
+}
+
 function callDeepSeek({ apiKey, baseUrl, model, systemPrompt, userPrompt, timeoutMs = 30000 }) {
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
+  const resolvedModel = model || 'deepseek-chat';
   return fetch(url, {
     method: 'POST',
     redirect: 'error',
@@ -49,7 +56,7 @@ function callDeepSeek({ apiKey, baseUrl, model, systemPrompt, userPrompt, timeou
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: model || 'deepseek-chat',
+      model: resolvedModel,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -57,6 +64,7 @@ function callDeepSeek({ apiKey, baseUrl, model, systemPrompt, userPrompt, timeou
       temperature: 0,
       response_format: { type: 'json_object' },
       max_tokens: 1024,
+      ...chatCompletionThinkingBody(resolvedModel),
     }),
     signal: AbortSignal.timeout(timeoutMs),
   })
@@ -233,6 +241,7 @@ async function parseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighter
 /// 自由文本对话（用于智能体问答）：返回完整回复文本
 async function chatWithDeepSeek({ apiKey, baseUrl, model, messages, timeoutMs = 60000, temperature = 0.3, maxTokens = 2000 }) {
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
+  const resolvedModel = model || 'deepseek-chat';
   const res = await fetch(url, {
     method: 'POST',
     redirect: 'error',
@@ -241,10 +250,11 @@ async function chatWithDeepSeek({ apiKey, baseUrl, model, messages, timeoutMs = 
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: model || 'deepseek-chat',
+      model: resolvedModel,
       messages,
       temperature,
       max_tokens: maxTokens,
+      ...chatCompletionThinkingBody(resolvedModel),
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -282,6 +292,7 @@ async function searchWithDeepSeek({ apiKey, baseUrl, query, signal }) {
 /// DeepSeek 原生 stream 输出 `data: {...delta...}` 行，[DONE] 结束。
 async function* chatWithDeepSeekStream({ apiKey, baseUrl, model, messages, timeoutMs = 60000, temperature = 0.3, maxTokens = 2000 }) {
   const url = (baseUrl || 'https://api.deepseek.com') + '/chat/completions';
+  const resolvedModel = model || 'deepseek-chat';
   const res = await fetch(url, {
     method: 'POST',
     redirect: 'error',
@@ -290,11 +301,12 @@ async function* chatWithDeepSeekStream({ apiKey, baseUrl, model, messages, timeo
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: model || 'deepseek-chat',
+      model: resolvedModel,
       messages,
       temperature,
       max_tokens: maxTokens,
       stream: true,
+      ...chatCompletionThinkingBody(resolvedModel),
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -491,4 +503,4 @@ async function reviseTextWithDeepSeek({ apiKey, baseUrl, model, text, firefighte
   return corrected || text;
 }
 
-module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithDeepSeekStream, chatWithWebSearch, analyzeVisionWithDeepSeek, looksMultiPerson, guardrailAction, guardrailIntent };
+module.exports = { parseTextWithDeepSeek, reviseTextWithDeepSeek, chatWithDeepSeek, chatWithDeepSeekStream, chatWithWebSearch, analyzeVisionWithDeepSeek, chatCompletionThinkingBody, looksMultiPerson, guardrailAction, guardrailIntent };

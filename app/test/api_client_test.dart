@@ -538,9 +538,48 @@ void main() {
     );
 
     final body = await capturedBody.future;
+    expect(body['follow_ups_protocol'], 'v2');
     final history = List<Map<String, dynamic>>.from(body['history'] as List);
     expect(history, hasLength(2));
     expect(history[1]['content'], '**先断电控火**\n- 警戒隔离');
     expect(history[1]['content'], isNot(contains('FOLLOW_UPS')));
+  });
+
+  test('sendChatMessageStream 请求体携带 follow_ups_protocol=v2 与 stream=1', () async {
+    final capturedBody = Completer<Map<String, dynamic>>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      final raw = await utf8.decoder.bind(request).join();
+      if (!capturedBody.isCompleted) {
+        capturedBody.complete(jsonDecode(raw) as Map<String, dynamic>);
+      }
+      request.response
+        ..statusCode = 200
+        ..headers.contentType = ContentType('text', 'event-stream', charset: 'utf-8')
+        ..write('data: {"content":"先评估风险"}\n\n')
+        ..write('data: [DONE]\n\n');
+      await request.response.close();
+    });
+    final api = ApiClient(
+      baseUrl: 'http://${server.address.address}:${server.port}',
+      incidentId: 'inc-1',
+    );
+    addTearDown(() async {
+      api.dispose();
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    final chunks = <String>[];
+    final reply = await api.sendChatMessageStream(
+      '厂房浓烟怎么处置',
+      onChunk: chunks.add,
+    );
+
+    final body = await capturedBody.future;
+    expect(body['follow_ups_protocol'], 'v2');
+    expect(body['stream'], 1);
+    expect(reply, '先评估风险');
+    expect(chunks, ['先评估风险']);
   });
 }

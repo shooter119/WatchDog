@@ -10,6 +10,7 @@ process.env.DEEPSEEK_API_KEY = 'test-key';
 
 const app = require('../src/server');
 const db = require('../src/db');
+const { chatCompletionThinkingBody } = require('../src/parse');
 
 let server;
 let base;
@@ -240,12 +241,13 @@ test('POST /api/chat 默认火场口令卡提示词与流式 max_tokens=500 约�
   const res = await fetch(`${base}/api/chat`, {
     method: 'POST',
     headers: H,
-    body: JSON.stringify({ message: '气瓶压力掉得很快怎么办', stream: 1 }),
+    body: JSON.stringify({ message: '气瓶压力掉得很快怎么办', follow_ups_protocol: 'v2', stream: 1 }),
   });
   assert.equal(res.status, 200);
   await res.text();
   assert.ok(capturedBody);
   assert.equal(capturedBody.max_tokens, 500);
+  assert.deepEqual(capturedBody.thinking, { type: 'disabled' });
   const sys = capturedBody.messages.find((m) => m.role === 'system')?.content || '';
   assert.match(sys, /80~120/);
   assert.match(sys, /正文严禁反问与追问/);
@@ -279,6 +281,7 @@ test('POST /api/chat 详述提问放宽 max_tokens=1200 且历史剥离 <<<FOLLO
     headers: H,
     body: JSON.stringify({
       message: '请详细展开破拆卷帘门的具体步骤',
+      follow_ups_protocol: 'v2',
       stream: 1,
       history: [
         { role: 'user', content: '卷帘门怎么破拆' },
@@ -290,10 +293,85 @@ test('POST /api/chat 详述提问放宽 max_tokens=1200 且历史剥离 <<<FOLLO
   await res.text();
   assert.ok(capturedBody);
   assert.equal(capturedBody.max_tokens, 1200);
+  assert.deepEqual(capturedBody.thinking, { type: 'disabled' });
   const assistantHistory = capturedBody.messages.find((m) => m.role === 'assistant')?.content || '';
   assert.equal(assistantHistory.includes('FOLLOW_UPS'), false);
   assert.equal(assistantHistory.includes('展开详细破拆步骤'), false);
   assert.match(assistantHistory, /先断电控火/);
+});
+
+test('chatCompletionThinkingBody 对 flash/chat 显式关闭思考且对 reasoner 保持兼容', () => {
+  assert.deepEqual(chatCompletionThinkingBody('deepseek-flash'), { thinking: { type: 'disabled' } });
+  assert.deepEqual(chatCompletionThinkingBody('deepseek-chat'), { thinking: { type: 'disabled' } });
+  assert.deepEqual(chatCompletionThinkingBody(''), { thinking: { type: 'disabled' } });
+  assert.deepEqual(chatCompletionThinkingBody('deepseek-reasoner'), {});
+  assert.deepEqual(chatCompletionThinkingBody('DeepSeek-Reasoner-v2'), {});
+});
+
+test('POST /api/chat 旧版客户端（未传 follow_ups_protocol）提示词兼容与流式 <<<FOLLOW_UPS>>> 自动降级', async () => {
+  let capturedBody = null;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).match(/chat\/completions$/)) {
+      capturedBody = JSON.parse(opts.body);
+      const enc = new TextEncoder();
+      const chunks = [
+        'data: {"choices":[{"delta":{"content":"**立刻撤离**\\n- 佩戴空呼\\n<<<FO"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"LLOW_UPS>>>\\n- 展开详细步骤\\n个人防护要求"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ];
+      return Promise.resolve({
+        ok: true,
+        body: new ReadableStream({
+          start(c) {
+            for (const line of chunks) c.enqueue(enc.encode(line));
+            c.close();
+          },
+        }),
+      });
+    }
+    return realFetch(url, opts);
+  };
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ message: '浓烟中毒风险怎么处理', stream: 1 }),
+  });
+  assert.equal(res.status, 200);
+  const sseText = await res.text();
+  assert.ok(capturedBody);
+  assert.deepEqual(capturedBody.thinking, { type: 'disabled' });
+  const sys = capturedBody.messages.find((m) => m.role === 'system')?.content || '';
+  assert.equal(sys.includes('<<<FOLLOW_UPS>>>'), false);
+  assert.match(sys, /追问：/);
+
+  const streamedReply = sseText
+    .split('\n')
+    .filter((line) => line.startsWith('data: ') && line !== 'data: [DONE]')
+    .map((line) => JSON.parse(line.slice(6)).content || '')
+    .join('');
+  assert.equal(streamedReply, '**立刻撤离**\n- 佩戴空呼\n追问：展开详细步骤');
+  assert.equal(streamedReply.includes('FOLLOW_UPS'), false);
+  assert.equal(streamedReply.includes('个人防护要求'), false);
+
+  assert.equal(
+    app._downgradeFollowUpsForLegacyClientForTest('**先撤离**\n- 保持队形\n<<<FOLLOW_UPS>>>\n1. 展开救援步骤\n2. 检查余压'),
+    '**先撤离**\n- 保持队形\n追问：展开救援步骤',
+  );
+  assert.equal(
+    app._downgradeFollowUpsForLegacyClientForTest('余压<10MPa立即撤离'),
+    '余压<10MPa立即撤离',
+  );
+
+  const tx = app._createLegacyFollowUpsStreamTransformerForTest();
+  const safeOut = [
+    tx.push('余压<'),
+    tx.push('10MPa，'),
+    tx.push('<<注意>>防护\n'),
+    tx.push('<<<FOLLOW'),
+    tx.push('_UPS>>>\n展开撤离条件\n次要问题'),
+    tx.flush(),
+  ].join('');
+  assert.equal(safeOut, '余压<10MPa，<<注意>>防护\n追问：展开撤离条件');
 });
 
 test('isDetailedChatRequest 与 chatHistoryFromRequest 辅助函数边界验证', () => {
