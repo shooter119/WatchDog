@@ -1209,5 +1209,108 @@ void main() {
       expect(fakeIpDialCount, 0, reason: '存在 DoH 公网 IP 时不应先硬连 Fake-IP 等待超时');
       expect(publicIpDialCount, 1);
     }));
+
+    test('connectResilientWebSocket 连接无显式端口的 wss:// 与 ws:// 时分别拨号默认端口 443 与 80（绝不拨号 :0）', () => _withRealHttp(() async {
+      final tls = _createTempTlsContexts('api.example.com');
+      addTearDown(() => tls.dir.deleteSync(recursive: true));
+
+      final wssServer = await HttpServer.bindSecure(
+        InternetAddress.loopbackIPv4,
+        0,
+        tls.serverContext,
+      );
+      final wssSub = wssServer.listen((request) async {
+        if (WebSocketTransformer.isUpgradeRequest(request)) {
+          final ws = await WebSocketTransformer.upgrade(request);
+          ws.listen((msg) => ws.add('wss:$msg'));
+          return;
+        }
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+      });
+
+      final wsServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final wsSub = wsServer.listen((request) async {
+        if (WebSocketTransformer.isUpgradeRequest(request)) {
+          final ws = await WebSocketTransformer.upgrade(request);
+          ws.listen((msg) => ws.add('ws:$msg'));
+          return;
+        }
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+      });
+
+      addTearDown(() async {
+        await wssSub.cancel();
+        await wssServer.close(force: true);
+        await wsSub.cancel();
+        await wsServer.close(force: true);
+      });
+
+      final resolver = ResilientDnsResolver(
+        systemLookup: (host, {type = InternetAddressType.any}) async => [
+          InternetAddress('93.184.216.34'),
+        ],
+        delay: _instantDelay,
+      );
+      final recordedPorts = <int>[];
+      final parentIoOverrides = IOOverrides.current ?? _DefaultIoOverrides();
+
+      await IOOverrides.runZoned(() async {
+        final wssClient = createResilientHttpClient(
+          resolver: resolver,
+          tlsContext: tls.clientContext,
+        );
+        final wssSocket = await connectResilientWebSocket(
+          'wss://api.example.com/api/asr/stream',
+          customClient: wssClient,
+          resolver: resolver,
+        );
+        wssClient.close(force: false);
+        addTearDown(wssSocket.close);
+
+        wssSocket.add('ping');
+        expect(
+          await wssSocket.first.timeout(const Duration(seconds: 2)),
+          'wss:ping',
+        );
+
+        final wsClient = createResilientHttpClient(resolver: resolver);
+        final wsSocket = await connectResilientWebSocket(
+          'ws://api.example.com/api/realtime',
+          customClient: wsClient,
+          resolver: resolver,
+        );
+        wsClient.close(force: false);
+        addTearDown(wsSocket.close);
+
+        wsSocket.add('ping');
+        expect(
+          await wsSocket.first.timeout(const Duration(seconds: 2)),
+          'ws:ping',
+        );
+      }, socketStartConnect: (host, port, {sourceAddress, sourcePort = 0}) {
+        final target = host is InternetAddress ? host.address : host.toString();
+        if (target == '93.184.216.34') {
+          recordedPorts.add(port);
+          final actualPort = port == 443 ? wssServer.port : wsServer.port;
+          return IOOverrides.runWithIOOverrides(
+            () => Socket.startConnect(InternetAddress.loopbackIPv4, actualPort),
+            parentIoOverrides,
+          );
+        }
+        return IOOverrides.runWithIOOverrides(
+          () => Socket.startConnect(
+            host,
+            port,
+            sourceAddress: sourceAddress,
+            sourcePort: sourcePort,
+          ),
+          parentIoOverrides,
+        );
+      });
+
+      expect(recordedPorts, [443, 80]);
+    }));
   });
 }

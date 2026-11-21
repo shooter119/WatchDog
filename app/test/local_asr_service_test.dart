@@ -392,4 +392,13 @@ void main() {
       isFalse,
     );
   });
+
+  test('未下载本地离线模型时调用 updateHotwords 安全返回且不抛出 LocalAsrNotInstalledException', () async {
+    final service = serviceFor(_FakeClient());
+    expect(await service.isModelInstalled(), isFalse);
+    await expectLater(
+      service.updateHotwords(const ['张三', '空呼']),
+      completes,
+    );
+  });
 }

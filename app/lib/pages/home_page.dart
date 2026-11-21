@@ -46,6 +46,8 @@ class HomePage extends StatefulWidget {
   final VideoPlaybackSession? videoPlayback;
   final VoidCallback? onVideoFloating;
   final AudioService? audioService; // 测试注入
+  final RealtimeAsrService Function(ApiClient api, RealtimeTextCallback onText)?
+  realtimeAsrFactory; // 测试注入
 
   const HomePage({
     super.key,
@@ -60,6 +62,7 @@ class HomePage extends StatefulWidget {
     this.videoPlayback,
     this.onVideoFloating,
     this.audioService,
+    this.realtimeAsrFactory,
   });
 
   @override
@@ -72,7 +75,7 @@ class HomePageState extends State<HomePage> {
 
   // 测试注入的 AudioService 继续走文件录音；正式运行时使用实时 PCM 会话。
   bool get _realtimeEnabled =>
-      widget.audioService == null &&
+      (widget.realtimeAsrFactory != null || widget.audioService == null) &&
       widget.controller.asrCloudEnabled &&
       widget.controller.api != null;
 
@@ -301,13 +304,14 @@ class HomePageState extends State<HomePage> {
     }
     try {
       if (_realtimeEnabled) {
-        _realtime = RealtimeAsrService(
-          api: widget.controller.api!,
-          onText: (text, {required finalText}) {
-            if (!mounted || (!_recording && !_recordingRequested)) return;
-            setState(() => _transcript = text);
-          },
-        );
+        void onText(String text, {required bool finalText}) {
+          if (!mounted || (!_recording && !_recordingRequested)) return;
+          setState(() => _transcript = text);
+        }
+
+        _realtime =
+            widget.realtimeAsrFactory?.call(widget.controller.api!, onText) ??
+            RealtimeAsrService(api: widget.controller.api!, onText: onText);
         try {
           await _realtime!.start(opId: _opId);
         } catch (error) {
@@ -332,6 +336,7 @@ class HomePageState extends State<HomePage> {
           !mounted) {
         if (_realtime != null) {
           await _realtime!.cancel();
+          await _realtime!.dispose();
           _realtime = null;
         } else if (_audio.isRecording) {
           await _audio.stop();
@@ -405,7 +410,7 @@ class HomePageState extends State<HomePage> {
           OpLogService.instance.record(
             opId,
             'transcribe_fallback',
-            '实时云端识别失败，切换批量云端识别',
+            '实时云端识别失败，切换批量云端识别: ${error.cause}',
             level: 'warn',
           );
           realtimeText = null;
@@ -424,9 +429,15 @@ class HomePageState extends State<HomePage> {
       );
       String text;
       try {
-        text = realtimeText?.trim().isNotEmpty == true
-            ? realtimeText!.trim()
-            : await widget.controller.transcribeAudio(bytes, opId: opId);
+        final trimmedRealtime = realtimeText?.trim() ?? '';
+        if (trimmedRealtime.isNotEmpty) {
+          text = trimmedRealtime;
+        } else if (realtime != null && bytes.length <= 44) {
+          // 实时流未录到任何有效 PCM 采样（仅 44 字节 WAV 头），直接视为空语音提示重录。
+          text = '';
+        } else {
+          text = await widget.controller.transcribeAudio(bytes, opId: opId);
+        }
         OpLogService.instance.record(
           opId,
           'transcribe_ok',

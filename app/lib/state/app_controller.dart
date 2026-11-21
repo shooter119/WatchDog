@@ -1530,7 +1530,10 @@ class AppController extends ChangeNotifier {
     }
     final unitId = (snapshot['unit'] as Map?)?['id']?.toString();
     if (unitId != null && unitId.isNotEmpty) unawaited(_cacheRoster(unitId));
-    unawaited(localAsr?.updateHotwords(orgDirectory.asrTerms));
+    unawaited(
+      localAsr?.updateHotwords(orgDirectory.asrTerms).catchError((Object _) {}) ??
+          Future<void>.value(),
+    );
     _lastSyncSuccessAt = _nowMs();
     _firstSyncFailureAt = 0;
     _lastConnectionLost = connectionLost;
@@ -1664,7 +1667,12 @@ class AppController extends ChangeNotifier {
         if (orgDirectory.applyEvent(event)) {
           final rosterUnitId = api?.unitId ?? '';
           if (rosterUnitId.isNotEmpty) unawaited(_cacheRoster(rosterUnitId));
-          unawaited(localAsr?.updateHotwords(orgDirectory.asrTerms));
+          unawaited(
+            localAsr?.updateHotwords(orgDirectory.asrTerms).catchError(
+                  (Object _) {},
+                ) ??
+                Future<void>.value(),
+          );
         }
         break;
     }

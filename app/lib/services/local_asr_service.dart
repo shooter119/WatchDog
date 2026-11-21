@@ -959,11 +959,18 @@ class LocalAsrService {
     _recognizerGenerationId = null;
   }
 
-  /// 单位名单/热词发生变化时串行重建识别器；模型文件本身不会重复下载。
+  /// 单位名单/热词发生变化时，若本地识别器已加载或正在初始化则串行重建；
+  /// 尚未初始化时延迟到首次本地识别按需加载，避免冷启动抢占内存或在未下载模型时抛异常。
   Future<void> updateHotwords(List<String> hotwords) async {
     if (_disposed) return;
     await _transcriptionQueue;
-    await _ensureInitialized(hotwords: hotwords);
+    if (_disposed) return;
+    if (_recognizer == null && _pendingInit == null) return;
+    try {
+      await _ensureInitialized(hotwords: hotwords);
+    } on LocalAsrNotInstalledException {
+      // 模型被并发移除或未安装时静默忽略，下次实际触发本地识别时再按需提示。
+    }
   }
 
   /// 释放 native 识别器；等待当前串行识别完成，避免释放仍在使用的 stream。

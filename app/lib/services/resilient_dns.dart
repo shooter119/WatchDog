@@ -590,7 +590,9 @@ HttpClient createResilientHttpClient({
 
     final scheme = uri.scheme.toLowerCase();
     final isSecure = scheme == 'https' || scheme == 'wss';
-    final port = uri.hasPort ? uri.port : (isSecure ? 443 : 80);
+    // Dart WebSocket.connect 将无显式端口的 ws/wss 转为 http/https 时会传入 port: 0
+    // （此时 uri.hasPort 为 true 且 uri.port == 0），必须回退至协议默认端口 80/443。
+    final port = (uri.hasPort && uri.port > 0) ? uri.port : (isSecure ? 443 : 80);
 
     var cancelled = false;
     var verified = false;

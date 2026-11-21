@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
+import '../api/api_client.dart';
 import '../models/models.dart';
 import '../services/chat_history.dart';
 import 'incident_details_page.dart';
@@ -25,6 +26,8 @@ class ChatPage extends StatefulWidget {
   final ValueChanged<bool>? onProcessingChanged;
   final ValueChanged<bool>? onSendingChanged; // 问答请求中（兼容外部监听）
   final AudioService? audioService; // 测试注入
+  final RealtimeAsrService Function(ApiClient api, RealtimeTextCallback onText)?
+  realtimeAsrFactory; // 测试注入
   final Duration requestTimeout;
   final double bottomNavClearance; // 键盘收起时为底部凸起语音按钮预留的避让间隙
 
@@ -35,6 +38,7 @@ class ChatPage extends StatefulWidget {
     this.onProcessingChanged,
     this.onSendingChanged,
     this.audioService,
+    this.realtimeAsrFactory,
     this.requestTimeout = const Duration(seconds: 45),
     this.bottomNavClearance = 0.0,
   });
@@ -658,17 +662,18 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     }
     try {
       final realtimeEnabled =
-          widget.audioService == null &&
+          (widget.realtimeAsrFactory != null || widget.audioService == null) &&
           widget.controller.asrCloudEnabled &&
           widget.controller.api != null;
       if (realtimeEnabled) {
-        _realtime = RealtimeAsrService(
-          api: widget.controller.api!,
-          onText: (text, {required finalText}) {
-            if (!mounted || (!_recording && !_recordingRequested)) return;
-            setState(() => _transcript = text);
-          },
-        );
+        void onText(String text, {required bool finalText}) {
+          if (!mounted || (!_recording && !_recordingRequested)) return;
+          setState(() => _transcript = text);
+        }
+
+        _realtime =
+            widget.realtimeAsrFactory?.call(widget.controller.api!, onText) ??
+            RealtimeAsrService(api: widget.controller.api!, onText: onText);
         try {
           await _realtime!.start(opId: _opId);
         } catch (error) {
@@ -690,7 +695,13 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       if (!_recordingRequested ||
           generation != _recordingGeneration ||
           !mounted) {
-        if (_audio.isRecording) await _audio.stop();
+        if (_realtime != null) {
+          await _realtime!.cancel();
+          await _realtime!.dispose();
+          _realtime = null;
+        } else if (_audio.isRecording) {
+          await _audio.stop();
+        }
         _recordingStarting = false;
         _endOp('cancelled');
         return;
@@ -760,7 +771,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           OpLogService.instance.record(
             opId,
             'transcribe_fallback',
-            '实时识别失败，切换批量云端识别',
+            '实时识别失败，切换批量云端识别: ${error.cause}',
             level: 'warn',
             sync: false,
           );
@@ -773,9 +784,15 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       }
       String text;
       try {
-        text = realtimeText?.trim().isNotEmpty == true
-            ? realtimeText!.trim()
-            : await widget.controller.transcribeAudio(bytes, opId: opId);
+        final trimmedRealtime = realtimeText?.trim() ?? '';
+        if (trimmedRealtime.isNotEmpty) {
+          text = trimmedRealtime;
+        } else if (realtime != null && bytes.length <= 44) {
+          // 实时流未录到任何有效 PCM 采样（仅 44 字节 WAV 头），直接视为空语音提示重录。
+          text = '';
+        } else {
+          text = await widget.controller.transcribeAudio(bytes, opId: opId);
+        }
         if (mounted) setState(() => _transcript = text);
         OpLogService.instance.record(
           opId,
