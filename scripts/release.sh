@@ -45,7 +45,8 @@ info() { printf '    %s\n' "$*"; }
 warn() { printf '\033[1;33m    ! %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m错误：%s\033[0m\n' "$*" >&2; exit 1; }
 
-WORK_DIR="$(mktemp -d -t watchdog-release.XXXXXX)"
+WORK_DIR="$(mktemp -d /tmp/watchdog-rel.XXXXXX)"
+chmod 700 "$WORK_DIR"
 SSH_OPTS=(
   -o ControlMaster=auto
   -o "ControlPath=${WORK_DIR}/ssh-%C"
