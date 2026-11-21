@@ -761,6 +761,7 @@ void main() {
           violations.add('lib/$rel 禁止使用库名形式 part of');
         }
         final srcFeature = _featureOf(rel)!;
+        final isFeatureData = RegExp(r'^features/[^/]+/data/').hasMatch(rel);
         final isFeatureModel = RegExp(
           r'^features/[^/]+/data/models/',
         ).hasMatch(rel);
@@ -771,7 +772,8 @@ void main() {
           final firstSeg = target.split('/').first;
           final allowedForwards =
               _allowedLegacyModelForwards[rel] ?? const <String>{};
-          if ((_featureDataForbiddenDirs.contains(firstSeg) ||
+          if (isFeatureData &&
+              (_featureDataForbiddenDirs.contains(firstSeg) ||
                   target == 'main.dart') &&
               !allowedForwards.contains(target)) {
             violations.add('lib/$rel:${d.line} feature/data 禁止反向依赖 lib/$target');

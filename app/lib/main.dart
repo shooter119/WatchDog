@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'app/app_bootstrap.dart';
+import 'app/app_feature_flags.dart';
+import 'app/shell/command_app_shell.dart';
 import 'pages/board_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/home_page.dart';
@@ -15,7 +17,6 @@ import 'pages/settings_page.dart';
 import 'pages/video_playback_surface.dart';
 import 'services/audio_service.dart';
 import 'services/foreground_keep_alive.dart';
-import 'services/app_data_epoch.dart';
 import 'services/local_asr_service.dart';
 import 'services/diagnostic_log_service.dart';
 import 'services/op_log_service.dart';
@@ -29,58 +30,7 @@ import 'theme/nav_icons.dart';
 import 'widgets/pip_shell.dart';
 
 void main() {
-  final diagnostics = DiagnosticLogService.instance;
-  // ensureInitialized 与 runApp 必须处于同一个 Zone，否则 Flutter 会产生
-  // Zone mismatch 告警，并可能让插件的 Zone 配置行为不一致。
-  runZonedGuarded<void>(
-    () {
-      WidgetsFlutterBinding.ensureInitialized();
-      unawaited(SystemPip.initialize());
-      unawaited(diagnostics.init());
-
-      // Flutter framework 异常通常就是开发者看到的红屏；保留 Flutter 默认输出，
-      // 同时异步写入诊断日志。日志失败不能阻断 Flutter 的默认错误处理。
-      final previousFlutterError = FlutterError.onError;
-      FlutterError.onError = (details) {
-        diagnostics.recordFlutterError(details);
-        if (previousFlutterError != null) {
-          previousFlutterError(details);
-        } else {
-          FlutterError.presentError(details);
-        }
-      };
-
-      // 捕获未被 Widget 层处理的异步异常；返回 false 让 Flutter 保留默认行为。
-      final previousPlatformError = PlatformDispatcher.instance.onError;
-      PlatformDispatcher.instance.onError = (error, stack) {
-        diagnostics.recordUncaught(error, stack, source: 'platform_error');
-        return previousPlatformError?.call(error, stack) ?? false;
-      };
-
-      // 新协议首次启动必须先停止旧保活、清理旧会话/离线队列/模型缓存，
-      // 再创建控制器，避免旧状态在新 WebSocket 会话建立前短暂泄漏。
-      unawaited(_bootstrapApp(diagnostics));
-    },
-    (error, stack) {
-      // 兜住 runApp/Zone 内未处理的同步和异步异常。
-      diagnostics.recordUncaught(error, stack, source: 'zone_error');
-    },
-  );
-}
-
-/// 启动链：数据纪元清理 → 主题偏好加载 → runApp。
-///
-/// 三步必须串行：主题在 runApp 之前读取，首帧就是正确配色，
-/// 不会先白后暖；任何一步失败只降级，不能把用户卡在黑屏。
-Future<void> _bootstrapApp(DiagnosticLogService diagnostics) async {
-  try {
-    await ensureAppDataEpoch();
-  } catch (error, stack) {
-    // 清理失败不阻断启动；控制器仍会要求重新认证。
-    diagnostics.recordUncaught(error, stack, source: 'data_epoch_reset');
-  }
-  await ThemeController.instance.load();
-  runApp(const WatchDogApp());
+  AppBootstrap.run(appBuilder: () => const WatchDogApp());
 }
 
 const double _kVoiceNavProtrusion = 12.0;
@@ -92,17 +42,98 @@ double _bottomNavBarHeight(BuildContext context) {
   return math.max(70.0, 55.0 + labelScaleHeight);
 }
 
-class WatchDogApp extends StatefulWidget {
+class WatchDogApp extends StatelessWidget {
+  final AppController? controller;
+  final AudioService? chatAudioService;
+  final bool? useNewShell;
+
+  const WatchDogApp({
+    super.key,
+    this.controller,
+    this.chatAudioService,
+    this.useNewShell,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (AppFeatureFlags.resolveUseNewShell(override: useNewShell)) {
+      return _NewShellWatchDogApp(
+        controller: controller,
+        chatAudioService: chatAudioService,
+      );
+    }
+    return _LegacyWatchDogApp(
+      controller: controller,
+      chatAudioService: chatAudioService,
+    );
+  }
+}
+
+class _NewShellWatchDogApp extends StatefulWidget {
   final AppController? controller;
   final AudioService? chatAudioService;
 
-  const WatchDogApp({super.key, this.controller, this.chatAudioService});
+  const _NewShellWatchDogApp({this.controller, this.chatAudioService});
 
   @override
-  State<WatchDogApp> createState() => _WatchDogAppState();
+  State<_NewShellWatchDogApp> createState() => _NewShellWatchDogAppState();
 }
 
-class _WatchDogAppState extends State<WatchDogApp> with WidgetsBindingObserver {
+class _NewShellWatchDogAppState extends State<_NewShellWatchDogApp> {
+  late AppController _controller;
+  late bool _ownsController;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsController = widget.controller == null;
+    _controller =
+        widget.controller ?? AppController(localAsr: LocalAsrService());
+  }
+
+  @override
+  void didUpdateWidget(covariant _NewShellWatchDogApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      if (_ownsController) {
+        _controller.dispose();
+      }
+      _ownsController = widget.controller == null;
+      _controller =
+          widget.controller ?? AppController(localAsr: LocalAsrService());
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_ownsController) {
+      _controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CommandAppShell(
+      controller: _controller,
+      chatAudioService: widget.chatAudioService,
+      disposeController: false,
+    );
+  }
+}
+
+class _LegacyWatchDogApp extends StatefulWidget {
+  final AppController? controller;
+  final AudioService? chatAudioService;
+
+  const _LegacyWatchDogApp({this.controller, this.chatAudioService});
+
+  @override
+  State<_LegacyWatchDogApp> createState() => _LegacyWatchDogAppState();
+}
+
+class _LegacyWatchDogAppState extends State<_LegacyWatchDogApp>
+    with WidgetsBindingObserver {
   late final AppController controller;
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
   final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();

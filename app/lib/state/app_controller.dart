@@ -6,6 +6,12 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../app/app_scope.dart';
+import '../core/sync/sync_store.dart' show SyncStore;
+import '../features/auth/state/session_store.dart' show SessionStore;
+import '../features/incident/state/incident_store.dart' show IncidentStore;
+import '../features/roster/state/roster_store.dart' show RosterStore;
+import '../features/settings/state/update_store.dart' show UpdateStore;
 import '../models/models.dart';
 import '../models/key_sites.dart';
 import '../models/admin_login.dart';
@@ -68,6 +74,9 @@ class AppController extends ChangeNotifier {
   /// 语义解析联网开关：开 = 云端优先失败自动切本地；关 = 强制本地
   bool parseCloudEnabled = true;
 
+  AppScope? _appScope;
+  bool _ownsAppScope;
+
   AppController({
     this.localAsr,
     OfflineOperationEnqueuer? offlineOperationEnqueuer,
@@ -75,11 +84,66 @@ class AppController extends ChangeNotifier {
     @visibleForTesting SyncClientFactory? syncClientFactory,
     @visibleForTesting ApiClientFactory? apiFactory,
     @visibleForTesting int Function()? nowMs,
+    AppScope? appScope,
   }) : _offlineOperationEnqueuer = offlineOperationEnqueuer,
        _offlineQueueDrainer = offlineQueueDrainer,
        _syncClientFactory = syncClientFactory,
        _apiFactory = apiFactory,
-       _nowMs = nowMs ?? _defaultNowMs;
+       _nowMs = nowMs ?? _defaultNowMs,
+       _appScope = appScope,
+       _ownsAppScope = false;
+
+  /// 已挂接的 M2 依赖装配容器（未触发惰性构建时返回 null）。
+  AppScope? get attachedAppScope => _appScope;
+
+  /// M2 过渡期依赖装配容器：按需惰性构建并与本控制器共享组织词库，随本控制器释放。
+  AppScope get appScope => _ensureAppScope();
+
+  SyncStore get syncStore => appScope.syncStore;
+  SessionStore get sessionStore => appScope.sessionStore;
+  IncidentStore get incidentStore => appScope.incidentStore;
+  RosterStore get rosterStore => appScope.rosterStore;
+  UpdateStore get updateStore => appScope.updateStore;
+
+  AppScope _ensureAppScope() {
+    final existing = _appScope;
+    if (existing != null) return existing;
+    final created = AppScope(
+      rosterStore: RosterStore(orgDirectory: orgDirectory, localAsr: localAsr),
+      createDefaultLocalAsr: false,
+      enableStartupMaintenance: false,
+      nowMs: _nowMs,
+      isAssistantBusy: () => _assistantBusy,
+    );
+    _appScope = created;
+    _ownsAppScope = true;
+    syncScopeBridge();
+    return created;
+  }
+
+  /// 将当前控制器核心状态镜像到已挂接的 [AppScope] Store（仅供 M2~M3g 过渡桥接读取）。
+  void syncScopeBridge() {
+    final s = _appScope;
+    if (s == null || s.isDisposed || _disposed) return;
+    s.incidentStore.setCurrentIncident(
+      currentIncident,
+      forces: forces,
+      notify: false,
+    );
+    s.incidentStore.setActiveIncidents(activeIncidents, notify: false);
+    s.incidentStore.setExternalIncidents(externalIncidents, notify: false);
+    s.incidentStore.setExternalIncidentsLoading(
+      externalIncidentsLoading,
+      notify: false,
+    );
+    s.incidentStore.setExternalReorganizing(
+      externalReorganizing,
+      notify: false,
+    );
+    s.updateStore.setPendingUpdate(pendingUpdate, notify: false);
+    s.updateStore.setUpdateCheckDone(updateCheckDone, notify: false);
+    s.updateStore.setUpdateCheckError(updateCheckError, notify: false);
+  }
 
   static int _defaultNowMs() => DateTime.now().millisecondsSinceEpoch;
 
@@ -2047,7 +2111,9 @@ class AppController extends ChangeNotifier {
   }
 
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (_disposed) return;
+    if (_ownsAppScope) syncScopeBridge();
+    notifyListeners();
   }
 
   /// 下拉刷新：等待一次实际同步完成（与轮询互斥），供刷新控件与失败反馈使用
@@ -3409,6 +3475,10 @@ class AppController extends ChangeNotifier {
     unawaited(_stopKeepAliveSafely());
     unawaited(_clearScheduledNotifications());
     unawaited(localAsr?.dispose());
+    if (_ownsAppScope) {
+      _appScope?.dispose();
+    }
+    _appScope = null;
     tts.stop();
     clockTick.dispose();
     super.dispose();
