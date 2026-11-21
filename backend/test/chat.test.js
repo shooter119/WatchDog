@@ -215,6 +215,104 @@ test('POST /api/chat 流式（stream=1）：SSE 增量输出且不落云端历�
   assert.deepEqual(list, []);
 });
 
+test('POST /api/chat 默认火场口令卡提示词与流式 max_tokens=500 约束', async () => {
+  let capturedBody = null;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).match(/chat\/completions$/)) {
+      capturedBody = JSON.parse(opts.body);
+      const enc = new TextEncoder();
+      const sse = [
+        'data: {"choices":[{"delta":{"content":"**先撤离再核实**\\n- 立即停止内攻"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ].join('');
+      return Promise.resolve({
+        ok: true,
+        body: new ReadableStream({
+          start(c) {
+            c.enqueue(enc.encode(sse));
+            c.close();
+          },
+        }),
+      });
+    }
+    return realFetch(url, opts);
+  };
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ message: '气瓶压力掉得很快怎么办', stream: 1 }),
+  });
+  assert.equal(res.status, 200);
+  await res.text();
+  assert.ok(capturedBody);
+  assert.equal(capturedBody.max_tokens, 500);
+  const sys = capturedBody.messages.find((m) => m.role === 'system')?.content || '';
+  assert.match(sys, /80~120/);
+  assert.match(sys, /正文严禁反问与追问/);
+  assert.match(sys, /<<<FOLLOW_UPS>>>/);
+});
+
+test('POST /api/chat 详述提问放宽 max_tokens=1200 且历史剥离 <<<FOLLOW_UPS>>> 候选区', async () => {
+  let capturedBody = null;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).match(/chat\/completions$/)) {
+      capturedBody = JSON.parse(opts.body);
+      const enc = new TextEncoder();
+      const sse = [
+        'data: {"choices":[{"delta":{"content":"1. 断电确认"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ].join('');
+      return Promise.resolve({
+        ok: true,
+        body: new ReadableStream({
+          start(c) {
+            c.enqueue(enc.encode(sse));
+            c.close();
+          },
+        }),
+      });
+    }
+    return realFetch(url, opts);
+  };
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({
+      message: '请详细展开破拆卷帘门的具体步骤',
+      stream: 1,
+      history: [
+        { role: 'user', content: '卷帘门怎么破拆' },
+        { role: 'assistant', content: '**先断电控火**\n- 确认门体无电\n<<<FOLLOW_UPS>>>\n展开详细破拆步骤\n个人防护要求' },
+      ],
+    }),
+  });
+  assert.equal(res.status, 200);
+  await res.text();
+  assert.ok(capturedBody);
+  assert.equal(capturedBody.max_tokens, 1200);
+  const assistantHistory = capturedBody.messages.find((m) => m.role === 'assistant')?.content || '';
+  assert.equal(assistantHistory.includes('FOLLOW_UPS'), false);
+  assert.equal(assistantHistory.includes('展开详细破拆步骤'), false);
+  assert.match(assistantHistory, /先断电控火/);
+});
+
+test('isDetailedChatRequest 与 chatHistoryFromRequest 辅助函数边界验证', () => {
+  assert.equal(app._isDetailedChatRequestForTest('浓烟中怎么走'), false);
+  assert.equal(app._isDetailedChatRequestForTest('请展开详细步骤'), true);
+  assert.equal(app._isDetailedChatRequestForTest('完整流程是什么'), true);
+  assert.equal(app._isDetailedChatRequestForTest('细说一下防护要求'), true);
+
+  const cleaned = app._chatHistoryFromRequestForTest([
+    { role: 'assistant', content: '核心动作\n<<<FOLLOW_UPS>>>\n问题A\n问题B' },
+    { role: 'assistant', content: '<<<FOLLOW_UPS>>>\n只有追问没有正文' },
+    { role: 'user', content: '  下一个问题  ' },
+  ]);
+  assert.deepEqual(cleaned, [
+    { role: 'assistant', content: '核心动作' },
+    { role: 'user', content: '下一个问题' },
+  ]);
+});
+
 test('GET /api/chat 无警情也返回空历史', async () => {
   const list = await (await fetch(`${base}/api/chat`, { headers: H })).json();
   assert.deepEqual(list, []);

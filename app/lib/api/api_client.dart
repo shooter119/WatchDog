@@ -659,7 +659,7 @@ class ApiClient {
   String _chatMessageForModel(String message) {
     if (!_looksLikeIncidentBrief(message)) return message;
     const instruction =
-        '这是一条真实的现场警情简报，不是普通提问。请水元素直接进行现场辅助研判：先给警情性质和主要风险，再给立即处置要点、禁忌事项，并主动列出需核实的信息。不要反问用户想了解什么。\n\n原始警情：';
+        '这是一条真实的现场警情简报，不是普通提问。请水元素按80~120字火场口令卡直接研判（1句核心风险判断+最多3条立即处置与禁忌短句），正文中严禁反问；需核实或展开的问题放入末尾 <<<FOLLOW_UPS>>>。\n\n原始警情：';
     final maxOriginalLength = 2000 - instruction.length;
     final original = message.length > maxOriginalLength
         ? message.substring(0, maxOriginalLength)
@@ -1370,25 +1370,31 @@ class ApiClient {
     return MediaType(parts.first, parts.length > 1 ? parts[1] : 'jpeg');
   }
 
-  List<Map<String, String>> _chatHistoryPayload(List<ChatMessage> history) =>
-      history
-          .where(
-            (message) =>
-                (message.role == 'user' || message.role == 'assistant') &&
-                message.content.trim().isNotEmpty,
-          )
-          .toList()
-          .reversed
-          .take(40)
-          .toList()
-          .reversed
-          .map(
-            (message) => {
-              'role': message.role,
-              'content': message.content.trim(),
-            },
-          )
-          .toList();
+  List<Map<String, String>> _chatHistoryPayload(List<ChatMessage> history) {
+    final followUpDelimiter = RegExp(
+      r'\n?<{2,3}\s*FOLLOW_UPS\s*>{2,3}[\s\S]*$',
+      caseSensitive: false,
+    );
+    return history
+        .where(
+          (message) =>
+              (message.role == 'user' || message.role == 'assistant') &&
+              message.content.trim().isNotEmpty,
+        )
+        .map(
+          (message) => {
+            'role': message.role,
+            'content': message.content.replaceFirst(followUpDelimiter, '').trim(),
+          },
+        )
+        .where((entry) => entry['content']!.isNotEmpty)
+        .toList()
+        .reversed
+        .take(40)
+        .toList()
+        .reversed
+        .toList();
+  }
 
   /// 清空本场景问答记录
   Future<void> clearChatMessages() async {

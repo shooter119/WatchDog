@@ -612,6 +612,8 @@ void main() {
           await tester.runAsync(() => Future<void>.delayed(Duration.zero));
           await tester.pump(const Duration(milliseconds: 10));
         }
+        await tester.pump(const Duration(milliseconds: 1200));
+        await tester.pump();
 
         expect(recordingStates, [true, false]);
         expect(api.transcribedPayloads, hasLength(1));

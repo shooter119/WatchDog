@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watchdog/api/api_client.dart';
+import 'package:watchdog/models/models.dart';
 import 'package:watchdog/services/settings.dart';
 
 class _JsonFixture {
@@ -491,5 +492,55 @@ void main() {
     });
     expect(m1.inRoster, isTrue);
     expect(m2.inRoster, isFalse);
+  });
+
+  test('sendChatMessage 提交历史上下文前自动剥离 <<<FOLLOW_UPS>>> 候选块', () async {
+    final capturedBody = Completer<Map<String, dynamic>>();
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      final raw = await utf8.decoder.bind(request).join();
+      if (!capturedBody.isCompleted) {
+        capturedBody.complete(jsonDecode(raw) as Map<String, dynamic>);
+      }
+      request.response
+        ..statusCode = 200
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode({'reply': '收到', 'created_at': 1}));
+      await request.response.close();
+    });
+    final api = ApiClient(
+      baseUrl: 'http://${server.address.address}:${server.port}',
+      incidentId: 'inc-1',
+    );
+    addTearDown(() async {
+      api.dispose();
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    await api.sendChatMessage(
+      '下一步怎么做？',
+      history: const [
+        ChatMessage(id: 'u1', role: 'user', content: '厂房起火', createdAt: 1),
+        ChatMessage(
+          id: 'a1',
+          role: 'assistant',
+          content: '**先断电控火**\n- 警戒隔离\n<<<FOLLOW_UPS>>>\n展开详细步骤',
+          createdAt: 2,
+        ),
+        ChatMessage(
+          id: 'a2',
+          role: 'assistant',
+          content: '<<<FOLLOW_UPS>>>\n只有追问没有正文',
+          createdAt: 3,
+        ),
+      ],
+    );
+
+    final body = await capturedBody.future;
+    final history = List<Map<String, dynamic>>.from(body['history'] as List);
+    expect(history, hasLength(2));
+    expect(history[1]['content'], '**先断电控火**\n- 警戒隔离');
+    expect(history[1]['content'], isNot(contains('FOLLOW_UPS')));
   });
 }

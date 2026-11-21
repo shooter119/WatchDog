@@ -2658,6 +2658,7 @@ void main() {
       expect(find.text('水元素思考中…'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump(const Duration(milliseconds: 1200));
       await tester.pump();
       // 用户消息与 AI 回复都渲染，无异常
       expect(find.text('如何破拆卷帘门？'), findsOneWidget);
@@ -2738,6 +2739,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 5));
       await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump(const Duration(milliseconds: 1200));
       await tester.pump();
       expect(find.byTooltip('清空问答记录'), findsOneWidget);
       expect(find.text('气瓶压力下降太快怎么办？'), findsOneWidget);
@@ -2763,6 +2765,7 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 5));
         await tester.pump(const Duration(milliseconds: 20));
+        await tester.pump(const Duration(milliseconds: 1200));
         await tester.pump();
         expect(tester.takeException(), isNull);
       }
@@ -2849,6 +2852,8 @@ void main() {
       await state.finishRecording();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump(const Duration(milliseconds: 1500));
+      await tester.pump();
 
       expect(find.text('三楼发现明火，请问下一步怎么处置？'), findsOneWidget);
       expect(find.text('回答：三楼发现明火，请问下一步怎么处置？'), findsOneWidget);
@@ -2975,6 +2980,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 5));
       await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump(const Duration(milliseconds: 1200));
       await tester.pump();
       expect(find.text('当前气瓶压力多少？'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -4815,6 +4821,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 5));
       await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump(const Duration(milliseconds: 1200));
       await tester.pump();
       expect(find.text('仅供参考，以指挥口令和规程为准'), findsOneWidget);
       expect(tester.takeException(), isNull);

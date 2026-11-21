@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
@@ -30,6 +32,7 @@ class ChatPage extends StatefulWidget {
   realtimeAsrFactory; // 测试注入
   final Duration requestTimeout;
   final double bottomNavClearance; // 键盘收起时为底部凸起语音按钮预留的避让间隙
+  final Duration streamCharInterval; // 流式逐字输出节拍（默认 52ms ≈ 19.2 字/秒）
 
   const ChatPage({
     super.key,
@@ -41,13 +44,128 @@ class ChatPage extends StatefulWidget {
     this.realtimeAsrFactory,
     this.requestTimeout = const Duration(seconds: 45),
     this.bottomNavClearance = 0.0,
+    this.streamCharInterval = const Duration(milliseconds: 52),
   });
 
   @override
   State<ChatPage> createState() => ChatPageState();
 }
 
-class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
+class ChatReplyParts {
+  final String body;
+  final List<String> followUps;
+  final bool isLegacy;
+
+  const ChatReplyParts({
+    required this.body,
+    required this.followUps,
+    this.isLegacy = false,
+  });
+}
+
+String _holdbackStreamingTail(String content) {
+  final ltMatch = RegExp(r'<+[^<\n]*$').firstMatch(content);
+  if (ltMatch != null && content.length - ltMatch.start <= 24) {
+    final compact = ltMatch
+        .group(0)!
+        .replaceAll(RegExp(r'\s+'), '')
+        .toUpperCase();
+    if ('<<<FOLLOW_UPS>>>'.startsWith(compact) ||
+        '<<FOLLOW_UPS>>'.startsWith(compact)) {
+      return content.substring(0, ltMatch.start).trimRight();
+    }
+  }
+  final legacyTail = RegExp(
+    r'(?:^|\n)\s*\*{0,2}(?:关|关键|追|关键追|追问|关键追问)\*{0,2}[：:]?\s*$',
+  );
+  final m = legacyTail.firstMatch(content);
+  if (m != null) {
+    return content.substring(0, m.start).trimRight();
+  }
+  return content;
+}
+
+/// 解析 AI 回复正文与独立追问按钮：
+/// 1) 新协议以 `<<<FOLLOW_UPS>>>` 分隔（流式期间彻底隐藏标记及尾部内容，并扣留不完整前缀）；
+/// 2) 向下兼容旧版历史中的 `追问：` / `关键追问：` 格式。
+ChatReplyParts parseAssistantReply(String content, {bool streaming = false}) {
+  final delimiterRe = RegExp(
+    r'<{2,3}\s*FOLLOW_UPS\s*>{2,3}',
+    caseSensitive: false,
+  );
+  final delimiterMatch = delimiterRe.firstMatch(content);
+  if (delimiterMatch != null) {
+    final rawBody = content.substring(0, delimiterMatch.start);
+    final body = streaming ? rawBody.trimRight() : rawBody.trim();
+    if (streaming) {
+      return ChatReplyParts(body: body, followUps: const [], isLegacy: false);
+    }
+    final seen = <String>{};
+    final followUps = <String>[];
+    final rest = content.substring(delimiterMatch.end);
+    for (final rawLine in rest.split(RegExp(r'\r?\n'))) {
+      var q = rawLine.trim();
+      q = q.replaceFirst(RegExp(r'^(?:[-•*]+|\d+[.、）)])\s*'), '').trim();
+      q = q
+          .replaceAll(RegExp(r'^\*{1,2}|\*{1,2}$'), '')
+          .replaceAll(RegExp(r'^[「『"“”‘’]+|[」』"“”‘’]+$'), '')
+          .trim();
+      if (q.isEmpty || q.length > 40 || !seen.add(q)) continue;
+      followUps.add(q);
+      if (followUps.length >= 3) break;
+    }
+    return ChatReplyParts(body: body, followUps: followUps, isLegacy: false);
+  }
+
+  final legacyRe = RegExp(r'\*{0,2}(关键)?\s*追问\s*[：:]\s*');
+  final matches = legacyRe.allMatches(content).toList();
+  if (matches.isNotEmpty) {
+    final m = matches.last;
+    final rawBody = content.substring(0, m.start);
+    final body = streaming ? rawBody.trimRight() : rawBody.trim();
+    if (streaming) {
+      return ChatReplyParts(body: body, followUps: const [], isLegacy: true);
+    }
+    final rest = content.substring(m.end).trim();
+    if (rest.isEmpty) {
+      return ChatReplyParts(
+        body: content,
+        followUps: const [],
+        isLegacy: true,
+      );
+    }
+    final seen = <String>{};
+    final followUps = <String>[];
+    for (final rawLine in rest.split(RegExp(r'\r?\n'))) {
+      var q = rawLine.trim();
+      q = q.replaceFirst(RegExp(r'^(?:[-•*]+|\d+[.、）)])\s*'), '').trim();
+      q = q.replaceAll(RegExp(r'^\*{1,2}|\*{1,2}$'), '').trim();
+      if (q.isEmpty || !seen.add(q)) continue;
+      followUps.add(q);
+      if (followUps.length >= 3) break;
+    }
+    if (followUps.isEmpty) {
+      return ChatReplyParts(
+        body: content,
+        followUps: const [],
+        isLegacy: true,
+      );
+    }
+    return ChatReplyParts(body: body, followUps: followUps, isLegacy: true);
+  }
+
+  if (streaming) {
+    return ChatReplyParts(
+      body: _holdbackStreamingTail(content),
+      followUps: const [],
+      isLegacy: false,
+    );
+  }
+  return ChatReplyParts(body: content, followUps: const [], isLegacy: false);
+}
+
+class ChatPageState extends State<ChatPage>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   late final AudioService _audio = widget.audioService ?? AudioService();
   final ScrollController _scroll = ScrollController();
   final TextEditingController _inputController = TextEditingController();
@@ -82,6 +200,16 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
   DateTime? _recordingStartedAt;
   int _recordingSeconds = 0;
 
+  bool _autoFollowScroll = true;
+  String? _activeStreamId;
+  String _streamRawBuffer = '';
+  String? _finalFullReply;
+  bool _networkStreamDone = false;
+  bool _hadStreamChunks = false;
+  int _revealedCharCount = 0;
+  int _baseRevealedCount = 0;
+  Ticker? _revealTicker;
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +241,8 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _requestGeneration++;
     _historyGeneration++;
     _historyCleared = false;
+    _stopReveal();
+    _autoFollowScroll = true;
     setState(() {
       _messages = [];
       _error = null;
@@ -177,6 +307,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _recordingGeneration++;
     _recordingStarting = false;
     _stopRecordingTimer();
+    _stopReveal();
+    _revealTicker?.dispose();
+    _revealTicker = null;
     _endOp('page_disposed');
     widget.controller.cancelAssistantRequest();
     unawaited(_realtime?.dispose() ?? Future<void>.value());
@@ -185,6 +318,98 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     _scroll.dispose();
     _audio.dispose();
     super.dispose();
+  }
+
+  void _stopReveal({bool clearState = true}) {
+    _revealTicker?.stop();
+    if (clearState) {
+      _activeStreamId = null;
+      _streamRawBuffer = '';
+      _finalFullReply = null;
+      _networkStreamDone = false;
+      _hadStreamChunks = false;
+      _revealedCharCount = 0;
+      _baseRevealedCount = 0;
+    }
+  }
+
+  void _startRevealTicker() {
+    _revealTicker ??= createTicker(_onRevealTick);
+    if (_revealTicker!.isActive) return;
+    _baseRevealedCount = _revealedCharCount;
+    _revealTicker!.start();
+  }
+
+  void _updateStreamingMessage(String streamId, String content) {
+    final index = _messages.indexWhere((m) => m.id == streamId);
+    if (index < 0) return;
+    final current = _messages[index];
+    if (current.content == content) return;
+    setState(() {
+      _messages[index] = ChatMessage(
+        id: current.id,
+        role: current.role,
+        content: content,
+        createdAt: current.createdAt,
+      );
+    });
+  }
+
+  void _finalizeStreamReply(String streamId, String reply) {
+    final index = _messages.indexWhere((m) => m.id == streamId);
+    _stopReveal();
+    setState(() {
+      if (index >= 0) {
+        final current = _messages[index];
+        _messages[index] = ChatMessage(
+          id: current.id,
+          role: current.role,
+          content: reply,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
+      _sending = false;
+    });
+    widget.onSendingChanged?.call(false);
+    _maybeAutoScroll();
+  }
+
+  void _onRevealTick(Duration elapsed) {
+    final streamId = _activeStreamId;
+    if (!mounted || streamId == null) {
+      _revealTicker?.stop();
+      return;
+    }
+    final intervalUs = widget.streamCharInterval.inMicroseconds;
+    final targetSource = _networkStreamDone
+        ? (_finalFullReply ?? _streamRawBuffer)
+        : _streamRawBuffer;
+    final parsed = parseAssistantReply(
+      targetSource,
+      streaming: !_networkStreamDone,
+    );
+    final bodyChars = parsed.body.characters;
+    final total = bodyChars.length;
+    if (intervalUs <= 0) {
+      _revealedCharCount = total;
+    } else {
+      final step = elapsed.inMicroseconds ~/ intervalUs;
+      final desired = min(total, _baseRevealedCount + step);
+      if (desired > _revealedCharCount) {
+        _revealedCharCount = desired;
+        _updateStreamingMessage(
+          streamId,
+          bodyChars.take(_revealedCharCount).toString(),
+        );
+        _maybeAutoScroll();
+      }
+    }
+    if (_revealedCharCount >= total) {
+      _revealTicker?.stop();
+      if (_networkStreamDone) {
+        _finalizeStreamReply(streamId, _finalFullReply ?? _streamRawBuffer);
+      }
+    }
   }
 
   /// 外部切换页面或点击底栏其他入口时收起输入法。
@@ -277,6 +502,9 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         'op-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(0xFFFF).toRadixString(16)}';
     final requestGeneration = ++_requestGeneration;
     final placeholderId = 'stream-$opId';
+    _stopReveal();
+    _activeStreamId = placeholderId;
+    _autoFollowScroll = true;
     OpLogService.instance.record(
       opId,
       'chat_submit',
@@ -306,7 +534,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       _transcript = null;
     });
     widget.onSendingChanged?.call(true);
-    _scrollToBottom();
+    _maybeAutoScroll(force: true);
     try {
       final reply = await widget.controller
           .askAssistantStream(
@@ -314,19 +542,39 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
             opId: opId,
             history: history,
             onChunk: (delta) {
-              if (!mounted || requestGeneration != _requestGeneration) return;
-              final index = _messages.indexWhere((m) => m.id == placeholderId);
-              if (index < 0) return;
-              final current = _messages[index];
-              setState(() {
-                _messages[index] = ChatMessage(
-                  id: current.id,
-                  role: current.role,
-                  content: '${current.content}$delta',
-                  createdAt: current.createdAt,
+              if (!mounted ||
+                  requestGeneration != _requestGeneration ||
+                  _activeStreamId != placeholderId) {
+                return;
+              }
+              if (delta.isEmpty) return;
+              _hadStreamChunks = true;
+              _streamRawBuffer += delta;
+              final visibleBody = parseAssistantReply(
+                _streamRawBuffer,
+                streaming: true,
+              ).body;
+              if (widget.streamCharInterval <= Duration.zero) {
+                _revealedCharCount = visibleBody.characters.length;
+                _updateStreamingMessage(placeholderId, visibleBody);
+                _maybeAutoScroll();
+                return;
+              }
+              final visibleChars = visibleBody.characters;
+              if (visibleChars.isEmpty) return;
+              if (_revealedCharCount == 0) {
+                // 首字零额外延迟：首个有效字符到达立即上屏替换思考态
+                _revealedCharCount = 1;
+                _updateStreamingMessage(
+                  placeholderId,
+                  visibleChars.take(1).toString(),
                 );
-              });
-              _scrollToBottom();
+                _maybeAutoScroll();
+              }
+              if (_revealedCharCount < visibleChars.length &&
+                  !(_revealTicker?.isActive ?? false)) {
+                _startRevealTicker();
+              }
             },
           )
           .timeout(
@@ -336,27 +584,40 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
               throw TimeoutException('辅助问答响应超时，请检查网络后重试');
             },
           );
-      if (!mounted || requestGeneration != _requestGeneration) return;
-      setState(() {
-        final index = _messages.indexWhere((m) => m.id == placeholderId);
-        if (index >= 0) {
-          final current = _messages[index];
-          _messages[index] = ChatMessage(
-            id: current.id,
-            role: current.role,
-            content: reply,
-            createdAt: DateTime.now().millisecondsSinceEpoch,
+      if (!mounted ||
+          requestGeneration != _requestGeneration ||
+          _activeStreamId != placeholderId) {
+        return;
+      }
+      final finalParsed = parseAssistantReply(reply, streaming: false);
+      final totalBodyChars = finalParsed.body.characters.length;
+      if (!_hadStreamChunks ||
+          widget.streamCharInterval <= Duration.zero ||
+          _revealedCharCount >= totalBodyChars) {
+        _finalizeStreamReply(placeholderId, reply);
+      } else {
+        _finalFullReply = reply;
+        _networkStreamDone = true;
+        if (_revealedCharCount == 0 && totalBodyChars > 0) {
+          _revealedCharCount = 1;
+          _updateStreamingMessage(
+            placeholderId,
+            finalParsed.body.characters.take(1).toString(),
           );
+          _maybeAutoScroll();
         }
-        _sending = false;
-      });
-      widget.onSendingChanged?.call(false);
-      _scrollToBottom();
+        if (_revealedCharCount >= totalBodyChars) {
+          _finalizeStreamReply(placeholderId, reply);
+        } else if (!(_revealTicker?.isActive ?? false)) {
+          _startRevealTicker();
+        }
+      }
     } catch (e) {
       widget.controller.cancelAssistantRequest();
       // 使已被取消的底层流即使晚到，也不能重新填充“思考中”占位。
       if (requestGeneration == _requestGeneration) _requestGeneration++;
       if (!mounted) return;
+      _stopReveal();
       setState(() {
         // 请求失败：丢弃空占位，避免假"思考中"卡住
         _messages = _messages
@@ -453,6 +714,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
       );
       if (!mounted || generation != _requestGeneration) return;
       final reply = _formatVisionAnalysis(analysis);
+      _autoFollowScroll = true;
       setState(() {
         _messages = [
           ..._messages,
@@ -470,7 +732,7 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
           ),
         ];
       });
-      _scrollToBottom();
+      _maybeAutoScroll(force: true);
     } catch (e) {
       if (mounted && generation == _requestGeneration) {
         ScaffoldMessenger.of(
@@ -542,11 +804,12 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
     return '**图片相关性：$relevance**\n\n${section('### 已确认事实', a.facts)}\n\n${section('### 可能风险', a.risks)}\n\n${section('### 待确认事项', a.toConfirm)}\n\n${section('### 建议措施', a.suggestions)}\n\n> ${a.disclaimer}';
   }
 
-  void _scrollToBottom() {
+  void _maybeAutoScroll({bool force = false}) {
+    if (!force && !_autoFollowScroll) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
-        _scroll.jumpTo(_scroll.position.maxScrollExtent);
-      }
+      if (!mounted || !_scroll.hasClients) return;
+      if (!force && !_autoFollowScroll) return;
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
   }
 
@@ -1318,29 +1581,48 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
         if (_recording || (_processing && _transcript != null))
           _buildTranscriptPreview(),
         Expanded(
-          child: ListView.builder(
-            controller: _scroll,
-            padding: EdgeInsets.fromLTRB(
-              AppSpacing.s4,
-              AppSpacing.s3,
-              AppSpacing.s4,
-              _scrollBottomPadding(View.of(context).viewInsets.bottom > 0),
-            ),
-            itemCount: _messages.length,
-            itemBuilder: (context, i) {
-              final m = _messages[i];
-              // 请求占位（内容为空）：显示"水元素思考中…"气泡，完整回复到达后自动切换
-              if (m.role == 'assistant' && m.content.isEmpty) {
-                return _sending
-                    ? const _ThinkingBubble()
-                    : const SizedBox.shrink();
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              final isUserGesture =
+                  (notification is ScrollUpdateNotification &&
+                      notification.dragDetails != null) ||
+                  (notification is UserScrollNotification &&
+                      notification.direction != ScrollDirection.idle);
+              if (!isUserGesture) return false;
+              final extentAfter = notification.metrics.extentAfter;
+              if (extentAfter > 64.0) {
+                _autoFollowScroll = false;
+              } else if (extentAfter <= 24.0) {
+                _autoFollowScroll = true;
               }
-              return _MessageBubble(
-                message: m,
-                onFollowUpTap: m.isUser ? null : (q) => submitQuestion(q),
-                onCopy: _copyMessage,
-              );
+              return false;
             },
+            child: ListView.builder(
+              controller: _scroll,
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.s4,
+                AppSpacing.s3,
+                AppSpacing.s4,
+                _scrollBottomPadding(View.of(context).viewInsets.bottom > 0),
+              ),
+              itemCount: _messages.length,
+              itemBuilder: (context, i) {
+                final m = _messages[i];
+                // 请求占位（内容为空）：显示"水元素思考中…"气泡，首个字符到达后自动切换
+                if (m.role == 'assistant' && m.content.isEmpty) {
+                  return _sending
+                      ? const _ThinkingBubble()
+                      : const SizedBox.shrink();
+                }
+                return _MessageBubble(
+                  message: m,
+                  isStreaming: m.id == _activeStreamId,
+                  canTapFollowUp: !_sending && !_clearing,
+                  onFollowUpTap: m.isUser ? null : (q) => submitQuestion(q),
+                  onCopy: _copyMessage,
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -1483,38 +1765,27 @@ class ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
 
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
+  final bool isStreaming;
+  final bool canTapFollowUp;
   final ValueChanged<String>? onFollowUpTap; // 点击「追问」直接发送该问题
   final ValueChanged<String>? onCopy;
   const _MessageBubble({
     required this.message,
+    this.isStreaming = false,
+    this.canTapFollowUp = true,
     this.onFollowUpTap,
     this.onCopy,
   });
-
-  /// 从 AI 回复中解析「追问：xxx」段：返回 (正文, 追问问题)
-  /// 回复固定三段（结论/立即行动/注意事项），注意事项尾部常带一句追问
-  static (String body, String? followUp) splitFollowUp(String content) {
-    final re = RegExp(r'\*{0,2}(关键)?\s*追问\s*[：:]\s*');
-    final matches = re.allMatches(content).toList();
-    if (matches.isEmpty) return (content, null);
-    final m = matches.last;
-    final body = content.substring(0, m.start).trim();
-    var rest = content.substring(m.end).trim();
-    rest = rest.replaceAll(RegExp(r'^\*\*|\*\*$'), '').trim();
-    if (rest.isEmpty) return (content, null);
-    return (body, rest);
-  }
 
   @override
   Widget build(BuildContext context) {
     Theme.of(context);
     final isUser = message.isUser;
-    final split = isUser
-        ? (message.content, null)
-        : splitFollowUp(message.content);
-    final body = split.$1;
-    final followUp = split.$2;
-    final followUpLabel = followUp == null ? null : '我想进一步确认：$followUp';
+    final parsed = isUser
+        ? ChatReplyParts(body: message.content, followUps: const [])
+        : parseAssistantReply(message.content, streaming: isStreaming);
+    final body = parsed.body;
+    final followUps = isStreaming ? const <String>[] : parsed.followUps;
     final time = DateTime.fromMillisecondsSinceEpoch(message.createdAt);
     final timeText =
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
@@ -1667,48 +1938,83 @@ class _MessageBubble extends StatelessWidget {
                               ),
                         ),
                 ),
-                if (followUpLabel != null && onFollowUpTap != null) ...[
+                if (!isStreaming &&
+                    followUps.isNotEmpty &&
+                    onFollowUpTap != null)
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.s2),
-                    child: Material(
-                      color: AppColors.actionPrimary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        onTap: () => onFollowUpTap!(followUp!),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minHeight: 48),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.s3,
-                              vertical: AppSpacing.s2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var i = 0; i < followUps.length; i++)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              top: i == 0 ? 0 : AppSpacing.s2,
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.north_east_rounded,
-                                  size: 15,
-                                  color: AppColors.actionPrimary,
+                            child: Material(
+                              key: ValueKey('chat-followup-${message.id}-$i'),
+                              color: AppColors.actionPrimary.withValues(
+                                alpha: 0.10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.pill,
                                 ),
-                                const SizedBox(width: AppSpacing.s2),
-                                Flexible(
-                                  child: Text(
-                                    followUpLabel,
-                                    style: AppTextStyles.label.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary,
+                                side: BorderSide(
+                                  color: AppColors.actionPrimary.withValues(
+                                    alpha: 0.24,
+                                  ),
+                                  width: 1,
+                                ),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.pill,
+                                ),
+                                onTap: canTapFollowUp
+                                    ? () => onFollowUpTap!(followUps[i])
+                                    : null,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    minHeight: 48,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppSpacing.s3,
+                                      vertical: AppSpacing.s2,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.north_east_rounded,
+                                          size: 15,
+                                          color: AppColors.actionPrimary,
+                                        ),
+                                        const SizedBox(width: AppSpacing.s2),
+                                        Flexible(
+                                          child: Text(
+                                            parsed.isLegacy &&
+                                                    followUps.length == 1
+                                                ? '我想进一步确认：${followUps[i]}'
+                                                : followUps[i],
+                                            style: AppTextStyles.label.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                      ],
                     ),
                   ),
-                ],
                 Padding(
                   padding: const EdgeInsets.only(
                     top: AppSpacing.s1,
@@ -1735,22 +2041,24 @@ class _MessageBubble extends StatelessWidget {
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
-                            key: ValueKey('chat-copy-${message.id}'),
-                            onPressed: onCopy == null || body.trim().isEmpty
-                                ? null
-                                : () => onCopy!(body),
-                            icon: const Icon(Icons.copy_rounded),
-                            tooltip: '复制',
-                            iconSize: 20,
-                            constraints: const BoxConstraints(
-                              minWidth: 48,
-                              minHeight: 48,
+                          if (!isStreaming) ...[
+                            IconButton(
+                              key: ValueKey('chat-copy-${message.id}'),
+                              onPressed: onCopy == null || body.trim().isEmpty
+                                  ? null
+                                  : () => onCopy!(body),
+                              icon: const Icon(Icons.copy_rounded),
+                              tooltip: '复制',
+                              iconSize: 20,
+                              constraints: const BoxConstraints(
+                                minWidth: 48,
+                                minHeight: 48,
+                              ),
+                              padding: const EdgeInsets.all(AppSpacing.s2),
+                              color: AppColors.textTertiary,
                             ),
-                            padding: const EdgeInsets.all(AppSpacing.s2),
-                            color: AppColors.textTertiary,
-                          ),
-                          const SizedBox(width: AppSpacing.s1),
+                            const SizedBox(width: AppSpacing.s1),
+                          ],
                           Text(
                             timeText,
                             style: AppTextStyles.caption.copyWith(
