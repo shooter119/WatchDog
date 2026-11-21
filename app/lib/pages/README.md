@@ -16,6 +16,7 @@ Flutter 移动客户端的视图层，承载五大底部常驻导航入口（日
   - [`camera_page.dart`](./camera_page.dart), [`media_review_page.dart`](./media_review_page.dart): 现场水印相机拍摄与双轨成对存盘核对。
   - [`route_traffic_page.dart`](./route_traffic_page.dart): 赶赴现场路径规划与天气路况多路线切换。
   - [`scene_map_page.dart`](./scene_map_page.dart): 首页「现场地图」高德 JS API 2.0 实时定位卫星地图（默认卫星+路网、图层切换、警情联动与一键导航）。
+  - [`water_sources_page.dart`](./water_sources_page.dart): 首页「周边水源」大队级自建水源库独立页面（高德 JS API 2.0 `LabelsLayer` 三类两态标点、WGS-84→GCJ-02 本地算距排序、十字准星选点、快捷切状态、60 秒软删撤销与无定位降级列表）。
   - [`hazmat_page.dart`](./hazmat_page.dart): 危化品 UN 码离线速查、电台战术复诵卡展示与 AI 应急提炼页。
   - [`video_resources_page.dart`](./video_resources_page.dart), [`video_playback_surface.dart`](./video_playback_surface.dart): 现场监控流播放与画中画切换。
   - [`member_review_page.dart`](./member_review_page.dart): 入队申请多管理员协同在线审批。

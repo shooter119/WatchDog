@@ -15,6 +15,7 @@
   - `016_org_scoped_stations.sql`: 组织专属消防站分区
   - `017_hazardous_chemicals.sql`: 危化品速查表与 UN 编号索引
   - `018_external_incidents.sql`: 外部官方派警原始数据融合与 AI 重组结果缓存表 (`external_incidents`)
+  - `019_water_sources.sql`: 大队级自建水源库表 (`water_sources`)，含三类水源与取水方式 CHECK 约束及活跃/回收站/导入幂等部分索引
 - **迁移执行器**:
   - `backend/src/postgres-migrator.js`: 导出的 `runMigrations(pool, migrationsDir)` 函数
 

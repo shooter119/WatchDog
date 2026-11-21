@@ -30,6 +30,8 @@
   - 通过 `querylist` 拉取近 3 天属地已调派力量警情（`isDispatchedIncident` 保留全部含内部测试/演练在内的已调派记录，仅排除未调派及无力量的接警/受理/立案/作废/注销记录），融合全量原始字段为 `raw_merged_text` 并通过 DeepSeek JSON 模式按 `content_hash` 缓存结构化事件/地点/力量与规则兜底；配套 `GET /api/external-incidents`、`POST /api/external-incidents/reorganize` 与 `POST /api/incidents/claim-external`（认领建档时按需调用 `fetchIncidentHomeInfo` 拉取 `homeinfo` 自动补全多站联调参战力量与缺失描述，超时或异常时静默降级，未知车数或人数仍标为待补充）。
 - **重点单位与危化品检索**: [`key-sites.js`](./key-sites.js), [`hazardous-chemicals.js`](./hazardous-chemicals.js), [`hazmat-routes.js`](./hazmat-routes.js), [`hazmat-ai.js`](./hazmat-ai.js)
   - 危化品客户端新增 `GET /api/hazmats/sync` 增量同步（含软删除 ID）与 `POST /api/hazmats/ai-card` 应急战术卡提炼（精确库优先 + AI 防编造兜底）
+- **大队级自建水源库**: [`water-sources.js`](./water-sources.js), [`water-source-routes.js`](./water-source-routes.js)
+  - 基于 PostgreSQL `water_sources` 表提供按大队隔离的三类水源（`hydrant`/`natural`/`pump_connector`）查询与维护服务；App 端挂载 `/api/water-sources`（全员 CRUD + 60 秒原删除人撤销 + 30 次/分钟写限流 + 5000 条活跃上限），Web 后台挂载 `/api/admin/water-sources`（`unit_admin` 锁定本单位 / `platform_admin` 支持 `?unit_id=` 切换 + 回收站恢复 + `admin_audit` 审计），并暴露 `upsertImportedBatch` 供一次性清洗脚本幂等入库。
 - **子目录契约**:
   - [数据库迁移契约](../migrations/README.md)
   - [管理后台契约](../admin/README.md)

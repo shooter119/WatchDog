@@ -19,6 +19,7 @@ import 'tactical_brief_sheet.dart';
 import 'video_resources_page.dart';
 import 'hazmat_page.dart';
 import 'scene_map_page.dart';
+import 'water_sources_page.dart';
 import '../services/audio_service.dart';
 import '../services/realtime_asr_service.dart';
 import '../services/op_log_service.dart';
@@ -3624,6 +3625,28 @@ class HomePageState extends State<HomePage> {
                 keyId: '现场地图',
               ),
             ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.s2),
+        Row(
+          children: [
+            Expanded(
+              child: _fieldTool(
+                '周边水源',
+                '自建消火栓与水源',
+                Icons.water_drop_outlined,
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        WaterSourcesPage(controller: widget.controller),
+                  ),
+                ),
+                keyId: '周边水源',
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s2),
+            const Expanded(child: SizedBox()),
           ],
         ),
       ],

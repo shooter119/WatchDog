@@ -671,8 +671,203 @@
     word-break: break-all;
   }
 
+  /* Water Sources View */
+  .water-unit-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .water-unit-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .water-unit-bar .select-control {
+    width: auto;
+    min-width: 220px;
+  }
+
+  .water-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .water-stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .water-stat-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .water-stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    line-height: 1.2;
+    color: var(--text-primary);
+  }
+
+  .water-stat-card.stat-safe .water-stat-value {
+    color: var(--safe-text);
+  }
+
+  .water-stat-card.stat-danger .water-stat-value {
+    color: var(--alarm-text);
+  }
+
+  .water-stat-card.stat-info .water-stat-value {
+    color: var(--info-text);
+  }
+
+  .water-mode-tabs {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    gap: 2px;
+  }
+
+  .water-mode-tab {
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.14s ease, color 0.14s ease;
+  }
+
+  .water-mode-tab:hover {
+    color: var(--text-primary);
+  }
+
+  .water-mode-tab.active {
+    background: var(--surface);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .water-name-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 300px;
+  }
+
+  .water-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .water-name-main {
+    font-weight: 700;
+    color: var(--text-primary);
+    word-break: break-word;
+  }
+
+  .water-note-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .water-intake-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .water-intake-tag {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface-subtle);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .water-coord-cell {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .water-meta-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+  }
+
+  .water-meta-actor {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .water-meta-time {
+    font-family: var(--font-mono);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+
+  .water-checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-muted);
+  }
+
+  .water-checkbox-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    user-select: none;
+  }
+
   /* Responsive Overrides for Views */
   @media (max-width: 1024px) {
+    .water-stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     .editor-shell {
       grid-template-columns: 1fr;
     }
@@ -707,6 +902,10 @@
   }
 
   @media (max-width: 768px) {
+    .water-stats-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .form-grid-2,
     .form-grid-3,
     .tactical-kv-grid {

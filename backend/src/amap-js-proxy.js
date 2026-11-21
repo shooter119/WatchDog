@@ -183,7 +183,8 @@ function createAmapJsService({
     if (!claims) {
       return res.status(401).json({ error: '地图代理凭证无效或已过期', code: 'MAP_TICKET_INVALID' });
     }
-    if (proxyLimiter.isLimited(claims.unitId, 360, now())) {
+    const limitKey = claims.sessionId ? `s:${claims.sessionId}` : `u:${claims.unitId}`;
+    if (proxyLimiter.isLimited(limitKey, 360, now())) {
       return res.status(429).json({ error: '地图代理请求过于频繁，请稍后再试', code: 'UPSTREAM_RATE_LIMITED' });
     }
     const { jsSecret } = readConfig();

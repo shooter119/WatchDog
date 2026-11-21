@@ -1,4 +1,4 @@
-const VALID_ROUTES = new Set(['sites', 'panos', 'hazmats', 'access']);
+const VALID_ROUTES = new Set(['sites', 'panos', 'hazmats', 'water-sources', 'access']);
 
 export function parseRouteFromHash(hash = window.location.hash) {
   const cleaned = String(hash || '').replace(/^#\/?/, '').split('?')[0].split('/')[0].trim();

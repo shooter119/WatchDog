@@ -8,12 +8,14 @@ import { toast } from './ui/toast.js';
 import { createLoginView } from './views/login.js';
 import { createSitesView } from './views/sites/index.js';
 import { createHazmatsView } from './views/hazmats/index.js';
+import { createWaterSourcesView } from './views/water-sources/index.js';
 import { createAccessView } from './views/access/index.js';
 
 const ROUTE_META = {
   sites: { title: '重点单位资料', navId: 'show-sites', panelId: 'site-manager' },
   panos: { title: '360° 全景漫游', navId: 'show-panos', panelId: 'site-manager' },
   hazmats: { title: '危化品速查库', navId: 'show-hazmats', panelId: 'hazmat-manager' },
+  'water-sources': { title: '水源管理', navId: 'show-water-sources', panelId: 'water-source-manager' },
   access: { title: '后台授权与审计', navId: 'show-permissions', panelId: 'platform' },
 };
 
@@ -61,7 +63,7 @@ function updateActiveNavAndPanels(route) {
     }
   }
 
-  const panels = ['site-manager', 'hazmat-manager', 'platform'];
+  const panels = ['site-manager', 'hazmat-manager', 'water-source-manager', 'platform'];
   for (const id of panels) {
     const panel = $(id);
     if (panel) panel.hidden = id !== meta.panelId;
@@ -82,6 +84,7 @@ async function bootstrap() {
     },
   });
   const hazmatsView = createHazmatsView();
+  const waterSourcesView = createWaterSourcesView({ getMember: session.getMember });
   const accessView = createAccessView();
 
   const router = createRouter({
@@ -102,6 +105,8 @@ async function bootstrap() {
         await sitesView.activatePanos();
       } else if (route === 'hazmats') {
         await hazmatsView.activate();
+      } else if (route === 'water-sources') {
+        await waterSourcesView.activate();
       } else if (route === 'access') {
         await accessView.activate();
       }
@@ -141,6 +146,7 @@ async function bootstrap() {
     closeAllModals();
     sitesView.reset();
     hazmatsView.reset();
+    waterSourcesView.reset();
     accessView.reset();
     router.resetToDefault();
     if (dirtyIndicator) dirtyIndicator.hidden = true;

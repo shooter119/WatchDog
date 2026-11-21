@@ -18,6 +18,17 @@ export const ERROR_MESSAGES = {
   KEY_SITE_CONVERT_FAILED: '文档或图片转换失败，请检查文件格式',
   HAZMAT_FILE_TOO_LARGE: '上传文件超过 10MB 限制',
   HAZMAT_IMPORT_TOO_MANY_ROWS: '单次导入行数超过上限',
+  SESSION_REQUIRED: '会话已失效，请重新登录',
+  UNIT_FORBIDDEN: '无权访问或修改其他单位的水源数据',
+  WATER_SOURCE_NOT_FOUND: '未找到对应的水源记录',
+  INVALID_CATEGORY: '水源类别参数无效',
+  INVALID_STATUS: '水源可用状态参数无效',
+  INVALID_INTAKE_METHODS: '天然水源至少需选择一种取水方式，非天然水源不可设置取水方式',
+  INVALID_COORDINATES: '经纬度坐标超出有效范围（纬度 3~55，经度 73~136）',
+  INVALID_NAME: '水源名称不能为空且不能超过 120 个字符',
+  INVALID_NOTE: '备注长度不能超过 500 个字符',
+  RESTORE_WINDOW_EXPIRED: '已超过撤销时限，请联系管理员在回收站恢复',
+  WATER_SOURCE_LIMIT_REACHED: '当前单位活跃水源数量已达 5000 条上限',
 };
 
 export function mapErrorMessage(code, fallback = '请求处理失败') {

@@ -15,7 +15,7 @@ const wrap = (handler) => (req, res, next) => Promise.resolve(handler(req, res))
 
 const safeBody = (req) => (req.body && typeof req.body === 'object' ? req.body : {});
 
-function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, files, ai, hazmats } = {}) {
+function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, files, ai, hazmats, waterSources } = {}) {
   const router = express.Router();
   const challengeLimiter = new MinuteRateLimiter();
   const claimLimiter = new MinuteRateLimiter();
@@ -84,6 +84,7 @@ function createAdminRouter(auth, { origin = 'https://fireman119.xyz', sites, fil
   router.get('/audit', wrap(async (req, res) => res.json({ events: await auth.listAudit(req.admin.id, req.query.offset) })));
   if (sites && files) router.use('/key-sites', require('./key-site-routes').createKeySiteAdminRouter(sites, files, ai));
   if (hazmats) router.use('/hazmats', require('./hazmat-routes').createHazmatAdminRouter(hazmats, auth));
+  if (waterSources) router.use('/water-sources', require('./water-source-routes').createWaterSourceAdminRouter(waterSources, auth));
   return router;
 }
 

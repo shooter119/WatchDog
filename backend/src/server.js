@@ -271,6 +271,7 @@ let keySites = null;
 let keySiteFiles = null;
 let videoResources = null;
 let hazardousChemicals = null;
+let waterSources = null;
 const adminDir = path.join(__dirname, '..', 'admin');
 const adminSecurityHeaders = (res, filePath = '') => {
   const isHtml = !filePath || filePath.endsWith('.html');
@@ -296,6 +297,7 @@ if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER ||
   keySiteFiles = require('./key-site-files').createKeySiteFiles(require('./postgres-store'), keySites, adminAuth);
   videoResources = require('./video-resources').createVideoResources(require('./postgres-store'));
   hazardousChemicals = require('./hazardous-chemicals').createHazardousChemicals(require('./postgres-store'));
+  waterSources = require('./water-sources').createWaterSources(require('./postgres-store'));
   const keySiteAI = require('./key-site-ai').createKeySiteAI(require('./postgres-store'), keySites, keySiteFiles, adminAuth, CFG.llm);
   const adminOrigin = process.env.WATCHDOG_ADMIN_ORIGIN || 'https://fireman119.xyz';
   app.use('/api/admin', require('./admin-router').createAdminRouter(adminAuth, {
@@ -304,6 +306,7 @@ if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER ||
     files: keySiteFiles,
     ai: keySiteAI,
     hazmats: hazardousChemicals,
+    waterSources,
   }));
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteFiles.startWorker(error => logger.warn(`key_site_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
   if (process.env.NODE_ENV !== 'test') db.ready.then(() => keySiteAI.startWorker(error => logger.warn(`key_site_ai_worker code=${error.code || 'INTERNAL_ERROR'}`))).catch(() => {});
@@ -378,6 +381,7 @@ if (keySites) app.use('/api/incidents', require('./incident-key-sites').createIn
   require('./incident-key-sites').createIncidentKeySites(require('./postgres-store'), db, keySites),
 ));
 if (hazardousChemicals) app.use('/api/hazmats', require('./hazmat-routes').createHazmatAppRouter(hazardousChemicals, { llm: CFG.llm }));
+if (waterSources) app.use('/api/water-sources', require('./water-source-routes').createWaterSourceAppRouter(waterSources));
 
 // Maps inherit the same session and unit authentication as business APIs.
 app.use('/api/maps', require('./orthomaps').createOrthomapRouter(
