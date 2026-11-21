@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../design_system/design_system.dart';
+import '../../features/copilot/state/copilot_store.dart';
+import '../../features/voice/state/voice_intent_router.dart';
+import '../../features/voice/state/voice_session_store.dart';
 import '../../services/audio_service.dart';
 import '../../services/diagnostic_log_service.dart';
 import '../../services/foreground_keep_alive.dart';
@@ -15,8 +18,12 @@ import '../../state/app_controller.dart';
 import '../../widgets/pip_shell.dart';
 import 'guest_banner_bar.dart';
 import 'legacy_tab_adapters.dart';
+import 'shell_copilot_adapter.dart';
 import 'shell_keys.dart';
+import 'shell_monitor_adapter.dart';
+import 'shell_nav_bar.dart';
 import 'shell_voice_bridge.dart';
+import 'shell_voice_coordinator.dart';
 
 /// Design System v3.0 新外壳根组件（4 Tab + 中置 64dp 语音指令键）。
 ///
@@ -30,6 +37,9 @@ class CommandAppShell extends StatefulWidget {
     this.chatAudioService,
     this.videoPlayback,
     this.voiceSlot,
+    this.voiceSessionStore,
+    this.voiceIntentRouter,
+    this.copilotStore,
     this.enableStartupSideEffects = true,
     this.disposeController = false,
     this.tabOverrides,
@@ -45,6 +55,9 @@ class CommandAppShell extends StatefulWidget {
   final AudioService? chatAudioService;
   final VideoPlaybackSession? videoPlayback;
   final ShellVoiceSlot? voiceSlot;
+  final VoiceSessionStore? voiceSessionStore;
+  final VoiceIntentRouter? voiceIntentRouter;
+  final CopilotStore? copilotStore;
 
   /// 是否执行前台保活、控制器初始化及静默检查更新（Widget 测试可设为 `false`）。
   final bool enableStartupSideEffects;
@@ -74,6 +87,9 @@ class _CommandAppShellState extends State<CommandAppShell>
   late VideoPlaybackSession _videoPlayback;
   late bool _ownsVideoPlayback;
   late ShellVoiceBridge _voiceBridge;
+  late ShellMonitorAdapter _monitorAdapter;
+  late ShellCopilotAdapter _copilotAdapter;
+  late ShellVoiceCoordinator _voiceCoordinator;
   late LegacyTabAdapters _adapters;
   int _tab = ShellVoiceBridge.commandTabIndex;
 
@@ -91,12 +107,13 @@ class _CommandAppShellState extends State<CommandAppShell>
     DiagnosticLogService.instance.setPage(_pageName(_tab));
 
     _voiceBridge = _createVoiceBridge();
+    _monitorAdapter = _createMonitorAdapter();
+    _copilotAdapter = _createCopilotAdapter();
+    _voiceCoordinator = _createVoiceCoordinator();
     _adapters = _createAdapters();
     _voiceBridge.updateSlot(widget.voiceSlot ?? _adapters.createVoiceSlot());
 
     if (widget.enableStartupSideEffects) {
-      // 等 FlutterActivity 完成插件注册后再初始化后台值守；前台服务属于可选能力，
-      // 平台插件不可用或系统权限流程卡住时，不能阻塞警情同步等核心链路。
       unawaited(
         ForegroundKeepAlive.init().catchError((Object error, StackTrace _) {
           debugPrint('ForegroundKeepAlive init failed: $error');
@@ -122,12 +139,33 @@ class _CommandAppShellState extends State<CommandAppShell>
     if (controllerChanged) {
       _voiceBridge.dispose();
       _voiceBridge = _createVoiceBridge();
+      _monitorAdapter.dispose();
+      _monitorAdapter = _createMonitorAdapter();
       widget.controller.setPipActive(SystemPip.isActive.value);
+    }
+
+    final copilotChanged =
+        controllerChanged ||
+        !identical(oldWidget.chatAudioService, widget.chatAudioService) ||
+        !identical(oldWidget.copilotStore, widget.copilotStore);
+    if (copilotChanged) {
+      _copilotAdapter.dispose();
+      _copilotAdapter = _createCopilotAdapter();
+    }
+
+    final voiceChanged =
+        controllerChanged ||
+        !identical(oldWidget.voiceSessionStore, widget.voiceSessionStore) ||
+        !identical(oldWidget.voiceIntentRouter, widget.voiceIntentRouter);
+    if (voiceChanged) {
+      _voiceCoordinator.dispose();
+      _voiceCoordinator = _createVoiceCoordinator();
     }
 
     final adaptersChanged =
         controllerChanged ||
-        !identical(oldWidget.chatAudioService, widget.chatAudioService) ||
+        copilotChanged ||
+        voiceChanged ||
         !identical(oldWidget.videoPlayback, widget.videoPlayback) ||
         oldWidget.tabOverrides != widget.tabOverrides ||
         oldWidget.commandTabBuilder != widget.commandTabBuilder ||
@@ -149,6 +187,9 @@ class _CommandAppShellState extends State<CommandAppShell>
     _videoPlayback.removeListener(_syncSystemPip);
     SystemPip.isActive.removeListener(_handlePipActiveChanged);
     if (_ownsVideoPlayback) _videoPlayback.dispose();
+    _voiceCoordinator.dispose();
+    _copilotAdapter.dispose();
+    _monitorAdapter.dispose();
     _voiceBridge.dispose();
     if (widget.disposeController) widget.controller.dispose();
     super.dispose();
@@ -162,15 +203,38 @@ class _CommandAppShellState extends State<CommandAppShell>
     initialTab: _tab,
   );
 
+  ShellMonitorAdapter _createMonitorAdapter() =>
+      ShellMonitorAdapter(controller: widget.controller);
+
+  ShellCopilotAdapter _createCopilotAdapter() => ShellCopilotAdapter(
+    controller: widget.controller,
+    chatAudioService: widget.chatAudioService,
+    storeOverride: widget.copilotStore,
+    onOpenIncidentDetails: _openIncidentDetails,
+  );
+
+  ShellVoiceCoordinator _createVoiceCoordinator() => ShellVoiceCoordinator(
+    controller: widget.controller,
+    voiceBridge: _voiceBridge,
+    navigatorKey: _navigatorKey,
+    findEntryById: _monitorAdapter.findEntryById,
+    onShowMessage: _showSnackMessage,
+    onSelectTab: _selectTab,
+    sessionStoreOverride: widget.voiceSessionStore,
+    routerOverride: widget.voiceIntentRouter,
+  );
+
   LegacyTabAdapters _createAdapters() {
     final base = widget.tabOverrides;
     return LegacyTabAdapters(
       controller: widget.controller,
       voiceBridge: _voiceBridge,
       videoPlayback: _videoPlayback,
+      monitorAdapter: _monitorAdapter,
+      copilotAdapter: _copilotAdapter,
+      voiceCoordinator: _voiceCoordinator,
       onSelectTab: _selectTab,
       onOpenNotes: _openNotesPage,
-      chatAudioService: widget.chatAudioService,
       overrides: ShellTabOverrides(
         commandTabBuilder: widget.commandTabBuilder ?? base?.commandTabBuilder,
         monitorTabBuilder: widget.monitorTabBuilder ?? base?.monitorTabBuilder,
@@ -237,6 +301,14 @@ class _CommandAppShellState extends State<CommandAppShell>
   void _openNotesPage() {
     if (!mounted) return;
     _navigatorKey.currentState?.push<void>(_adapters.buildNotesRoute());
+  }
+
+  void _openIncidentDetails() {
+    if (!mounted) return;
+    final route = _adapters.buildIncidentDetailsRoute();
+    if (route != null) {
+      _navigatorKey.currentState?.push<void>(route);
+    }
   }
 
   Future<void> _fullscreenFloatingVideo(BuildContext context) async {
@@ -353,7 +425,7 @@ class _CommandAppShellState extends State<CommandAppShell>
             excluding: startupGateLocked,
             child: IgnorePointer(
               ignoring: startupGateLocked,
-              child: _ShellCommandNavBar(
+              child: ShellCommandNavBar(
                 tabs: _buildNavTabs(),
                 selectedIndex: _tab,
                 voiceBridge: _voiceBridge,
@@ -369,6 +441,7 @@ class _CommandAppShellState extends State<CommandAppShell>
             fit: StackFit.expand,
             children: <Widget>[
               appScaffold,
+              if (!startupGateLocked) _buildGlobalVoiceOverlay(),
               if (startupGateLocked)
                 KeyedSubtree(
                   key: ShellKeys.startupGate,
@@ -381,6 +454,11 @@ class _CommandAppShellState extends State<CommandAppShell>
       },
     );
   }
+
+  Widget _buildGlobalVoiceOverlay() => ListenableBuilder(
+    listenable: _voiceCoordinator,
+    builder: (BuildContext context, _) => _voiceCoordinator.buildOverlay(context),
+  );
 
   Widget _buildFloatingVideoOverlay() => ListenableBuilder(
     listenable: _videoPlayback,
@@ -405,80 +483,4 @@ class _CommandAppShellState extends State<CommandAppShell>
       );
     },
   );
-}
-
-/// 包装 [CommandNavBar]，以透明穿透锚点绑定 [ShellKeys.navBar]、Tab 与语音键 Key。
-class _ShellCommandNavBar extends StatelessWidget {
-  const _ShellCommandNavBar({
-    required this.tabs,
-    required this.selectedIndex,
-    required this.voiceBridge,
-    required this.onSelectTab,
-  });
-
-  final List<CommandNavTab> tabs;
-  final int selectedIndex;
-  final ShellVoiceBridge voiceBridge;
-  final ValueChanged<int> onSelectTab;
-
-  Widget _anchor(Key key) => MetaData(
-    key: key,
-    behavior: HitTestBehavior.translucent,
-    child: const SizedBox.expand(),
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
-    return SizedBox(
-      key: ShellKeys.navBar,
-      height: DsSizes.voiceProtrusion + DsSizes.navBarHeight + safeBottom,
-      width: double.infinity,
-      child: Stack(
-        alignment: Alignment.topCenter,
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          CommandNavBar(
-            tabs: tabs,
-            selectedIndex: selectedIndex,
-            voiceState: voiceBridge.voiceState,
-            onSelectTab: onSelectTab,
-            onVoiceTap: voiceBridge.handleVoiceTap,
-            onVoiceLongPressStart: voiceBridge.handleVoiceLongPressStart,
-            onVoiceLongPressEnd: voiceBridge.handleVoiceLongPressEnd,
-            onVoiceLongPressCancel: voiceBridge.handleVoiceLongPressCancel,
-          ),
-          // 透明穿透锚点层：MetaData(HitTestBehavior.translucent) 进入命中链满足
-          // 语义 Key 测试，同时返回 false 让指针事件 100% 穿透给 CommandNavBar。
-          Positioned(
-            left: 0,
-            right: 0,
-            top: DsSizes.voiceProtrusion,
-            bottom: 0,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: safeBottom),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(child: _anchor(ShellKeys.tabCommand)),
-                  Expanded(child: _anchor(ShellKeys.tabMonitor)),
-                  const SizedBox(width: DsSizes.voiceButton + DsSpacing.sm),
-                  Expanded(child: _anchor(ShellKeys.tabCopilot)),
-                  Expanded(child: _anchor(ShellKeys.tabMine)),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            child: SizedBox(
-              width: DsSizes.voiceButton,
-              height: DsSizes.voiceButton,
-              child: _anchor(ShellKeys.voiceBtn),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

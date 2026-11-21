@@ -25,6 +25,10 @@ const Set<String> _shellCleanFiles = <String>{
   'app/shell/command_app_shell.dart',
   'app/shell/shell_voice_bridge.dart',
   'app/shell/guest_banner_bar.dart',
+  'app/shell/shell_nav_bar.dart',
+  'app/shell/shell_monitor_adapter.dart',
+  'app/shell/shell_copilot_adapter.dart',
+  'app/shell/shell_voice_coordinator.dart',
 };
 
 const Set<String> _shellCleanForbiddenDirs = <String>{'theme', 'pages'};
@@ -198,22 +202,29 @@ String _relFromLib(Directory libDir, File file) {
   return normalizedFile.substring(prefix.length);
 }
 
-bool _isFeatureStatePath(String rel) =>
-    RegExp(r'^features/[^/]+/state/').hasMatch(rel);
+String? _featureOfStatePath(String rel) {
+  final match = RegExp(r'^features/([^/]+)/state/').firstMatch(rel);
+  return match?.group(1);
+}
+
+bool _isFeatureStatePath(String rel) => _featureOfStatePath(rel) != null;
 
 bool _isStorePath(String rel) =>
-    rel == 'core/sync/sync_store.dart' || _isFeatureStatePath(rel);
+    rel == 'core/sync/sync_store.dart' ||
+    (_isFeatureStatePath(rel) && rel.endsWith('_store.dart'));
 
 void main() {
   final libDir = _resolveLibDir();
 
   group('M2 状态隔离与外壳架构门禁', () {
-    test('(a) Store 间 0 互调（features/*/state/ 与 core/sync/sync_store.dart）', () {
+    test('(a) Store 间 0 互调（*_store.dart + core/sync/sync_store.dart）且禁止跨 Feature state/ 依赖', () {
+      final featureStateFiles = _listDartFiles(
+        Directory('${libDir.path}/features'),
+      ).where((f) => _isFeatureStatePath(_relFromLib(libDir, f))).toList();
+
       final storeFiles = <File>[
         File('${libDir.path}/core/sync/sync_store.dart'),
-        ..._listDartFiles(Directory('${libDir.path}/features')).where(
-          (f) => _isFeatureStatePath(_relFromLib(libDir, f)),
-        ),
+        ...featureStateFiles.where((f) => _isStorePath(_relFromLib(libDir, f))),
       ];
       final discoveredRels = storeFiles
           .map((f) => _relFromLib(libDir, f))
@@ -242,7 +253,27 @@ void main() {
         }
       }
 
-      expect(violations, isEmpty, reason: '存在 Store 间互调违例:\n${violations.join('\n')}');
+      for (final file in featureStateFiles) {
+        final rel = _relFromLib(libDir, file);
+        final srcFeature = _featureOfStatePath(rel)!;
+        for (final d in _parseDirectives(file.readAsStringSync())) {
+          if (d.kind == 'part of') continue;
+          final target = _resolveLibRelativePath(rel, d.uri);
+          if (target == null || target == rel) continue;
+          final dstFeature = _featureOfStatePath(target);
+          if (dstFeature != null && dstFeature != srcFeature) {
+            violations.add(
+              'lib/$rel:${d.line} 禁止跨 Feature state/ 依赖 -> lib/$target',
+            );
+          } else if (target == 'core/sync/sync_store.dart') {
+            violations.add(
+              'lib/$rel:${d.line} 禁止 features/*/state/ 依赖 core/sync/sync_store.dart',
+            );
+          }
+        }
+      }
+
+      expect(violations, isEmpty, reason: '存在 Store 间互调或跨 Feature state 违例:\n${violations.join('\n')}');
     });
 
     test('(b) features/*/state/ 零依赖 models/、api/、pages/、theme/、state/、app/', () {

@@ -5,17 +5,18 @@ import 'package:flutter/services.dart';
 
 import '../../design_system/design_system.dart';
 import '../../models/models.dart';
-import '../../pages/board_page.dart';
-import '../../pages/chat_page.dart';
 import '../../pages/home_page.dart';
+import '../../pages/incident_details_page.dart';
 import '../../pages/incident_selection_overlay.dart';
 import '../../pages/notes_page.dart';
 import '../../pages/settings_page.dart';
 import '../../pages/video_playback_surface.dart';
-import '../../services/audio_service.dart';
 import '../../services/video_playback_session.dart';
 import '../../state/app_controller.dart';
+import 'shell_copilot_adapter.dart';
+import 'shell_monitor_adapter.dart';
 import 'shell_voice_bridge.dart';
+import 'shell_voice_coordinator.dart';
 
 /// 新外壳 4 个 Tab 及过渡期浮层的可注入覆写槽位。
 ///
@@ -60,9 +61,11 @@ class LegacyTabAdapters {
     required this.controller,
     required this.voiceBridge,
     required this.videoPlayback,
+    required this.monitorAdapter,
+    required this.copilotAdapter,
+    required this.voiceCoordinator,
     required this.onSelectTab,
     required this.onOpenNotes,
-    this.chatAudioService,
     this.overrides = const ShellTabOverrides(),
   });
 
@@ -72,27 +75,26 @@ class LegacyTabAdapters {
   final AppController controller;
   final ShellVoiceBridge voiceBridge;
   final VideoPlaybackSession videoPlayback;
+  final ShellMonitorAdapter monitorAdapter;
+  final ShellCopilotAdapter copilotAdapter;
+  final ShellVoiceCoordinator voiceCoordinator;
   final ValueChanged<int> onSelectTab;
   final VoidCallback onOpenNotes;
-  final AudioService? chatAudioService;
   final ShellTabOverrides overrides;
 
   final GlobalKey<HomePageState> _homeKey = GlobalKey<HomePageState>();
-  final GlobalKey<ChatPageState> _chatKey = GlobalKey<ChatPageState>();
 
-  /// 生成供 `ShellVoiceBridge` 使用的过渡期语音执行槽位。
+  /// 生成供 `ShellVoiceBridge` 使用的全局语音与智能辅助语音执行槽位。
   ShellVoiceSlot createVoiceSlot() {
     return ShellVoiceSlot(
-      beginCommandRecording: () => _homeKey.currentState?.beginRecording(),
-      finishCommandRecording: () => _homeKey.currentState?.finishRecording(),
-      beginCopilotRecording: () =>
-          _chatKey.currentState?.beginRecording() ?? Future<void>.value(),
-      finishCopilotRecording: () =>
-          _chatKey.currentState?.finishRecording() ?? Future<void>.value(),
-      dismissCopilotKeyboard: () => _chatKey.currentState?.dismissKeyboard(),
-      submitCopilotQuestion: (String question) =>
-          _chatKey.currentState?.submitQuestion(question),
-      supportsInPlaceCommandRecording: false,
+      beginCommandRecording: () => unawaited(voiceCoordinator.beginRecording()),
+      finishCommandRecording: () =>
+          unawaited(voiceCoordinator.finishRecording()),
+      beginCopilotRecording: copilotAdapter.beginRecording,
+      finishCopilotRecording: copilotAdapter.finishRecording,
+      dismissCopilotKeyboard: copilotAdapter.dismissKeyboard,
+      submitCopilotQuestion: copilotAdapter.submitQuestion,
+      supportsInPlaceCommandRecording: true,
     );
   }
 
@@ -148,8 +150,8 @@ class LegacyTabAdapters {
   Widget _buildMonitorTab(BuildContext context) {
     final override = overrides.monitorTabBuilder;
     if (override != null) return override(context);
-    return BoardPage(
-      controller: controller,
+    return monitorAdapter.buildMonitorPage(
+      context,
       onGoVoice: () => onSelectTab(ShellVoiceBridge.commandTabIndex),
     );
   }
@@ -157,11 +159,8 @@ class LegacyTabAdapters {
   Widget _buildCopilotTab(BuildContext context) {
     final override = overrides.copilotTabBuilder;
     if (override != null) return override(context);
-    return ChatPage(
-      key: _chatKey,
-      controller: controller,
-      audioService: chatAudioService,
-      bottomNavClearance: 4.0,
+    return copilotAdapter.buildCopilotPage(
+      context,
       onRecordingChanged: voiceBridge.setCopilotRecording,
       onProcessingChanged: voiceBridge.setCopilotProcessing,
     );
@@ -249,6 +248,20 @@ class LegacyTabAdapters {
   Route<void> buildNotesRoute() {
     return MaterialPageRoute<void>(
       builder: (_) => _TransitionalNotesScreen(controller: controller),
+    );
+  }
+
+  /// 构建过渡期警情背景资料二级页面路由（供智能辅助警情胶囊跳转，M3c 后替换）。
+  Route<void>? buildIncidentDetailsRoute() {
+    final api = controller.api;
+    final incident = controller.currentIncident;
+    if (api == null || incident == null) return null;
+    return MaterialPageRoute<void>(
+      builder: (_) => IncidentDetailsPage(
+        api: api,
+        incident: incident,
+        controller: controller,
+      ),
     );
   }
 }
