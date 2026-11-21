@@ -27,6 +27,9 @@ const Set<String> _shellCleanFiles = <String>{
   'app/shell/command_home_incident_actions.dart',
   'app/shell/field_tools_gateways.dart',
   'app/shell/field_tools_router.dart',
+  'app/shell/onboarding_assembly.dart',
+  'app/shell/profile_hub_assembly.dart',
+  'app/shell/profile_hub_gateways.dart',
   'app/shell/shell_voice_bridge.dart',
   'app/shell/guest_banner_bar.dart',
   'app/shell/shell_nav_bar.dart',
@@ -325,7 +328,7 @@ void main() {
       expect(violations, isEmpty, reason: '存在 app/ 行数超标文件:\n${violations.join('\n')}');
     });
 
-    test('(d) command_app_shell / shell_voice_bridge / guest_banner_bar 零旧 theme/ 与 pages/ 依赖', () {
+    test('(d) 新外壳洁净文件零旧 theme/、pages/、widgets/ 依赖且 app/ 全域零 pages/ 依赖', () {
       final violations = <String>[];
       for (final rel in _shellCleanFiles) {
         final file = File('${libDir.path}/$rel');
@@ -338,6 +341,15 @@ void main() {
             violations.add(
               'lib/$rel:${d.line} 新外壳核心文件禁止依赖旧层 lib/$target',
             );
+          }
+        }
+      }
+      for (final file in _listDartFiles(Directory('${libDir.path}/app'))) {
+        final rel = _relFromLib(libDir, file);
+        for (final d in _parseDirectives(file.readAsStringSync())) {
+          final target = _resolveLibRelativePath(rel, d.uri);
+          if (target != null && target.split('/').first == 'pages') {
+            violations.add('lib/$rel:${d.line} 新外壳禁止引用旧页面 lib/$target');
           }
         }
       }

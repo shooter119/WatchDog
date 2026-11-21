@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../design_system/design_system.dart';
 import '../../features/copilot/state/copilot_store.dart';
+import '../../features/incident/data/models/incident.dart';
 import '../../features/video/ui/pip_shell.dart';
 import '../../features/voice/state/voice_intent_router.dart';
 import '../../features/voice/state/voice_session_store.dart';
@@ -19,6 +20,8 @@ import '../../state/app_controller.dart';
 import 'command_home_assembly.dart';
 import 'guest_banner_bar.dart';
 import 'legacy_tab_adapters.dart';
+import 'onboarding_assembly.dart';
+import 'profile_hub_assembly.dart';
 import 'shell_copilot_adapter.dart';
 import 'shell_keys.dart';
 import 'shell_monitor_adapter.dart';
@@ -88,8 +91,10 @@ class _CommandAppShellState extends State<CommandAppShell>
   late VideoPlaybackSession _videoPlayback;
   late bool _ownsVideoPlayback;
   late ShellVoiceBridge _voiceBridge;
-  late CommandHomeAssembly _homeAssembly;
   late ShellMonitorAdapter _monitorAdapter;
+  late OnboardingAssembly _onboardingAssembly;
+  late ProfileHubAssembly _profileHubAssembly;
+  late CommandHomeAssembly _homeAssembly;
   late ShellCopilotAdapter _copilotAdapter;
   late ShellVoiceCoordinator _voiceCoordinator;
   late LegacyTabAdapters _adapters;
@@ -100,24 +105,23 @@ class _CommandAppShellState extends State<CommandAppShell>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _ownsVideoPlayback = widget.videoPlayback == null;
-    _videoPlayback = (widget.videoPlayback ?? VideoPlaybackSession())
-      ..addListener(_syncSystemPip);
+    _videoPlayback = (widget.videoPlayback ?? VideoPlaybackSession())..addListener(_syncSystemPip);
     widget.controller.setPipActive(SystemPip.isActive.value);
     SystemPip.isActive.addListener(_handlePipActiveChanged);
     DiagnosticLogService.instance.setPage(_pageName(_tab));
     _voiceBridge = _createVoiceBridge();
-    _homeAssembly = _createHomeAssembly();
     _monitorAdapter = _createMonitorAdapter();
+    _onboardingAssembly = _createOnboardingAssembly();
+    _profileHubAssembly = _createProfileHubAssembly();
+    _homeAssembly = _createHomeAssembly();
     _copilotAdapter = _createCopilotAdapter();
     _voiceCoordinator = _createVoiceCoordinator();
     _adapters = _createAdapters();
     _voiceBridge.updateSlot(widget.voiceSlot ?? _adapters.createVoiceSlot());
     if (widget.enableStartupSideEffects) {
-      unawaited(
-        ForegroundKeepAlive.init().catchError(
-          (Object e, StackTrace _) => debugPrint('ForegroundKeepAlive failed: $e'),
-        ),
-      );
+      unawaited(ForegroundKeepAlive.init().catchError(
+        (Object e, StackTrace _) => debugPrint('ForegroundKeepAlive failed: $e'),
+      ));
       unawaited(widget.controller.init());
       unawaited(widget.controller.checkUpdateSilently());
     }
@@ -131,8 +135,7 @@ class _CommandAppShellState extends State<CommandAppShell>
       _videoPlayback.removeListener(_syncSystemPip);
       if (_ownsVideoPlayback) _videoPlayback.dispose();
       _ownsVideoPlayback = widget.videoPlayback == null;
-      _videoPlayback = widget.videoPlayback ?? VideoPlaybackSession();
-      _videoPlayback.addListener(_syncSystemPip);
+      _videoPlayback = (widget.videoPlayback ?? VideoPlaybackSession())..addListener(_syncSystemPip);
     }
 
     final controllerChanged = !identical(oldWidget.controller, widget.controller);
@@ -141,6 +144,9 @@ class _CommandAppShellState extends State<CommandAppShell>
       _voiceBridge = _createVoiceBridge();
       _monitorAdapter.dispose();
       _monitorAdapter = _createMonitorAdapter();
+      _onboardingAssembly = _createOnboardingAssembly();
+      _profileHubAssembly.dispose();
+      _profileHubAssembly = _createProfileHubAssembly();
       widget.controller.setPipActive(SystemPip.isActive.value);
     }
 
@@ -149,8 +155,7 @@ class _CommandAppShellState extends State<CommandAppShell>
       _homeAssembly = _createHomeAssembly();
     }
 
-    final copilotChanged =
-        controllerChanged ||
+    final copilotChanged = controllerChanged ||
         !identical(oldWidget.chatAudioService, widget.chatAudioService) ||
         !identical(oldWidget.copilotStore, widget.copilotStore);
     if (copilotChanged) {
@@ -158,8 +163,7 @@ class _CommandAppShellState extends State<CommandAppShell>
       _copilotAdapter = _createCopilotAdapter();
     }
 
-    final voiceChanged =
-        controllerChanged ||
+    final voiceChanged = controllerChanged ||
         !identical(oldWidget.voiceSessionStore, widget.voiceSessionStore) ||
         !identical(oldWidget.voiceIntentRouter, widget.voiceIntentRouter);
     if (voiceChanged) {
@@ -167,11 +171,7 @@ class _CommandAppShellState extends State<CommandAppShell>
       _voiceCoordinator = _createVoiceCoordinator();
     }
 
-    final adaptersChanged =
-        controllerChanged ||
-        videoChanged ||
-        copilotChanged ||
-        voiceChanged ||
+    final adaptersChanged = controllerChanged || videoChanged || copilotChanged || voiceChanged ||
         oldWidget.tabOverrides != widget.tabOverrides ||
         oldWidget.commandTabBuilder != widget.commandTabBuilder ||
         oldWidget.monitorTabBuilder != widget.monitorTabBuilder ||
@@ -194,8 +194,9 @@ class _CommandAppShellState extends State<CommandAppShell>
     if (_ownsVideoPlayback) _videoPlayback.dispose();
     _voiceCoordinator.dispose();
     _copilotAdapter.dispose();
-    _monitorAdapter.dispose();
     _homeAssembly.dispose();
+    _profileHubAssembly.dispose();
+    _monitorAdapter.dispose();
     _voiceBridge.dispose();
     if (widget.disposeController) widget.controller.dispose();
     super.dispose();
@@ -209,26 +210,32 @@ class _CommandAppShellState extends State<CommandAppShell>
     initialTab: _tab,
   );
 
+  OnboardingAssembly _createOnboardingAssembly() => OnboardingAssembly(
+    controller: widget.controller,
+    onSelectTab: _selectTab,
+    onShowMessage: _showSnackMessage,
+  );
+
+  ProfileHubAssembly _createProfileHubAssembly() => ProfileHubAssembly(
+    controller: widget.controller,
+    monitorAdapter: _monitorAdapter,
+    buildIncidentDetailsRoute: ([Incident? target]) => _homeAssembly.buildIncidentDetailsRoute(target),
+    onSelectThemeId: LegacyTabAdapters.selectThemeById,
+  );
+
   CommandHomeAssembly _createHomeAssembly() => CommandHomeAssembly(
     controller: widget.controller,
     videoPlayback: _videoPlayback,
     onVideoFloating: () => _selectTab(ShellVoiceBridge.commandTabIndex),
     onOpenMonitor: () => _selectTab(ShellVoiceBridge.monitorTabIndex),
     onOpenNotes: _openNotesPage,
-    onOpenWatermarkSettings: LegacyTabAdapters.openLegacyWatermarkSettings,
-    onOpenVideoResourceAdmin: (ctx) =>
-        LegacyTabAdapters.openLegacyVideoResourceAdmin(ctx, widget.controller),
-    onOpenIncidentImport: (ctx, {bool chooseSourceOnOpen = false}) =>
-        LegacyTabAdapters.openLegacyIncidentImport(
-          ctx,
-          widget.controller,
-          chooseSourceOnOpen: chooseSourceOnOpen,
-        ),
+    onOpenWatermarkSettings: ProfileHubAssembly.openWatermarkSettings,
+    onOpenVideoResourceAdmin: _profileHubAssembly.openVideoResourceAdmin,
+    onOpenIncidentImport: _onboardingAssembly.openIncidentImport,
     onShowMessage: _showSnackMessage,
   );
 
-  ShellMonitorAdapter _createMonitorAdapter() =>
-      ShellMonitorAdapter(controller: widget.controller);
+  ShellMonitorAdapter _createMonitorAdapter() => ShellMonitorAdapter(controller: widget.controller);
 
   ShellCopilotAdapter _createCopilotAdapter() => ShellCopilotAdapter(
     controller: widget.controller,
@@ -257,6 +264,8 @@ class _CommandAppShellState extends State<CommandAppShell>
       homeAssembly: _homeAssembly,
       monitorAdapter: _monitorAdapter,
       copilotAdapter: _copilotAdapter,
+      profileHubAssembly: _profileHubAssembly,
+      onboardingAssembly: _onboardingAssembly,
       voiceCoordinator: _voiceCoordinator,
       onSelectTab: _selectTab,
       onShowMessage: _showSnackMessage,
@@ -265,10 +274,8 @@ class _CommandAppShellState extends State<CommandAppShell>
         monitorTabBuilder: widget.monitorTabBuilder ?? base?.monitorTabBuilder,
         copilotTabBuilder: widget.copilotTabBuilder ?? base?.copilotTabBuilder,
         mineTabBuilder: widget.mineTabBuilder ?? base?.mineTabBuilder,
-        startupGateBuilder:
-            widget.startupGateBuilder ?? base?.startupGateBuilder,
-        floatingVideoBuilder:
-            widget.floatingVideoBuilder ?? base?.floatingVideoBuilder,
+        startupGateBuilder: widget.startupGateBuilder ?? base?.startupGateBuilder,
+        floatingVideoBuilder: widget.floatingVideoBuilder ?? base?.floatingVideoBuilder,
       ),
     );
   }
@@ -307,26 +314,15 @@ class _CommandAppShellState extends State<CommandAppShell>
     _ => 'unknown',
   };
 
-  void _showSnackMessage(
-    String message, {
-    Duration duration = const Duration(seconds: 2),
-  }) {
+  void _showSnackMessage(String message, {Duration duration = const Duration(seconds: 2)}) {
     if (!mounted) return;
     _messengerKey.currentState
       ?..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: duration,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      ..showSnackBar(SnackBar(content: Text(message), duration: duration, behavior: SnackBarBehavior.floating));
   }
 
   void _openNotesPage() {
-    if (mounted) {
-      _navigatorKey.currentState?.push<void>(_adapters.buildNotesRoute());
-    }
+    if (mounted) _navigatorKey.currentState?.push<void>(_adapters.buildNotesRoute());
   }
 
   void _openIncidentDetails() {
@@ -335,10 +331,7 @@ class _CommandAppShellState extends State<CommandAppShell>
   }
 
   Future<void> _fullscreenFloatingVideo(BuildContext context) async {
-    if (_videoPlayback.presentation != VideoPlaybackPresentation.floating ||
-        !_videoPlayback.hasResource) {
-      return;
-    }
+    if (_videoPlayback.presentation != VideoPlaybackPresentation.floating || !_videoPlayback.hasResource) return;
     _videoPlayback.enterFullscreen();
     await Navigator.of(context).push<void>(_adapters.buildFullscreenVideoRoute());
     if (mounted && _videoPlayback.hasResource) _videoPlayback.enterFloating();
@@ -357,19 +350,9 @@ class _CommandAppShellState extends State<CommandAppShell>
     final t = CommandNavBar.defaultTabs;
     return <CommandNavTab>[
       t[0],
-      CommandNavTab(
-        label: t[1].label,
-        icon: t[1].icon,
-        activeIcon: t[1].activeIcon,
-        hasAlert: _hasBoardAlert(),
-      ),
+      CommandNavTab(label: t[1].label, icon: t[1].icon, activeIcon: t[1].activeIcon, hasAlert: _hasBoardAlert()),
       t[2],
-      CommandNavTab(
-        label: t[3].label,
-        icon: t[3].icon,
-        activeIcon: t[3].activeIcon,
-        badgeCount: widget.controller.pendingMemberCount,
-      ),
+      CommandNavTab(label: t[3].label, icon: t[3].icon, activeIcon: t[3].activeIcon, badgeCount: widget.controller.pendingMemberCount),
     ];
   }
 

@@ -26,10 +26,10 @@ import 'field_tools_gateways.dart';
 typedef IncidentImportOpener =
     Future<bool?> Function(BuildContext context, {bool chooseSourceOnOpen});
 
-/// 新外壳现场工具与工具内二级页统一路由器（M3e 全 12 页 DS v3.0 接线）。
+/// 新外壳现场工具与工具内二级页统一路由器（M3e/M3f/M3g 全量 DS v3.0 接线）。
 ///
-/// 严禁引入任何旧 `pages/`、`theme/`、`widgets/`；M3f/M3g 尚未替换的 3 个
-/// 过渡期二级页回调（水印设置、视频源管理、警情导入）由调用方显式注入。
+/// 严禁引入任何旧 `pages/`、`theme/`、`widgets/`；跨 Feature 的水印设置、视频源管理
+/// 与警情导入回调由外壳装配层统一注入。
 class FieldToolsRouter {
   FieldToolsRouter({
     required this.controller,
