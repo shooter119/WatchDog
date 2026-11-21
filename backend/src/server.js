@@ -91,6 +91,9 @@ const SESSION_MAX_TTL_MS = Number.isFinite(configuredSessionMaxTtl)
 if (process.env.NODE_ENV === 'production' && !UNIT_AUTH_REQUIRED) {
   throw new Error('生产环境必须启用 WATCHDOG_UNIT_AUTH_REQUIRED');
 }
+if (process.env.NODE_ENV === 'production' && !SESSION_AUTH_REQUIRED) {
+  throw new Error('生产环境必须启用 WATCHDOG_SESSION_AUTH_REQUIRED');
+}
 if (process.env.NODE_ENV === 'production' && SESSION_AUTH_REQUIRED && !MEMBER_AUTH_REQUIRED) {
   throw new Error('启用 WATCHDOG_SESSION_AUTH_REQUIRED 时必须同时启用 WATCHDOG_MEMBER_AUTH_REQUIRED');
 }
@@ -3505,15 +3508,100 @@ async function* streamDeepSeekWithAbort({
   }
 }
 
-// 智能体问答限流：单实例每分钟最多 10 次提问；固定容量防止调用方
-// 轮换来源标识制造高基数 key，跨实例共享限流仍由网关负责。
-const chatRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
-const visionRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
-function chatRateLimited(clientKey, now = Date.now()) {
-  return chatRateLimiter.isLimited(clientKey, 10, now);
+// AI 问答与视觉分析双层限流：
+// 1) 成员层按 member_id 计数（测试关闭会话认证时回落 ip:unitId），防止同单位共享出口 IP 互踩 429 且防止换 IP 绕过；
+// 2) 单位层按 unit_id 汇总封顶，防止同单位高并发击穿上游 AI 预算；
+// 3) 严格先判成员层、通过后再判单位层，单成员超限时绝不消耗单位配额；跨实例共享限流仍由网关负责。
+function parsePositiveIntEnv(name, fallback) {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw) || raw < 1) return fallback;
+  return Math.floor(raw);
 }
-function visionRateLimited(clientKey, now = Date.now()) {
-  return visionRateLimiter.isLimited(clientKey, 3, now);
+const CHAT_MEMBER_RATE_LIMIT = parsePositiveIntEnv('CHAT_MEMBER_RATE_LIMIT', 10);
+const CHAT_UNIT_RATE_LIMIT = parsePositiveIntEnv('CHAT_UNIT_RATE_LIMIT', 60);
+const VISION_MEMBER_RATE_LIMIT = parsePositiveIntEnv('VISION_MEMBER_RATE_LIMIT', 3);
+const VISION_UNIT_RATE_LIMIT = parsePositiveIntEnv('VISION_UNIT_RATE_LIMIT', 20);
+const chatMemberRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
+const chatUnitRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
+const visionMemberRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
+const visionUnitRateLimiter = new MinuteRateLimiter({ maxEntries: 10000 });
+
+function resolveAiRateLimitKeys(req) {
+  const unitId = String(req?.unit?.id || req?.auth?.unitId || '').trim();
+  const memberId = String(req?.auth?.memberId || '').trim();
+  const memberKey = memberId
+    ? `member:${unitId || 'unauthenticated'}:${memberId}`
+    : `ip:${req?.ip || 'anonymous'}:${unitId || 'unauthenticated'}`;
+  const unitKey = unitId ? `unit:${unitId}` : null;
+  return { memberKey, unitKey };
+}
+
+function aiRateLimitRetryAfterSeconds(now = Date.now()) {
+  return Math.max(1, Math.ceil((60000 - (now % 60000)) / 1000));
+}
+
+function evaluateTwoTierAiRateLimit({
+  req,
+  memberLimiter,
+  unitLimiter,
+  memberLimit,
+  unitLimit,
+  memberCode,
+  unitCode,
+  memberError,
+  unitError,
+  now = Date.now(),
+}) {
+  const { memberKey, unitKey } = resolveAiRateLimitKeys(req);
+  if (memberLimiter.isLimited(memberKey, memberLimit, now)) {
+    return {
+      limited: true,
+      tier: 'member',
+      code: memberCode,
+      error: memberError,
+      retryAfter: aiRateLimitRetryAfterSeconds(now),
+    };
+  }
+  if (unitKey && unitLimiter.isLimited(unitKey, unitLimit, now)) {
+    return {
+      limited: true,
+      tier: 'unit',
+      code: unitCode,
+      error: unitError,
+      retryAfter: aiRateLimitRetryAfterSeconds(now),
+    };
+  }
+  return { limited: false };
+}
+
+function checkChatRateLimit(req, now = Date.now()) {
+  return evaluateTwoTierAiRateLimit({
+    req,
+    memberLimiter: chatMemberRateLimiter,
+    unitLimiter: chatUnitRateLimiter,
+    memberLimit: CHAT_MEMBER_RATE_LIMIT,
+    unitLimit: CHAT_UNIT_RATE_LIMIT,
+    memberCode: 'CHAT_MEMBER_RATE_LIMITED',
+    unitCode: 'CHAT_UNIT_RATE_LIMITED',
+    memberError: '提问过于频繁，请稍后再试',
+    unitError: '当前单位提问过于频繁，请稍后再试',
+    now,
+  });
+}
+
+function checkVisionRateLimit(req, now = Date.now()) {
+  return evaluateTwoTierAiRateLimit({
+    req,
+    memberLimiter: visionMemberRateLimiter,
+    unitLimiter: visionUnitRateLimiter,
+    memberLimit: VISION_MEMBER_RATE_LIMIT,
+    unitLimit: VISION_UNIT_RATE_LIMIT,
+    memberCode: 'VISION_MEMBER_RATE_LIMITED',
+    unitCode: 'VISION_UNIT_RATE_LIMITED',
+    memberError: '图片分析请求过于频繁，请稍后再试',
+    unitError: '当前单位图片分析请求过于频繁，请稍后再试',
+    now,
+  });
 }
 const visionUpload = multer({
   storage: multer.memoryStorage(),
@@ -3689,9 +3777,12 @@ app.post('/api/chat', async (req, res, next) => {
     if (!clean) return res.status(400).json({ error: '缺少 message' });
     if (clean.length > 2000) return res.status(400).json({ error: '问题过长（最多 2000 字）' });
     if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY' });
-    // 设备标识可由调用方轮换，不能作为 AI 限流的唯一依据。
-    const clientKey = `${req.ip || 'anonymous'}:${req.unit?.id || 'unauthenticated'}`;
-    if (chatRateLimited(clientKey)) return res.status(429).json({ error: '提问过于频繁，请稍后再试' });
+    // 按成员 + 单位双层限流；成员超限不消耗单位额度。
+    const chatLimit = checkChatRateLimit(req);
+    if (chatLimit.limited) {
+      res.set('Retry-After', String(chatLimit.retryAfter));
+      return res.status(429).json({ error: chatLimit.error, code: chatLimit.code });
+    }
     if (req.body?.history_incident_id !== undefined && req.body.history_incident_id !== String(req.headers['x-incident-id'] || '')) {
       return res.status(400).json({ error: '对话与当前警情不一致，请重新打开辅助页', code: 'CHAT_SCOPE_MISMATCH' });
     }
@@ -3849,8 +3940,11 @@ app.post('/api/chat/vision', visionUpload.single('image'), async (req, res, next
   try {
     if (!CFG.llm.apiKey) return res.status(503).json({ error: 'LLM 未配置，请设置 DEEPSEEK_API_KEY' });
     if (!req.file?.buffer?.length) return res.status(400).json({ error: '缺少图片' });
-    const clientKey = `${req.ip || 'anonymous'}:${req.unit?.id || 'unauthenticated'}`;
-    if (visionRateLimited(clientKey)) return res.status(429).json({ error: '图片分析请求过于频繁，请稍后再试' });
+    const visionLimit = checkVisionRateLimit(req);
+    if (visionLimit.limited) {
+      res.set('Retry-After', String(visionLimit.retryAfter));
+      return res.status(429).json({ error: visionLimit.error, code: visionLimit.code });
+    }
     const mime = String(req.file.mimetype || '').toLowerCase();
     if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mime)) {
       return res.status(415).json({ error: '仅支持 JPEG、PNG、GIF 或 WebP 图片' });
@@ -4939,5 +5033,14 @@ app._isDetailedChatRequestForTest = isDetailedChatRequest;
 app._chatHistoryFromRequestForTest = chatHistoryFromRequest;
 app._downgradeFollowUpsForLegacyClientForTest = downgradeFollowUpsForLegacyClient;
 app._createLegacyFollowUpsStreamTransformerForTest = createLegacyFollowUpsStreamTransformer;
+app._resolveAiRateLimitKeysForTest = resolveAiRateLimitKeys;
+app._checkChatRateLimitForTest = checkChatRateLimit;
+app._checkVisionRateLimitForTest = checkVisionRateLimit;
+app._resetAiRateLimitersForTest = () => {
+  chatMemberRateLimiter.clear();
+  chatUnitRateLimiter.clear();
+  visionMemberRateLimiter.clear();
+  visionUnitRateLimiter.clear();
+};
 
 module.exports = app;

@@ -21,3 +21,23 @@ test('业务运行时拒绝 SQLite，确保实时多实例只使用 PostgreSQL',
   assert.notEqual(result.status, 0);
   assert.match(`${result.stdout}\n${result.stderr}`, /WATCHDOG_DB_DRIVER=postgres/);
 });
+
+test('生产环境禁用 WATCHDOG_SESSION_AUTH_REQUIRED 时启动即拒绝', () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-prod-session-guard-'));
+  const result = spawnSync(process.execPath, ['-e', "require('./src/server')"], {
+    cwd: path.join(__dirname, '..'),
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      WATCHDOG_DB_DRIVER: 'postgres',
+      DATABASE_URL: 'postgresql://127.0.0.1:1/watchdog_test',
+      WATCHDOG_UNIT_AUTH_REQUIRED: '1',
+      WATCHDOG_SESSION_AUTH_REQUIRED: '0',
+      WATCHDOG_MEMBER_AUTH_REQUIRED: '1',
+      WATCHDOG_DATA_DIR: dataDir,
+    },
+    encoding: 'utf8',
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}\n${result.stderr}`, /生产环境必须启用 WATCHDOG_SESSION_AUTH_REQUIRED/);
+});

@@ -405,13 +405,60 @@ test('DELETE /api/chat 兼容旧客户端但不操作云端记录', async () => 
 test('POST /api/chat 限流：30 次内必然触发 429（按分钟桶）', async () => {
   mockChat();
   let saw429 = false;
+  let last429Body = null;
+  let lastRetryAfter = null;
   for (let i = 0; i < 30 && !saw429; i++) {
     const res = await fetch(`${base}/api/chat`, {
       method: 'POST',
       headers: H,
       body: JSON.stringify({ message: `限流问题${i}` }),
     });
-    saw429 = res.status === 429;
+    if (res.status === 429) {
+      saw429 = true;
+      lastRetryAfter = Number(res.headers.get('retry-after'));
+      last429Body = await res.json();
+    }
   }
   assert.ok(saw429, '30 次内应触发限流');
+  assert.equal(last429Body.code, 'CHAT_MEMBER_RATE_LIMITED');
+  assert.ok(Number.isInteger(lastRetryAfter) && lastRetryAfter >= 1 && lastRetryAfter <= 60);
+});
+
+test('AI 限流键解析与无会话测试环境回落兼容（ip:unauthenticated，不阻塞纯路由单测）', async () => {
+  assert.deepEqual(
+    app._resolveAiRateLimitKeysForTest({
+      ip: '10.0.0.1',
+      unit: { id: 'unit-a' },
+      auth: { unitId: 'unit-a', memberId: 'member-1' },
+    }),
+    { memberKey: 'member:unit-a:member-1', unitKey: 'unit:unit-a' },
+  );
+  assert.deepEqual(
+    app._resolveAiRateLimitKeysForTest({ ip: '10.0.0.2' }),
+    { memberKey: 'ip:10.0.0.2:unauthenticated', unitKey: null },
+  );
+
+  app._resetAiRateLimitersForTest();
+  mockChat();
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: { ...H, 'X-Forwarded-For': '198.51.100.10' },
+    body: JSON.stringify({ message: '无会话环境回落兼容性校验' }),
+  });
+  assert.equal(res.status, 200);
+});
+
+test('AI 双层限流分钟窗口重置与严格先成员后单位判定', () => {
+  app._resetAiRateLimitersForTest();
+  const t0 = 600_000;
+  const req = { ip: '10.0.0.9', unit: { id: 'unit-win' }, auth: { unitId: 'unit-win', memberId: 'mem-win' } };
+  for (let i = 0; i < 3; i++) {
+    assert.equal(app._checkVisionRateLimitForTest(req, t0).limited, false);
+  }
+  const blocked = app._checkVisionRateLimitForTest(req, t0 + 1000);
+  assert.equal(blocked.limited, true);
+  assert.equal(blocked.code, 'VISION_MEMBER_RATE_LIMITED');
+  assert.equal(blocked.retryAfter, 59);
+  // 跨入下一分钟后窗口自动重置，恢复可用。
+  assert.equal(app._checkVisionRateLimitForTest(req, t0 + 60_000).limited, false);
 });
