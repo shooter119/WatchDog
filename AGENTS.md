@@ -26,7 +26,8 @@
 7. **用户确认后自动提交、关闭与部署（Confirm -> Commit -> Auto-Close -> Deploy）**：
    - **commit / push 在用户确认后自动执行**：经用户审核确认后，自动执行 `git add` + `git commit -m "... (closes #<id>)"` + `git push origin main`，GitHub 收到 push 后自动关闭对应的 Issue；
    - **后端与部署联动**：后端代码（`backend/src/`、`deploy/`）有修改时，在本地测试全绿且用户确认后执行 VPS Docker Compose 部署与数据库迁移，部署完成后必须完成公网健康检查与路由验收；
-   - **发版严格由用户决定**：版本号与构建号、`git tag`、正式 APK 构建、VPS OTA 清单更新、GitHub Release 等全部环节，必须等用户明确指令后才执行。
+   - **发版严格由用户决定**：版本号与构建号、`git tag`、正式 APK 构建、VPS OTA 清单更新、GitHub Release 等全部环节，必须等用户明确指令后才执行；
+   - **合并后分支即刻清理**：特性分支合并到主干 `main` 且确认无误后，**必须顺手清理并删除该特性分支**（自动删除远端分支 `git push origin :<branch>` 与本地分支 `git branch -d <branch>`），保持仓库分支整洁无陈旧游离分支。
 
 - commit 前检查 `git status` / `git diff`，只提交本次相关的改动。
 - 提交信息简洁中文，符合仓库现有风格。
