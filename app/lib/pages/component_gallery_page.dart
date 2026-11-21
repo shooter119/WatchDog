@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../design_system/design_system.dart';
 import '../services/theme_controller.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_widgets.dart';
@@ -49,6 +51,58 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.pageMargin),
         children: [
+          if (kDebugMode) ...[
+            AppCard(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const DsPreviewPage(),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.actionPrimary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                    ),
+                    child: Icon(
+                      Icons.auto_awesome_mosaic_outlined,
+                      color: AppColors.actionPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.s3),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Design System v3.0 预览',
+                          style: AppTextStyles.title.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '组件总览 · 指挥台与现场监控原型（昼白 / 暗曜 · 130% 字号）',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.textTertiary,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sectionGap),
+          ],
           const SectionTitle(text: '1. 状态胶囊徽标 (StatusBadge) · 微圆点精致版'),
           Wrap(
             spacing: AppSpacing.s2,

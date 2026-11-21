@@ -57,10 +57,23 @@
 
 ## UI 与 App 调试规范
 
-- **唯一 UI 设计规范**：本地 `fire-rescue-safety-app-ui-spec-v2.0.md` 与代码实现 `app/lib/theme/`（`app_palette.dart`、`app_widgets.dart`、`app_theme.dart`）是当前唯一 UI 规范标准（旧版 v0.1 / v0.2 已废止删除）：
-  1. **严禁手写带阴影与边框叠加的 Container**：所有业务卡片统一复用 `AppCard`（默认圆角 `AppRadius.lg = 16`），横幅统一复用 `AppBanner` / `AppNotice`，区块标题统一复用 `SectionTitle`，杜绝内外双层边框或彩色边框叠加阴影导致的边缘重影；
+- **唯一 UI 设计规范（Design System v3.0）**：本地 `fire-rescue-safety-app-ui-spec-v3.0.md` 与代码实现 `app/lib/design_system/`（`DsTheme` / `buildCommandTheme`、Tokens 与 12 个标准组件）是所有新代码与新页面的**唯一 UI 规范标准**。
+  1. **单入口与主题读取**：业务代码与新页面仅允许通过 `design_system.dart` 单一出口引入（如 `import '../design_system/design_system.dart';` 或 `package:watchdog/design_system/design_system.dart`），并统一通过 `context.ds` 读取语义色彩（`context.ds.colors`）与字阶（`context.ds.typography`）；严禁 `app/lib/design_system/` 反向引入 `pages/`、`state/`、`services/`、`api/`、`models/`、`theme/`、`widgets/` 或引用旧主题符号（由 `app/test/design_system/ds_isolation_gate_test.dart` 静态门禁守护）。
+  2. **调试预览隔离**：`DsPreviewPage` 与原型页面仅在 `app/lib/pages/component_gallery_page.dart` 中通过 `kDebugMode` 守卫暴露，正式包编译时整段剔除。
+- **旧版主题过渡期维护（`app/lib/theme/`）**：既有 `app/lib/theme/`（`app_palette.dart`、`app_widgets.dart`、`app_theme.dart` 中的 `AppColors`、`AppCard`、`AppBanner`、`AppNotice`、`SectionTitle`、`StatusBadge`、`CountdownText` 等）降级为**过渡期维护**——仅允许修复既有页面缺陷，**严禁在新代码或新页面中新增用法**，待 M4 整体切换并完成旧页面替换后统一移除。在 M3 对应页面重做完成前，既有页面仍遵守：
+  1. **严禁手写带阴影与边框叠加的 Container**：既有业务卡片继续复用 `AppCard`（`AppRadius.lg = 16`），横幅复用 `AppBanner` / `AppNotice`，标题复用 `SectionTitle`，杜绝双层边框或彩色边框叠加阴影导致的重影；
   2. **严禁固定矮高度挤压文字**：`StatusBadge` 与 `CountdownText` 保持自适应最小高度与紧凑行高，严禁截断或压扁字形；
-  3. **主页与看板职责分明**：主页「现场监控」仅展示单行在场人数与最高风险胶囊，点击跳看板；详细人员空呼压力与倒计时统一在看板页展示。
+  3. **主页与看板职责分明**：既有主页「现场监控」仅展示单行在场人数与最高风险胶囊，点击跳看板；详细人员空呼压力与倒计时统一在看板页展示（维持至 M3 对应页面重写）。
+- **现场可用性硬指标（新 UI 强制门禁）**：
+  1. **触控热区**：常规交互触控目标 ≥ 48dp（`DsSizes.touchTarget`）；**进出场、报压、确认等主操作与紧急操作 ≥ 56dp**（`DsSizes.primaryAction`）；底部中置语音指令键直径 **64dp**（`DsSizes.voiceButton`）且向上凸出 **12dp**（`DsSizes.voiceProtrusion`）。
+  2. **大字号零溢出**：在 360dp 窄屏与系统 **130% 字号**缩放下，全部组件与页面必须保持零溢出、不截断、不重叠（由 `app/test/design_system/ds_text_scale_test.dart` 守护）。
+  3. **双通道状态表达**：`StatusPill` 等状态指示必须**同时包含图标与文字**（严禁纯色表达），最小高度自适应字号且不截断；填充色与文本色双通道分离，满足 WCAG 对比度要求（文本及状态字 ≥ 4.5:1，`metric*` 关键读数 ≥ 7.0:1，由 `app/test/design_system/ds_contrast_test.dart` 校验）。
+  4. **等宽数字**：压力、倒计时、时长、时间戳等所有数值读数统一启用 `FontFeature.tabularFigures()`（`DsTypography.metric` / `metricLarge` / `tabular(...)` / `MetricReadout`），确保跳秒时不左右抖动。
+  5. **卡片层次与防误触**：卡片（`SurfaceCard`）统一采用 1px 细描边区分层次，严禁厚重阴影与双层边框叠加（仅 `CommandSheet`、中置语音键等浮层允许轻柔悬浮阴影）；危险/不可逆操作（如 `CommandButtonVariant.danger`）默认通过 `CommandSheet` 弹出**二次确认**后方可生效，关键操作配触感反馈。
+- **视觉回归（Golden）门禁**：
+  1. `app/test/design_system/golden/` 通过目录级 `flutter_test_config.dart` 配置 **0.5% (`0.005`) 像素差异容差**比较器（作用域仅限 `test/design_system/golden/`，不影响其他测试），用于兼容 macOS 本机与 Linux CI 间的抗锯齿微差。
+  2. 基准图生成/更新命令（在 `app/` 目录下执行）：`flutter test --update-goldens test/design_system/golden`。
+  3. **人工视觉复核**：每次生成或更新基准图后，**提交前必须人工逐张打开核查所有基准 PNG**，确认布局、配色、圆角与状态呈现无误后方可提交，严禁未核查直接覆盖。
 - **默认调试方案（真机 + scrcpy）**：当用户指示「调试」或进行 App UI 效果预览时，默认执行方案一：
   1. 依托 Android 实体机调试，拒绝使用或启动重型 QEMU / AVD 虚拟机；
   2. 使用 `scrcpy` 实现低延迟、高帧率桌面投屏，直接在 Mac 窗口中查看真机 UI、字体、圆角与交互效果；
