@@ -4,6 +4,7 @@ import '../../../design_system/design_system.dart';
 import '../../../services/phone_caller.dart';
 import '../data/incident_import_repository.dart';
 import '../data/models/incident.dart';
+import 'sheets/incident_basic_info_sheet.dart';
 import 'sheets/incident_details_edit_sheet.dart';
 import 'widgets/incident_detail_blocks.dart';
 import 'widgets/incident_situation_parts.dart';
@@ -17,6 +18,7 @@ class IncidentDetailsScreen extends StatefulWidget {
     super.key,
     required this.incident,
     this.importRepository,
+    this.onLocateAddress,
     this.keySiteSlot,
     this.onExitIncident,
     this.onArchiveIncident,
@@ -26,6 +28,7 @@ class IncidentDetailsScreen extends StatefulWidget {
 
   final Incident incident;
   final IncidentImportRepository? importRepository;
+  final IncidentAddressLocator? onLocateAddress;
   final Widget? keySiteSlot;
   final Future<void> Function()? onExitIncident;
   final Future<void> Function()? onArchiveIncident;
@@ -92,11 +95,12 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
 
   Future<void> _edit() async {
     final repo = widget.importRepository;
-    if (repo == null || _detail == null) return;
+    if (_busy || repo == null || _detail == null) return;
     final data = Map<String, dynamic>.from(_detail?['data'] as Map? ?? const {});
     final updated = await showIncidentDetailsEditSheet(
       context,
       initialData: data,
+      onLocateAddress: widget.onLocateAddress,
     );
     if (updated == null || !mounted) return;
     setState(() => _busy = true);
@@ -247,7 +251,17 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
                 icon: DsIcons.toolTacticalBrief,
                 message: widget.importRepository == null
                     ? '当前处于单机模式，暂未连接云端详情接口。'
-                    : '尚未补充警情资料，可从指挥台导入图片或文字。',
+                    : (widget.incident.isActive
+                          ? '尚未补充警情资料，可手动填写或从指挥台导入图片/文字。'
+                          : '暂无警情补充资料'),
+                actionLabel:
+                    widget.incident.isActive && widget.importRepository != null
+                    ? '手动填写资料'
+                    : null,
+                onAction:
+                    widget.incident.isActive && widget.importRepository != null
+                    ? _edit
+                    : null,
               ),
             if (basicFields.isNotEmpty)
               SurfaceCard(

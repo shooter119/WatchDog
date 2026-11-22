@@ -8,6 +8,7 @@ import '../../design_system/design_system.dart';
 import '../../features/incident/data/incident_import_repository.dart';
 import '../../features/incident/data/models/incident.dart';
 import '../../features/incident/data/models/incident_force.dart';
+import '../../features/incident/ui/sheets/incident_basic_info_sheet.dart';
 import '../../features/incident/ui/sheets/incident_force_edit_sheet.dart';
 import '../../features/incident/ui/sheets/incident_level_sheet.dart';
 import '../../features/incident/ui/widgets/incident_key_site_card.dart';
@@ -15,6 +16,7 @@ import '../../features/key_sites/data/models/key_sites.dart';
 import '../../features/roster/data/models/station.dart';
 import '../../state/app_controller.dart';
 import 'field_tools_router.dart';
+import 'incident_address_locator.dart';
 
 /// 指挥台警情操作与重点单位绑定协调器（零旧 `pages/`、`theme/`、`widgets/` 依赖）。
 class CommandHomeIncidentActions {
@@ -111,6 +113,23 @@ class CommandHomeIncidentActions {
       onShowMessage('修改名称失败：$error', duration: const Duration(seconds: 3));
     }
   }
+
+  Future<void> editBasicInfo(IncidentBasicInfoResult result) async {
+    try {
+      await controller.updateCurrentBasicInfo(
+        title: result.title,
+        location: result.location,
+        latitude: result.latitude,
+        longitude: result.longitude,
+      );
+      onShowMessage('警情信息已更新', duration: const Duration(seconds: 2));
+    } catch (error) {
+      onShowMessage('更新警情信息失败：$error', duration: const Duration(seconds: 3));
+    }
+  }
+
+  Future<IncidentLocatedAddress> locateCurrentAddress() =>
+      locateCurrentIncidentAddress(controller);
 
   Future<void> archiveIncident() async {
     try {

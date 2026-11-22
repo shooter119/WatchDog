@@ -6,6 +6,7 @@ import '../../../../design_system/design_system.dart';
 import '../../../../services/settings.dart';
 import '../../data/models/incident.dart';
 import '../../data/models/incident_force.dart';
+import '../sheets/incident_basic_info_sheet.dart';
 import 'incident_category_chip.dart';
 import 'incident_category_style.dart';
 import 'incident_situation_parts.dart';
@@ -35,6 +36,8 @@ class IncidentSituationCard extends StatefulWidget {
     this.loadExpanded,
     this.saveExpanded,
     this.onRename,
+    this.onEditBasicInfo,
+    this.onLocateAddress,
     this.onAddForce,
     this.onImportInfo,
     this.onAdjustIncident,
@@ -60,6 +63,8 @@ class IncidentSituationCard extends StatefulWidget {
   final IncidentExpandedLoader? loadExpanded;
   final IncidentExpandedSaver? saveExpanded;
   final Future<void> Function(String newTitle)? onRename;
+  final Future<void> Function(IncidentBasicInfoResult result)? onEditBasicInfo;
+  final IncidentAddressLocator? onLocateAddress;
   final VoidCallback? onAddForce;
   final VoidCallback? onImportInfo;
   final VoidCallback? onAdjustIncident;
@@ -146,6 +151,17 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
   }
 
   Future<void> _handleRename() async {
+    final onEditBasicInfo = widget.onEditBasicInfo;
+    if (onEditBasicInfo != null) {
+      final result = await showIncidentBasicInfoSheet(
+        context,
+        initialTitle: widget.incident.title ?? '',
+        initialLocation: widget.incident.effectiveLocation,
+        onLocateAddress: widget.onLocateAddress,
+      );
+      if (result != null && mounted) await onEditBasicInfo(result);
+      return;
+    }
     if (widget.onRename == null) return;
     final nextTitle = await showIncidentRenameSheet(
       context,
@@ -268,6 +284,7 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
           ),
         ),
         IncidentMoreMenuButton(
+          renameLabel: widget.onEditBasicInfo != null ? '编辑警情信息' : '修改警情名称',
           onRename: () => unawaited(_handleRename()),
           onExit: () => unawaited(_handleExit()),
           onArchive: () => unawaited(_handleArchive()),
@@ -320,7 +337,7 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
               )
             else if (showPendingForcePill)
               const StatusPill(
-                status: DsStatus.caution,
+                status: DsStatus.neutral,
                 icon: DsIcons.hourglass,
                 label: '力量待登记',
               ),

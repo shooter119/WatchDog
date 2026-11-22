@@ -74,7 +74,13 @@ mixin _AppControllerIncidentMixin on _AppControllerBase {
     }
   }
 
-  Future<Incident> createIncident() async {
+  Future<Incident> createIncident({
+    String? title,
+    String? location,
+    String? disasterCategory,
+    double? latitude,
+    double? longitude,
+  }) async {
     final name = await Settings.realName;
     if (name.isEmpty) throw StateError('请先在设置中填写真实姓名');
     await _ensureApiReady();
@@ -117,12 +123,52 @@ mixin _AppControllerIncidentMixin on _AppControllerBase {
       }
       rethrow;
     }
-    await Settings.setCurrentIncidentId(incident.id);
+
+    var resolved = incident;
+    final cleanTitle = (title ?? '').trim();
+    if (cleanTitle.isNotEmpty) {
+      try {
+        resolved = await a.updateIncidentTitle(
+          resolved.id,
+          cleanTitle,
+          expectedVersion: resolved.version,
+        );
+      } catch (error) {
+        AppLogger.log(
+          'WatchDog createIncident title follow-up failed: $error',
+          tag: 'incident',
+        );
+      }
+    }
+
+    final detailPatch = _buildBasicDetailPatch(
+      location: location,
+      disasterCategory: disasterCategory,
+      latitude: latitude,
+      longitude: longitude,
+    );
+    if (detailPatch.isNotEmpty && !_disposed) {
+      final scoped = a.forIncident(resolved.id);
+      try {
+        await scoped.updateIncidentDetails(detailPatch, 0, '$opId-details');
+        resolved = await a.fetchIncident(resolved.id);
+      } catch (error) {
+        AppLogger.log(
+          'WatchDog createIncident details follow-up failed: $error',
+          tag: 'incident',
+        );
+      } finally {
+        if (!identical(scoped, a)) scoped.dispose();
+      }
+    }
+
+    if (_disposed) return resolved;
+    await Settings.setCurrentIncidentId(resolved.id);
     _enteredWithoutIncident = false;
-    currentIncident = incident;
+    currentIncident = resolved;
     activeIncidents = [
-      incident,
-      ...activeIncidents.where((item) => item.id != incident.id),
+      resolved,
+      ...activeIncidents.where((item) => item.id != resolved.id),
     ];
     entries = [];
     notes = [];
@@ -135,7 +181,7 @@ mixin _AppControllerIncidentMixin on _AppControllerBase {
     _recomputeSyncing();
     _notify();
     await refreshConfig();
-    if (_disposed) return incident;
+    if (_disposed) return resolved;
     unawaited(syncKeepAlive());
     if (!_syncStarted) {
       if (_authenticated) {
@@ -144,7 +190,88 @@ mixin _AppControllerIncidentMixin on _AppControllerBase {
         await sync();
       }
     }
-    return incident;
+    return resolved;
+  }
+
+  Map<String, dynamic> _buildBasicDetailPatch({
+    String? location,
+    String? disasterCategory,
+    double? latitude,
+    double? longitude,
+  }) {
+    final cleanLocation = (location ?? '').trim();
+    final cleanCategory = (disasterCategory ?? '').trim();
+    final hasCoords = latitude != null && longitude != null;
+    return <String, dynamic>{
+      if (cleanLocation.isNotEmpty) 'location': cleanLocation,
+      if (cleanCategory.isNotEmpty) 'disaster_category': cleanCategory,
+      if (hasCoords) ...<String, dynamic>{
+        'latitude': latitude.toStringAsFixed(6),
+        'longitude': longitude.toStringAsFixed(6),
+      },
+    };
+  }
+
+  Future<Incident> updateCurrentBasicInfo({
+    required String title,
+    required String location,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final incident = currentIncident;
+    final a = api;
+    if (incident == null || a == null) throw StateError('未选择警情');
+
+    final cleanTitle = title.trim();
+    final existingTitle = (incident.title ?? '').trim();
+    var updated = incident;
+    if (cleanTitle != existingTitle) {
+      updated = await a.updateIncidentTitle(
+        incident.id,
+        cleanTitle.isEmpty ? null : cleanTitle,
+        expectedVersion: incident.version,
+      );
+    }
+
+    final cleanLocation = location.trim();
+    final existingLocation = (updated.info['location']?.toString() ?? '').trim();
+    final hasCoords = latitude != null && longitude != null;
+    final shouldPatchLocation =
+        cleanLocation.isNotEmpty &&
+        (cleanLocation != existingLocation || hasCoords);
+    final detailPatch = <String, dynamic>{
+      if (shouldPatchLocation) 'location': cleanLocation,
+      if (hasCoords) ...<String, dynamic>{
+        'latitude': latitude.toStringAsFixed(6),
+        'longitude': longitude.toStringAsFixed(6),
+      },
+    };
+
+    if (detailPatch.isNotEmpty) {
+      final scoped = a.forIncident(updated.id);
+      try {
+        final detail = await scoped.fetchIncidentDetails();
+        final version = (detail['version'] as num?)?.toInt() ?? 0;
+        await scoped.updateIncidentDetails(
+          detailPatch,
+          version,
+          'incident-basic-info-${DateTime.now().microsecondsSinceEpoch}',
+        );
+      } finally {
+        if (!identical(scoped, a)) scoped.dispose();
+      }
+      updated = await a.fetchIncident(updated.id);
+    }
+
+    if (!identical(api, a) || currentIncident?.id != incident.id || _disposed) {
+      return updated;
+    }
+    currentIncident = updated;
+    activeIncidents = activeIncidents
+        .map((item) => item.id == updated.id ? updated : item)
+        .toList();
+    _notify();
+    return updated;
   }
 
   Future<Incident> renameCurrent(String title) async {
@@ -157,6 +284,9 @@ mixin _AppControllerIncidentMixin on _AppControllerBase {
       expectedVersion: incident.version,
     );
     currentIncident = updated;
+    activeIncidents = activeIncidents
+        .map((item) => item.id == updated.id ? updated : item)
+        .toList();
     _notify();
     return updated;
   }

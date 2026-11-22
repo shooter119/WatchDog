@@ -6,6 +6,7 @@ import 'package:watchdog/features/incident/data/models/external_incident.dart';
 import 'package:watchdog/features/incident/data/models/incident.dart';
 import 'package:watchdog/features/incident/data/models/incident_create_conflict_exception.dart';
 import 'package:watchdog/features/incident/ui/incident_picker_page.dart';
+import 'package:watchdog/features/incident/ui/sheets/incident_basic_info_sheet.dart';
 
 void main() {
   final fixedNow = DateTime(2026, 11, 7, 16, 0);
@@ -680,6 +681,67 @@ void main() {
         expect(overlay.color, expectedColors.canvas);
         expect(tester.takeException(), isNull);
       }
+    });
+
+    testWidgets('配置 onCreateWithDraft 后新建警情弹出建档抽屉并回传名称/地点/定位/分类', (
+      tester,
+    ) async {
+      IncidentCreateDraft? submittedDraft;
+      Incident? joined;
+      var throwConflict = false;
+
+      await tester.pumpWidget(
+        wrap(
+          IncidentPickerPage(
+            activeIncidents: const <Incident>[],
+            loading: false,
+            onSelect: (inc) async => joined = inc,
+            onCreateWithDraft: (IncidentCreateDraft draft) async {
+              submittedDraft = draft;
+              if (throwConflict) {
+                throw IncidentCreateConflictException('10秒前已有队员新建警情', customIncident);
+              }
+            },
+            onLocateAddress: () async => const IncidentLocatedAddress(
+              address: '示例大道66号物流园',
+              latitude: 31.2304,
+              longitude: 121.4737,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('incident-picker-create-btn')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('incident-create-title-field')),
+        '示例工业园厂房火灾',
+      );
+      await tester.tap(find.byKey(const Key('incident-locate-btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('incident-create-category-rescue')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('incident-create-confirm-btn')));
+      await tester.pumpAndSettle();
+
+      expect(submittedDraft?.title, '示例工业园厂房火灾');
+      expect(submittedDraft?.location, '示例大道66号物流园');
+      expect(submittedDraft?.category, DsIncidentCategory.rescue);
+      expect(submittedDraft?.categoryExplicitlySelected, isTrue);
+      expect(submittedDraft?.latitude, 31.2304);
+      expect(submittedDraft?.longitude, 121.4737);
+
+      // 带草稿建档触发冷却冲突同样支持直接加入现有警情
+      throwConflict = true;
+      await tester.tap(find.byKey(const Key('incident-picker-create-btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('incident-create-confirm-btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('incident-picker-join-conflict-btn')));
+      await tester.pumpAndSettle();
+      expect(joined?.id, customIncident.id);
     });
   });
 }

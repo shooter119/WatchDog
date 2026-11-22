@@ -15,11 +15,13 @@ class IncidentMoreMenuButton extends StatelessWidget {
     required this.onRename,
     required this.onExit,
     required this.onArchive,
+    this.renameLabel = '修改警情名称',
   });
 
   final VoidCallback onRename;
   final VoidCallback onExit;
   final VoidCallback onArchive;
+  final String renameLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +56,7 @@ class IncidentMoreMenuButton extends StatelessWidget {
             children: <Widget>[
               Icon(DsIcons.edit, size: 18, color: colors.textPrimary),
               const SizedBox(width: DsSpacing.sm),
-              const Text('修改警情名称'),
+              Text(renameLabel),
             ],
           ),
         ),

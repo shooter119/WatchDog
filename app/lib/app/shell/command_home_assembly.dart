@@ -177,6 +177,8 @@ class CommandHomeAssembly {
       showConnectionPill: false,
       onConnectionTap: () => unawaited(openConnectionDetail(context)),
       onRename: incidentActions.renameIncident,
+      onEditBasicInfo: incidentActions.editBasicInfo,
+      onLocateAddress: incidentActions.locateCurrentAddress,
       onAddForce: () => unawaited(incidentActions.editForce(context)),
       onImportInfo: () => unawaited(incidentActions.openImport(context)),
       onAdjustIncident: () =>
@@ -241,6 +243,7 @@ class CommandHomeAssembly {
       builder: (_) => IncidentDetailsScreen(
         incident: incident,
         importRepository: incidentActions.buildImportRepository(incident.id),
+        onLocateAddress: incidentActions.locateCurrentAddress,
         keySiteSlot: incidentActions.buildKeySiteCard(incident),
         onExitIncident: incident.isActive
             ? controller.exitCurrentIncident

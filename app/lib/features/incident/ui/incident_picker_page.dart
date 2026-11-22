@@ -6,11 +6,13 @@ import '../data/models/external_incident.dart';
 import '../data/models/incident.dart';
 import '../data/models/incident_create_conflict_exception.dart';
 import 'incident_picker_card.dart';
+import 'sheets/incident_action_sheets.dart';
+import 'sheets/incident_basic_info_sheet.dart';
 
 /// Design System v3.0 全屏警情选择页。
 ///
 /// 统一展示自建活跃警情与外部接警记录，支持辖区强隔离、跨区增援匹配、全文检索、
-/// 冷启动单一加载不闪空态、新建警情（含冷却期冲突抽屉）以及「直接进入 App」。
+/// 冷启动单一加载不闪空态、新建警情（含名称/地点/大类建档与冷却期冲突抽屉）以及「直接进入 App」。
 class IncidentPickerPage extends StatefulWidget {
   const IncidentPickerPage({
     super.key,
@@ -19,20 +21,24 @@ class IncidentPickerPage extends StatefulWidget {
     required this.loading,
     this.externalLoading = false,
     required this.onSelect,
-    required this.onCreate,
+    this.onCreate,
+    this.onCreateWithDraft,
+    this.onLocateAddress,
     this.onClaimExternal,
     this.onRefreshExternal,
     this.onEnterWithoutIncident,
     this.userUnitName,
     this.confirmCreate = false,
     this.now,
-  });
+  }) : assert(onCreate != null || onCreateWithDraft != null);
 
   final List<Incident> activeIncidents;
   final List<ExternalIncident> externalIncidents;
   final bool loading, externalLoading, confirmCreate;
   final Future<void> Function(Incident incident) onSelect;
-  final Future<void> Function() onCreate;
+  final Future<void> Function()? onCreate;
+  final Future<void> Function(IncidentCreateDraft draft)? onCreateWithDraft;
+  final IncidentAddressLocator? onLocateAddress;
   final Future<void> Function(ExternalIncident incident)? onClaimExternal;
   final Future<void> Function({bool forceRefresh})? onRefreshExternal;
   final VoidCallback? onEnterWithoutIncident;
@@ -102,32 +108,17 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
 
   Future<void> _handleCreate() async {
     if (_busy) return;
-    if (widget.confirmCreate) {
-      final confirmed = await showCommandSheet<bool>(
-        context: context,
-        title: '新建现场警情',
-        subtitle: '系统将自动生成时间戳警情编号，稍后可在详情中补充名称和资料。',
-        builder: (BuildContext ctx) => Text(
-          '若列表中已存在同一警情，建议直接点选进入以避免重复建档。确认要新建警情吗？',
-          style: ctx.ds.typography.body.copyWith(color: ctx.ds.colors.textSecondary),
-        ),
-        actionsBuilder: (BuildContext ctx) => <Widget>[
-          CommandButton(
-            label: '取消',
-            variant: CommandButtonVariant.secondary,
-            size: CommandButtonSize.large,
-            onPressed: () => Navigator.of(ctx).pop(false),
-          ),
-          CommandButton(
-            key: const Key('incident-picker-create-confirm-btn'),
-            label: '确认新建',
-            variant: CommandButtonVariant.primary,
-            size: CommandButtonSize.large,
-            onPressed: () => Navigator.of(ctx).pop(true),
-          ),
-        ],
+    IncidentCreateDraft? draft;
+    final onCreateWithDraft = widget.onCreateWithDraft;
+    if (onCreateWithDraft != null) {
+      draft = await showIncidentCreateSheet(
+        context,
+        onLocateAddress: widget.onLocateAddress,
       );
-      if (confirmed != true || !mounted) return;
+      if (draft == null || !mounted) return;
+    } else if (widget.confirmCreate) {
+      final confirmed = await showIncidentCreateConfirmSheet(context);
+      if (!confirmed || !mounted) return;
     }
 
     setState(() {
@@ -136,7 +127,11 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
     });
     IncidentCreateConflictException? conflict;
     try {
-      await widget.onCreate();
+      if (onCreateWithDraft != null && draft != null) {
+        await onCreateWithDraft(draft);
+      } else {
+        await widget.onCreate?.call();
+      }
     } on IncidentCreateConflictException catch (e) {
       conflict = e;
     } catch (error) {
@@ -144,36 +139,11 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-    if (conflict != null && mounted) await _showCreateConflictSheet(conflict);
-  }
-
-  Future<void> _showCreateConflictSheet(
-    IncidentCreateConflictException conflict,
-  ) async {
-    final join = await showCommandSheet<bool>(
-      context: context,
-      title: '已有刚创建的警情',
-      builder: (BuildContext ctx) => Text(
-        '${conflict.existing.displayName}\n\n${conflict.message}',
-        style: ctx.ds.typography.body.copyWith(color: ctx.ds.colors.textSecondary),
-      ),
-      actionsBuilder: (BuildContext ctx) => <Widget>[
-        CommandButton(
-          label: '暂不加入',
-          variant: CommandButtonVariant.secondary,
-          size: CommandButtonSize.large,
-          onPressed: () => Navigator.of(ctx).pop(false),
-        ),
-        CommandButton(
-          key: const Key('incident-picker-join-conflict-btn'),
-          label: '加入现有警情',
-          variant: CommandButtonVariant.primary,
-          size: CommandButtonSize.large,
-          onPressed: () => Navigator.of(ctx).pop(true),
-        ),
-      ],
-    );
-    if (join == true && mounted) await _select(conflict.existing);
+    if (conflict != null && mounted) {
+      if (await showIncidentCreateConflictSheet(context, conflict) && mounted) {
+        await _select(conflict.existing);
+      }
+    }
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -314,9 +284,11 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
           ],
           const SizedBox(height: DsSpacing.sm),
           Text(
-            widget.activeIncidents.isEmpty
-                ? '当前没有进行中的警情。新建警情会自动使用时间戳名称。'
-                : '如果列表中没有目标警情，可新建；系统会自动使用时间戳名称。',
+            widget.onCreateWithDraft != null
+                ? '新建时可填写名称与事发地点；名称留空将自动使用时间戳编号。'
+                : (widget.activeIncidents.isEmpty
+                      ? '当前没有进行中的警情。新建警情会自动使用时间戳名称。'
+                      : '如果列表中没有目标警情，可新建；系统会自动使用时间戳名称。'),
             textAlign: TextAlign.center,
             style: context.ds.typography.caption.copyWith(color: colors.textTertiary),
           ),

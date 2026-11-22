@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../design_system/design_system.dart';
+import '../../data/models/incident_create_conflict_exception.dart';
 
 /// 弹出警情改名 [CommandSheet]。
 ///
@@ -162,4 +163,64 @@ Future<bool> showIncidentArchiveConfirmSheet(BuildContext context) async {
     ],
   );
   return confirmed == true;
+}
+
+/// 弹出旧版纯确认式新建警情 [CommandSheet]，保留 `Key('incident-picker-create-confirm-btn')`。
+Future<bool> showIncidentCreateConfirmSheet(BuildContext context) async {
+  final confirmed = await showCommandSheet<bool>(
+    context: context,
+    title: '新建现场警情',
+    subtitle: '系统将自动生成时间戳警情编号，稍后可在详情中补充名称和资料。',
+    builder: (BuildContext ctx) => Text(
+      '若列表中已存在同一警情，建议直接点选进入以避免重复建档。确认要新建警情吗？',
+      style: ctx.ds.typography.body.copyWith(color: ctx.ds.colors.textSecondary),
+    ),
+    actionsBuilder: (BuildContext ctx) => <Widget>[
+      CommandButton(
+        label: '取消',
+        variant: CommandButtonVariant.secondary,
+        size: CommandButtonSize.large,
+        onPressed: () => Navigator.of(ctx).pop(false),
+      ),
+      CommandButton(
+        key: const Key('incident-picker-create-confirm-btn'),
+        label: '确认新建',
+        variant: CommandButtonVariant.primary,
+        size: CommandButtonSize.large,
+        onPressed: () => Navigator.of(ctx).pop(true),
+      ),
+    ],
+  );
+  return confirmed == true;
+}
+
+/// 弹出冷却期新建冲突 [CommandSheet]，保留 `Key('incident-picker-join-conflict-btn')`。
+Future<bool> showIncidentCreateConflictSheet(
+  BuildContext context,
+  IncidentCreateConflictException conflict,
+) async {
+  final join = await showCommandSheet<bool>(
+    context: context,
+    title: '已有刚创建的警情',
+    builder: (BuildContext ctx) => Text(
+      '${conflict.existing.displayName}\n\n${conflict.message}',
+      style: ctx.ds.typography.body.copyWith(color: ctx.ds.colors.textSecondary),
+    ),
+    actionsBuilder: (BuildContext ctx) => <Widget>[
+      CommandButton(
+        label: '暂不加入',
+        variant: CommandButtonVariant.secondary,
+        size: CommandButtonSize.large,
+        onPressed: () => Navigator.of(ctx).pop(false),
+      ),
+      CommandButton(
+        key: const Key('incident-picker-join-conflict-btn'),
+        label: '加入现有警情',
+        variant: CommandButtonVariant.primary,
+        size: CommandButtonSize.large,
+        onPressed: () => Navigator.of(ctx).pop(true),
+      ),
+    ],
+  );
+  return join == true;
 }

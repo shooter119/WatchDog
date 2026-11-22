@@ -4,6 +4,7 @@ import 'package:watchdog/design_system/design_system.dart';
 import 'package:watchdog/features/incident/data/models/incident.dart';
 import 'package:watchdog/features/incident/data/models/incident_force.dart';
 import 'package:watchdog/features/incident/ui/sheets/incident_action_sheets.dart';
+import 'package:watchdog/features/incident/ui/sheets/incident_basic_info_sheet.dart';
 import 'package:watchdog/features/incident/ui/sheets/incident_force_edit_sheet.dart';
 import 'package:watchdog/features/incident/ui/sheets/incident_level_sheet.dart';
 import 'package:watchdog/features/incident/ui/widgets/incident_category_chip.dart';
@@ -193,6 +194,10 @@ void main() {
       expect(find.byType(IncidentHeader), findsOneWidget);
       expect(find.byKey(const Key('incident-card-details')), findsOneWidget);
       expect(find.text('力量待登记'), findsOneWidget);
+      final pendingPill = tester.widget<StatusPill>(
+        find.widgetWithText(StatusPill, '力量待登记'),
+      );
+      expect(pendingPill.status, DsStatus.neutral);
 
       // 新增在场人员时自动收起并落盘 false
       await tester.pumpWidget(
@@ -564,6 +569,74 @@ void main() {
       await tester.pumpAndSettle();
       expect(renamed, '示例工业园厂房火灾');
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('配置 onEditBasicInfo 时菜单显示「编辑警情信息」并回传名称/地点与坐标', (
+      WidgetTester tester,
+    ) async {
+      IncidentBasicInfoResult? saved;
+      const incident = Incident(
+        id: 'inc-edit-info',
+        number: '2026-11-22-01',
+        title: '自建示例警情',
+        info: <String, dynamic>{'location': '示例路12号'},
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+
+      await tester.pumpWidget(
+        _wrap(
+          IncidentSituationCard(
+            incident: incident,
+            initialExpanded: false,
+            onEditBasicInfo: (IncidentBasicInfoResult result) async =>
+                saved = result,
+            onLocateAddress: () async => const IncidentLocatedAddress(
+              address: '示例大道188号北门',
+              latitude: 31.25,
+              longitude: 121.48,
+            ),
+            now: fixedNow,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('incident-more-menu-btn')));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑警情信息'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('rename-incident')));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('incident-rename-field')))
+            .controller
+            ?.text,
+        '自建示例警情',
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('incident-location-field')))
+            .controller
+            ?.text,
+        '示例路12号',
+      );
+
+      await tester.enterText(
+        find.byKey(const Key('incident-rename-field')),
+        '示范物流仓库火情',
+      );
+      await tester.tap(find.byKey(const Key('incident-locate-btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('incident-rename-save-btn')));
+      await tester.pumpAndSettle();
+
+      expect(saved?.title, '示范物流仓库火情');
+      expect(saved?.location, '示例大道188号北门');
+      expect(saved?.latitude, 31.25);
+      expect(saved?.longitude, 121.48);
     });
   });
 }

@@ -1684,6 +1684,15 @@ void main() {
           greaterThanOrEqualTo(150.0),
           reason: '${scenario.categoryLabel} 场景下标题不应被挤压过窄',
         );
+
+        final colors = DsColors.of(Brightness.light);
+        final pillContainer = tester.widget<Container>(
+          find.byKey(const Key('incident-header-category-pill')),
+        );
+        final pillDecoration = pillContainer.decoration! as BoxDecoration;
+        expect(pillDecoration.color, colors.brand.withValues(alpha: 0.12));
+        final pillLabel = tester.widget<Text>(find.text(scenario.categoryLabel));
+        expect(pillLabel.style?.color, colors.brandText);
       }
     });
   });

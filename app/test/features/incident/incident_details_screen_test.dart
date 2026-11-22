@@ -5,6 +5,8 @@ import 'package:watchdog/design_system/design_system.dart';
 import 'package:watchdog/features/incident/data/incident_import_repository.dart';
 import 'package:watchdog/features/incident/data/models/incident.dart';
 import 'package:watchdog/features/incident/ui/incident_details_screen.dart';
+import 'package:watchdog/features/incident/ui/sheets/incident_basic_info_sheet.dart';
+import 'package:watchdog/features/incident/ui/sheets/incident_details_edit_sheet.dart';
 
 class _FakeImportRepository extends IncidentImportRepository {
   _FakeImportRepository()
@@ -269,6 +271,54 @@ void main() {
       expect(find.text('示例县示例镇示例村'), findsOneWidget);
       expect(find.text('演练场景处置'), findsOneWidget);
       expect(find.byKey(const Key('incident-details-edit-btn')), findsNothing);
+    });
+
+    testWidgets('空资料活跃警情显示「手动填写资料」按钮，事发地点置顶且支持一键定位提交坐标', (
+      WidgetTester tester,
+    ) async {
+      expect(incidentDetailFieldLabels.keys.first, 'location');
+      expect(incidentDetailFieldLabels['location'], '事发地点');
+
+      final repo = _FakeImportRepository()
+        ..detailPayload = <String, dynamic>{
+          'data': <String, dynamic>{},
+          'version': 0,
+          'imports': const <dynamic>[],
+          'observations': const <dynamic>[],
+        };
+      var updatedCount = 0;
+
+      await tester.pumpWidget(
+        _wrap(
+          IncidentDetailsScreen(
+            incident: _incident,
+            importRepository: repo,
+            onLocateAddress: () async => const IncidentLocatedAddress(
+              address: '示例区示范路168号',
+              latitude: 31.2304,
+              longitude: 121.4737,
+            ),
+            onDetailsUpdated: () => updatedCount++,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('手动填写资料'), findsOneWidget);
+      await tester.tap(find.text('手动填写资料'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('incident-locate-btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('incident-details-edit-save-btn')));
+      await tester.pumpAndSettle();
+
+      expect(repo.lastUpdatedVersion, 0);
+      expect(repo.lastUpdatedData?['location'], '示例区示范路168号');
+      expect(repo.lastUpdatedData?['latitude'], '31.230400');
+      expect(repo.lastUpdatedData?['longitude'], '121.473700');
+      expect(updatedCount, 1);
+      expect(find.text('示例区示范路168号'), findsOneWidget);
     });
   });
 }

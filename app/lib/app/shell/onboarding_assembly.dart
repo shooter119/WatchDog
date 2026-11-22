@@ -10,7 +10,9 @@ import '../../features/incident/data/models/incident_force.dart';
 import '../../features/incident/state/incident_import_store.dart';
 import '../../features/incident/ui/incident_import_page.dart';
 import '../../features/incident/ui/incident_picker_page.dart';
+import '../../features/incident/ui/sheets/incident_basic_info_sheet.dart';
 import '../../state/app_controller.dart';
+import 'incident_address_locator.dart';
 import 'shell_voice_bridge.dart';
 
 /// 新外壳全屏启动引导（单位认证 -> 待审 -> 选警情）与警情导入页装配器（M3g）。
@@ -68,6 +70,15 @@ class OnboardingAssembly {
       onSelect: (Incident incident) =>
           controller.selectIncident(incident.id, knownIncident: incident),
       onCreate: controller.createIncident,
+      onCreateWithDraft: (IncidentCreateDraft draft) => controller.createIncident(
+        title: draft.title,
+        location: draft.location,
+        disasterCategory:
+            draft.categoryExplicitlySelected ? draft.category.name : null,
+        latitude: draft.latitude,
+        longitude: draft.longitude,
+      ),
+      onLocateAddress: () => locateCurrentIncidentAddress(controller),
       onClaimExternal: (ExternalIncident ext) async {
         try {
           await controller.claimExternalIncident(ext);
