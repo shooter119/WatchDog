@@ -65,7 +65,7 @@ class SceneMapTopOverlay extends StatelessWidget {
           const SizedBox(height: DsSpacing.sm),
           _NoticeStrip(
             status: DsStatus.alarm,
-            icon: Icons.cloud_off_rounded,
+            icon: DsIcons.connOffline,
             text: store.scriptError!,
             actionLabel: '重试',
             onAction: onRetryBootstrap,
@@ -149,7 +149,7 @@ class _LocationNoticeBanner extends StatelessWidget {
     return _NoticeStrip(
       key: const Key('scene-map-location-notice'),
       status: DsStatus.caution,
-      icon: Icons.warning_amber_rounded,
+      icon: DsIcons.warning,
       text: text,
       actionLabel: actionLabel,
       onAction: onAction,
@@ -227,8 +227,8 @@ class SceneMapQuickFocusButtons extends StatelessWidget {
         _MapActionButton(
           key: const Key('scene-map-focus-me'),
           icon: store.followMe
-              ? Icons.my_location_rounded
-              : Icons.location_searching,
+              ? DsIcons.myLocation
+              : DsIcons.myLocation,
           tooltip: '我的位置',
           active: store.followMe && store.myGcj != null,
           onTap: store.focusMyLocation,
@@ -237,7 +237,7 @@ class SceneMapQuickFocusButtons extends StatelessWidget {
           const SizedBox(height: DsSpacing.sm),
           _MapActionButton(
             key: const Key('scene-map-focus-incident'),
-            icon: Icons.location_on_rounded,
+            icon: DsIcons.locationPin,
             tooltip: '事发地点',
             iconColor: ds.colors.alarmFill,
             onTap: store.focusIncident,
@@ -245,7 +245,7 @@ class SceneMapQuickFocusButtons extends StatelessWidget {
           const SizedBox(height: DsSpacing.sm),
           _MapActionButton(
             key: const Key('scene-map-fit-both'),
-            icon: Icons.fit_screen_rounded,
+            icon: DsIcons.fitScreen,
             tooltip: '全览两点',
             onTap: store.fitBoth,
           ),
@@ -418,7 +418,7 @@ class SceneMapTelemetryCard extends StatelessWidget {
                       child: Row(
                         children: [
                           Icon(
-                            Icons.local_fire_department_rounded,
+                            DsIcons.categoryFire,
                             size: 18,
                             color: colors.alarmFill,
                           ),
@@ -462,7 +462,7 @@ class SceneMapTelemetryCard extends StatelessWidget {
                   CommandButton(
                     key: const Key('scene-map-navigate'),
                     label: '导航',
-                    icon: Icons.navigation_rounded,
+                    icon: DsIcons.navigation,
                     size: CommandButtonSize.standard,
                     onPressed: onNavigate,
                   ),

@@ -103,7 +103,7 @@ class AdminScannerPage extends StatelessWidget {
           return CommandScaffold(
             appBar: AppBar(title: const Text('扫一扫')),
             body: const StatePlaceholder.empty(
-              icon: Icons.qr_code_scanner_outlined,
+              icon: DsIcons.qrScan,
               message: '无有效后台授权',
               detail: '请返回后重新认证或联系平台管理员',
             ),
@@ -288,7 +288,7 @@ class _AdminScannerSessionState extends State<_AdminScannerSession>
                     controller: _camera,
                     onDetect: _detect,
                     errorBuilder: (_, _) => StatePlaceholder.error(
-                      icon: Icons.videocam_off_outlined,
+                      icon: DsIcons.videoOff,
                       title: '无法使用相机',
                       reason: '请检查相机权限或关闭其它相机页面',
                       retryLabel: '打开系统设置',
@@ -348,9 +348,9 @@ class _AdminScannerSessionState extends State<_AdminScannerSession>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 const AuthHeaderBadgeRow(
-                  icon: Icons.desktop_windows_outlined,
+                  icon: DsIcons.computer,
                   pillLabel: '本站管理端认证',
-                  pillIcon: Icons.verified_user_outlined,
+                  pillIcon: DsIcons.verified,
                   pillStatus: DsStatus.safe,
                 ),
                 const SizedBox(height: DsSpacing.lg),
@@ -399,7 +399,7 @@ class _AdminScannerSessionState extends State<_AdminScannerSession>
                 CommandButton(
                   key: const Key('admin-confirm-login'),
                   label: '确认登录',
-                  icon: Icons.check_circle_outline_rounded,
+                  icon: DsIcons.checkCircle,
                   variant: CommandButtonVariant.primary,
                   size: CommandButtonSize.large,
                   expanded: true,
@@ -411,7 +411,7 @@ class _AdminScannerSessionState extends State<_AdminScannerSession>
                 CommandButton(
                   key: const Key('admin-cancel-login'),
                   label: '取消登录',
-                  icon: Icons.close_rounded,
+                  icon: DsIcons.close,
                   variant: CommandButtonVariant.secondary,
                   size: CommandButtonSize.large,
                   expanded: true,
@@ -438,7 +438,7 @@ class _AdminScannerSessionState extends State<_AdminScannerSession>
         appBar: AppBar(title: const Text('扫一扫')),
         body: _finished
             ? const StatePlaceholder.empty(
-                icon: Icons.check_circle_outline,
+                icon: DsIcons.checkCircle,
                 message: '已确认网页登录',
                 detail: '请回到发起二维码的浏览器继续',
               )

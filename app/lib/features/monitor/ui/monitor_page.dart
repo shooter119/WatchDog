@@ -149,7 +149,7 @@ class _MonitorPageState extends State<MonitorPage> {
                       if (showOffline) ...<Widget>[
                         MonitorNoticeBanner(
                           status: DsStatus.alarm,
-                          icon: Icons.cloud_off_outlined,
+                          icon: DsIcons.connOffline,
                           text: '网络已中断，看板数据可能不是最新',
                           actionLabel: widget.onRefresh == null ? null : '重试',
                           onAction: widget.onRefresh == null
@@ -162,7 +162,7 @@ class _MonitorPageState extends State<MonitorPage> {
                         const MonitorNoticeBanner(
                           key: Key('monitor-sound-muted-banner'),
                           status: DsStatus.caution,
-                          icon: Icons.volume_off_rounded,
+                          icon: DsIcons.volumeMute,
                           text: '报警音已关闭',
                         ),
                         const SizedBox(height: DsSpacing.sm),
@@ -252,19 +252,22 @@ class _MonitorPageState extends State<MonitorPage> {
       style: ds.typography.display.copyWith(color: colors.textPrimary),
     );
 
+    final connState = _resolveConnectionState();
     final actions = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        ConnectionPill(
-          state: _resolveConnectionState(),
-          onTap: widget.onRefresh == null ? null : () => _onRefresh(),
-        ),
-        const SizedBox(width: DsSpacing.xs),
+        if (connState != DsConnectionState.online) ...<Widget>[
+          ConnectionPill(
+            state: connState,
+            onTap: widget.onRefresh == null ? null : () => _onRefresh(),
+          ),
+          const SizedBox(width: DsSpacing.xs),
+        ],
         IconButton(
           key: const Key('monitor-stats-btn'),
           tooltip: '数据统计',
           onPressed: _openStats,
-          icon: Icon(Icons.bar_chart_rounded, color: colors.textPrimary),
+          icon: Icon(DsIcons.stats, color: colors.textPrimary),
           constraints: const BoxConstraints(
             minWidth: DsSizes.touchTarget,
             minHeight: DsSizes.touchTarget,
@@ -310,7 +313,7 @@ class _MonitorPageState extends State<MonitorPage> {
     return SingleChildScrollView(
       key: const Key('monitor-empty-state'),
       child: StatePlaceholder.empty(
-        icon: Icons.people_outline_rounded,
+        icon: DsIcons.roster,
         message: '暂无人员在场',
         detail: widget.requiresIncident
             ? '选择警情后可登记进场'

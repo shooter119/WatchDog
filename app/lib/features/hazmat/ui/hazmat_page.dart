@@ -85,7 +85,7 @@ class _HazmatPageState extends State<HazmatPage> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.sync_rounded),
+                      : const Icon(DsIcons.sync),
                 ),
             ],
           ),
@@ -135,7 +135,7 @@ class _HazmatPageState extends State<HazmatPage> {
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: '输入 4 位 UN 编号（如 1428）、品名或俗名',
-                prefixIcon: const Icon(Icons.search_rounded),
+                prefixIcon: const Icon(DsIcons.search),
                 suffixIcon: query.isEmpty
                     ? null
                     : IconButton(
@@ -145,7 +145,7 @@ class _HazmatPageState extends State<HazmatPage> {
                           _searchController.clear();
                           _store.updateQuery('');
                         },
-                        icon: const Icon(Icons.close_rounded),
+                        icon: const Icon(DsIcons.close),
                       ),
               ),
             ),
@@ -154,8 +154,8 @@ class _HazmatPageState extends State<HazmatPage> {
               children: <Widget>[
                 Icon(
                   _store.syncedFromServer
-                      ? Icons.cloud_done_outlined
-                      : Icons.offline_pin_outlined,
+                      ? DsIcons.connOnline
+                      : DsIcons.offlinePin,
                   size: DsSizes.iconSm,
                   color: _store.syncedFromServer
                       ? colors.safeText
@@ -177,7 +177,7 @@ class _HazmatPageState extends State<HazmatPage> {
                 if (_store.selected != null && _store.results.length > 1)
                   TextButton.icon(
                     onPressed: () => _store.selectItem(null),
-                    icon: const Icon(Icons.list_rounded, size: DsSizes.iconSm),
+                    icon: const Icon(DsIcons.list, size: DsSizes.iconSm),
                     label: const Text('返回列表'),
                     style: TextButton.styleFrom(
                       visualDensity: VisualDensity.compact,
@@ -248,7 +248,7 @@ class _HazmatPageState extends State<HazmatPage> {
           HazmatNoticeBanner(
             key: const ValueKey<String>('hazmat-ai-warning-banner'),
             status: DsStatus.caution,
-            icon: Icons.auto_awesome_rounded,
+            icon: DsIcons.sparkle,
             text: disclaimer.isNotEmpty
                 ? disclaimer
                 : 'AI 辅助提炼 · 请务必结合随车运单、SDS 与现场侦检仪器核实',
@@ -257,7 +257,7 @@ class _HazmatPageState extends State<HazmatPage> {
         ] else if (aiResult?.found == true && aiResult?.source == 'server') ...[
           const HazmatNoticeBanner(
             status: DsStatus.safe,
-            icon: Icons.verified_outlined,
+            icon: DsIcons.verified,
             text: '已从云端标准危化库精确匹配',
           ),
           const SizedBox(height: DsSpacing.cardGap),
@@ -308,7 +308,7 @@ class _HazmatPageState extends State<HazmatPage> {
                   Padding(
                     padding: const EdgeInsets.only(top: 1),
                     child: Icon(
-                      Icons.search_off_rounded,
+                      DsIcons.searchOff,
                       color: colors.textSecondary,
                       size: DsSizes.iconLg,
                     ),
@@ -334,7 +334,7 @@ class _HazmatPageState extends State<HazmatPage> {
                 if (!_store.canGenerateAi)
                   const HazmatNoticeBanner(
                     status: DsStatus.neutral,
-                    icon: Icons.cloud_off_rounded,
+                    icon: DsIcons.connOffline,
                     text: '当前处于离线或未登录状态，无法调用云端 AI 应急提炼。请核对随车 SDS 或联系指挥中心。',
                   )
                 else ...<Widget>[
@@ -343,7 +343,7 @@ class _HazmatPageState extends State<HazmatPage> {
                     label: _store.loadingAi
                         ? '正在向云端提炼「$query」...'
                         : 'AI 应急提炼战术卡',
-                    icon: Icons.auto_awesome_rounded,
+                    icon: DsIcons.sparkle,
                     variant: CommandButtonVariant.primary,
                     size: CommandButtonSize.large,
                     expanded: true,
@@ -361,7 +361,7 @@ class _HazmatPageState extends State<HazmatPage> {
                 const SizedBox(height: DsSpacing.md),
                 HazmatNoticeBanner(
                   status: DsStatus.alarm,
-                  icon: Icons.error_outline_rounded,
+                  icon: DsIcons.warning,
                   text: _store.aiError!,
                 ),
               ],
@@ -370,7 +370,7 @@ class _HazmatPageState extends State<HazmatPage> {
                 HazmatNoticeBanner(
                   key: const ValueKey<String>('hazmat-ai-unverified-banner'),
                   status: DsStatus.caution,
-                  icon: Icons.warning_amber_rounded,
+                  icon: DsIcons.warning,
                   text: aiResult.reason.isNotEmpty
                       ? aiResult.reason
                       : '未查找到与「$query」对应的已核实危化品记录，严禁猜测处置，请核对运单与 SDS。',

@@ -100,7 +100,7 @@ class GuestBannerBar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
                   Icon(
-                    Icons.shield_outlined,
+                    DsIcons.shield,
                     size: DsSizes.iconMd,
                     color: caution.text,
                   ),

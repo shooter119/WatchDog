@@ -175,7 +175,7 @@ class KeySiteDetailContent extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Icon(
-                        Icons.location_on_outlined,
+                        DsIcons.locationPin,
                         size: DsSizes.iconSm,
                         color: colors.textSecondary,
                       ),
@@ -199,20 +199,20 @@ class KeySiteDetailContent extends StatelessWidget {
                   StatusPill(
                     status: site.active ? DsStatus.safe : DsStatus.caution,
                     icon: site.active
-                        ? Icons.verified_outlined
-                        : Icons.pause_circle_outline_rounded,
+                        ? DsIcons.verified
+                        : DsIcons.pauseCircle,
                     label: '资料 v${site.version}',
                   ),
                   if (district.isNotEmpty)
                     StatusPill(
                       status: DsStatus.neutral,
-                      icon: Icons.map_outlined,
+                      icon: DsIcons.toolSceneMap,
                       label: district,
                     ),
                   if (siteType.isNotEmpty)
                     StatusPill(
                       status: DsStatus.neutral,
-                      icon: Icons.domain_outlined,
+                      icon: DsIcons.toolKeySites,
                       label: siteType,
                     ),
                 ],
@@ -355,7 +355,7 @@ class _ModuleTile extends StatelessWidget {
                 ),
                 const SizedBox(width: DsSpacing.xs),
                 Icon(
-                  Icons.chevron_right_rounded,
+                  DsIcons.chevronRight,
                   size: DsSizes.iconSm,
                   color: colors.textTertiary,
                 ),

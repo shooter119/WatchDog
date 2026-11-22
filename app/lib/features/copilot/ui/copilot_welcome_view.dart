@@ -8,9 +8,9 @@ import 'copilot_message_bubble.dart';
 
 const List<(String text, IconData icon)> _copilotSampleQuestions =
     <(String, IconData)>[
-      ('气瓶压力下降太快怎么办？', Icons.gas_meter_outlined),
-      ('浓烟中看不清路怎么办？', Icons.visibility_off_outlined),
-      ('破拆卷帘门有哪些注意事项？', Icons.blinds_closed_outlined),
+      ('气瓶压力下降太快怎么办？', DsIcons.gasMeter),
+      ('浓烟中看不清路怎么办？', DsIcons.eyeOff),
+      ('破拆卷帘门有哪些注意事项？', DsIcons.doorLock),
     ];
 
 /// 智能辅助欢迎态：水元素头像、核心能力提示、三条等高常见紧急提问卡片及免责声明。
@@ -35,7 +35,7 @@ class CopilotWelcomeView extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(
         DsSpacing.lg,
-        DsSpacing.xs,
+        DsSpacing.lg,
         DsSpacing.lg,
         scrollBottomPadding,
       ),
@@ -49,7 +49,7 @@ class CopilotWelcomeView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const Center(child: CopilotAvatar(size: 64)),
-              const SizedBox(height: DsSpacing.sm),
+              const SizedBox(height: DsSpacing.md),
               Text(
                 '你好，我是水元素',
                 textAlign: TextAlign.center,
@@ -139,7 +139,7 @@ class CopilotErrorBanner extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Icon(
-              Icons.error_outline_rounded,
+              DsIcons.warning,
               size: DsSizes.iconSm,
               color: alarmPair.text,
             ),
@@ -173,7 +173,7 @@ Future<void> showCopilotLegacyHistorySheet(
       final ds = sheetContext.ds;
       if (history.isEmpty) {
         return const StatePlaceholder.empty(
-          icon: Icons.history_rounded,
+          icon: DsIcons.opLog,
           message: '没有旧版通用对话记录',
           padding: EdgeInsets.symmetric(vertical: DsSpacing.xl),
         );
@@ -255,18 +255,26 @@ class _SampleQuestionCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: colors.surfaceMuted,
                     borderRadius: DsRadius.borderSm,
+                    border: Border.all(
+                      color: colors.border.withValues(alpha: 0.7),
+                      width: 1,
+                    ),
                   ),
                   child: Icon(
                     icon,
                     size: DsSizes.iconSm + 2,
-                    color: colors.textSecondary,
+                    color: Color.lerp(
+                      colors.textPrimary,
+                      colors.textSecondary,
+                      0.55,
+                    )!,
                   ),
                 ),
                 const SizedBox(width: DsSpacing.md),
                 Expanded(child: Text(text, style: style)),
                 const SizedBox(width: DsSpacing.sm),
                 Icon(
-                  Icons.north_east_rounded,
+                  DsIcons.arrowUpRight,
                   size: DsSizes.iconSm,
                   color: colors.textTertiary,
                 ),

@@ -205,7 +205,7 @@ class IncidentContactItemRow extends StatelessWidget {
               const SizedBox(width: DsSpacing.sm),
               CommandButton(
                 label: '拨打',
-                icon: Icons.phone_outlined,
+                icon: DsIcons.phone,
                 variant: CommandButtonVariant.secondary,
                 size: CommandButtonSize.standard,
                 onPressed: () => onCall(normalized),

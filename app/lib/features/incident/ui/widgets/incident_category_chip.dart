@@ -1,11 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../../../design_system/design_system.dart';
 import 'incident_category_style.dart';
 
-/// DS v3.0 警情三大类矢量徽标（动态响应昼白/暗曜主题）。
+/// DS v3.0 警情三大类徽标（统一使用 RemixIcon 矢量并与头部标签图标严格一致）。
 class IncidentCategoryIconBadge extends StatelessWidget {
   const IncidentCategoryIconBadge({
     super.key,
@@ -38,14 +36,10 @@ class IncidentCategoryIconBadge extends StatelessWidget {
           borderRadius: DsRadius.borderMd,
           border: Border.all(color: palette.border, width: 1),
         ),
-        child: SizedBox.square(
-          dimension: iconSize,
-          child: CustomPaint(
-            painter: _IncidentCategoryVectorPainter(
-              category: category,
-              color: palette.text,
-            ),
-          ),
+        child: Icon(
+          IncidentCategoryStyle.iconOf(category),
+          size: iconSize,
+          color: palette.text,
         ),
       ),
     );
@@ -271,91 +265,4 @@ class IncidentAntiOrphanText extends StatelessWidget {
     final end = range.end.clamp(start, text.length);
     return text.substring(start, end).trim();
   }
-}
-
-class _IncidentCategoryVectorPainter extends CustomPainter {
-  const _IncidentCategoryVectorPainter({
-    required this.category,
-    required this.color,
-  });
-
-  final DsIncidentCategory category;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = math.min(size.width, size.height) / 24.0;
-    final offset = Offset(
-      (size.width - 24.0 * scale) / 2.0,
-      (size.height - 24.0 * scale) / 2.0,
-    );
-    canvas.save();
-    canvas.translate(offset.dx, offset.dy);
-    canvas.scale(scale);
-
-    final paint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = color;
-
-    final path = switch (category) {
-      DsIncidentCategory.fire => _firePath(),
-      DsIncidentCategory.rescue => _rescuePath(),
-      DsIncidentCategory.aid => _aidPath(),
-    };
-    path.fillType = PathFillType.evenOdd;
-    canvas.drawPath(path, paint);
-    canvas.restore();
-  }
-
-  static Path _firePath() => Path()
-    ..moveTo(12.3, 2.2)
-    ..cubicTo(14.6, 4.7, 17.8, 8.0, 17.8, 12.7)
-    ..cubicTo(17.8, 16.8, 15.1, 20.2, 12.0, 20.8)
-    ..cubicTo(8.9, 20.2, 6.2, 16.8, 6.2, 12.7)
-    ..cubicTo(6.2, 10.3, 7.1, 8.1, 8.4, 6.4)
-    ..cubicTo(8.4, 7.9, 9.1, 9.2, 10.2, 9.9)
-    ..cubicTo(9.8, 7.3, 10.6, 4.5, 12.3, 2.2)
-    ..close()
-    ..moveTo(12.1, 11.4)
-    ..cubicTo(11.1, 12.9, 10.4, 14.1, 10.4, 15.3)
-    ..cubicTo(10.4, 16.7, 11.1, 17.7, 12.0, 17.7)
-    ..cubicTo(12.9, 17.7, 13.6, 16.7, 13.6, 15.3)
-    ..cubicTo(13.6, 13.8, 12.9, 12.6, 12.1, 11.4)
-    ..close();
-
-  static Path _rescuePath() => Path()
-    ..moveTo(12, 2.4)
-    ..lineTo(19.8, 6.2)
-    ..lineTo(19.8, 12.4)
-    ..cubicTo(19.8, 16.8, 16.5, 19.9, 12, 21.4)
-    ..cubicTo(7.5, 19.9, 4.2, 16.8, 4.2, 12.4)
-    ..lineTo(4.2, 6.2)
-    ..close()
-    ..moveTo(13.1, 6.4)
-    ..lineTo(8.4, 12.6)
-    ..lineTo(11.7, 12.6)
-    ..lineTo(10.7, 17.6)
-    ..lineTo(15.6, 11.2)
-    ..lineTo(12.2, 11.2)
-    ..close();
-
-  static Path _aidPath() => Path()
-    ..addOval(Rect.fromCircle(center: const Offset(12, 12), radius: 9.5))
-    ..moveTo(10.6, 7.0)
-    ..lineTo(10.6, 10.6)
-    ..lineTo(7.0, 10.6)
-    ..lineTo(7.0, 13.4)
-    ..lineTo(10.6, 13.4)
-    ..lineTo(10.6, 17.0)
-    ..lineTo(13.4, 17.0)
-    ..lineTo(13.4, 13.4)
-    ..lineTo(17.0, 13.4)
-    ..lineTo(17.0, 10.6)
-    ..lineTo(13.4, 10.6)
-    ..lineTo(13.4, 7.0)
-    ..close();
-
-  @override
-  bool shouldRepaint(covariant _IncidentCategoryVectorPainter oldDelegate) =>
-      oldDelegate.category != category || oldDelegate.color != color;
 }

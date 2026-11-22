@@ -16,6 +16,7 @@ class DsTimelineEntry {
     required this.icon,
     required this.title,
     this.subtitle,
+    this.footer,
     this.status = DsStatus.neutral,
     this.categoryLabel,
     this.onTap,
@@ -25,6 +26,7 @@ class DsTimelineEntry {
   final IconData icon;
   final String title;
   final String? subtitle;
+  final Widget? footer;
   final DsStatus status;
   final String? categoryLabel;
   final VoidCallback? onTap;
@@ -51,10 +53,15 @@ class TimelineList extends StatelessWidget {
     super.key,
     required this.entries,
     this.emptyBuilder,
+    this.connectLastToNext = false,
   });
 
   final List<DsTimelineEntry> entries;
   final WidgetBuilder? emptyBuilder;
+
+  /// 当多个 [TimelineList] 在外层分段列表（如按分钟分片的 `ListView.builder`）中
+  /// 纵向拼接时，设为 `true` 可让最后一条卡片向下一分组保持竖线连通与等距间距。
+  final bool connectLastToNext;
 
   static bool _sameMinute(DateTime a, DateTime b) =>
       a.year == b.year &&
@@ -107,6 +114,7 @@ class TimelineList extends StatelessWidget {
           _TimelineGroupRow(
             group: groups[g],
             isLastGroup: g == groups.length - 1,
+            connectLastToNext: connectLastToNext,
             timeStyle: typo.captionTabular.copyWith(
               color: colors.textSecondary,
               fontWeight: FontWeight.w600,
@@ -121,11 +129,13 @@ class _TimelineGroupRow extends StatelessWidget {
   const _TimelineGroupRow({
     required this.group,
     required this.isLastGroup,
+    required this.connectLastToNext,
     required this.timeStyle,
   });
 
   final _MinuteGroup group;
   final bool isLastGroup;
+  final bool connectLastToNext;
   final TextStyle timeStyle;
 
   @override
@@ -153,6 +163,7 @@ class _TimelineGroupRow extends StatelessWidget {
                     final entry = group.entries[i];
                     final isVeryLast =
                         isLastGroup && i == group.entries.length - 1;
+                    final showConnector = !isVeryLast || connectLastToNext;
                     final statusPair = colors.statusColors(entry.status);
 
                     return IntrinsicHeight(
@@ -181,7 +192,7 @@ class _TimelineGroupRow extends StatelessWidget {
                                     color: statusPair.text,
                                   ),
                                 ),
-                                if (!isVeryLast)
+                                if (showConnector)
                                   Expanded(
                                     child: Container(
                                       width: 1.5,
@@ -198,7 +209,7 @@ class _TimelineGroupRow extends StatelessWidget {
                           Expanded(
                             child: Padding(
                               padding: EdgeInsets.only(
-                                bottom: isVeryLast ? 0 : DsSpacing.md,
+                                bottom: showConnector ? DsSpacing.md : 0,
                               ),
                               child: SurfaceCard(
                                 level: DsSurfaceLevel.outlined,
@@ -237,6 +248,10 @@ class _TimelineGroupRow extends StatelessWidget {
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
+                                    if (entry.footer != null) ...<Widget>[
+                                      const SizedBox(height: DsSpacing.xs),
+                                      entry.footer!,
+                                    ],
                                     if (entry.subtitle != null &&
                                         entry.subtitle!.isNotEmpty) ...<Widget>[
                                       const SizedBox(height: DsSpacing.xs),

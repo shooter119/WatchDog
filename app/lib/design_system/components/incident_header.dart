@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/ds_theme.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_radius.dart';
 import '../tokens/ds_sizes.dart';
 import '../tokens/ds_spacing.dart';
@@ -68,19 +69,19 @@ class IncidentHeader extends StatelessWidget {
       DsIncidentCategory.fire => (
           colors.statusColors(DsStatus.alarm).pillBg,
           colors.statusColors(DsStatus.alarm).text,
-          Icons.local_fire_department_rounded,
+          DsIcons.categoryFire,
           '火灾',
         ),
       DsIncidentCategory.rescue => (
           colors.statusColors(DsStatus.caution).pillBg,
           colors.statusColors(DsStatus.caution).text,
-          Icons.handyman_rounded,
+          DsIcons.categoryRescue,
           '抢险',
         ),
       DsIncidentCategory.aid => (
           colors.brand.withValues(alpha: 0.12),
           colors.brandText,
-          Icons.medical_services_outlined,
+          DsIcons.categoryAid,
           '救援',
         ),
     };
@@ -164,7 +165,7 @@ class IncidentHeader extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   Icon(
-                    Icons.schedule_rounded,
+                    DsIcons.time,
                     size: DsSizes.iconSm,
                     color: colors.textSecondary,
                   ),

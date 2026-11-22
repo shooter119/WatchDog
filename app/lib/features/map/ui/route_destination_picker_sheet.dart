@@ -75,8 +75,8 @@ class _CandidateTile extends StatelessWidget {
           children: [
             Icon(
               isSelected
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_unchecked_rounded,
+                  ? DsIcons.checkCircleFill
+                  : DsIcons.radioUnchecked,
               color: isSelected ? colors.brand : colors.textSecondary,
               size: DsSizes.iconMd,
             ),

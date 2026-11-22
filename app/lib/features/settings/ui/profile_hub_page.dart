@@ -243,14 +243,14 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
           SettingsGroupCard(
             children: <Widget>[
               SettingsNavRow(
-                icon: Icons.branding_watermark_outlined,
+                icon: DsIcons.watermark,
                 title: '水印设置',
                 onTap: () => _open(widget.routes.onOpenWatermarkSettings, const WatermarkSettingsPage()),
               ),
               if (id.canManageVideoResources)
                 SettingsNavRow(
                   rowKey: const Key('video-resource-settings'),
-                  icon: Icons.videocam_outlined,
+                  icon: DsIcons.video,
                   title: '视频资源管理',
                   enabled: id.hasApi && widget.routes.onOpenVideoAdmin != null,
                   onTap: () => _invokeRoute(widget.routes.onOpenVideoAdmin),
@@ -263,7 +263,7 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
             children: <Widget>[
               if (id.canReviewMembers || id.memberReviewError != null)
                 SettingsNavRow(
-                  icon: Icons.how_to_reg_outlined,
+                  icon: DsIcons.memberApprove,
                   title: '入队审批',
                   badge: id.pendingMemberCount > 0,
                   subtitle: id.memberReviewError != null
@@ -274,14 +274,14 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
                   onTap: () => _invokeRoute(widget.routes.onOpenMemberReview),
                 ),
               SettingsNavRow(
-                icon: Icons.group_outlined,
+                icon: DsIcons.roster,
                 title: '人员与热词',
                 subtitle: id.pendingMemberCount > 0 ? '${id.pendingMemberCount} 名队员待审批' : null,
                 badge: id.pendingMemberCount > 0,
                 onTap: () => _invokeRoute(widget.routes.onOpenRoster),
               ),
               SettingsNavRow(
-                icon: Icons.local_fire_department_outlined,
+                icon: DsIcons.stations,
                 title: '单位常用队伍',
                 enabled: id.hasApi && widget.routes.onOpenUnitStations != null,
                 onTap: () => _invokeRoute(widget.routes.onOpenUnitStations),
@@ -293,17 +293,17 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
           SettingsGroupCard(
             children: <Widget>[
               SettingsNavRow(
-                icon: Icons.archive_outlined,
+                icon: DsIcons.archive,
                 title: '归档警情',
                 onTap: () => _invokeRoute(widget.routes.onOpenArchivedIncidents),
               ),
               SettingsNavRow(
-                icon: Icons.bar_chart_outlined,
+                icon: DsIcons.stats,
                 title: '数据统计',
                 onTap: () => _invokeRoute(widget.routes.onOpenStats),
               ),
               SettingsNavRow(
-                icon: Icons.history_rounded,
+                icon: DsIcons.opLog,
                 title: '操作日志',
                 onTap: () => _open(
                   widget.routes.onOpenOpLog,
@@ -317,7 +317,7 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
           SettingsGroupCard(
             children: <Widget>[
               SettingsExpandRow(
-                icon: Icons.calculate_outlined,
+                icon: DsIcons.calculator,
                 title: '计算参数',
                 summary: store.calcSummary,
                 expanded: _calcExpanded,
@@ -340,7 +340,7 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
                 ),
               ),
               SettingsExpandRow(
-                icon: Icons.mic_none_outlined,
+                icon: DsIcons.voiceLine,
                 title: '语音识别',
                 summary: store.voiceSummary,
                 expanded: _voiceExpanded,
@@ -363,7 +363,7 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
                 ),
               ),
               SettingsExpandRow(
-                icon: Icons.notifications_none_outlined,
+                icon: DsIcons.alerts,
                 title: '提醒方式',
                 summary: store.alertSummary,
                 expanded: _alertExpanded,
@@ -408,7 +408,7 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
             children: <Widget>[
               SettingsExpandRow(
                 key: _serverSectionKey,
-                icon: Icons.dns_outlined,
+                icon: DsIcons.server,
                 title: '服务连接',
                 summary: store.serverSummary,
                 expanded: _serverExpanded,
@@ -416,7 +416,7 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
                 child: SettingsServerBody(serverController: _server, serverFocus: _serverFocus),
               ),
               SettingsNavRow(
-                icon: store.checkingUpdate ? Icons.downloading_outlined : Icons.system_update_alt_rounded,
+                icon: store.checkingUpdate ? DsIcons.sync : DsIcons.update,
                 title: '版本更新',
                 badge: pendingUpdate != null && !store.checkingUpdate,
                 trailingText: versionSummary,
@@ -425,13 +425,13 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
                 onTap: () => unawaited(SettingsUpdateSheets.runCheckUpdateFlow(context, store)),
               ),
               SettingsNavRow(
-                icon: Icons.info_outline,
+                icon: DsIcons.info,
                 title: '关于项目',
                 onTap: () => _open(widget.routes.onOpenAbout, const AboutPage()),
               ),
               if (kDebugMode)
                 SettingsNavRow(
-                  icon: Icons.palette_outlined,
+                  icon: DsIcons.appearance,
                   title: 'UI 规范与组件画廊（调试）',
                   onTap: () => _open(widget.routes.onOpenComponentGallery, const ComponentGalleryPage()),
                 ),
@@ -444,7 +444,7 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
 
   Widget _buildTopHeader(DsTheme ds) {
     final conn = widget.store.connection;
-    final Widget pill = conn.isGuest
+    final Widget? pill = conn.isGuest
         ? Semantics(
             button: true,
             label: '单机模式，点击查看服务连接',
@@ -454,21 +454,21 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
               onTap: _inspectServerConnection,
               child: const StatusPill(
                 status: DsStatus.neutral,
-                icon: Icons.person_outline_rounded,
+                icon: DsIcons.user,
                 label: '单机模式',
               ),
             ),
           )
-        : ConnectionPill(
+        : (conn.syncing || conn.connectionLost || conn.syncError != null)
+        ? ConnectionPill(
             key: const Key('profile-connection-pill'),
             state: conn.syncing
                 ? DsConnectionState.reconnecting
-                : (conn.connectionLost || conn.syncError != null)
-                ? DsConnectionState.offline
-                : DsConnectionState.online,
+                : DsConnectionState.offline,
             pendingCount: conn.pendingOfflineCount,
             onTap: () => unawaited(_handleConnectionTap()),
-          );
+          )
+        : null;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -482,8 +482,10 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
             ],
           ),
         ),
-        const SizedBox(width: DsSpacing.sm),
-        pill,
+        if (pill != null) ...<Widget>[
+          const SizedBox(width: DsSpacing.sm),
+          pill,
+        ],
       ],
     );
   }

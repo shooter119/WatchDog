@@ -117,20 +117,24 @@ class MonitorRiskBar extends StatelessWidget {
             runSpacing: DsSpacing.xs,
             children: <Widget>[
               StatusPill(
-                status: DsStatus.timeout,
+                status: summary.timeoutCount > 0 ? DsStatus.timeout : DsStatus.neutral,
+                icon: DsIcons.statusTimeout,
                 label: '超时 ${summary.timeoutCount}',
                 solid: summary.timeoutCount > 0,
               ),
               StatusPill(
-                status: DsStatus.alarm,
+                status: summary.alarmCount > 0 ? DsStatus.alarm : DsStatus.neutral,
+                icon: DsIcons.statusAlarm,
                 label: '告警 ${summary.alarmCount}',
               ),
               StatusPill(
-                status: DsStatus.caution,
+                status: summary.cautionCount > 0 ? DsStatus.caution : DsStatus.neutral,
+                icon: DsIcons.statusCaution,
                 label: '注意 ${summary.cautionCount}',
               ),
               StatusPill(
-                status: DsStatus.safe,
+                status: summary.safeCount > 0 ? DsStatus.safe : DsStatus.neutral,
+                icon: DsIcons.statusSafe,
                 label: '安全 ${summary.safeCount}',
               ),
             ],
@@ -171,9 +175,9 @@ class MonitorDangerBanner extends StatelessWidget {
         ? pair.fill
         : pair.fill.withValues(alpha: 0.35);
     final icon = switch (status) {
-      DsStatus.timeout => Icons.timer_off_rounded,
-      DsStatus.alarm => Icons.notifications_active_rounded,
-      _ => Icons.warning_amber_rounded,
+      DsStatus.timeout => DsIcons.statusTimeout,
+      DsStatus.alarm => DsIcons.statusAlarm,
+      _ => DsIcons.statusCaution,
     };
     final earliestText = formatMonitorCountdown(earliest.exitAt - nowMs);
 

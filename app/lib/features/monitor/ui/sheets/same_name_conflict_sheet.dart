@@ -86,7 +86,7 @@ class SameNameConflictSheetBody extends StatelessWidget {
         CommandButton(
           key: const Key('same-name-merge-btn'),
           label: '同一人，按新压力重新倒计时',
-          icon: Icons.merge_type_rounded,
+          icon: DsIcons.merge,
           variant: CommandButtonVariant.primary,
           size: CommandButtonSize.large,
           expanded: true,
@@ -96,7 +96,7 @@ class SameNameConflictSheetBody extends StatelessWidget {
         CommandButton(
           key: const Key('same-name-force-btn'),
           label: '同名不同人，返回补充标识',
-          icon: Icons.person_add_alt_1_rounded,
+          icon: DsIcons.userAdd,
           variant: CommandButtonVariant.secondary,
           size: CommandButtonSize.large,
           expanded: true,

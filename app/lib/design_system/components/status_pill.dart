@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/ds_theme.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_radius.dart';
 import '../tokens/ds_sizes.dart';
 import '../tokens/ds_spacing.dart';
@@ -26,11 +27,11 @@ class StatusPill extends StatelessWidget {
 
   static (String label, IconData icon) _defaultsFor(DsStatus status) {
     return switch (status) {
-      DsStatus.safe => ('安全', Icons.check_circle_rounded),
-      DsStatus.caution => ('注意', Icons.warning_amber_rounded),
-      DsStatus.alarm => ('告警', Icons.notifications_active_rounded),
-      DsStatus.timeout => ('超时', Icons.timer_off_rounded),
-      DsStatus.neutral => ('中性', Icons.info_outline_rounded),
+      DsStatus.safe => ('安全', DsIcons.statusSafe),
+      DsStatus.caution => ('注意', DsIcons.statusCaution),
+      DsStatus.alarm => ('告警', DsIcons.statusAlarm),
+      DsStatus.timeout => ('超时', DsIcons.statusTimeout),
+      DsStatus.neutral => ('中性', DsIcons.statusNeutral),
     };
   }
 

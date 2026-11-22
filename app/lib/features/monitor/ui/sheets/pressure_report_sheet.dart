@@ -124,7 +124,7 @@ class _PressureReportSheetState extends State<PressureReportSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Icon(
-                  Icons.warning_amber_rounded,
+                  DsIcons.warning,
                   color: cautionPair.text,
                   size: DsSizes.iconLg,
                 ),
@@ -205,7 +205,7 @@ class _PressureReportSheetState extends State<PressureReportSheet> {
               : (effective == null
                     ? '选择压力档位'
                     : '确认更新 ${MonitorStore.formatPressure(effective)} MPa'),
-          icon: Icons.speed_rounded,
+          icon: DsIcons.gasMeter,
           variant: CommandButtonVariant.primary,
           size: CommandButtonSize.large,
           expanded: true,

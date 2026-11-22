@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:watchdog/design_system/design_system.dart';
 import 'package:watchdog/features/incident/data/models/incident.dart';
 import 'package:watchdog/features/incident/data/models/incident_force.dart';
+import 'package:watchdog/features/incident/ui/sheets/incident_action_sheets.dart';
 import 'package:watchdog/features/incident/ui/sheets/incident_force_edit_sheet.dart';
 import 'package:watchdog/features/incident/ui/sheets/incident_level_sheet.dart';
 import 'package:watchdog/features/incident/ui/widgets/incident_category_chip.dart';
@@ -254,8 +255,10 @@ void main() {
 
       expect(
         find.byKey(const Key('incident-category-badge-rescue')),
-        findsOneWidget,
+        findsNothing,
       );
+      expect(find.byIcon(DsIcons.categoryRescue), findsOneWidget);
+      expect(find.byIcon(DsIcons.locationPin), findsOneWidget);
       expect(find.byKey(const Key('incident-collapsed-forces')), findsOneWidget);
       expect(find.text('示例路站 2车6人'), findsOneWidget);
 
@@ -522,6 +525,44 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('showIncidentRenameSheet 保存退出动画期间不触发控制器提前释放异常', (
+      WidgetTester tester,
+    ) async {
+      String? renamed;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildCommandTheme(Brightness.light),
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext ctx) => CommandButton(
+                label: '打开改名',
+                onPressed: () async {
+                  renamed = await showIncidentRenameSheet(
+                    ctx,
+                    initialTitle: '旧警情名称',
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('打开改名'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('incident-rename-field')),
+        '示例工业园厂房火灾',
+      );
+      await tester.tap(find.byKey(const Key('incident-rename-save-btn')));
+      // 逐帧步进退出动画，验证退场期间零异常
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 30));
+      }
+      await tester.pumpAndSettle();
+      expect(renamed, '示例工业园厂房火灾');
       expect(tester.takeException(), isNull);
     });
   });

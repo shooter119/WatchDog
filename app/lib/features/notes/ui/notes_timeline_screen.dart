@@ -42,9 +42,7 @@ class NotesTimelineScreen extends StatefulWidget {
   final PhoneLauncher? phoneLauncher;
   final DateTime? now;
 
-  static final RegExp phoneRegex = RegExp(
-    r'(?:(?:\+?86)?1[3-9]\d{9}|0\d{2,3}-?\d{7,8})',
-  );
+  static final RegExp phoneRegex = notePhoneRegex;
 
   @override
   State<NotesTimelineScreen> createState() => _NotesTimelineScreenState();
@@ -80,17 +78,6 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
       }
     }
     return groups;
-  }
-
-  List<String> _extractPhones(List<Note> notes) {
-    final phones = <String>[];
-    for (final note in notes) {
-      for (final match in NotesTimelineScreen.phoneRegex.allMatches(note.text)) {
-        final phone = note.text.substring(match.start, match.end);
-        if (!phones.contains(phone)) phones.add(phone);
-      }
-    }
-    return phones;
   }
 
   Future<void> _openEditor(Note? note) async {
@@ -174,23 +161,24 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
                 IconButton(
                   key: const Key('notes-tactical-brief-btn'),
                   tooltip: '警情上报',
-                  icon: const Icon(Icons.description_outlined),
+                  icon: const Icon(DsIcons.toolTacticalBrief),
                   constraints: const BoxConstraints(
                     minWidth: DsSizes.touchTarget,
                     minHeight: DsSizes.touchTarget,
                   ),
                   onPressed: widget.onOpenTacticalBrief,
                 ),
-              Padding(
-                padding: const EdgeInsets.only(right: DsSpacing.md),
-                child: Center(
-                  child: ConnectionPill(
-                    state: widget.connectionState,
-                    pendingCount: widget.pendingSyncCount,
-                    onTap: widget.onConnectionTap,
+              if (widget.connectionState != DsConnectionState.online)
+                Padding(
+                  padding: const EdgeInsets.only(right: DsSpacing.md),
+                  child: Center(
+                    child: ConnectionPill(
+                      state: widget.connectionState,
+                      pendingCount: widget.pendingSyncCount,
+                      onTap: widget.onConnectionTap,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           body: Stack(
@@ -216,7 +204,11 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
                               itemCount: groups.length,
                               itemBuilder: (BuildContext context, int index) {
                                 final group = groups[index];
-                                return _buildMinuteGroup(context, group);
+                                return _buildMinuteGroup(
+                                  context,
+                                  group,
+                                  isLastGroup: index == groups.length - 1,
+                                );
                               },
                             ),
                     ),
@@ -240,7 +232,7 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
                       side: BorderSide(color: colors.surface, width: 1.5),
                     ),
                     onPressed: () => _openEditor(null),
-                    child: const Icon(Icons.add_rounded, size: 28),
+                    child: const Icon(DsIcons.add, size: 28),
                   ),
                 ),
               ),
@@ -258,13 +250,13 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(
-        horizontal: DsSpacing.pageMargin,
-        vertical: DsSpacing.sm,
+        horizontal: DsSpacing.md,
+        vertical: DsSpacing.xs,
       ),
       child: Row(
         children: <Widget>[
           for (var i = 0; i < categories.length; i++) ...<Widget>[
-            if (i > 0) const SizedBox(width: DsSpacing.sm),
+            if (i > 0) const SizedBox(width: DsSpacing.xs),
             _FilterPill(
               label: categories[i],
               selected: selected == categories[i],
@@ -285,7 +277,7 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
           hasScrollBody: false,
           child: Center(
             child: StatePlaceholder.empty(
-              icon: Icons.note_alt_outlined,
+              icon: DsIcons.note,
               message: '还没有日志记录',
               detail: widget.requiresIncident
                   ? '请先选择或新建警情，再记录火场日志'
@@ -297,53 +289,40 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
     );
   }
 
-  Widget _buildMinuteGroup(BuildContext context, _MinuteNoteGroup group) {
+  Widget _buildMinuteGroup(
+    BuildContext context,
+    _MinuteNoteGroup group, {
+    required bool isLastGroup,
+  }) {
     final entries = <DsTimelineEntry>[
-      for (final note in group.notes) _toEntry(note),
+      for (final note in group.notes) _toEntry(context, note),
     ];
-    final phones = _extractPhones(group.notes);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: DsSpacing.md),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          TimelineList(entries: entries),
-          if (phones.isNotEmpty) ...<Widget>[
-            const SizedBox(height: DsSpacing.xs),
-            Padding(
-              padding: const EdgeInsets.only(left: 56),
-              child: Wrap(
-                spacing: DsSpacing.sm,
-                runSpacing: DsSpacing.xs,
-                children: <Widget>[
-                  for (final phone in phones)
-                    _PhoneActionChip(
-                      phone: phone,
-                      onCall: () => PhoneCaller.dial(
-                        context,
-                        phone,
-                        launcher: widget.phoneLauncher,
-                      ),
-                      onLongPress: () => _copyPhone(phone),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+    return TimelineList(
+      entries: entries,
+      connectLastToNext: !isLastGroup,
     );
   }
 
-  DsTimelineEntry _toEntry(Note note) {
+  DsTimelineEntry _toEntry(BuildContext context, Note note) {
     final (status, icon) = noteCategoryVisual(note.category);
     final ts = note.updatedAt > note.createdAt ? note.updatedAt : note.createdAt;
+    final phones = extractNotePhones(note.text);
     return DsTimelineEntry(
       timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
       icon: icon,
       title: note.text,
+      footer: phones.isEmpty
+          ? null
+          : NotePhoneChips(
+              phones: phones,
+              onCall: (String phone) => PhoneCaller.dial(
+                context,
+                phone,
+                launcher: widget.phoneLauncher,
+              ),
+              onLongPress: _copyPhone,
+            ),
       subtitle: formatNoteSubtitle(note, now: widget.now),
       status: status,
       categoryLabel: note.category,
@@ -387,8 +366,8 @@ class _FilterPill extends StatelessWidget {
               widthFactor: 1,
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 7,
+                  horizontal: 10,
+                  vertical: 6,
                 ),
                 decoration: BoxDecoration(
                   color: selected ? colors.brand : colors.surface,
@@ -405,74 +384,6 @@ class _FilterPill extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PhoneActionChip extends StatelessWidget {
-  const _PhoneActionChip({
-    required this.phone,
-    required this.onCall,
-    required this.onLongPress,
-  });
-
-  final String phone;
-  final VoidCallback onCall;
-  final VoidCallback onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    final ds = context.ds;
-    final colors = ds.colors;
-    return Semantics(
-      button: true,
-      label: '呼叫 $phone',
-      child: Material(
-        key: Key('note-phone-call-$phone'),
-        color: colors.brand.withValues(alpha: 0.10),
-        shape: RoundedRectangleBorder(
-          borderRadius: DsRadius.borderPill,
-          side: BorderSide(
-            color: colors.brand.withValues(alpha: 0.28),
-            width: 1,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          borderRadius: DsRadius.borderPill,
-          onTap: onCall,
-          onLongPress: onLongPress,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: DsSizes.touchTarget),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: DsSpacing.md,
-                vertical: DsSpacing.xs,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Icon(
-                    Icons.phone_in_talk_outlined,
-                    size: DsSizes.iconSm,
-                    color: colors.brandText,
-                  ),
-                  const SizedBox(width: DsSpacing.xs),
-                  Text(
-                    phone,
-                    style: ds.typography.captionTabular.copyWith(
-                      color: colors.brandText,
-                      fontWeight: FontWeight.w600,
-                      decoration: TextDecoration.underline,
-                      decorationColor: colors.brandText.withValues(alpha: 0.6),
-                    ),
-                  ),
-                ],
               ),
             ),
           ),

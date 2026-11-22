@@ -151,7 +151,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
               minHeight: DsSizes.touchTarget,
             ),
             onPressed: _busy ? null : () => _edit(),
-            icon: const Icon(Icons.add_rounded, size: DsSizes.iconLg),
+            icon: const Icon(DsIcons.add, size: DsSizes.iconLg),
           ),
         ],
       ),
@@ -204,7 +204,7 @@ class _UnitStationsPageState extends State<UnitStationsPage> {
               ),
             if (!_busy && _stations.isEmpty)
               const StatePlaceholder.empty(
-                icon: Icons.groups_outlined,
+                icon: DsIcons.stations,
                 message: '暂无常用队伍',
                 detail: '可在此新增，也可导入警情时保存。',
               ),
@@ -306,7 +306,7 @@ class _StationErrorCard extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            Icons.error_outline_rounded,
+            DsIcons.warning,
             color: alarmPair.text,
             size: DsSizes.iconMd,
           ),
@@ -380,7 +380,7 @@ class _StationRowCard extends StatelessWidget {
                         if (isInactive)
                           const StatusPill(
                             status: DsStatus.neutral,
-                            icon: Icons.block_rounded,
+                            icon: DsIcons.forbid,
                             label: '已停用',
                           ),
                         for (final alias in aliases)
@@ -409,7 +409,7 @@ class _StationRowCard extends StatelessWidget {
             if (canManage) ...<Widget>[
               const SizedBox(width: DsSpacing.sm),
               Icon(
-                Icons.edit_outlined,
+                DsIcons.edit,
                 size: DsSizes.iconMd,
                 color: colors.textSecondary,
               ),

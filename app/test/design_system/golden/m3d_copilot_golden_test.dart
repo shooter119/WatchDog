@@ -101,14 +101,6 @@ Future<void> _pumpCopilotGolden(
     ),
   );
   await tester.pumpAndSettle();
-  await tester.runAsync(() async {
-    final ctx = tester.element(find.byType(CopilotPage));
-    await precacheImage(
-      const AssetImage('assets/avatars/water-element-avatar-selected.png'),
-      ctx,
-    );
-  });
-  await tester.pumpAndSettle();
 }
 
 final List<ChatMessage> _goldenMessages = <ChatMessage>[

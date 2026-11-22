@@ -15,6 +15,7 @@ import '../components/tool_grid.dart';
 import '../theme/build_command_theme.dart';
 import '../theme/ds_theme.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_radius.dart';
 import '../tokens/ds_spacing.dart';
 import 'command_home_preview.dart';
@@ -390,7 +391,7 @@ class _DsPreviewPageState extends State<DsPreviewPage> {
                 variant: CommandButtonVariant.secondary,
                 size: CommandButtonSize.large,
                 expanded: true,
-                icon: Icons.view_agenda_outlined,
+                icon: DsIcons.list,
                 onPressed: () => showCommandSheet<void>(
                   context: dsContext,
                   title: 'CommandSheet 弹窗',

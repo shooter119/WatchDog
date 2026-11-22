@@ -131,17 +131,18 @@ class _MonitorStatsScreenState extends State<MonitorStatsScreen> {
             widget.monitorStore.entries.where((e) => e.isActive).length;
         final people = _perPerson(filtered);
 
+        final connState = _resolveConnectionState();
         return Scaffold(
           backgroundColor: colors.canvas,
           appBar: AppBar(
             title: const Text('数据统计'),
             actions: <Widget>[
-              if (widget.syncStore != null)
+              if (widget.syncStore != null && connState != DsConnectionState.online)
                 Padding(
                   padding: const EdgeInsets.only(right: DsSpacing.md),
                   child: Center(
                     child: ConnectionPill(
-                      state: _resolveConnectionState(),
+                      state: connState,
                       onTap: widget.onRefresh == null ? null : _handleRefresh,
                     ),
                   ),
@@ -177,7 +178,7 @@ class _MonitorStatsScreenState extends State<MonitorStatsScreen> {
                         const SizedBox(height: DsSpacing.sm),
                         if (people.isEmpty)
                           const StatePlaceholder.empty(
-                            icon: Icons.bar_chart_outlined,
+                            icon: DsIcons.stats,
                             message: '所选范围内暂无进出记录',
                           )
                         else
@@ -259,9 +260,9 @@ class _MonitorStatsScreenState extends State<MonitorStatsScreen> {
         MediaQuery.sizeOf(context).width < 400 ||
         MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
     final cards = <Widget>[
-      _SummaryMetricCard(icon: Icons.fire_extinguisher_outlined, label: '当前在场', value: '$activeCount 人'),
-      _SummaryMetricCard(icon: Icons.repeat_rounded, label: '$_range进场', value: '$count 人次'),
-      _SummaryMetricCard(icon: Icons.timer_outlined, label: '$_range累计', value: _formatDuration(totalMs)),
+      _SummaryMetricCard(icon: DsIcons.fireExtinguisher, label: '当前在场', value: '$activeCount 人'),
+      _SummaryMetricCard(icon: DsIcons.repeat, label: '$_range进场', value: '$count 人次'),
+      _SummaryMetricCard(icon: DsIcons.time, label: '$_range累计', value: _formatDuration(totalMs)),
     ];
     if (compact) {
       return Column(
@@ -316,7 +317,7 @@ class _MonitorStatsScreenState extends State<MonitorStatsScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Icon(
-                      _sortByDuration ? Icons.timer_outlined : Icons.repeat_rounded,
+                      _sortByDuration ? DsIcons.time : DsIcons.repeat,
                       size: DsSizes.iconSm,
                       color: colors.brandText,
                     ),

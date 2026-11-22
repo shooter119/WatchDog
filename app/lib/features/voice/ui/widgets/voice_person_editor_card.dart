@@ -124,7 +124,7 @@ class _VoicePersonEditorCardState extends State<VoicePersonEditorCard> {
             const SizedBox(height: DsSpacing.sm),
             _buildNoticeBox(
               context,
-              icon: Icons.info_outline_rounded,
+              icon: DsIcons.info,
               text: '「${draft.sourceName}」不在名单内，已清空姓名栏，请手动补全正确姓名',
             ),
           ],
@@ -133,7 +133,7 @@ class _VoicePersonEditorCardState extends State<VoicePersonEditorCard> {
             const SizedBox(height: DsSpacing.sm),
             _buildNoticeBox(
               context,
-              icon: Icons.warning_amber_rounded,
+              icon: DsIcons.warning,
               text: '「${draft.trimmedName}」已在火场内，确认时将弹窗选择：重新倒计时 / 另建记录',
             ),
           ],
@@ -143,7 +143,7 @@ class _VoicePersonEditorCardState extends State<VoicePersonEditorCard> {
           else
             _buildNoticeBox(
               context,
-              icon: Icons.info_outline_rounded,
+              icon: DsIcons.info,
               text: '未识别到气瓶压力，请手动填写（如 20）',
             ),
           if (!widget.showHeader && widget.onRemove != null) ...<Widget>[
@@ -163,7 +163,7 @@ class _VoicePersonEditorCardState extends State<VoicePersonEditorCard> {
     final colors = ds.colors;
     return TextButton.icon(
       onPressed: widget.enabled ? widget.onRemove : null,
-      icon: Icon(Icons.close_rounded, size: DsSizes.iconSm, color: colors.textSecondary),
+      icon: Icon(DsIcons.close, size: DsSizes.iconSm, color: colors.textSecondary),
       label: Text(
         '移除该人员',
         style: ds.typography.caption.copyWith(color: colors.textSecondary, fontWeight: FontWeight.w600),
@@ -223,7 +223,7 @@ class _VoicePersonEditorCardState extends State<VoicePersonEditorCard> {
           decoration: const InputDecoration(
             isDense: true,
             labelText: '姓名',
-            prefixIcon: Icon(Icons.person_outline_rounded, size: 20),
+            prefixIcon: Icon(DsIcons.user, size: 20),
           ),
           style: ds.typography.title.copyWith(color: colors.textPrimary),
         );
@@ -325,7 +325,7 @@ class _VoicePersonEditorCardState extends State<VoicePersonEditorCard> {
     final label = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Icon(Icons.gas_meter_outlined, size: DsSizes.iconSm, color: colors.textSecondary),
+        Icon(DsIcons.gasMeter, size: DsSizes.iconSm, color: colors.textSecondary),
         const SizedBox(width: DsSpacing.xs + 2),
         Text(
           '容量',

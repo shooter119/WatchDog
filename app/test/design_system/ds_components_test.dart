@@ -59,7 +59,7 @@ void main() {
         expect(find.text('顶部信息栏'), findsOneWidget);
         expect(find.text('主体内容'), findsOneWidget);
         expect(find.text('底栏'), findsOneWidget);
-        expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+        expect(find.byIcon(DsIcons.warning), findsNothing);
       }
     });
 
@@ -82,7 +82,7 @@ void main() {
       );
 
       expect(tester.takeException(), isNull);
-      final icon = tester.widget<Icon>(find.byIcon(Icons.warning_amber_rounded));
+      final icon = tester.widget<Icon>(find.byIcon(DsIcons.warning));
       expect(icon.color, DsColors.daylight.onCaution);
 
       final text = tester.widget<Text>(
@@ -92,7 +92,7 @@ void main() {
 
       final bannerMaterial = tester.widget<Material>(
         find.ancestor(
-          of: find.byIcon(Icons.warning_amber_rounded),
+          of: find.byIcon(DsIcons.warning),
           matching: find.byType(Material),
         ).first,
       );
@@ -1498,7 +1498,7 @@ void main() {
           ),
         ),
       );
-      expect(find.byIcon(Icons.mic_none_rounded), findsOneWidget);
+      expect(find.byIcon(DsIcons.voiceLine), findsOneWidget);
 
       // recording (disableAnimations: false -> pump 200ms 正常推进)
       await tester.pumpWidget(
@@ -1514,7 +1514,7 @@ void main() {
           ),
         ),
       );
-      expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
+      expect(find.byIcon(DsIcons.voiceFill), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 200));
 
       // recording (disableAnimations: true -> pumpAndSettle 立即完成)
@@ -1578,11 +1578,11 @@ void main() {
       );
 
       expect(find.text('在线'), findsOneWidget);
-      expect(find.byIcon(Icons.cloud_done_outlined), findsOneWidget);
+      expect(find.byIcon(DsIcons.connOnline), findsOneWidget);
       expect(find.text('重连中'), findsOneWidget);
-      expect(find.byIcon(Icons.sync_rounded), findsOneWidget);
+      expect(find.byIcon(DsIcons.connReconnecting), findsOneWidget);
       expect(find.text('离线 · 待补传 3'), findsOneWidget);
-      expect(find.byIcon(Icons.cloud_off_outlined), findsOneWidget);
+      expect(find.byIcon(DsIcons.connOffline), findsOneWidget);
 
       await tester.tap(find.text('离线 · 待补传 3'));
       expect(tapped, isTrue);

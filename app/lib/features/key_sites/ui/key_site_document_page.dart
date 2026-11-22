@@ -192,7 +192,7 @@ class _DocumentViewerState extends State<_DocumentViewer> {
           children: <Widget>[
             _buildNavButton(
               tooltip: '上一页',
-              icon: Icons.chevron_left_rounded,
+              icon: DsIcons.chevronLeft,
               enabled: _page > 1,
               colors: colors,
               onPressed: _page > 1 ? () => stepPage(-1) : null,
@@ -206,14 +206,14 @@ class _DocumentViewerState extends State<_DocumentViewer> {
             ),
             _buildNavButton(
               tooltip: '下一页',
-              icon: Icons.chevron_right_rounded,
+              icon: DsIcons.chevronRight,
               enabled: _page < count,
               colors: colors,
               onPressed: _page < count ? () => stepPage(1) : null,
             ),
             CommandButton(
               label: widget.map ? '恢复全图' : '恢复整页',
-              icon: Icons.fit_screen_rounded,
+              icon: DsIcons.fitScreen,
               variant: CommandButtonVariant.secondary,
               size: CommandButtonSize.standard,
               onPressed: () => setState(() {
@@ -313,7 +313,7 @@ class _KeySiteImageState extends State<KeySiteImage> {
                 minHeight: DsSizes.touchTarget,
               ),
               onPressed: retry,
-              icon: const Icon(Icons.refresh_rounded),
+              icon: const Icon(DsIcons.refresh),
             ),
           )
         : KeySiteFailure(error: error, retry: retry);
@@ -386,7 +386,7 @@ class _PixelMapCanvasState extends State<_PixelMapCanvas> {
     final height = (widget.metadata['height'] as num?)?.toDouble() ?? 0;
     if (width <= 0 || height <= 0) {
       return const StatePlaceholder.empty(
-        icon: Icons.map_outlined,
+        icon: DsIcons.toolSceneMap,
         message: '地图切片不可用，请联系资料维护人员',
       );
     }
@@ -427,7 +427,7 @@ class _PixelMapCanvasState extends State<_PixelMapCanvas> {
                   child: KeySiteStatusBanner(
                     key: const ValueKey<String>('key-site-map-error-banner'),
                     status: DsStatus.alarm,
-                    icon: Icons.cloud_off_rounded,
+                    icon: DsIcons.connOffline,
                     message: '部分图纸加载失败：${keySiteError(_failure!)}',
                     actionLabel: '重试地图',
                     onAction: () => setState(() {

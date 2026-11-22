@@ -150,21 +150,21 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         );
       case LocationSharePhase.permissionDenied:
         return LocationShareProblemCard(
-          icon: Icons.location_disabled_outlined,
+          icon: DsIcons.locationOff,
           title: '定位权限未授权',
           body: '需要在系统权限中允许“火场智控”使用定位，才能生成现场位置。',
           actions: [
             CommandButton(
               key: const Key('location-share-relocate'),
               label: '重新申请定位权限',
-              icon: Icons.my_location_rounded,
+              icon: DsIcons.myLocation,
               expanded: true,
               onPressed: () => unawaited(_store.loadLocation()),
             ),
             CommandButton(
               key: const Key('location-share-app-settings'),
               label: '打开应用设置',
-              icon: Icons.settings_outlined,
+              icon: DsIcons.settings,
               variant: CommandButtonVariant.secondary,
               expanded: true,
               onPressed: () => unawaited(_store.gateway.openAppSettings()),
@@ -173,21 +173,21 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         );
       case LocationSharePhase.serviceDisabled:
         return LocationShareProblemCard(
-          icon: Icons.wrong_location_outlined,
+          icon: DsIcons.locationOff,
           title: '定位服务未开启',
           body: '请打开手机定位服务，再返回这里重新定位。',
           actions: [
             CommandButton(
               key: const Key('location-share-relocate'),
               label: '重新定位',
-              icon: Icons.my_location_rounded,
+              icon: DsIcons.myLocation,
               expanded: true,
               onPressed: () => unawaited(_store.loadLocation()),
             ),
             CommandButton(
               key: const Key('location-share-open-settings'),
               label: '打开系统定位设置',
-              icon: Icons.location_searching_rounded,
+              icon: DsIcons.myLocation,
               variant: CommandButtonVariant.secondary,
               expanded: true,
               onPressed: () => unawaited(_store.gateway.openLocationSettings()),
@@ -196,21 +196,21 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         );
       case LocationSharePhase.unavailable:
         return LocationShareProblemCard(
-          icon: Icons.location_off_outlined,
+          icon: DsIcons.locationOff,
           title: '未获取到定位',
           body: '可先到开阔位置重试；仍失败时检查系统定位服务和权限。',
           actions: [
             CommandButton(
               key: const Key('location-share-relocate'),
               label: '重新定位',
-              icon: Icons.my_location_rounded,
+              icon: DsIcons.myLocation,
               expanded: true,
               onPressed: () => unawaited(_store.loadLocation()),
             ),
             CommandButton(
               key: const Key('location-share-open-settings'),
               label: '打开定位设置',
-              icon: Icons.location_searching_rounded,
+              icon: DsIcons.myLocation,
               variant: CommandButtonVariant.secondary,
               expanded: true,
               onPressed: () => unawaited(_store.gateway.openLocationSettings()),
@@ -237,7 +237,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         final copyBtn = CommandButton(
           key: const Key('location-share-copy'),
           label: '复制完整文案',
-          icon: Icons.copy_all_outlined,
+          icon: DsIcons.copyAll,
           variant: CommandButtonVariant.secondary,
           size: CommandButtonSize.standard,
           expanded: true,
@@ -247,7 +247,7 @@ class _LocationShareSheetState extends State<LocationShareSheet> {
         final shareBtn = CommandButton(
           key: const Key('location-share-submit'),
           label: '分享位置',
-          icon: Icons.ios_share_outlined,
+          icon: DsIcons.share,
           variant: CommandButtonVariant.primary,
           size: CommandButtonSize.standard,
           expanded: true,

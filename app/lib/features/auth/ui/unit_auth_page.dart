@@ -225,7 +225,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
               border: Border.all(color: colors.brand.withValues(alpha: 0.28)),
             ),
             child: Icon(
-              Icons.verified_user_outlined,
+              DsIcons.verified,
               size: DsSizes.iconMd,
               color: colors.brandText,
             ),
@@ -258,9 +258,9 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         const AuthHeaderBadgeRow(
-          icon: Icons.verified_user_outlined,
+          icon: DsIcons.verified,
           pillLabel: '单位实名接入',
-          pillIcon: Icons.shield_outlined,
+          pillIcon: DsIcons.shield,
         ),
         const SizedBox(height: DsSpacing.lg),
         Text(
@@ -327,7 +327,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                               context,
                               label: '单位名称',
                               hint: '请输入所属消防救援单位全称',
-                              icon: Icons.business_outlined,
+                              icon: DsIcons.unit,
                             ),
                           ),
                           const SizedBox(height: DsSpacing.md),
@@ -344,7 +344,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                               context,
                               label: '真实姓名',
                               hint: '请输入姓名，用于现场记录署名',
-                              icon: Icons.person_outline_rounded,
+                              icon: DsIcons.user,
                             ),
                           ),
                           if (store.recentSuggestions.isNotEmpty)
@@ -370,7 +370,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                               context,
                               label: '单位验证码',
                               hint: '请输入单位验证码',
-                              icon: Icons.password_outlined,
+                              icon: DsIcons.password,
                               suffixIcon: IconButton(
                                 key: const Key('auth-code-visibility-toggle'),
                                 constraints: const BoxConstraints(
@@ -379,8 +379,8 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                                 ),
                                 icon: Icon(
                                   _obscureUnitCode
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
+                                      ? DsIcons.eyeOff
+                                      : DsIcons.eye,
                                   size: DsSizes.iconMd,
                                   color: colors.textTertiary,
                                 ),
@@ -402,7 +402,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                           CommandButton(
                             key: const Key('auth-submit'),
                             label: '认证并继续',
-                            icon: Icons.arrow_forward_rounded,
+                            icon: DsIcons.arrowRight,
                             variant: CommandButtonVariant.primary,
                             size: CommandButtonSize.large,
                             expanded: true,
@@ -415,7 +415,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                             CommandButton(
                               key: const Key('auth-apply-membership'),
                               label: '不在单位名单？申请加入单位',
-                              icon: Icons.person_add_alt_1_outlined,
+                              icon: DsIcons.userAdd,
                               variant: CommandButtonVariant.ghost,
                               size: CommandButtonSize.standard,
                               expanded: true,
@@ -431,7 +431,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                       CommandButton(
                         key: const Key('auth-guest-mode'),
                         label: '先以游客身份体验（单机可用）',
-                        icon: Icons.explore_outlined,
+                        icon: DsIcons.compass,
                         variant: CommandButtonVariant.secondary,
                         size: CommandButtonSize.large,
                         expanded: true,

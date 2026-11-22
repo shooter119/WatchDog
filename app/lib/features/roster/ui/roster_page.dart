@@ -239,7 +239,7 @@ class _RosterPageState extends State<RosterPage>
                 foregroundColor: colors.brandText,
                 textStyle: ds.typography.body.copyWith(fontWeight: FontWeight.w600),
               ),
-              icon: const Icon(Icons.paste_rounded, size: DsSizes.iconMd),
+              icon: const Icon(DsIcons.copyAll, size: DsSizes.iconMd),
               label: const Text('批量导入'),
             ),
           ),
@@ -264,8 +264,8 @@ class _RosterPageState extends State<RosterPage>
                       hintText: _tab.index == 0 ? '输入消防员姓名…' : '输入专业术语…',
                       prefixIcon: Icon(
                         _tab.index == 0
-                            ? Icons.person_add_outlined
-                            : Icons.tag_rounded,
+                            ? DsIcons.userAdd
+                            : DsIcons.tag,
                       ),
                     ),
                     textInputAction: TextInputAction.done,
@@ -274,7 +274,7 @@ class _RosterPageState extends State<RosterPage>
                 const SizedBox(width: DsSpacing.sm),
                 CommandButton(
                   label: '添加',
-                  icon: Icons.add_rounded,
+                  icon: DsIcons.add,
                   variant: CommandButtonVariant.primary,
                   size: CommandButtonSize.standard,
                   onPressed: _add,
@@ -320,7 +320,7 @@ class _RosterPageState extends State<RosterPage>
       padding: const EdgeInsets.only(bottom: DsSpacing.md),
       child: CommandButton(
         label: '入队审批 (${widget.gateway.pendingMemberCount})',
-        icon: Icons.how_to_reg_outlined,
+        icon: DsIcons.memberApprove,
         variant: hasPending
             ? CommandButtonVariant.primary
             : CommandButtonVariant.secondary,
@@ -352,8 +352,8 @@ class _RosterPageState extends State<RosterPage>
           _buildNotice(context),
           StatePlaceholder.empty(
             icon: isFirefighter
-                ? Icons.group_outlined
-                : Icons.interpreter_mode_outlined,
+                ? DsIcons.roster
+                : DsIcons.speak,
             message: isFirefighter ? '暂无消防员，先添加几人吧' : '暂无专业术语',
           ),
         ],
@@ -456,7 +456,7 @@ class _RosterItemCard extends StatelessWidget {
               height: 38,
               decoration: BoxDecoration(shape: BoxShape.circle, color: colors.surfaceMuted),
               child: Icon(
-                isFirefighter ? Icons.person_outline_rounded : Icons.tag_rounded,
+                isFirefighter ? DsIcons.user : DsIcons.tag,
                 size: DsSizes.iconMd,
                 color: colors.textSecondary,
               ),
@@ -480,7 +480,7 @@ class _RosterItemCard extends StatelessWidget {
                   minHeight: DsSizes.touchTarget,
                 ),
                 icon: Icon(
-                  Icons.delete_outline_rounded,
+                  DsIcons.delete,
                   color: colors.textSecondary,
                   size: DsSizes.iconLg,
                 ),

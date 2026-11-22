@@ -46,7 +46,7 @@ Future<bool?> showRosterOnlyApplySheet(
     subtitle: unitName.trim().isNotEmpty ? unitName.trim() : null,
     builder: (_) => AuthNoticeBanner(
       status: DsStatus.caution,
-      icon: Icons.badge_outlined,
+      icon: DsIcons.idCard,
       message:
           '「$realName」已在语音识别名单中，但还没有登录权限。请提交入队申请，管理员在「我的 → 入队审批」批准后即可登录。',
     ),
@@ -107,7 +107,7 @@ Future<NameSuggestionChoice?> showNameSuggestionsSheet(
                 child: Row(
                   children: <Widget>[
                     Icon(
-                      Icons.person_outline_rounded,
+                      DsIcons.user,
                       size: DsSizes.iconMd,
                       color: colors.brandText,
                     ),
@@ -121,7 +121,7 @@ Future<NameSuggestionChoice?> showNameSuggestionsSheet(
                       ),
                     ),
                     Icon(
-                      Icons.chevron_right_rounded,
+                      DsIcons.chevronRight,
                       size: DsSizes.iconMd,
                       color: colors.textTertiary,
                     ),
@@ -335,7 +335,7 @@ class _MembershipApplyFormSheetState extends State<_MembershipApplyFormSheet> {
               context,
               label: '单位名称 *',
               hint: '请输入所属消防救援单位全称',
-              icon: Icons.business_outlined,
+              icon: DsIcons.unit,
             ),
           ),
           const SizedBox(height: DsSpacing.md),
@@ -350,7 +350,7 @@ class _MembershipApplyFormSheetState extends State<_MembershipApplyFormSheet> {
               context,
               label: '真实姓名 *',
               hint: '请输入本人真实姓名',
-              icon: Icons.person_outline_rounded,
+              icon: DsIcons.user,
             ),
           ),
           const SizedBox(height: DsSpacing.md),
@@ -366,7 +366,7 @@ class _MembershipApplyFormSheetState extends State<_MembershipApplyFormSheet> {
               context,
               label: '单位验证码 *',
               hint: '向站长或管理员获取',
-              icon: Icons.password_outlined,
+              icon: DsIcons.password,
             ),
           ),
           const SizedBox(height: DsSpacing.md),
@@ -380,7 +380,7 @@ class _MembershipApplyFormSheetState extends State<_MembershipApplyFormSheet> {
               context,
               label: '所属队站（选填）',
               hint: '如：示例路消防救援站',
-              icon: Icons.local_fire_department_outlined,
+              icon: DsIcons.categoryFireLine,
             ),
           ),
           const SizedBox(height: DsSpacing.md),
@@ -395,7 +395,7 @@ class _MembershipApplyFormSheetState extends State<_MembershipApplyFormSheet> {
               context,
               label: '联系电话（选填）',
               hint: '便于站长核实身份',
-              icon: Icons.phone_outlined,
+              icon: DsIcons.phone,
             ),
           ),
           const SizedBox(height: DsSpacing.md),
@@ -411,7 +411,7 @@ class _MembershipApplyFormSheetState extends State<_MembershipApplyFormSheet> {
               context,
               label: '申请说明（选填）',
               hint: '如：新调入战斗一班',
-              icon: Icons.notes_rounded,
+              icon: DsIcons.note,
             ),
           ),
           if (_validationError != null) ...<Widget>[

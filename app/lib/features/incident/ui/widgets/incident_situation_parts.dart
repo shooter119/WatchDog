@@ -4,116 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../../../../design_system/design_system.dart';
 import '../../data/models/incident_force.dart';
+import 'incident_category_chip.dart';
 
-/// 弹出警情改名 [CommandSheet]。
-Future<String?> showIncidentRenameSheet(
-  BuildContext context, {
-  String initialTitle = '',
-}) async {
-  final ctrl = TextEditingController(text: initialTitle);
-  final result = await showCommandSheet<String>(
-    context: context,
-    title: '修改警情名称',
-    subtitle: '留空将恢复默认警情编号',
-    builder: (BuildContext sheetContext) {
-      final ds = sheetContext.ds;
-      return TextField(
-        key: const Key('incident-rename-field'),
-        controller: ctrl,
-        autofocus: true,
-        maxLength: 120,
-        style: ds.typography.body.copyWith(color: ds.colors.textPrimary),
-        decoration: InputDecoration(
-          hintText: '如：幸福小区住宅火灾',
-          filled: true,
-          fillColor: ds.colors.surfaceMuted,
-          border: OutlineInputBorder(
-            borderRadius: DsRadius.borderMd,
-            borderSide: BorderSide(color: ds.colors.border),
-          ),
-        ),
-      );
-    },
-    actionsBuilder: (BuildContext sheetContext) => <Widget>[
-      CommandButton(
-        label: '稍后',
-        variant: CommandButtonVariant.secondary,
-        size: CommandButtonSize.large,
-        onPressed: () => Navigator.of(sheetContext).pop(),
-      ),
-      CommandButton(
-        key: const Key('incident-rename-save-btn'),
-        label: '保存',
-        variant: CommandButtonVariant.primary,
-        size: CommandButtonSize.large,
-        onPressed: () => Navigator.of(sheetContext).pop(ctrl.text.trim()),
-      ),
-    ],
-  );
-  WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
-  return result;
-}
-
-/// 弹出退出当前警情二次确认 [CommandSheet]。
-Future<bool> showIncidentExitConfirmSheet(BuildContext context) async {
-  final confirmed = await showCommandSheet<bool>(
-    context: context,
-    title: '退出当前警情',
-    builder: (BuildContext ctx) => Text(
-      '退出后不会归档警情，仍可从正在处置的警情列表重新加入。',
-      style: ctx.ds.typography.body.copyWith(
-        color: ctx.ds.colors.textSecondary,
-      ),
-    ),
-    actionsBuilder: (BuildContext ctx) => <Widget>[
-      CommandButton(
-        label: '取消',
-        variant: CommandButtonVariant.secondary,
-        size: CommandButtonSize.large,
-        onPressed: () => Navigator.of(ctx).pop(false),
-      ),
-      CommandButton(
-        key: const Key('incident-exit-confirm-btn'),
-        label: '确认退出',
-        variant: CommandButtonVariant.primary,
-        size: CommandButtonSize.large,
-        onPressed: () => Navigator.of(ctx).pop(true),
-      ),
-    ],
-  );
-  return confirmed == true;
-}
-
-/// 弹出归档警情危险操作二次确认 [CommandSheet]，保留 `Key('incident-archive-confirm-btn')`。
-Future<bool> showIncidentArchiveConfirmSheet(BuildContext context) async {
-  final confirmed = await showCommandSheet<bool>(
-    context: context,
-    title: '归档警情',
-    builder: (BuildContext ctx) => Text(
-      '归档后现场数据只读，名称仍可在归档警情列表中修改。请确认处置已经结束。',
-      style: ctx.ds.typography.body.copyWith(
-        color: ctx.ds.colors.textSecondary,
-      ),
-    ),
-    actionsBuilder: (BuildContext ctx) => <Widget>[
-      CommandButton(
-        label: '取消',
-        variant: CommandButtonVariant.secondary,
-        size: CommandButtonSize.large,
-        onPressed: () => Navigator.of(ctx).pop(false),
-      ),
-      CommandButton(
-        key: const Key('incident-archive-confirm-btn'),
-        label: '确认归档',
-        variant: CommandButtonVariant.danger,
-        size: CommandButtonSize.large,
-        requireConfirmation: false,
-        onPressed: () => Navigator.of(ctx).pop(true),
-      ),
-    ],
-  );
-  return confirmed == true;
-}
+export '../sheets/incident_action_sheets.dart';
 
 /// 警情态势卡更多操作菜单按钮（改名 / 退出 / 归档，保留 `Key('incident-more-menu-btn')`）。
 class IncidentMoreMenuButton extends StatelessWidget {
@@ -139,7 +32,7 @@ class IncidentMoreMenuButton extends StatelessWidget {
         minHeight: DsSizes.touchTarget,
       ),
       icon: Icon(
-        Icons.more_horiz_rounded,
+        DsIcons.moreHoriz,
         size: DsSizes.iconMd,
         color: colors.textSecondary,
       ),
@@ -159,7 +52,7 @@ class IncidentMoreMenuButton extends StatelessWidget {
           value: 'rename',
           child: Row(
             children: <Widget>[
-              Icon(Icons.edit_outlined, size: 18, color: colors.textPrimary),
+              Icon(DsIcons.edit, size: 18, color: colors.textPrimary),
               const SizedBox(width: DsSpacing.sm),
               const Text('修改警情名称'),
             ],
@@ -170,7 +63,7 @@ class IncidentMoreMenuButton extends StatelessWidget {
           value: 'exit',
           child: Row(
             children: <Widget>[
-              Icon(Icons.logout_outlined, size: 18, color: colors.textPrimary),
+              Icon(DsIcons.logout, size: 18, color: colors.textPrimary),
               const SizedBox(width: DsSpacing.sm),
               const Text('退出当前警情'),
             ],
@@ -182,7 +75,7 @@ class IncidentMoreMenuButton extends StatelessWidget {
           value: 'archive',
           child: Row(
             children: <Widget>[
-              Icon(Icons.archive_outlined, size: 18, color: colors.alarmText),
+              Icon(DsIcons.archive, size: 18, color: colors.alarmText),
               const SizedBox(width: DsSpacing.sm),
               Text(
                 '归档警情',
@@ -249,7 +142,7 @@ class IncidentActionStrip extends StatelessWidget {
             children: <Widget>[
               _ActionStripCell(
                 label: '登记力量',
-                icon: Icons.group_add_outlined,
+                icon: DsIcons.userAdd,
                 stacked: stacked,
                 labelStyle: labelStyle,
                 onTap: onAddForce,
@@ -260,7 +153,7 @@ class IncidentActionStrip extends StatelessWidget {
               ),
               _ActionStripCell(
                 label: '信息导入',
-                icon: Icons.upload_file_outlined,
+                icon: DsIcons.toolTacticalBrief,
                 stacked: stacked,
                 labelStyle: labelStyle,
                 onTap: onImportInfo,
@@ -271,7 +164,7 @@ class IncidentActionStrip extends StatelessWidget {
               ),
               _ActionStripCell(
                 label: '警情调整',
-                icon: Icons.tune_rounded,
+                icon: DsIcons.edit,
                 stacked: stacked,
                 labelStyle: labelStyle,
                 onTap: onAdjustIncident,
@@ -375,7 +268,7 @@ class IncidentForceItemRow extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            Icons.local_shipping_outlined,
+            DsIcons.truck,
             size: DsSizes.iconMd,
             color: colors.textSecondary,
           ),
@@ -393,7 +286,7 @@ class IncidentForceItemRow extends StatelessWidget {
           ),
           IconButton(
             tooltip: '编辑参战力量',
-            icon: const Icon(Icons.edit_outlined, size: 20),
+            icon: const Icon(DsIcons.edit, size: 20),
             color: colors.textSecondary,
             constraints: const BoxConstraints(
               minWidth: DsSizes.touchTarget,
@@ -403,7 +296,7 @@ class IncidentForceItemRow extends StatelessWidget {
           ),
           IconButton(
             tooltip: '删除参战力量',
-            icon: const Icon(Icons.close_rounded, size: 20),
+            icon: const Icon(DsIcons.close, size: 20),
             color: colors.textSecondary,
             constraints: const BoxConstraints(
               minWidth: DsSizes.touchTarget,
@@ -413,6 +306,84 @@ class IncidentForceItemRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 警情态势卡摘要栏中的地点与出动力量压缩行。
+class IncidentCollapsedLocationForces extends StatelessWidget {
+  const IncidentCollapsedLocationForces({
+    super.key,
+    required this.hasRealLocation,
+    required this.locationText,
+    required this.expanded,
+    required this.compactForces,
+  });
+
+  final bool hasRealLocation, expanded;
+  final String locationText, compactForces;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    final colors = ds.colors;
+    final typo = ds.typography;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (hasRealLocation)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(DsIcons.locationPin, size: DsSizes.iconSm, color: colors.textSecondary),
+              ),
+              const SizedBox(width: DsSpacing.xs),
+              Expanded(
+                child: IncidentAntiOrphanText(
+                  text: locationText,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: typo.caption.copyWith(color: colors.textSecondary, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        if (hasRealLocation && !expanded && compactForces.isNotEmpty) const SizedBox(height: DsSpacing.xs),
+        if (!expanded && compactForces.isNotEmpty)
+          Row(
+            key: const Key('incident-collapsed-forces'),
+            children: <Widget>[
+              Icon(DsIcons.truck, size: DsSizes.iconSm, color: colors.textSecondary),
+              const SizedBox(width: DsSpacing.xs),
+              Expanded(
+                child: Text(
+                  compactForces,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: typo.caption.copyWith(color: colors.textSecondary, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          )
+        else if (!hasRealLocation)
+          Row(
+            children: <Widget>[
+              Icon(DsIcons.roster, size: DsSizes.iconSm, color: colors.textSecondary),
+              const SizedBox(width: DsSpacing.xs),
+              Expanded(
+                child: Text(
+                  expanded ? '收起警情详情' : '展开警情管理与力量',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: typo.caption.copyWith(color: colors.textSecondary, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+      ],
     );
   }
 }

@@ -332,7 +332,7 @@ class IncidentPickerCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 2),
                     Icon(
-                      Icons.chevron_right_rounded,
+                      DsIcons.chevronRight,
                       size: DsSizes.iconSm,
                       color: colors.brandText,
                     ),
@@ -413,7 +413,7 @@ class IncidentPickerCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         Icon(
-                          Icons.local_shipping_outlined,
+                          DsIcons.truck,
                           size: DsSizes.iconSm,
                           color: colors.textSecondary,
                         ),
@@ -445,27 +445,27 @@ class IncidentPickerCard extends StatelessWidget {
       return StatusPill(
         status: DsStatus.safe,
         label: highlight,
-        icon: Icons.play_circle_outline_rounded,
+        icon: DsIcons.navMonitorFill,
       );
     }
     if (_warningHighlightPattern.hasMatch(highlight)) {
       return StatusPill(
         status: DsStatus.caution,
         label: highlight,
-        icon: Icons.warning_amber_rounded,
+        icon: DsIcons.statusCaution,
       );
     }
     if (IncidentCardViewModel.isTerminalOfficialStatus(highlight)) {
       return StatusPill(
         status: DsStatus.neutral,
         label: highlight,
-        icon: Icons.check_circle_outline_rounded,
+        icon: DsIcons.checkCircle,
       );
     }
     return StatusPill(
       status: DsStatus.neutral,
       label: highlight,
-      icon: Icons.info_outline_rounded,
+      icon: DsIcons.statusNeutral,
     );
   }
 }

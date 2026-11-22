@@ -57,12 +57,12 @@ class CameraControlDeck extends StatelessWidget {
     final colors = ds.colors;
     final typo = ds.typography;
     final torchButton = CameraRoundIconButton(
-      icon: store.torch ? Icons.flash_on : Icons.flash_off,
+      icon: store.torch ? DsIcons.flashOn : DsIcons.flashOff,
       tooltip: store.torch ? '关闭手电筒' : '打开手电筒',
       onTap: store.isTorchDisabled ? null : onToggleTorch,
     );
     final switchButton = CameraRoundIconButton(
-      icon: Icons.cameraswitch_outlined,
+      icon: DsIcons.cameraSwitch,
       tooltip: '切换镜头',
       onTap: store.isControlLocked ? null : onSwitchCamera,
     );
@@ -137,7 +137,7 @@ class CameraControlDeck extends StatelessWidget {
                         ),
                         onPressed: onRetryPendingRender,
                         icon: const Icon(
-                          Icons.refresh_rounded,
+                          DsIcons.refresh,
                           size: DsSizes.iconMd,
                         ),
                         label: const Text('重新生成水印版'),
@@ -276,8 +276,8 @@ class _CameraModeSwitch extends StatelessWidget {
       ),
       child: Row(
         children: [
-          item(CameraCaptureMode.photo, '拍照', Icons.photo_camera_outlined),
-          item(CameraCaptureMode.video, '录像', Icons.videocam_outlined),
+          item(CameraCaptureMode.photo, '拍照', DsIcons.camera),
+          item(CameraCaptureMode.video, '录像', DsIcons.video),
         ],
       ),
     );
@@ -318,7 +318,7 @@ class _CameraShutterButton extends StatelessWidget {
         ? (
             Colors.white,
             Colors.white,
-            Icons.camera_alt_rounded,
+            DsIcons.camera,
             Colors.black87,
             30.0,
             '点击拍照',
@@ -329,7 +329,7 @@ class _CameraShutterButton extends StatelessWidget {
         ? (
             Colors.white,
             alarmColor,
-            Icons.videocam_rounded,
+            DsIcons.video,
             Colors.white,
             32.0,
             '点击开始录像',
@@ -339,7 +339,7 @@ class _CameraShutterButton extends StatelessWidget {
         : (
             alarmColor,
             Colors.transparent,
-            Icons.stop_rounded,
+            DsIcons.stop,
             alarmColor,
             36.0,
             '点击停止',

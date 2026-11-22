@@ -111,7 +111,7 @@ class _KeySiteModuleBodyState extends State<_KeySiteModuleBody> {
               controller: _searchController,
               decoration: InputDecoration(
                 labelText: '搜索危险品名称、位置、仓库或储罐编号',
-                prefixIcon: const Icon(Icons.search_rounded),
+                prefixIcon: const Icon(DsIcons.search),
                 suffixIcon: _query.isEmpty
                     ? null
                     : IconButton(
@@ -120,7 +120,7 @@ class _KeySiteModuleBodyState extends State<_KeySiteModuleBody> {
                           _searchController.clear();
                           setState(() => _query = '');
                         },
-                        icon: const Icon(Icons.close_rounded),
+                        icon: const Icon(DsIcons.close),
                       ),
               ),
               onChanged: (q) => setState(() => _query = q),
@@ -195,7 +195,7 @@ class _KeySiteModuleBodyState extends State<_KeySiteModuleBody> {
                 padding: const EdgeInsets.only(bottom: DsSpacing.sm),
                 child: StatusPill(
                   status: DsStatus.neutral,
-                  icon: Icons.label_outline_rounded,
+                  icon: DsIcons.tag,
                   label: keySiteRecordLabels[entry.kind] ?? '标准记录',
                 ),
               ),
@@ -255,7 +255,7 @@ class _KeySiteModuleBodyState extends State<_KeySiteModuleBody> {
                   padding: const EdgeInsets.only(top: DsSpacing.sm),
                   child: CommandButton(
                     label: '查看地图',
-                    icon: Icons.map_outlined,
+                    icon: DsIcons.toolSceneMap,
                     variant: CommandButtonVariant.secondary,
                     size: CommandButtonSize.standard,
                     enabled: attachment != null,

@@ -242,7 +242,7 @@ class _IncidentForceEditSheetState extends State<_IncidentForceEditSheet> {
               child: CommandButton(
                 key: const Key('force-toggle-custom-btn'),
                 label: _custom ? '返回名录选择' : '现场新增消防站',
-                icon: Icons.edit_location_alt_outlined,
+                icon: DsIcons.locationAdd,
                 variant: CommandButtonVariant.ghost,
                 size: CommandButtonSize.standard,
                 onPressed: () => setState(() => _custom = !_custom),

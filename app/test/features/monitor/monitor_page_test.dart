@@ -112,6 +112,7 @@ void main() {
       );
 
       expect(find.byKey(const Key('monitor-page')), findsOneWidget);
+      expect(find.byType(ConnectionPill), findsNothing);
       expect(find.byKey(const Key('monitor-risk-bar')), findsOneWidget);
       expect(find.text('3'), findsWidgets);
       expect(find.text('2'), findsWidgets);
@@ -120,6 +121,15 @@ void main() {
       expect(find.text('告警 1'), findsOneWidget);
       expect(find.text('注意 1'), findsOneWidget);
       expect(find.text('安全 1'), findsOneWidget);
+
+      StatusPill pillOf(String text) => tester.widget<StatusPill>(
+        find.ancestor(of: find.text(text), matching: find.byType(StatusPill)).first,
+      );
+
+      expect(pillOf('超时 0').status, DsStatus.neutral);
+      expect(pillOf('告警 1').status, DsStatus.alarm);
+      expect(pillOf('注意 1').status, DsStatus.caution);
+      expect(pillOf('安全 1').status, DsStatus.safe);
     });
 
     testWidgets('空列表显示 -- 与 monitor-empty-state', (tester) async {

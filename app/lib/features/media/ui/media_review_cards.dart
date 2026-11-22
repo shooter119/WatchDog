@@ -42,8 +42,8 @@ class MediaInfoCard extends StatelessWidget {
                 children: [
                   Icon(
                     media.isVideo
-                        ? Icons.videocam_rounded
-                        : Icons.photo_rounded,
+                        ? DsIcons.video
+                        : DsIcons.photoLibrary,
                     size: 18,
                     color: colors.textSecondary,
                   ),
@@ -60,13 +60,13 @@ class MediaInfoCard extends StatelessWidget {
                 const StatusPill(
                   status: DsStatus.safe,
                   label: '已写入警情',
-                  icon: Icons.check_circle_outline,
+                  icon: DsIcons.checkCircle,
                 )
               else if (media.incidentId.isEmpty)
                 const StatusPill(
                   status: DsStatus.caution,
                   label: '未关联',
-                  icon: Icons.link_off,
+                  icon: DsIcons.linkOff,
                 ),
             ],
           ),
@@ -149,7 +149,7 @@ class MediaDerivingCard extends StatelessWidget {
           const SizedBox(height: DsSpacing.sm),
           CommandButton(
             label: '取消识别',
-            icon: Icons.close_rounded,
+            icon: DsIcons.close,
             variant: CommandButtonVariant.ghost,
             size: CommandButtonSize.standard,
             onPressed: onCancel,
@@ -190,7 +190,7 @@ class MediaDeriveErrorCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Icon(
-                  Icons.error_outline_rounded,
+                  DsIcons.warning,
                   size: 18,
                   color: colors.alarmText,
                 ),
@@ -219,7 +219,7 @@ class MediaDeriveErrorCard extends StatelessWidget {
                 ),
                 CommandButton(
                   label: '重试识别',
-                  icon: Icons.refresh_rounded,
+                  icon: DsIcons.refresh,
                   variant: CommandButtonVariant.secondary,
                   size: CommandButtonSize.standard,
                   onPressed: onRetry,
@@ -303,7 +303,7 @@ class MediaTranscriptCard extends StatelessWidget {
             const SizedBox(height: DsSpacing.md),
             CommandButton(
               label: '核对无误，写入警情',
-              icon: Icons.fact_check_outlined,
+              icon: DsIcons.taskCheck,
               variant: CommandButtonVariant.primary,
               size: CommandButtonSize.standard,
               expanded: true,

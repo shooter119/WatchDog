@@ -56,7 +56,7 @@ class IncidentImportInputView extends StatelessWidget {
             onTap: store.busy ? null : store.resumeUnfinishedTask,
             child: ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.history_outlined, color: colors.textSecondary),
+              leading: Icon(DsIcons.opLog, color: colors.textSecondary),
               title: Text(
                 '继续未完成的导入',
                 style: typo.body.copyWith(
@@ -68,7 +68,7 @@ class IncidentImportInputView extends StatelessWidget {
                 '状态：${_resumeStatusLabels[resume['status']] ?? '待处理'}',
                 style: typo.caption.copyWith(color: colors.textSecondary),
               ),
-              trailing: Icon(Icons.chevron_right_rounded, color: colors.textTertiary),
+              trailing: Icon(DsIcons.chevronRight, color: colors.textTertiary),
             ),
           ),
           const SizedBox(height: DsSpacing.md),
@@ -145,7 +145,7 @@ class IncidentImportInputView extends StatelessWidget {
                                   color: colors.surfaceMuted,
                                   alignment: Alignment.center,
                                   child: Icon(
-                                    Icons.image_outlined,
+                                    DsIcons.photoLibrary,
                                     color: colors.textTertiary,
                                   ),
                                 ),
@@ -184,7 +184,7 @@ class IncidentImportInputView extends StatelessWidget {
                             ),
                             onPressed: store.busy ? null : () => store.rotateImage(index),
                             icon: Icon(
-                              Icons.rotate_right_rounded,
+                              DsIcons.rotateRight,
                               color: colors.textPrimary,
                             ),
                           ),
@@ -196,9 +196,9 @@ class IncidentImportInputView extends StatelessWidget {
                               minHeight: DsSizes.touchTarget,
                             ),
                             onPressed: store.busy ? null : () => store.removeImage(index),
-                            icon: Icon(Icons.close_rounded, color: colors.textSecondary),
+                            icon: Icon(DsIcons.close, color: colors.textSecondary),
                           ),
-                          Icon(Icons.drag_handle_rounded, color: colors.textTertiary),
+                          Icon(DsIcons.dragHandle, color: colors.textTertiary),
                         ],
                       ),
                     ),
@@ -216,7 +216,7 @@ class IncidentImportInputView extends StatelessWidget {
             CommandButton(
               key: const Key('import-pick-camera-btn'),
               label: '拍照',
-              icon: Icons.camera_alt_outlined,
+              icon: DsIcons.camera,
               variant: CommandButtonVariant.secondary,
               size: CommandButtonSize.standard,
               enabled: !store.busy,
@@ -225,7 +225,7 @@ class IncidentImportInputView extends StatelessWidget {
             CommandButton(
               key: const Key('import-pick-gallery-btn'),
               label: '相册',
-              icon: Icons.photo_library_outlined,
+              icon: DsIcons.photoLibrary,
               variant: CommandButtonVariant.secondary,
               size: CommandButtonSize.standard,
               enabled: !store.busy,

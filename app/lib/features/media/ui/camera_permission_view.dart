@@ -26,7 +26,7 @@ class CameraPermissionView extends StatelessWidget {
         leading: IconButton(
           tooltip: '关闭',
           icon: const Icon(
-            Icons.close_rounded,
+            DsIcons.close,
             color: Colors.white,
             size: DsSizes.iconLg,
           ),
@@ -44,7 +44,7 @@ class CameraPermissionView extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(
-                  Icons.no_photography_outlined,
+                  DsIcons.cameraOff,
                   size: 48,
                   color: Colors.white54,
                 ),

@@ -76,7 +76,7 @@ class CopilotHeaderBar extends StatelessWidget {
             IconButton(
               onPressed: canClear ? onClearTap : null,
               icon: const Icon(
-                Icons.delete_sweep_outlined,
+                DsIcons.clearSweep,
                 size: DsSizes.iconLg,
               ),
               tooltip: '清空问答记录',
@@ -93,7 +93,7 @@ class CopilotHeaderBar extends StatelessWidget {
               minWidth: DsSizes.touchTarget,
               minHeight: DsSizes.touchTarget,
             ),
-            icon: const Icon(Icons.history_rounded, size: DsSizes.iconLg),
+            icon: const Icon(DsIcons.opLog, size: DsSizes.iconLg),
             color: colors.textTertiary,
           ),
         ],
@@ -141,7 +141,7 @@ class CopilotIncidentContextPill extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
                   Icon(
-                    Icons.info_outline_rounded,
+                    DsIcons.info,
                     size: DsSizes.iconSm,
                     color: colors.brandText,
                   ),
@@ -157,7 +157,7 @@ class CopilotIncidentContextPill extends StatelessWidget {
                   ),
                   const SizedBox(width: DsSpacing.xs),
                   Icon(
-                    Icons.chevron_right_rounded,
+                    DsIcons.chevronRight,
                     size: DsSizes.iconSm + 2,
                     color: colors.textTertiary,
                   ),
@@ -222,7 +222,7 @@ class CopilotRecordingBanner extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
           Icon(
-            isWarning ? Icons.warning_amber_rounded : Icons.mic_rounded,
+            isWarning ? DsIcons.warning : DsIcons.voiceFill,
             size: DsSizes.iconSm,
             color: fg,
           ),
@@ -276,7 +276,7 @@ class CopilotTranscriptBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Icon(
-            hasText ? Icons.graphic_eq_rounded : Icons.mic_none_rounded,
+            hasText ? DsIcons.soundWave : DsIcons.voiceLine,
             size: DsSizes.iconMd - 2,
             color: colors.brandText,
           ),
@@ -391,7 +391,7 @@ class CopilotTextComposerBar extends StatelessWidget {
               minHeight: DsSizes.touchTarget,
             ),
             color: colors.textSecondary,
-            icon: const Icon(Icons.keyboard_hide_outlined, size: 22),
+            icon: const Icon(DsIcons.chevronDown, size: 22),
           ),
           Expanded(
             child: ConstrainedBox(
@@ -455,7 +455,7 @@ class CopilotTextComposerBar extends StatelessWidget {
                           color: colors.onBrand,
                         ),
                       )
-                    : const Icon(Icons.send_rounded, size: DsSizes.iconMd),
+                    : const Icon(DsIcons.send, size: DsSizes.iconMd),
               );
             },
           ),

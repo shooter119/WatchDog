@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../theme/ds_theme.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_motion.dart';
 import '../tokens/ds_radius.dart';
 import '../tokens/ds_sizes.dart';
@@ -153,7 +154,7 @@ class CommandSheet extends StatelessWidget {
           ),
           if (showCloseButton)
             IconButton(
-              icon: const Icon(Icons.close_rounded),
+              icon: const Icon(DsIcons.close),
               tooltip: '关闭',
               color: colors.textSecondary,
               constraints: const BoxConstraints(

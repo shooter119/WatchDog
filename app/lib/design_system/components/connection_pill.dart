@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/ds_theme.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_radius.dart';
 import '../tokens/ds_spacing.dart';
 
@@ -41,17 +42,17 @@ class ConnectionPill extends StatelessWidget {
     final (DsStatus status, IconData icon, String label) = switch (state) {
       DsConnectionState.online => (
           DsStatus.safe,
-          Icons.cloud_done_outlined,
+          DsIcons.connOnline,
           '在线',
         ),
       DsConnectionState.reconnecting => (
           DsStatus.caution,
-          Icons.sync_rounded,
+          DsIcons.connReconnecting,
           '重连中',
         ),
       DsConnectionState.offline => (
           DsStatus.alarm,
-          Icons.cloud_off_outlined,
+          DsIcons.connOffline,
           pendingCount > 0 ? '离线 · 待补传 $pendingCount' : '离线',
         ),
     };

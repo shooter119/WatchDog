@@ -78,7 +78,7 @@ class _OpLogPageState extends State<OpLogPage> {
                   const SizedBox(height: DsSpacing.md),
                   if (groups.isEmpty)
                     const StatePlaceholder.empty(
-                      icon: Icons.receipt_long_outlined,
+                      icon: DsIcons.receipt,
                       message: '暂无操作日志',
                       detail: '长按底部语音按钮录一次，这里会显示完整步骤',
                     )
@@ -153,7 +153,7 @@ class _OpLogPageState extends State<OpLogPage> {
                   ),
                 ),
                 onPressed: svc.syncing ? null : () => unawaited(_flush()),
-                icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+                icon: const Icon(DsIcons.cloudUpload, size: 18),
                 label: Text(svc.syncing ? '同步中…' : '立即同步'),
               ),
             ],
@@ -169,7 +169,7 @@ class _OpLogPageState extends State<OpLogPage> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Icon(Icons.error_outline, size: 14, color: colors.cautionText),
+                  Icon(DsIcons.warning, size: 14, color: colors.cautionText),
                   const SizedBox(width: DsSpacing.xs + 2),
                   Expanded(
                     child: Text(
@@ -207,7 +207,7 @@ class _OpLogPageState extends State<OpLogPage> {
         CommandButton(
           key: const Key('op-log-clear-button'),
           label: '清空本地日志',
-          icon: Icons.delete_outline,
+          icon: DsIcons.delete,
           variant: CommandButtonVariant.danger,
           size: CommandButtonSize.large,
           expanded: true,

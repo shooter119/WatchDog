@@ -132,7 +132,7 @@ Future<void> showWaterSourceDetailSheet(
                     for (final m in current.intakeMethods)
                       StatusPill(
                         status: DsStatus.neutral,
-                        icon: Icons.water_drop_outlined,
+                        icon: DsIcons.toolWaterSources,
                         label: m.label,
                       ),
                   ],
@@ -169,7 +169,7 @@ Future<void> showWaterSourceDetailSheet(
                   CommandButton(
                     key: const Key('water-detail-edit'),
                     label: '编辑',
-                    icon: Icons.edit_outlined,
+                    icon: DsIcons.edit,
                     variant: CommandButtonVariant.secondary,
                     onPressed: () {
                       Navigator.pop(ctx);
@@ -180,7 +180,7 @@ Future<void> showWaterSourceDetailSheet(
                     CommandButton(
                       key: const Key('water-detail-reposition'),
                       label: '调坐标',
-                      icon: Icons.my_location_outlined,
+                      icon: DsIcons.myLocation,
                       variant: CommandButtonVariant.secondary,
                       onPressed: () {
                         Navigator.pop(ctx);
@@ -190,7 +190,7 @@ Future<void> showWaterSourceDetailSheet(
                   CommandButton(
                     key: const Key('water-detail-delete'),
                     label: '删除',
-                    icon: Icons.delete_outline,
+                    icon: DsIcons.delete,
                     variant: CommandButtonVariant.danger,
                     requireConfirmation: false,
                     onPressed: () {

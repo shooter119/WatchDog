@@ -74,13 +74,13 @@ class MediaGalleryTile extends StatelessWidget {
                         const StatusPill(
                           status: DsStatus.safe,
                           label: '已写入警情',
-                          icon: Icons.check_circle_outline,
+                          icon: DsIcons.checkCircle,
                         )
                       else if (media.incidentId.isEmpty)
                         const StatusPill(
                           status: DsStatus.caution,
                           label: '未关联',
-                          icon: Icons.link_off,
+                          icon: DsIcons.linkOff,
                         ),
                     ],
                   ),
@@ -105,7 +105,7 @@ class MediaGalleryTile extends StatelessWidget {
                 minHeight: DsSizes.touchTarget,
               ),
               icon: Icon(
-                Icons.more_vert_rounded,
+                DsIcons.more,
                 color: colors.textSecondary,
                 size: DsSizes.iconLg,
               ),
@@ -143,7 +143,7 @@ class MediaGalleryTile extends StatelessWidget {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.delete_outline,
+                        DsIcons.delete,
                         size: 18,
                         color: colors.alarmText,
                       ),
@@ -185,7 +185,7 @@ class _MediaThumb extends StatelessWidget {
           border: Border.all(color: colors.border),
         ),
         child: Icon(
-          media.isVideo ? Icons.videocam_rounded : Icons.photo_rounded,
+          media.isVideo ? DsIcons.video : DsIcons.photoLibrary,
           color: colors.textTertiary,
         ),
       );
@@ -202,7 +202,7 @@ class _MediaThumb extends StatelessWidget {
           height: 64,
           color: colors.surfaceMuted,
           child: Icon(
-            Icons.image_not_supported_outlined,
+            DsIcons.imageBroken,
             color: colors.textTertiary,
           ),
         ),

@@ -74,7 +74,7 @@ class MediaPreviewCard extends StatelessWidget {
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
-                            Icons.play_arrow_rounded,
+                            DsIcons.play,
                             color: Colors.white,
                             size: 36,
                           ),
@@ -86,8 +86,8 @@ class MediaPreviewCard extends StatelessWidget {
                       child: _PreviewChip(
                         text: isVideo ? '播放视频' : '查看原图',
                         icon: isVideo
-                            ? Icons.play_circle_outline
-                            : Icons.zoom_out_map_rounded,
+                            ? DsIcons.playCircle
+                            : DsIcons.zoomMap,
                       ),
                     ),
                   ],
@@ -147,7 +147,7 @@ class MediaFramesCard extends StatelessWidget {
                         height: 84,
                         color: colors.surfaceMuted,
                         child: Icon(
-                          Icons.image_not_supported_outlined,
+                          DsIcons.imageBroken,
                           color: colors.textTertiary,
                         ),
                       ),
@@ -187,7 +187,7 @@ class MediaPhotoViewerPage extends StatelessWidget {
               File(path),
               fit: BoxFit.contain,
               errorBuilder: (_, _, _) => const Icon(
-                Icons.image_not_supported_outlined,
+                DsIcons.imageBroken,
                 color: Colors.white70,
                 size: 42,
               ),
@@ -211,7 +211,7 @@ class _PreviewPlaceholder extends StatelessWidget {
       color: colors.surfaceMuted,
       alignment: Alignment.center,
       child: Icon(
-        isVideo ? Icons.videocam_rounded : Icons.photo_rounded,
+        isVideo ? DsIcons.video : DsIcons.photoLibrary,
         size: 42,
         color: colors.textSecondary,
       ),

@@ -100,7 +100,7 @@ class _TacticalBriefCommandSheetState extends State<TacticalBriefCommandSheet> {
         CommandButton(
           key: const Key('tactical-brief-copy-btn'),
           label: _copied ? '已复制到剪贴板' : '一键复制上报全文',
-          icon: _copied ? Icons.check_circle_rounded : Icons.copy_rounded,
+          icon: _copied ? DsIcons.checkCircleFill : DsIcons.copy,
           variant: CommandButtonVariant.primary,
           size: CommandButtonSize.large,
           expanded: true,

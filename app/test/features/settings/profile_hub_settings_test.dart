@@ -164,14 +164,14 @@ void main() {
         find.ancestor(of: find.text('水印设置'), matching: find.byType(SurfaceCard)),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.branding_watermark_outlined), findsOneWidget);
+      expect(find.byIcon(DsIcons.watermark), findsOneWidget);
 
       await _scrollToVisible(tester, list, find.text('单位常用队伍'));
       expect(
         find.ancestor(of: find.text('单位常用队伍'), matching: find.byType(SurfaceCard)),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.local_fire_department_outlined), findsOneWidget);
+      expect(find.byIcon(DsIcons.stations), findsOneWidget);
     });
 
     testWidgets('身份 Hero 合并展示，普通设置项保持统一行高且同组共卡', (tester) async {
@@ -208,6 +208,7 @@ void main() {
       final store = SettingsStore();
       addTearDown(store.dispose);
       await _pumpProfileHub(tester, store);
+      expect(find.byKey(const Key('profile-connection-pill')), findsNothing);
       final list = find.byType(ListView).first;
 
       for (final section in const <String>[
@@ -223,7 +224,7 @@ void main() {
       }
 
       await _scrollToVisible(tester, list, find.text('操作日志'));
-      expect(find.byIcon(Icons.history_rounded), findsOneWidget);
+      expect(find.byIcon(DsIcons.opLog), findsOneWidget);
 
       await _scrollToVisible(tester, list, find.text('计算参数'));
       expect(find.text('6.8L · 10/5分'), findsOneWidget);

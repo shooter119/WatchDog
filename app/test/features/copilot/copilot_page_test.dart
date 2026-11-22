@@ -507,7 +507,7 @@ void main() {
       final sendFuture = state.submitQuestion('进行中的问题');
       await tester.pump();
       final clearButton = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.delete_sweep_outlined),
+        find.widgetWithIcon(IconButton, DsIcons.clearSweep),
       );
       expect(clearButton.onPressed, isNull);
 
@@ -517,7 +517,7 @@ void main() {
       expect(
         tester
             .widget<IconButton>(
-              find.widgetWithIcon(IconButton, Icons.delete_sweep_outlined),
+              find.widgetWithIcon(IconButton, DsIcons.clearSweep),
             )
             .onPressed,
         isNotNull,

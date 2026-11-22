@@ -161,7 +161,7 @@ class _LoginDevicesPageState extends State<LoginDevicesPage> {
       appBar: AppBar(title: const Text('登录设备')),
       body: !authorized
           ? const StatePlaceholder.empty(
-              icon: Icons.devices_other_outlined,
+              icon: DsIcons.device,
               message: '登录已失效，请返回重新认证',
             )
           : ListView(
@@ -268,7 +268,7 @@ class _LoginDeviceCard extends StatelessWidget {
           if (device.current)
             const StatusPill(
               status: DsStatus.safe,
-              icon: Icons.check_circle_outline_rounded,
+              icon: DsIcons.checkCircle,
               label: '当前设备',
             )
           else

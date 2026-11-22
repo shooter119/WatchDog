@@ -72,7 +72,7 @@ class SettingsGroupCard extends StatelessWidget {
   }
 }
 
-/// 统一图标容器（带可选角标点）。
+/// 统一图标容器（带可选角标点，采用沉稳石板灰 + 1px 细边框，避免纯黑刺眼）。
 class SettingsIconBox extends StatelessWidget {
   const SettingsIconBox({super.key, required this.icon, this.badge = false});
   final IconData icon;
@@ -81,6 +81,7 @@ class SettingsIconBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.ds.colors;
+    final iconColor = Color.lerp(colors.textPrimary, colors.textSecondary, 0.55)!;
     return SizedBox(
       width: 36,
       height: 36,
@@ -90,8 +91,15 @@ class SettingsIconBox extends StatelessWidget {
           Container(
             width: 36,
             height: 36,
-            decoration: BoxDecoration(color: colors.surfaceMuted, borderRadius: DsRadius.borderSm),
-            child: Icon(icon, size: 18, color: colors.textPrimary),
+            decoration: BoxDecoration(
+              color: colors.surfaceMuted,
+              borderRadius: DsRadius.borderSm,
+              border: Border.all(
+                color: colors.border.withValues(alpha: 0.7),
+                width: 1,
+              ),
+            ),
+            child: Icon(icon, size: 18, color: iconColor),
           ),
           if (badge)
             Positioned(
@@ -191,7 +199,7 @@ class SettingsNavRow extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(width: DsSpacing.xs),
-                Icon(Icons.chevron_right_rounded, size: DsSizes.iconMd, color: colors.textTertiary),
+                Icon(DsIcons.chevronRight, size: DsSizes.iconMd, color: colors.textTertiary),
               ],
             ),
           ),
@@ -277,7 +285,7 @@ class SettingsExpandRow extends StatelessWidget {
                         color: expanded ? colors.brand.withValues(alpha: 0.12) : colors.surfaceMuted,
                       ),
                       child: Icon(
-                        expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        expanded ? DsIcons.chevronUp : DsIcons.chevronDown,
                         size: 18,
                         color: expanded ? colors.brandText : colors.textSecondary,
                       ),
@@ -396,13 +404,13 @@ class SettingsSaveStatusBadge extends StatelessWidget {
         ds,
       ),
       SettingsSaveState.saved => _badge(
-        Icon(Icons.check_circle_outline, size: 14, color: colors.safeText),
+        Icon(DsIcons.checkCircle, size: 14, color: colors.safeText),
         '已保存',
         colors.safeText,
         ds,
       ),
       SettingsSaveState.failed => _badge(
-        Icon(Icons.error_outline, size: 14, color: colors.alarmText),
+        Icon(DsIcons.warning, size: 14, color: colors.alarmText),
         '保存失败',
         colors.alarmText,
         ds,

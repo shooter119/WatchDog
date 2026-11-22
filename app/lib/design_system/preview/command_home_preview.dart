@@ -12,6 +12,7 @@ import '../components/timeline_list.dart';
 import '../components/tool_grid.dart';
 import '../theme/ds_theme.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_spacing.dart';
 import 'preview_fixtures.dart';
 
@@ -244,7 +245,7 @@ class CommandHomePreview extends StatelessWidget {
                   variant: CommandButtonVariant.secondary,
                   size: CommandButtonSize.large,
                   expanded: true,
-                  icon: Icons.description_outlined,
+                  icon: DsIcons.toolTacticalBrief,
                   onPressed: () => _openBriefSheet(context),
                 ),
               ],

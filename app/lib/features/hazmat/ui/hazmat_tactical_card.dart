@@ -96,7 +96,7 @@ class HazmatTacticalCard extends StatelessWidget {
               CommandButton(
                 key: const ValueKey<String>('hazmat-copy-btn'),
                 label: '复制处置要点',
-                icon: Icons.copy_all_rounded,
+                icon: DsIcons.copyAll,
                 variant: CommandButtonVariant.secondary,
                 size: CommandButtonSize.standard,
                 expanded: true,
@@ -125,7 +125,7 @@ class HazmatTacticalCard extends StatelessWidget {
                 Row(
                   children: <Widget>[
                     Icon(
-                      Icons.block_rounded,
+                      DsIcons.forbid,
                       color: alarmPair.text,
                       size: DsSizes.iconMd,
                     ),
@@ -172,7 +172,7 @@ class HazmatTacticalCard extends StatelessWidget {
               ),
               const SizedBox(height: DsSpacing.md),
               HazmatInfoBlock(
-                icon: Icons.local_fire_department_outlined,
+                icon: DsIcons.categoryFireLine,
                 label: '推荐灭火/抑蒸介质',
                 value: item.extinguishingAgents,
                 highlightColor: colors.safeText,
@@ -180,7 +180,7 @@ class HazmatTacticalCard extends StatelessWidget {
               if (item.firefightingTips.isNotEmpty) ...<Widget>[
                 Divider(height: DsSpacing.xl, color: colors.border),
                 HazmatInfoBlock(
-                  icon: Icons.shield_outlined,
+                  icon: DsIcons.shield,
                   label: '战术处置要点',
                   value: item.firefightingTips,
                 ),
@@ -188,7 +188,7 @@ class HazmatTacticalCard extends StatelessWidget {
               if (item.protectiveLevel.isNotEmpty) ...<Widget>[
                 Divider(height: DsSpacing.xl, color: colors.border),
                 HazmatInfoBlock(
-                  icon: Icons.health_and_safety_outlined,
+                  icon: DsIcons.shieldCheck,
                   label: '个体防护等级',
                   value: item.protectiveLevel,
                 ),
@@ -215,7 +215,7 @@ class HazmatTacticalCard extends StatelessWidget {
               const SizedBox(height: DsSpacing.md),
               if (item.isolationDistance.isNotEmpty)
                 HazmatInfoBlock(
-                  icon: Icons.social_distance_rounded,
+                  icon: DsIcons.distance,
                   label: '初期隔离与下风向疏散',
                   value: item.isolationDistance,
                   highlightColor: colors.cautionText,
@@ -225,7 +225,7 @@ class HazmatTacticalCard extends StatelessWidget {
                 if (item.isolationDistance.isNotEmpty)
                   Divider(height: DsSpacing.xl, color: colors.border),
                 HazmatInfoBlock(
-                  icon: Icons.warning_amber_rounded,
+                  icon: DsIcons.warning,
                   label: '核心危险性',
                   value: item.dangerSummary,
                 ),
@@ -233,7 +233,7 @@ class HazmatTacticalCard extends StatelessWidget {
               if (item.vaporDensityHint.isNotEmpty) ...<Widget>[
                 Divider(height: DsSpacing.xl, color: colors.border),
                 HazmatInfoBlock(
-                  icon: Icons.air_rounded,
+                  icon: DsIcons.wind,
                   label: '蒸气密度与积聚方位',
                   value: item.vaporDensityHint,
                   tabular: true,
@@ -291,7 +291,7 @@ class HazmatTacticalCard extends StatelessWidget {
           children: <Widget>[
             if (item.leakHandling.isNotEmpty) ...<Widget>[
               HazmatInfoBlock(
-                icon: Icons.water_damage_outlined,
+                icon: DsIcons.toolWaterSources,
                 label: '泄漏围堵与洗消',
                 value: item.leakHandling,
               ),
@@ -299,7 +299,7 @@ class HazmatTacticalCard extends StatelessWidget {
             ],
             if (item.firstAid.isNotEmpty) ...<Widget>[
               HazmatInfoBlock(
-                icon: Icons.medical_services_outlined,
+                icon: DsIcons.firstAid,
                 label: '现场急救措施',
                 value: item.firstAid,
               ),
@@ -307,7 +307,7 @@ class HazmatTacticalCard extends StatelessWidget {
             ],
             if (item.appearance.isNotEmpty) ...<Widget>[
               HazmatInfoBlock(
-                icon: Icons.visibility_outlined,
+                icon: DsIcons.eye,
                 label: '外观与气味识别',
                 value: item.appearance,
               ),
@@ -315,7 +315,7 @@ class HazmatTacticalCard extends StatelessWidget {
             ],
             if (item.casNumber.isNotEmpty) ...<Widget>[
               HazmatInfoBlock(
-                icon: Icons.tag_rounded,
+                icon: DsIcons.tag,
                 label: 'CAS 登记号',
                 value: item.casNumber,
                 tabular: true,
@@ -325,7 +325,7 @@ class HazmatTacticalCard extends StatelessWidget {
             ],
             if (item.notes.isNotEmpty)
               HazmatInfoBlock(
-                icon: Icons.menu_book_outlined,
+                icon: DsIcons.book,
                 label: '战术速记口诀',
                 value: item.notes,
               ),
@@ -366,7 +366,7 @@ class _CategoryBadge extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             Icon(
-              Icons.water_drop_outlined,
+              DsIcons.toolWaterSources,
               size: DsSizes.iconSm,
               color: colors.brandText,
             ),
@@ -390,9 +390,9 @@ class _CategoryBadge extends StatelessWidget {
       _ => DsStatus.neutral,
     };
     final icon = switch (signColor) {
-      'red' => Icons.local_fire_department_rounded,
-      'yellow' => Icons.warning_amber_rounded,
-      _ => Icons.science_outlined,
+      'red' => DsIcons.categoryFire,
+      'yellow' => DsIcons.warning,
+      _ => DsIcons.toolHazmat,
     };
     return StatusPill(status: status, icon: icon, label: label);
   }
@@ -409,18 +409,18 @@ class _WaterReactivityBanner extends StatelessWidget {
     final (DsStatus status, IconData icon, String text) = item.isWaterForbidden
         ? (
             DsStatus.alarm,
-            Icons.no_drinks_rounded,
+            DsIcons.prohibited,
             '遇水属性：严禁用水（遇水可能剧烈反应、燃爆或释放有毒/易燃气体）',
           )
         : item.isWaterReactive
         ? (
             DsStatus.caution,
-            Icons.warning_amber_rounded,
+            DsIcons.warning,
             '遇水属性：慎用/剧烈反应（遇水热反应或放气，严格按战术规程控水）',
           )
         : (
             DsStatus.safe,
-            Icons.water_drop_outlined,
+            DsIcons.toolWaterSources,
             '遇水属性：可用水冷却或稀释控制（注意防流淌污染）',
           );
 

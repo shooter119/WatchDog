@@ -135,7 +135,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               minWidth: DsSizes.touchTarget,
               minHeight: DsSizes.touchTarget,
             ),
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(DsIcons.refresh),
             onPressed: _store.loading ? null : () => unawaited(_store.load()),
           ),
         ],
@@ -165,7 +165,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const StatePlaceholder.empty(
-              icon: Icons.alt_route_rounded,
+              icon: DsIcons.altRoute,
               message: '尚未选择正在处置的警情',
               detail: '请先选择或创建一起警情，系统将根据警情中的事发地点查询沿途路况、耗时与天气。',
               padding: EdgeInsets.zero,
@@ -209,7 +209,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      Icons.wrong_location_outlined,
+                      DsIcons.locationOff,
                       color: cautionPair.text,
                       size: 26,
                     ),
@@ -241,7 +241,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               CommandButton(
                 key: const Key('route-traffic-edit-details'),
                 label: '完善警情资料',
-                icon: Icons.edit_note_rounded,
+                icon: DsIcons.note,
                 expanded: true,
                 onPressed: () => unawaited(_handleEditDetails()),
               ),
@@ -249,7 +249,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
               CommandButton(
                 key: const Key('route-traffic-import-details'),
                 label: '导入警情信息（图片/文字）',
-                icon: Icons.document_scanner_outlined,
+                icon: DsIcons.scanner,
                 variant: CommandButtonVariant.secondary,
                 expanded: true,
                 onPressed: () => unawaited(_handleImportDetails()),
@@ -363,7 +363,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
         child: Row(
           children: [
             Icon(
-              Icons.warning_amber_rounded,
+              DsIcons.warning,
               size: DsSizes.iconMd,
               color: cautionPair.text,
             ),
@@ -411,7 +411,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
           final copyBtn = CommandButton(
             key: const Key('route-traffic-copy'),
             label: '复制路况简报',
-            icon: Icons.copy_rounded,
+            icon: DsIcons.copy,
             variant: CommandButtonVariant.secondary,
             expanded: true,
             onPressed: () => unawaited(_handleCopySummary()),
@@ -419,7 +419,7 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
           final navBtn = CommandButton(
             key: const Key('route-traffic-navigate'),
             label: '高德导航',
-            icon: Icons.navigation_rounded,
+            icon: DsIcons.navigation,
             variant: CommandButtonVariant.primary,
             expanded: true,
             onPressed: () => unawaited(_handleNavigate()),

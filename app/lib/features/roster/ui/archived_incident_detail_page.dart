@@ -80,7 +80,7 @@ class _ArchivedIncidentDetailPageState
               minHeight: DsSizes.touchTarget,
             ),
             onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(DsIcons.refresh),
           ),
         ],
       ),
@@ -104,7 +104,7 @@ class _ArchivedIncidentDetailPageState
                       alignment: Alignment.centerLeft,
                       child: CommandButton(
                         label: '警情资料与导入记录',
-                        icon: Icons.description_outlined,
+                        icon: DsIcons.toolTacticalBrief,
                         variant: CommandButtonVariant.ghost,
                         size: CommandButtonSize.standard,
                         onPressed: () => unawaited(
@@ -124,7 +124,7 @@ class _ArchivedIncidentDetailPageState
                       child: Row(
                         children: <Widget>[
                           Icon(
-                            Icons.warning_amber_rounded,
+                            DsIcons.warning,
                             color: colors.cautionText,
                             size: DsSizes.iconMd,
                           ),
@@ -144,7 +144,7 @@ class _ArchivedIncidentDetailPageState
                   ],
                   const SizedBox(height: DsSpacing.xl),
                   ArchivedSectionHeader(
-                    icon: Icons.local_fire_department_outlined,
+                    icon: DsIcons.categoryFireLine,
                     title: '参战力量快照',
                     trailing: '${_forces.length} 个站点',
                   ),
@@ -152,7 +152,7 @@ class _ArchivedIncidentDetailPageState
                   _ForceSnapshotCard(forces: _forces),
                   const SizedBox(height: DsSpacing.xl),
                   const ArchivedSectionHeader(
-                    icon: Icons.timeline_rounded,
+                    icon: DsIcons.timeline,
                     title: '火场处置时间线',
                   ),
                   const SizedBox(height: DsSpacing.sm),
@@ -204,7 +204,7 @@ class _ForceSnapshotCard extends StatelessWidget {
                             borderRadius: DsRadius.borderSm,
                           ),
                           child: Icon(
-                            Icons.local_fire_department_outlined,
+                            DsIcons.categoryFireLine,
                             size: DsSizes.iconSm,
                             color: colors.textPrimary,
                           ),
@@ -301,14 +301,14 @@ class _ArchivedTimelineRow extends StatelessWidget {
   final bool isLast;
 
   IconData get _icon => switch (event.type) {
-    'entry' => Icons.login_rounded,
-    'exit' => Icons.logout_rounded,
-    'pressure' => Icons.speed_rounded,
+    'entry' => DsIcons.login,
+    'exit' => DsIcons.logout,
+    'pressure' => DsIcons.gasMeter,
     'force_added' ||
     'force_updated' ||
-    'force_removed' => Icons.local_fire_department_outlined,
-    'incident_archived' => Icons.archive_outlined,
-    _ => Icons.edit_note_rounded,
+    'force_removed' => DsIcons.categoryFireLine,
+    'incident_archived' => DsIcons.archive,
+    _ => DsIcons.note,
   };
 
   Color _accentColor(DsColors colors) => switch (event.type) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/ds_theme.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_radius.dart';
 import '../tokens/ds_sizes.dart';
 import '../tokens/ds_spacing.dart';
@@ -29,7 +30,7 @@ class StatePlaceholder extends StatelessWidget {
 
   const StatePlaceholder.empty({
     super.key,
-    this.icon = Icons.inbox_outlined,
+    this.icon = DsIcons.inbox,
     required String message,
     this.detail,
     this.actionLabel,
@@ -42,7 +43,7 @@ class StatePlaceholder extends StatelessWidget {
 
   const StatePlaceholder.error({
     super.key,
-    this.icon = Icons.error_outline_rounded,
+    this.icon = DsIcons.warning,
     this.title = '加载失败',
     required String reason,
     String retryLabel = '重试',
@@ -91,7 +92,7 @@ class StatePlaceholder extends StatelessWidget {
                 border: Border.all(color: colors.border, width: 1),
               ),
               child: Icon(
-                icon ?? Icons.inbox_outlined,
+                icon ?? DsIcons.inbox,
                 size: DsSizes.iconLg,
                 color: colors.textSecondary,
               ),
@@ -142,7 +143,7 @@ class StatePlaceholder extends StatelessWidget {
                     ),
                   ),
                   child: Icon(
-                    icon ?? Icons.error_outline_rounded,
+                    icon ?? DsIcons.warning,
                     size: DsSizes.iconLg,
                     color: alarmPair.text,
                   ),

@@ -175,7 +175,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
               minHeight: DsSizes.touchTarget,
             ),
             onPressed: File(media.path).existsSync() ? _openMedia : null,
-            icon: const Icon(Icons.open_in_new_rounded),
+            icon: const Icon(DsIcons.externalLink),
           ),
         ],
       ),
@@ -282,7 +282,7 @@ class _ActionBar extends StatelessWidget {
                   child: CommandButton(
                     key: const Key('review-save-only'),
                     label: '仅保存',
-                    icon: Icons.save_alt_rounded,
+                    icon: DsIcons.download,
                     variant: CommandButtonVariant.secondary,
                     size: CommandButtonSize.large,
                     enabled: enabled,
@@ -294,7 +294,7 @@ class _ActionBar extends StatelessWidget {
                   child: CommandButton(
                     key: const Key('review-save-share'),
                     label: '保存并分享',
-                    icon: Icons.ios_share_rounded,
+                    icon: DsIcons.share,
                     variant: CommandButtonVariant.primary,
                     size: CommandButtonSize.large,
                     enabled: enabled,

@@ -335,7 +335,7 @@ class _IncidentKeySiteLinkBodyState extends State<_IncidentKeySiteLinkBody> {
       constraints: const BoxConstraints(minHeight: DsSizes.touchTarget),
       child: Row(
         children: <Widget>[
-          Icon(Icons.domain_add_outlined, size: DsSizes.iconMd, color: colors.textSecondary),
+          Icon(DsIcons.toolKeySites, size: DsSizes.iconMd, color: colors.textSecondary),
           const SizedBox(width: DsSpacing.sm),
           Expanded(
             child: Text(
@@ -357,7 +357,7 @@ class _IncidentKeySiteLinkBodyState extends State<_IncidentKeySiteLinkBody> {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text('点击绑定', style: typo.caption.copyWith(color: fg, fontWeight: FontWeight.w600)),
-                    Icon(Icons.chevron_right_rounded, size: DsSizes.iconMd, color: fg),
+                    Icon(DsIcons.chevronRight, size: DsSizes.iconMd, color: fg),
                   ],
                 ),
               ),
@@ -384,7 +384,7 @@ class _IncidentKeySiteLinkBodyState extends State<_IncidentKeySiteLinkBody> {
       children: <Widget>[
         Row(
           children: <Widget>[
-            Icon(Icons.domain_verification_outlined, size: DsSizes.iconMd, color: colors.brandText),
+            Icon(DsIcons.verified, size: DsSizes.iconMd, color: colors.brandText),
             const SizedBox(width: DsSpacing.sm),
             Expanded(child: Text(link.name, style: typo.title.copyWith(color: colors.textPrimary))),
           ],
@@ -396,7 +396,7 @@ class _IncidentKeySiteLinkBodyState extends State<_IncidentKeySiteLinkBody> {
             runSpacing: DsSpacing.xs,
             children: <Widget>[
               for (final tag in profileTags)
-                StatusPill(status: DsStatus.neutral, icon: Icons.apartment_outlined, label: tag),
+                StatusPill(status: DsStatus.neutral, icon: DsIcons.community, label: tag),
             ],
           ),
         ],
@@ -420,7 +420,7 @@ class _IncidentKeySiteLinkBodyState extends State<_IncidentKeySiteLinkBody> {
             CommandButton(
               key: const Key('key-site-open'),
               label: '单位资料',
-              icon: Icons.folder_open_outlined,
+              icon: DsIcons.folderOpen,
               variant: CommandButtonVariant.secondary,
               size: CommandButtonSize.standard,
               onPressed: () => _host.onOpenKeySiteDetail(

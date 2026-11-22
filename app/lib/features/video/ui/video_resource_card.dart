@@ -45,10 +45,10 @@ class VideoResourceCard extends StatelessWidget {
   }
 
   IconData get _statusIcon {
-    if (available == null) return Icons.hourglass_empty_rounded;
+    if (available == null) return DsIcons.hourglass;
     return available!
-        ? Icons.check_circle_outline_rounded
-        : Icons.videocam_off_outlined;
+        ? DsIcons.checkCircle
+        : DsIcons.videoOff;
   }
 
   @override
@@ -136,7 +136,7 @@ class VideoResourceCard extends StatelessWidget {
                       border: Border.all(color: colors.border, width: 1),
                     ),
                     child: Icon(
-                      Icons.play_arrow_rounded,
+                      DsIcons.play,
                       color: colors.brandText,
                       size: DsSizes.iconLg,
                     ),
@@ -175,7 +175,7 @@ class VideoResourceCard extends StatelessWidget {
                                       'video-resource-fullscreen-${resource.id}',
                                     ),
                                     tooltip: '全屏播放',
-                                    icon: Icons.fullscreen_rounded,
+                                    icon: DsIcons.fullscreen,
                                     onPressed: onFullscreen ?? () {},
                                   ),
                                   const SizedBox(width: DsSpacing.xs),
@@ -185,7 +185,7 @@ class VideoResourceCard extends StatelessWidget {
                                     ),
                                     tooltip: '浮窗播放',
                                     icon:
-                                        Icons.picture_in_picture_alt_rounded,
+                                        DsIcons.pip,
                                     onPressed: onFloating ?? () {},
                                   ),
                                   const SizedBox(width: DsSpacing.xs),
@@ -194,7 +194,7 @@ class VideoResourceCard extends StatelessWidget {
                                       'video-resource-close-${resource.id}',
                                     ),
                                     tooltip: '关闭视频',
-                                    icon: Icons.close_rounded,
+                                    icon: DsIcons.close,
                                     onPressed: onClose,
                                   ),
                                 ],
@@ -239,7 +239,7 @@ class _LeadingCameraBadge extends StatelessWidget {
               border: Border.all(color: colors.border, width: 1),
             ),
             child: Icon(
-              Icons.videocam_rounded,
+              DsIcons.video,
               color: colors.brandText,
               size: DsSizes.iconLg,
             ),

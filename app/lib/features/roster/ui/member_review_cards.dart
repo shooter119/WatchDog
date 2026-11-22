@@ -94,7 +94,7 @@ class MemberReviewErrorBanner extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Icon(
-            Icons.error_outline_rounded,
+            DsIcons.warning,
             color: alarmPair.text,
             size: DsSizes.iconMd,
           ),
@@ -158,7 +158,7 @@ class PendingMemberCard extends StatelessWidget {
               if (member.inRoster)
                 const StatusPill(
                   status: DsStatus.neutral,
-                  icon: Icons.record_voice_over_outlined,
+                  icon: DsIcons.speak,
                   label: '已在语音名单',
                 ),
             ],
@@ -258,8 +258,8 @@ class ReviewHistoryCard extends StatelessWidget {
               StatusPill(
                 status: item.isApproved ? DsStatus.safe : DsStatus.neutral,
                 icon: item.isApproved
-                    ? Icons.check_rounded
-                    : Icons.close_rounded,
+                    ? DsIcons.check
+                    : DsIcons.close,
                 label: item.isApproved ? '已同意' : '已驳回',
               ),
             ],

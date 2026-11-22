@@ -56,14 +56,14 @@ class LocationShareReadyCards extends StatelessWidget {
           const SizedBox(height: DsSpacing.md),
           const LocationShareBanner(
             status: DsStatus.alarm,
-            icon: Icons.timer_off_outlined,
+            icon: DsIcons.statusTimeout,
             text: '定位已超过 5 分钟，不能直接分享。请重新定位后再发送。',
           ),
         ] else if (store.isStaleWarning) ...[
           const SizedBox(height: DsSpacing.md),
           const LocationShareBanner(
             status: DsStatus.caution,
-            icon: Icons.schedule_rounded,
+            icon: DsIcons.time,
             text: '定位已超过 2 分钟，位置可能已变化，请结合现场情况核实。',
           ),
         ],
@@ -71,7 +71,7 @@ class LocationShareReadyCards extends StatelessWidget {
           const SizedBox(height: DsSpacing.md),
           const LocationShareBanner(
             status: DsStatus.caution,
-            icon: Icons.gps_off_outlined,
+            icon: DsIcons.locationOff,
             text: '定位精度较差或未提供精度，接收方可能看到明显偏移。',
           ),
         ],
@@ -79,7 +79,7 @@ class LocationShareReadyCards extends StatelessWidget {
           const SizedBox(height: DsSpacing.md),
           LocationShareBanner(
             status: DsStatus.neutral,
-            icon: Icons.info_outline_rounded,
+            icon: DsIcons.info,
             text: !draft.hasAmapLocation
                 ? '地址或坐标转换未完成，已切换为 WGS84 坐标，仍可分享查看位置。'
                 : '地址查询未完成，但高德位置链接仍可用。',
@@ -117,14 +117,14 @@ class LocationShareReadyCards extends StatelessWidget {
             CommandButton(
               key: const Key('location-share-relocate'),
               label: '重新定位',
-              icon: Icons.my_location_rounded,
+              icon: DsIcons.myLocation,
               variant: CommandButtonVariant.secondary,
               onPressed: onRelocate,
             ),
             CommandButton(
               key: const Key('location-share-open-settings'),
               label: '打开定位设置',
-              icon: Icons.location_searching_rounded,
+              icon: DsIcons.myLocation,
               variant: CommandButtonVariant.secondary,
               onPressed: onOpenLocationSettings,
             ),
@@ -209,7 +209,7 @@ class _LocationCoordSlot extends StatelessWidget {
                     ? DsStatus.caution
                     : DsStatus.neutral,
                 label: accuracyText,
-                icon: Icons.gps_fixed_rounded,
+                icon: DsIcons.myLocation,
               ),
             ],
           ),
@@ -225,7 +225,7 @@ class _LocationCoordSlot extends StatelessWidget {
           Row(
             children: [
               Icon(
-                Icons.access_time_outlined,
+                DsIcons.time,
                 size: 14,
                 color: colors.textTertiary,
               ),

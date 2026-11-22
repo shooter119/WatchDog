@@ -214,8 +214,8 @@ class WaterStatusBanner extends StatelessWidget {
         children: [
           Icon(
             status == DsStatus.alarm
-                ? Icons.error_outline_rounded
-                : Icons.warning_amber_rounded,
+                ? DsIcons.warning
+                : DsIcons.warning,
             size: DsSizes.iconMd,
             color: pair.text,
           ),
@@ -340,14 +340,14 @@ class WaterDegradedFilterBar extends StatelessWidget {
             decoration: InputDecoration(
               isDense: true,
               hintText: '搜索点位名称或备注（如水池、闷盖、楼栋）',
-              prefixIcon: const Icon(Icons.search, size: 20),
+              prefixIcon: const Icon(DsIcons.search, size: 20),
               suffixIcon: store.searchQuery.isNotEmpty
                   ? IconButton(
                       onPressed: () {
                         searchController.clear();
                         store.setSearchQuery('');
                       },
-                      icon: const Icon(Icons.clear, size: 18),
+                      icon: const Icon(DsIcons.close, size: 18),
                     )
                   : null,
               filled: true,

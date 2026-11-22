@@ -248,7 +248,7 @@ void main() {
     await pumpGallery(tester, incident: activeIncident);
 
     // 1. 清理过期取消 -> 确认
-    await tester.tap(find.byIcon(Icons.cleaning_services_outlined));
+    await tester.tap(find.byIcon(DsIcons.cleanSweep));
     await tester.pumpAndSettle();
     expect(find.text('清理过期文件？'), findsOneWidget);
     expect(find.textContaining('将删除 3 个超过 30 天的媒体文件'), findsOneWidget);
@@ -256,14 +256,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.purgeCalls, 0);
 
-    await tester.tap(find.byIcon(Icons.cleaning_services_outlined));
+    await tester.tap(find.byIcon(DsIcons.cleanSweep));
     await tester.pumpAndSettle();
     await tester.tap(find.text('清理'));
     await tester.pumpAndSettle();
     expect(store.purgeCalls, 1);
 
     // 2. 删除单条取消 -> 确认
-    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    await tester.tap(find.byIcon(DsIcons.more));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
@@ -272,7 +272,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.deletedIds, isEmpty);
 
-    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    await tester.tap(find.byIcon(DsIcons.more));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
@@ -314,20 +314,20 @@ void main() {
       },
     );
 
-    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    await tester.tap(find.byIcon(DsIcons.more));
     await tester.pumpAndSettle();
     await tester.tap(find.text('重新识别口述'));
     await _pumpAsyncAction(tester);
     expect(derivedCalls, 1);
     expect(find.textContaining('识别完成'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    await tester.tap(find.byIcon(DsIcons.more));
     await tester.pumpAndSettle();
     await tester.tap(find.text('分享'));
     await tester.pumpAndSettle();
     expect(shareCalls.single.files!.single.path, '/tmp/watchdog-test/VID_1_WM.mp4');
 
-    await tester.tap(find.byIcon(Icons.more_vert_rounded));
+    await tester.tap(find.byIcon(DsIcons.more));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存两份到手机相册'));
     await _pumpAsyncAction(tester);

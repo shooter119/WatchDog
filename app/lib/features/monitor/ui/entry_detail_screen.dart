@@ -85,7 +85,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
               Padding(
                 padding: const EdgeInsets.only(right: DsSpacing.md),
                 child: Icon(
-                  exited ? Icons.logout_rounded : Icons.person_outline_rounded,
+                  exited ? DsIcons.logout : DsIcons.user,
                   color: exited ? colors.textTertiary : colors.brandText,
                   size: DsSizes.iconLg,
                 ),
@@ -100,7 +100,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
                 Expanded(
                   child: exited
                       ? StatePlaceholder.empty(
-                          icon: Icons.logout_rounded,
+                          icon: DsIcons.logout,
                           message: entry?.name == null
                               ? '该记录已不存在'
                               : '「${entry!.name}」已出火场',
@@ -262,9 +262,9 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
             spacing: DsSpacing.lg,
             runSpacing: DsSpacing.xs,
             children: <Widget>[
-              _metaChip(context, Icons.timer_outlined, pair.text, '${entry.durationMin} 分钟上限'),
+              _metaChip(context, DsIcons.time, pair.text, '${entry.durationMin} 分钟上限'),
               if (entry.pressureMpa != null)
-                _metaChip(context, Icons.speed_rounded, pair.text, '${entry.pressureMpa} MPa'),
+                _metaChip(context, DsIcons.gasMeter, pair.text, '${entry.pressureMpa} MPa'),
             ],
           ),
         ],
@@ -297,28 +297,28 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
     final volume = entry.cylinderVolL ?? cfg.cylinderVolL;
     final consumption = entry.consumptionLpm ?? cfg.consumptionLpm;
     final tiles = <Widget>[
-      _buildInfoTile(context, Icons.login_rounded, '进场时间', _formatClockTime(entry.entryAt)),
-      _buildInfoTile(context, Icons.logout_rounded, '预计出场', _formatClockTime(entry.exitAt)),
+      _buildInfoTile(context, DsIcons.login, '进场时间', _formatClockTime(entry.entryAt)),
+      _buildInfoTile(context, DsIcons.logout, '预计出场', _formatClockTime(entry.exitAt)),
       _buildInfoTile(
         context,
-        Icons.speed_rounded,
+        DsIcons.gasMeter,
         '气瓶压力',
         entry.pressureMpa != null ? '${entry.pressureMpa} MPa' : '--',
       ),
-      _buildInfoTile(context, Icons.local_fire_department_outlined, '气瓶容量', '$volume L'),
-      _buildInfoTile(context, Icons.water_drop_outlined, '消耗率', '$consumption L/min'),
+      _buildInfoTile(context, DsIcons.categoryFireLine, '气瓶容量', '$volume L'),
+      _buildInfoTile(context, DsIcons.toolWaterSources, '消耗率', '$consumption L/min'),
       _buildInfoTile(
         context,
-        Icons.analytics_outlined,
+        DsIcons.stats,
         '实测消耗率',
         entry.consumptionActualLpm != null
             ? '${entry.consumptionActualLpm!.toStringAsFixed(1)} L/min'
             : '--',
       ),
-      _buildInfoTile(context, Icons.timer_outlined, '分钟上限', '${entry.durationMin} 分钟'),
+      _buildInfoTile(context, DsIcons.time, '分钟上限', '${entry.durationMin} 分钟'),
       _buildInfoTile(
         context,
-        Icons.mic_none_rounded,
+        DsIcons.voiceLine,
         '来源',
         entry.source == 'voice' ? '语音录入' : '手动',
       ),
@@ -401,7 +401,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(Icons.graphic_eq_rounded, size: DsSizes.iconSm, color: colors.brandText),
+              Icon(DsIcons.soundWave, size: DsSizes.iconSm, color: colors.brandText),
               const SizedBox(width: DsSpacing.xs),
               Text(
                 '原始语音转写',
@@ -433,7 +433,7 @@ class _EntryDetailScreenState extends State<EntryDetailScreen> {
       child: CommandButton(
         key: const Key('entry-detail-exit-btn'),
         label: '确认「${entry.name}」已出火场',
-        icon: Icons.logout_rounded,
+        icon: DsIcons.logout,
         variant: CommandButtonVariant.danger,
         size: CommandButtonSize.large,
         expanded: true,

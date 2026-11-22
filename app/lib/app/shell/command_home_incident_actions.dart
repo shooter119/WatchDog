@@ -177,7 +177,7 @@ class CommandHomeIncidentActions {
           ),
           CommandButton(
             label: '去完成认证',
-            icon: Icons.verified_user_outlined,
+            icon: DsIcons.verified,
             variant: CommandButtonVariant.primary,
             size: CommandButtonSize.large,
             onPressed: () => Navigator.of(ctx).pop(true),

@@ -11,6 +11,7 @@ import '../components/status_pill.dart';
 import '../components/surface_card.dart';
 import '../theme/ds_theme.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_spacing.dart';
 import 'preview_fixtures.dart';
 
@@ -220,7 +221,7 @@ class _MonitorPreviewState extends State<MonitorPreview> {
             variant: CommandButtonVariant.danger,
             size: CommandButtonSize.large,
             expanded: true,
-            icon: Icons.campaign_rounded,
+            icon: DsIcons.broadcast,
             confirmTitle: '确认下达全员撤离指令？',
             confirmMessage:
                 '当前在场 ${personnel.length} 名内攻人员将收到最高级别撤离提示（M0 原型演示，无实际副作用）。',
@@ -306,7 +307,7 @@ class _MonitorPreviewState extends State<MonitorPreview> {
                   label: '报压',
                   variant: CommandButtonVariant.secondary,
                   size: CommandButtonSize.large,
-                  icon: Icons.speed_rounded,
+                  icon: DsIcons.gasMeter,
                   onPressed: () => _openReportPressureSheet(context, person),
                 ),
               ),
@@ -316,7 +317,7 @@ class _MonitorPreviewState extends State<MonitorPreview> {
                   label: '出场',
                   variant: CommandButtonVariant.primary,
                   size: CommandButtonSize.large,
-                  icon: Icons.logout_rounded,
+                  icon: DsIcons.logout,
                   onPressed: () => _showDemoNotice(
                     context,
                     '${person.name} 出场演示（仅预览，未修改状态）',

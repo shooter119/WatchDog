@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/ds_theme.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_radius.dart';
 import '../tokens/ds_sizes.dart';
 import '../tokens/ds_spacing.dart';
@@ -56,23 +57,23 @@ class CommandNavBar extends StatelessWidget {
   static const List<CommandNavTab> defaultTabs = <CommandNavTab>[
     CommandNavTab(
       label: '指挥台',
-      icon: Icons.space_dashboard_outlined,
-      activeIcon: Icons.space_dashboard,
+      icon: DsIcons.navCommandLine,
+      activeIcon: DsIcons.navCommandFill,
     ),
     CommandNavTab(
       label: '现场监控',
-      icon: Icons.monitor_heart_outlined,
-      activeIcon: Icons.monitor_heart,
+      icon: DsIcons.navMonitorLine,
+      activeIcon: DsIcons.navMonitorFill,
     ),
     CommandNavTab(
       label: '智能辅助',
-      icon: Icons.smart_toy_outlined,
-      activeIcon: Icons.smart_toy,
+      icon: DsIcons.navCopilotLine,
+      activeIcon: DsIcons.navCopilotFill,
     ),
     CommandNavTab(
       label: '我的',
-      icon: Icons.person_outline,
-      activeIcon: Icons.person,
+      icon: DsIcons.navProfileLine,
+      activeIcon: DsIcons.navProfileFill,
     ),
   ];
 
@@ -97,12 +98,12 @@ class CommandNavBar extends StatelessWidget {
 
     final Widget voiceInner = switch (voiceState) {
       DsVoiceState.idle => Icon(
-          Icons.mic_none_rounded,
+          DsIcons.voiceLine,
           color: colors.onBrand,
           size: 28,
         ),
       DsVoiceState.recording => Icon(
-          Icons.mic_rounded,
+          DsIcons.voiceFill,
           color: colors.onBrand,
           size: 28,
         ),

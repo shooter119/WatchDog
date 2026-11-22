@@ -196,7 +196,7 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
                 minHeight: DsSizes.touchTarget,
               ),
               onPressed: _busy || _detail == null ? null : _edit,
-              icon: const Icon(Icons.edit_outlined),
+              icon: const Icon(DsIcons.edit),
             ),
         ],
       ),
@@ -244,7 +244,7 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
                 observations.isEmpty &&
                 imports.isEmpty)
               StatePlaceholder.empty(
-                icon: Icons.description_outlined,
+                icon: DsIcons.toolTacticalBrief,
                 message: widget.importRepository == null
                     ? '当前处于单机模式，暂未连接云端详情接口。'
                     : '尚未补充警情资料，可从指挥台导入图片或文字。',
@@ -359,7 +359,7 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
                     CommandButton(
                       key: const Key('details-exit-incident'),
                       label: '退出当前警情',
-                      icon: Icons.logout_outlined,
+                      icon: DsIcons.logout,
                       variant: CommandButtonVariant.secondary,
                       size: CommandButtonSize.standard,
                       expanded: true,
@@ -373,7 +373,7 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
                     CommandButton(
                       key: const Key('details-archive-incident'),
                       label: '归档警情',
-                      icon: Icons.archive_outlined,
+                      icon: DsIcons.archive,
                       variant: CommandButtonVariant.danger,
                       size: CommandButtonSize.standard,
                       expanded: true,

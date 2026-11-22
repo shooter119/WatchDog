@@ -30,7 +30,7 @@ class RouteWeatherCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                Icons.wb_sunny_outlined,
+                DsIcons.sun,
                 size: DsSizes.iconMd,
                 color: colors.brand,
               ),
@@ -107,7 +107,7 @@ class RouteWeatherCard extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(
-                    Icons.air_rounded,
+                    DsIcons.wind,
                     size: DsSizes.iconMd,
                     color: cautionPair.text,
                   ),
@@ -194,7 +194,7 @@ class RouteEndpointsCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Icon(
-                  Icons.my_location_rounded,
+                  DsIcons.myLocation,
                   size: DsSizes.iconSm,
                   color: colors.brand,
                 ),
@@ -232,7 +232,7 @@ class RouteEndpointsCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Icon(
-                  Icons.location_on_rounded,
+                  DsIcons.locationPin,
                   size: DsSizes.iconSm,
                   color: colors.alarmFill,
                 ),
@@ -310,7 +310,7 @@ class RouteEndpointsCard extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.info_outline_rounded,
+                      DsIcons.info,
                       size: DsSizes.iconSm,
                       color: cautionPair.text,
                     ),
@@ -325,7 +325,7 @@ class RouteEndpointsCard extends StatelessWidget {
                       ),
                     ),
                     Icon(
-                      Icons.chevron_right_rounded,
+                      DsIcons.chevronRight,
                       size: DsSizes.iconSm,
                       color: cautionPair.text,
                     ),

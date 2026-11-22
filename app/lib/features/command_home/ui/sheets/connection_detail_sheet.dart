@@ -94,10 +94,10 @@ class ConnectionDetailSheet extends StatelessWidget {
         : (isConnected ? DsStatus.safe : DsStatus.alarm);
 
     final IconData statusIcon = snap.isGuest
-        ? Icons.phone_android_outlined
+        ? DsIcons.device
         : snap.syncing
-        ? Icons.cloud_sync_outlined
-        : (isConnected ? Icons.cloud_done_outlined : Icons.cloud_off_outlined);
+        ? DsIcons.sync
+        : (isConnected ? DsIcons.connOnline : DsIcons.connOffline);
 
     return CommandSheet(
       title: '连接与同步状态',
@@ -106,7 +106,7 @@ class ConnectionDetailSheet extends StatelessWidget {
         CommandButton(
           key: const Key('connection-retry-sync-btn'),
           label: '立即重试同步',
-          icon: Icons.sync_rounded,
+          icon: DsIcons.sync,
           variant: CommandButtonVariant.primary,
           size: CommandButtonSize.large,
           expanded: true,

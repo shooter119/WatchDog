@@ -22,7 +22,7 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
     if (!kDebugMode) {
       return const CommandScaffold(
         body: StatePlaceholder.empty(
-          icon: Icons.lock_outline_rounded,
+          icon: DsIcons.lock,
           message: '组件画廊仅在调试模式可用',
         ),
       );
@@ -49,8 +49,8 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
                       setState(() => _overrideBrightness = nextBrightness),
                   icon: Icon(
                     brightness == Brightness.light
-                        ? Icons.wb_sunny_outlined
-                        : Icons.nights_stay_outlined,
+                        ? DsIcons.sun
+                        : DsIcons.moon,
                     size: 18,
                   ),
                   label: Text(brightness == Brightness.light ? '昼白' : '暗曜'),
@@ -76,7 +76,7 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
                           borderRadius: DsRadius.borderMd,
                         ),
                         child: Icon(
-                          Icons.auto_awesome_mosaic_outlined,
+                          DsIcons.appearance,
                           color: colors.brandText,
                         ),
                       ),
@@ -102,7 +102,7 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
                         ),
                       ),
                       Icon(
-                        Icons.chevron_right_rounded,
+                        DsIcons.chevronRight,
                         color: colors.textTertiary,
                       ),
                     ],
@@ -154,13 +154,13 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
                   children: <Widget>[
                     CommandButton(
                       label: '主操作',
-                      icon: Icons.check_rounded,
+                      icon: DsIcons.check,
                       onPressed: () {},
                     ),
                     CommandButton(
                       label: '次级操作',
                       variant: CommandButtonVariant.secondary,
-                      icon: Icons.refresh_rounded,
+                      icon: DsIcons.refresh,
                       onPressed: () {},
                     ),
                     CommandButton(

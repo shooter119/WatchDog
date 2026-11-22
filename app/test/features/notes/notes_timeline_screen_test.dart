@@ -324,5 +324,92 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('电话芯片归属对应单条卡片内、NotePreviewSection 可直接拨号、跨分钟连线且分类配色克制', (
+      WidgetTester tester,
+    ) async {
+      expect(noteCategoryVisual(NoteCategory.abnormal).$1, DsStatus.alarm);
+      for (final routine in const <String>[
+        NoteCategory.deploy,
+        NoteCategory.rescue,
+        NoteCategory.water,
+        NoteCategory.withdraw,
+        NoteCategory.other,
+      ]) {
+        expect(noteCategoryVisual(routine).$1, DsStatus.neutral);
+      }
+
+      final dialed = <Uri>[];
+      final nPhone = Note(
+        id: 'n-phone',
+        text: '联系安全员王强 13800138000',
+        category: NoteCategory.other,
+        author: '张三',
+        createdAt: baseTs,
+        updatedAt: baseTs,
+      );
+      final nFollow = Note(
+        id: 'n-follow',
+        text: '补充出水阵地',
+        category: NoteCategory.water,
+        author: '李四',
+        createdAt: baseTs - 90000,
+        updatedAt: baseTs - 90000,
+      );
+      final store = NotesStore(initialNotes: <Note>[nPhone, nFollow]);
+      addTearDown(store.dispose);
+
+      await tester.pumpWidget(
+        _wrap(
+          NotesTimelineScreen(
+            store: store,
+            now: fixedNow,
+            phoneLauncher: (Uri uri) async {
+              dialed.add(uri);
+              return true;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final timelines = tester
+          .widgetList<TimelineList>(find.byType(TimelineList))
+          .toList();
+      expect(timelines.length, 2);
+      expect(timelines.first.connectLastToNext, isTrue);
+      expect(timelines.last.connectLastToNext, isFalse);
+
+      final chipFinder = find.byKey(const Key('note-phone-call-13800138000'));
+      final ownerCard = find.ancestor(
+        of: find.text('联系安全员王强 13800138000'),
+        matching: find.byType(SurfaceCard),
+      );
+      expect(
+        find.descendant(of: ownerCard, matching: chipFinder),
+        findsOneWidget,
+      );
+
+      await tester.pumpWidget(
+        _wrap(
+          Scaffold(
+            body: NotePreviewSection(
+              notes: <Note>[nPhone],
+              onSeeAll: () {},
+              phoneLauncher: (Uri uri) async {
+                dialed.add(uri);
+                return true;
+              },
+              now: fixedNow,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('note-phone-call-13800138000')));
+      await tester.pump();
+      expect(dialed, <Uri>[Uri(scheme: 'tel', path: '13800138000')]);
+    });
   });
 }

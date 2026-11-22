@@ -173,7 +173,7 @@ class VoiceRecordingOverlay extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Icon(
-                isWarning ? Icons.timer_outlined : Icons.graphic_eq_rounded,
+                isWarning ? DsIcons.time : DsIcons.soundWave,
                 size: DsSizes.iconSm,
                 color: isWarning ? colors.cautionText : colors.brandText,
               ),
@@ -208,7 +208,7 @@ class VoiceRecordingOverlay extends StatelessWidget {
           const SizedBox(height: DsSpacing.lg),
           CommandButton(
             label: '完成并识别',
-            icon: Icons.stop_circle_outlined,
+            icon: DsIcons.stopCircle,
             variant: CommandButtonVariant.primary,
             size: CommandButtonSize.large,
             expanded: true,
@@ -284,7 +284,7 @@ class VoiceRecordingOverlay extends StatelessWidget {
           const SizedBox(height: DsSpacing.lg),
           CommandButton(
             label: '去系统设置',
-            icon: Icons.settings_outlined,
+            icon: DsIcons.settings,
             variant: CommandButtonVariant.primary,
             size: CommandButtonSize.large,
             expanded: true,
@@ -294,7 +294,7 @@ class VoiceRecordingOverlay extends StatelessWidget {
         const SizedBox(height: DsSpacing.md),
         CommandButton(
           label: '重新语音输入',
-          icon: Icons.replay_rounded,
+          icon: DsIcons.refresh,
           variant: CommandButtonVariant.secondary,
           size: CommandButtonSize.standard,
           expanded: true,
@@ -368,7 +368,7 @@ class _VoicePulseRing extends StatelessWidget {
                 color: colors.brand,
               ),
               child: Icon(
-                Icons.mic_rounded,
+                DsIcons.voiceFill,
                 size: 38,
                 color: colors.onBrand,
               ),

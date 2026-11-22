@@ -165,10 +165,10 @@ class HazmatListTile extends StatelessWidget {
         ? DsStatus.alarm
         : (item.isWaterReactive ? DsStatus.caution : DsStatus.safe);
     final waterIcon = item.isWaterForbidden
-        ? Icons.no_drinks_rounded
+        ? DsIcons.prohibited
         : (item.isWaterReactive
-              ? Icons.warning_amber_rounded
-              : Icons.water_drop_outlined);
+              ? DsIcons.warning
+              : DsIcons.toolWaterSources);
 
     return SurfaceCard(
       key: ValueKey<String>('hazmat-list-item-${item.id}'),
@@ -210,7 +210,7 @@ class HazmatListTile extends StatelessWidget {
                   style: typo.title.copyWith(color: colors.textPrimary),
                 ),
               ),
-              Icon(Icons.chevron_right_rounded, color: colors.textTertiary),
+              Icon(DsIcons.chevronRight, color: colors.textTertiary),
             ],
           ),
           if (item.aliases.isNotEmpty) ...<Widget>[

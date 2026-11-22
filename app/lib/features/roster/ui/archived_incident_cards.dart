@@ -32,7 +32,7 @@ class ArchiveSummaryCard extends StatelessWidget {
               borderRadius: DsRadius.borderMd,
             ),
             child: Icon(
-              Icons.inventory_2_outlined,
+              DsIcons.archive,
               color: colors.brandText,
               size: DsSizes.iconLg,
             ),
@@ -106,7 +106,7 @@ class ArchivedIncidentCard extends StatelessWidget {
                   borderRadius: DsRadius.borderSm,
                 ),
                 child: Icon(
-                  Icons.local_fire_department_outlined,
+                  DsIcons.categoryFireLine,
                   size: DsSizes.iconMd,
                   color: colors.textPrimary,
                 ),
@@ -142,13 +142,13 @@ class ArchivedIncidentCard extends StatelessWidget {
                   minHeight: DsSizes.touchTarget,
                 ),
                 icon: Icon(
-                  Icons.edit_outlined,
+                  DsIcons.edit,
                   size: DsSizes.iconMd,
                   color: colors.textSecondary,
                 ),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                DsIcons.chevronRight,
                 color: colors.textTertiary,
                 size: DsSizes.iconLg,
               ),
@@ -161,7 +161,7 @@ class ArchivedIncidentCard extends StatelessWidget {
             children: <Widget>[
               StatusPill(
                 status: DsStatus.neutral,
-                icon: Icons.event_outlined,
+                icon: DsIcons.calendar,
                 label: formatArchiveTime(incident.archivedAt ?? 0),
               ),
               StatusPill(
@@ -169,8 +169,8 @@ class ArchivedIncidentCard extends StatelessWidget {
                     ? DsStatus.caution
                     : DsStatus.safe,
                 icon: incident.autoArchived
-                    ? Icons.schedule_outlined
-                    : Icons.task_alt_outlined,
+                    ? DsIcons.time
+                    : DsIcons.taskCheck,
                 label: archiveMethodLabel(incident.autoArchived),
               ),
             ],
@@ -320,7 +320,7 @@ class ArchivedIncidentIdentityCard extends StatelessWidget {
                   borderRadius: DsRadius.borderSm,
                 ),
                 child: Icon(
-                  Icons.fact_check_outlined,
+                  DsIcons.taskCheck,
                   color: colors.brandText,
                   size: DsSizes.iconMd,
                 ),
@@ -340,8 +340,8 @@ class ArchivedIncidentIdentityCard extends StatelessWidget {
                     ? DsStatus.caution
                     : DsStatus.safe,
                 icon: incident.autoArchived
-                    ? Icons.schedule_outlined
-                    : Icons.task_alt_outlined,
+                    ? DsIcons.time
+                    : DsIcons.taskCheck,
                 label: archiveMethodLabel(incident.autoArchived),
               ),
             ],

@@ -81,7 +81,7 @@ void main() {
       expect(find.text('告警'), findsOneWidget);
       expect(find.text('余4分钟 (王五)'), findsOneWidget);
       expect(find.text('二楼承重墙出现开裂坍塌风险'), findsOneWidget);
-      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+      expect(find.byIcon(DsIcons.warning), findsOneWidget);
     });
 
     testWidgets('点击卡片触发 onTap 跳看板回调', (WidgetTester tester) async {

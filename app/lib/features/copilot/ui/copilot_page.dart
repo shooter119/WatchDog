@@ -366,11 +366,15 @@ class CopilotPageState extends State<CopilotPage>
                       ? null
                       : () => _toggleInputMode(true),
                   icon: Icon(
-                    Icons.keyboard_alt_outlined,
+                    DsIcons.keyboard,
                     size: DsSizes.iconMd + 2,
                     color: store.recording || store.processing
                         ? colors.textTertiary
-                        : colors.textPrimary,
+                        : Color.lerp(
+                            colors.textPrimary,
+                            colors.textSecondary,
+                            0.55,
+                          )!,
                   ),
                 ),
               ),
@@ -394,7 +398,7 @@ class CopilotPageState extends State<CopilotPage>
                           ),
                         )
                       : Icon(
-                          Icons.camera_alt_outlined,
+                          DsIcons.camera,
                           size: DsSizes.iconMd + 2,
                           color: store.busy || store.recording
                               ? colors.textTertiary

@@ -91,7 +91,7 @@ class _SceneMapPageState extends State<SceneMapPage>
               _builderReadyScheduled = false;
               unawaited(_store.initialize());
             },
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(DsIcons.refresh),
           ),
         ],
       ),
@@ -187,7 +187,7 @@ class _SceneMapPageState extends State<SceneMapPage>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.satellite_alt_outlined,
+                  DsIcons.satellite,
                   size: 40,
                   color: colors.textSecondary,
                 ),
@@ -211,7 +211,7 @@ class _SceneMapPageState extends State<SceneMapPage>
                 CommandButton(
                   key: const Key('scene-map-retry-bootstrap'),
                   label: '重试连接',
-                  icon: Icons.refresh_rounded,
+                  icon: DsIcons.refresh,
                   onPressed: () {
                     _builderReadyScheduled = false;
                     unawaited(_store.initialize());

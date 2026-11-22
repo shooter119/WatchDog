@@ -143,7 +143,7 @@ class PersonnelCountdownCard extends StatelessWidget {
                 CommandButton(
                   key: Key('monitor-card-report-btn-${entry.id}'),
                   label: '更新压力',
-                  icon: Icons.speed_rounded,
+                  icon: DsIcons.gasMeter,
                   variant: CommandButtonVariant.secondary,
                   size: CommandButtonSize.large,
                   expanded: true,

@@ -148,7 +148,7 @@ class _TranscriptBar extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Icon(
-              Icons.graphic_eq_rounded,
+              DsIcons.soundWave,
               size: DsSizes.iconSm,
               color: colors.brandText,
             ),
@@ -229,7 +229,7 @@ class _ConfirmSheetFooter extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Icon(
-                    Icons.error_outline_rounded,
+                    DsIcons.warning,
                     size: DsSizes.iconSm,
                     color: alarm.text,
                   ),
@@ -252,7 +252,7 @@ class _ConfirmSheetFooter extends StatelessWidget {
         CommandButton(
           key: const Key('voice-confirm-all-btn'),
           label: primaryLabel,
-          icon: Icons.check_circle_outline_rounded,
+          icon: DsIcons.checkCircle,
           variant: CommandButtonVariant.primary,
           size: CommandButtonSize.large,
           expanded: true,
@@ -267,7 +267,7 @@ class _ConfirmSheetFooter extends StatelessWidget {
             final stacked = constraints.maxWidth < 290 || textScale > 1.25;
             final retryBtn = CommandButton(
               label: '重新语音输入',
-              icon: Icons.replay_rounded,
+              icon: DsIcons.refresh,
               variant: CommandButtonVariant.ghost,
               size: CommandButtonSize.standard,
               expanded: stacked,
@@ -277,7 +277,7 @@ class _ConfirmSheetFooter extends StatelessWidget {
             final continueBtn = CommandButton(
               key: const Key('voice-continue-record-btn'),
               label: '继续语音添加',
-              icon: Icons.mic_none_rounded,
+              icon: DsIcons.voiceLine,
               variant: CommandButtonVariant.secondary,
               size: CommandButtonSize.standard,
               expanded: stacked,

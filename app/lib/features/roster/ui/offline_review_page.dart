@@ -369,7 +369,7 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
       appBar: AppBar(title: const Text('离线记录待核对')),
       body: !widget.gateway.isAuthorized
           ? const StatePlaceholder.empty(
-              icon: Icons.cloud_off_outlined,
+              icon: DsIcons.connOffline,
               message: '登录已失效，请返回重新认证',
             )
           : ListView(
@@ -411,7 +411,7 @@ class _OfflineReviewPageState extends State<OfflineReviewPage> {
                 ],
                 if (!_busy && _rows.isEmpty)
                   const StatePlaceholder.empty(
-                    icon: Icons.task_alt_rounded,
+                    icon: DsIcons.taskCheck,
                     message: '没有待核对记录',
                   ),
                 for (final row in _rows)

@@ -90,7 +90,7 @@ class _OrthomapTileViewerPageState extends State<OrthomapTileViewerPage> {
       return CommandScaffold(
         appBar: AppBar(title: const Text('现场地图')),
         body: const StatePlaceholder.empty(
-          icon: Icons.lock_outline_rounded,
+          icon: DsIcons.lock,
           message: '认证已失效，请返回后重新认证',
         ),
       );
@@ -115,7 +115,7 @@ class _OrthomapTileViewerPageState extends State<OrthomapTileViewerPage> {
             onPressed: _viewport == null
                 ? null
                 : () => setState(() => _reset(_viewport!)),
-            icon: const Icon(Icons.fit_screen),
+            icon: const Icon(DsIcons.fitScreen),
           ),
         ],
       ),
@@ -138,7 +138,7 @@ class _OrthomapTileViewerPageState extends State<OrthomapTileViewerPage> {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.warning_amber_rounded,
+                      DsIcons.warning,
                       size: DsSizes.iconMd,
                       color: cautionPair.text,
                     ),
@@ -193,7 +193,7 @@ class _OrthomapTileViewerPageState extends State<OrthomapTileViewerPage> {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.broken_image_outlined,
+                      DsIcons.imageBroken,
                       size: DsSizes.iconMd,
                       color: alarmPair.text,
                     ),
@@ -333,7 +333,7 @@ class OrthomapTileFailureCell extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.error_outline_rounded,
+              DsIcons.warning,
               color: colors.textSecondary,
               size: DsSizes.iconLg,
             ),

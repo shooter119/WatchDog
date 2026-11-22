@@ -228,7 +228,7 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
             if (!allowed && !gw.isLoading && gw.error == null)
               const Expanded(
                 child: StatePlaceholder.empty(
-                  icon: Icons.lock_outline_rounded,
+                  icon: DsIcons.lock,
                   message: '无本单位审批权限，请重新认证或联系管理员',
                 ),
               ),
@@ -241,7 +241,7 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
                           !gw.isLoading &&
                           gw.error == null)
                         const StatePlaceholder.empty(
-                          icon: Icons.inbox_outlined,
+                          icon: DsIcons.inbox,
                           message: '暂无待审批申请',
                         ),
                       for (final member in gw.pendingMembers)
@@ -264,7 +264,7 @@ class _MemberReviewPageState extends State<MemberReviewPage> {
                           !gw.isLoading &&
                           gw.error == null)
                         const StatePlaceholder.empty(
-                          icon: Icons.assignment_outlined,
+                          icon: DsIcons.clipboard,
                           message: '暂无已处理记录',
                         ),
                       for (final item in gw.reviewHistory)

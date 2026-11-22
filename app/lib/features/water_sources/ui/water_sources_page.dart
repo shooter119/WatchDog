@@ -233,7 +233,7 @@ class _WaterSourcesPageState extends State<WaterSourcesPage> {
               minHeight: DsSizes.touchTarget,
             ),
             onPressed: () => unawaited(_store.refreshData()),
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(DsIcons.refresh),
           ),
           Padding(
             padding: const EdgeInsets.only(right: DsSpacing.sm),
@@ -249,7 +249,7 @@ class _WaterSourcesPageState extends State<WaterSourcesPage> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               onPressed: _store.pickingMode ? null : _startAddFlow,
-              icon: const Icon(Icons.add_location_alt_outlined, size: 17),
+              icon: const Icon(DsIcons.locationAdd, size: 17),
               label: const Text('新增'),
             ),
           ),
@@ -361,7 +361,7 @@ class _WaterSourcesPageState extends State<WaterSourcesPage> {
                 child: Tooltip(
                   message: '回到当前位置',
                   child: Icon(
-                    Icons.my_location_rounded,
+                    DsIcons.myLocation,
                     size: 22,
                     color: ds.colors.brandText,
                   ),
@@ -445,7 +445,7 @@ class _WaterSourcesPageState extends State<WaterSourcesPage> {
     }
     if (filtered.isEmpty) {
       return StatePlaceholder.empty(
-        icon: Icons.water_drop_outlined,
+        icon: DsIcons.toolWaterSources,
         message: _store.items.isEmpty
             ? '本单位暂未录入水源点位，点击右上角「新增」开始采集'
             : '当前筛选条件下暂无匹配水源',

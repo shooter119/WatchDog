@@ -142,9 +142,9 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
       builder: (BuildContext ctx) => Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          _sourceTile(ctx, Icons.camera_alt_outlined, '拍照', IncidentImportEntryMode.camera),
-          _sourceTile(ctx, Icons.photo_library_outlined, '从手机相册选择', IncidentImportEntryMode.gallery),
-          _sourceTile(ctx, Icons.description_outlined, '文字导入', IncidentImportEntryMode.text),
+          _sourceTile(ctx, DsIcons.camera, '拍照', IncidentImportEntryMode.camera),
+          _sourceTile(ctx, DsIcons.photoLibrary, '从手机相册选择', IncidentImportEntryMode.gallery),
+          _sourceTile(ctx, DsIcons.toolTacticalBrief, '文字导入', IncidentImportEntryMode.text),
         ],
       ),
     );
@@ -175,7 +175,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
           fontWeight: FontWeight.w600,
         ),
       ),
-      trailing: Icon(Icons.chevron_right_rounded, color: context.ds.colors.textTertiary),
+      trailing: Icon(DsIcons.chevronRight, color: context.ds.colors.textTertiary),
       onTap: () => Navigator.of(context).pop(mode),
     ),
   );
@@ -300,10 +300,10 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
                     p['status'] == 'succeeded'
-                        ? Icons.check_circle_outline_rounded
+                        ? DsIcons.checkCircle
                         : p['status'] == 'failed'
-                        ? Icons.error_outline_rounded
-                        : Icons.hourglass_empty_rounded,
+                        ? DsIcons.warning
+                        : DsIcons.hourglass,
                     color: p['status'] == 'failed'
                         ? colors.alarmText
                         : p['status'] == 'succeeded'
@@ -415,7 +415,7 @@ class _IncidentImportPageState extends State<IncidentImportPage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(Icons.error_outline_rounded, size: 18, color: colors.alarmText),
+                Icon(DsIcons.warning, size: 18, color: colors.alarmText),
                 const SizedBox(width: DsSpacing.sm),
                 Expanded(
                   child: Text(

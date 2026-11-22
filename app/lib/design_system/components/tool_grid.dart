@@ -143,17 +143,23 @@ class _ToolGridCell extends StatelessWidget {
                       alignment: Alignment.center,
                       children: <Widget>[
                         Container(
-                          width: 36,
-                          height: 36,
+                          width: 38,
+                          height: 38,
                           decoration: BoxDecoration(
                             color: item.enabled
-                                ? colors.brand.withValues(alpha: 0.10)
+                                ? colors.brand.withValues(alpha: 0.08)
                                 : colors.surface,
                             borderRadius: DsRadius.borderMd,
+                            border: Border.all(
+                              color: item.enabled
+                                  ? colors.brand.withValues(alpha: 0.14)
+                                  : colors.border,
+                              width: 1,
+                            ),
                           ),
                           child: Icon(
                             item.icon,
-                            size: DsSizes.iconMd,
+                            size: 20,
                             color: item.enabled
                                 ? colors.brandText
                                 : colors.textTertiary,

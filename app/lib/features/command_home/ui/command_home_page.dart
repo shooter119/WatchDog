@@ -224,7 +224,7 @@ class _NoIncidentGuidanceCard extends StatelessWidget {
                   borderRadius: DsRadius.borderMd,
                 ),
                 child: Icon(
-                  Icons.local_fire_department_outlined,
+                  DsIcons.categoryFireLine,
                   size: DsSizes.iconLg,
                   color: alarmPair.text,
                 ),
@@ -252,7 +252,7 @@ class _NoIncidentGuidanceCard extends StatelessWidget {
           CommandButton(
             key: const Key('choose-incident-from-home'),
             label: '选择或新建警情',
-            icon: Icons.add_circle_outline_rounded,
+            icon: DsIcons.addCircle,
             variant: CommandButtonVariant.primary,
             size: CommandButtonSize.large,
             expanded: true,
@@ -285,7 +285,7 @@ class _VoiceGuidanceStrip extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
           Icon(
-            Icons.mic_none_rounded,
+            DsIcons.voiceLine,
             size: DsSizes.iconSm,
             color: colors.textSecondary,
           ),

@@ -53,7 +53,7 @@ class CameraTopBar extends StatelessWidget {
                     ),
                   ),
                   icon: const Icon(
-                    Icons.photo_library_outlined,
+                    DsIcons.photoLibrary,
                     color: Colors.white,
                     size: DsSizes.iconLg,
                   ),
@@ -79,7 +79,7 @@ class CameraTopBar extends StatelessWidget {
                       ),
                     ),
                     icon: const Icon(
-                      Icons.tune_rounded,
+                      DsIcons.tune,
                       color: Colors.white,
                       size: DsSizes.iconMd,
                     ),
@@ -96,7 +96,7 @@ class CameraTopBar extends StatelessWidget {
                 ],
                 const Spacer(),
                 CameraRoundIconButton(
-                  icon: Icons.close_rounded,
+                  icon: DsIcons.close,
                   tooltip: '关闭',
                   onTap: onClose,
                 ),
@@ -164,7 +164,7 @@ class _ModeBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            isVideo ? Icons.videocam_rounded : Icons.photo_camera_rounded,
+            isVideo ? DsIcons.video : DsIcons.camera,
             size: 14,
             color: Colors.white,
           ),
@@ -209,7 +209,7 @@ class _IncidentChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.local_fire_department_outlined,
+            DsIcons.categoryFireLine,
             size: 14,
             color: unlinked ? cautionColor : Colors.white70,
           ),
@@ -260,7 +260,7 @@ class _RecordingTimerPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.fiber_manual_record, size: 10, color: alarmColor),
+          Icon(DsIcons.recordDot, size: 10, color: alarmColor),
           const SizedBox(width: 5),
           Text(
             'REC',
@@ -295,19 +295,19 @@ class _PermissionBadges extends StatelessWidget {
   Widget build(BuildContext context) {
     final badges = <Widget>[];
     if (!store.permissions.microphone) {
-      badges.add(_badge(context, '麦克风未授权', Icons.mic_off_rounded, onRequestAgain));
+      badges.add(_badge(context, '麦克风未授权', DsIcons.micOff, onRequestAgain));
     }
     if (!store.permissions.location) {
       badges.add(
-        _badge(context, '定位未授权', Icons.location_off_rounded, onRequestAgain),
+        _badge(context, '定位未授权', DsIcons.locationOff, onRequestAgain),
       );
     } else if (store.locating) {
       badges.add(
-        _badge(context, '定位更新中', Icons.location_searching_rounded, null),
+        _badge(context, '定位更新中', DsIcons.myLocation, null),
       );
     } else if (!store.permissions.preciseLocation) {
       badges.add(
-        _badge(context, '粗略定位', Icons.location_searching_rounded, null),
+        _badge(context, '粗略定位', DsIcons.myLocation, null),
       );
     }
     if (badges.isEmpty) return const SizedBox.shrink();

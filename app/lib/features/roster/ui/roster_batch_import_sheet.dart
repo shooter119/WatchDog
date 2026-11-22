@@ -70,31 +70,73 @@ bool _hasTitleSuffix(String word) => RegExp(r'[员长师理]$').hasMatch(word);
 /// 弹出批量导入姓名半屏面板（Design System v3.0 [CommandSheet]）。
 ///
 /// 支持多行粘贴、Excel 整表首列提取以及一键读取剪贴板。
-Future<String?> showRosterBatchImportSheet(BuildContext context) async {
-  final input = TextEditingController();
-  final result = await showCommandSheet<String>(
+Future<String?> showRosterBatchImportSheet(BuildContext context) {
+  final capturedTheme = Theme.of(context);
+  final capturedMediaQuery = MediaQuery.of(context);
+
+  return showModalBottomSheet<String>(
     context: context,
-    title: '批量导入姓名',
-    subtitle: '每行一个姓名，重复姓名自动跳过',
-    builder: (BuildContext sheetContext) =>
-        _RosterBatchImportBody(controller: input),
-    actionsBuilder: (BuildContext sheetContext) => <Widget>[
-      CommandButton(
-        label: '取消',
-        variant: CommandButtonVariant.secondary,
-        size: CommandButtonSize.large,
-        onPressed: () => Navigator.of(sheetContext).pop(),
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Colors.black54,
+    builder: (BuildContext routeContext) => Theme(
+      data: capturedTheme,
+      child: MediaQuery(
+        data: capturedMediaQuery.copyWith(
+          viewInsets: MediaQuery.viewInsetsOf(routeContext),
+          padding: MediaQuery.paddingOf(routeContext),
+          viewPadding: MediaQuery.viewPaddingOf(routeContext),
+        ),
+        child: const _RosterBatchImportSheet(),
       ),
-      CommandButton(
-        label: '导入',
-        variant: CommandButtonVariant.primary,
-        size: CommandButtonSize.large,
-        onPressed: () => Navigator.of(sheetContext).pop(input.text),
-      ),
-    ],
+    ),
   );
-  WidgetsBinding.instance.addPostFrameCallback((_) => input.dispose());
-  return result;
+}
+
+class _RosterBatchImportSheet extends StatefulWidget {
+  const _RosterBatchImportSheet();
+
+  @override
+  State<_RosterBatchImportSheet> createState() => _RosterBatchImportSheetState();
+}
+
+class _RosterBatchImportSheetState extends State<_RosterBatchImportSheet> {
+  final TextEditingController _input = TextEditingController();
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  void _close([String? value]) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CommandSheet(
+      title: '批量导入姓名',
+      subtitle: '每行一个姓名，重复姓名自动跳过',
+      actions: <Widget>[
+        CommandButton(
+          label: '取消',
+          variant: CommandButtonVariant.secondary,
+          size: CommandButtonSize.large,
+          onPressed: () => _close(),
+        ),
+        CommandButton(
+          label: '导入',
+          variant: CommandButtonVariant.primary,
+          size: CommandButtonSize.large,
+          onPressed: () => _close(_input.text),
+        ),
+      ],
+      child: _RosterBatchImportBody(controller: _input),
+    );
+  }
 }
 
 class _RosterBatchImportBody extends StatefulWidget {
@@ -168,7 +210,7 @@ class _RosterBatchImportBodyState extends State<_RosterBatchImportBody> {
           alignment: Alignment.centerRight,
           child: CommandButton(
             label: '从剪贴板粘贴',
-            icon: Icons.copy_all_outlined,
+            icon: DsIcons.copyAll,
             variant: CommandButtonVariant.ghost,
             size: CommandButtonSize.standard,
             onPressed: _pasteFromClipboard,

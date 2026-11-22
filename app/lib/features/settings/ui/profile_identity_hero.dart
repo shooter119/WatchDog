@@ -70,10 +70,10 @@ class ProfileIdentityHeroCard extends StatelessWidget {
         ? DsStatus.safe
         : DsStatus.caution;
     final roleIcon = identity.isGuest
-        ? Icons.person_outline_rounded
+        ? DsIcons.user
         : authenticated
-        ? Icons.verified_user_outlined
-        : Icons.shield_outlined;
+        ? DsIcons.verified
+        : DsIcons.shield;
 
     return SurfaceCard(
       key: const Key('identity-hero'),
@@ -115,7 +115,7 @@ class ProfileIdentityHeroCard extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
                           child: Icon(
-                            Icons.apartment_rounded,
+                            DsIcons.unit,
                             size: DsSizes.iconSm,
                             color: colors.textTertiary,
                           ),
@@ -178,7 +178,7 @@ class ProfileIdentityHeroCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: DsSpacing.sm),
                 ),
                 onPressed: onReview,
-                icon: const Icon(Icons.fact_check_outlined, size: 18),
+                icon: const Icon(DsIcons.checkCircle, size: 18),
                 label: Text('${identity.offlineReviewCount} 条离线记录待核对'),
               ),
             ),
@@ -208,7 +208,7 @@ class ProfileIdentityHeroCard extends StatelessWidget {
                 child: Row(
                   children: <Widget>[
                     Icon(
-                      Icons.qr_code_scanner_rounded,
+                      DsIcons.qrScan,
                       size: DsSizes.iconMd,
                       color: colors.textPrimary,
                     ),
@@ -232,7 +232,7 @@ class ProfileIdentityHeroCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 2),
                     Icon(
-                      Icons.chevron_right_rounded,
+                      DsIcons.chevronRight,
                       size: 18,
                       color: colors.textTertiary,
                     ),
@@ -245,7 +245,7 @@ class ProfileIdentityHeroCard extends StatelessWidget {
             const SizedBox(height: DsSpacing.lg),
             CommandButton(
               label: '加入单位',
-              icon: Icons.add_circle_outline,
+              icon: DsIcons.addCircle,
               variant: CommandButtonVariant.secondary,
               expanded: true,
               onPressed: onJoin,

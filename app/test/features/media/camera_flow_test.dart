@@ -287,14 +287,14 @@ void main() {
     expect(
       tester
           .widget<IconButton>(
-            find.widgetWithIcon(IconButton, Icons.cameraswitch_outlined),
+            find.widgetWithIcon(IconButton, DsIcons.cameraSwitch),
           )
           .onPressed,
       isNull,
     );
     expect(
       tester
-          .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.flash_off))
+          .widget<IconButton>(find.widgetWithIcon(IconButton, DsIcons.flashOff))
           .onPressed,
       isNull,
     );

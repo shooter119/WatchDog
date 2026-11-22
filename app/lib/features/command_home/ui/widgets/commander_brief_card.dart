@@ -101,7 +101,7 @@ class CommanderBriefCard extends StatelessWidget {
                   color: colors.surfaceMuted,
                 ),
                 child: Icon(
-                  Icons.shield_outlined,
+                  DsIcons.shield,
                   size: DsSizes.iconMd,
                   color: colors.textPrimary,
                 ),
@@ -123,7 +123,7 @@ class CommanderBriefCard extends StatelessWidget {
                 ),
               ),
               Icon(
-                Icons.chevron_right_rounded,
+                DsIcons.chevronRight,
                 size: DsSizes.iconMd,
                 color: colors.brandText,
               ),
@@ -220,8 +220,8 @@ class CommanderBriefCard extends StatelessWidget {
                     children: <Widget>[
                       Icon(
                         hasCriticalHazards
-                            ? Icons.warning_amber_rounded
-                            : Icons.timeline_rounded,
+                            ? DsIcons.warning
+                            : DsIcons.timeline,
                         size: DsSizes.iconSm,
                         color: hasCriticalHazards
                             ? colors.alarmText

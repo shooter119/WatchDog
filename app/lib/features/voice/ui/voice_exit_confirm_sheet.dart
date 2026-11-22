@@ -46,7 +46,7 @@ class VoiceExitConfirmSheet extends StatelessWidget {
         CommandButton(
           key: const Key('voice-exit-confirm-btn'),
           label: '确认离场',
-          icon: Icons.exit_to_app_rounded,
+          icon: DsIcons.logout,
           variant: CommandButtonVariant.danger,
           size: CommandButtonSize.large,
           requireConfirmation: false,
@@ -71,7 +71,7 @@ class VoiceExitConfirmSheet extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Icon(
-                      Icons.groups_rounded,
+                      DsIcons.stations,
                       size: DsSizes.iconLg,
                       color: colors.textPrimary,
                     ),
@@ -119,7 +119,7 @@ class VoiceExitConfirmSheet extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       Icon(
-                        Icons.person_rounded,
+                        DsIcons.user,
                         size: DsSizes.iconSm,
                         color: colors.textSecondary,
                       ),

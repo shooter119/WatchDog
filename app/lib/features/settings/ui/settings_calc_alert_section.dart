@@ -200,14 +200,14 @@ class SettingsVoiceBody extends StatelessWidget {
     return Column(
       children: <Widget>[
         SettingsSwitchRow(
-          icon: Icons.cloud_outlined,
+          icon: DsIcons.connOnline,
           title: '联网语音识别',
           value: asrCloudEnabled,
           onChanged: onToggleAsrCloud,
         ),
         divider,
         SettingsSwitchRow(
-          icon: Icons.shield_outlined,
+          icon: DsIcons.shield,
           title: '联网语义解析',
           value: parseCloudEnabled,
           onChanged: onToggleParseCloud,
@@ -255,7 +255,7 @@ class SettingsVoiceBody extends StatelessWidget {
           dense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: DsSpacing.lg),
           leading: Icon(
-            Icons.cloud_download_outlined,
+            DsIcons.update,
             color: colors.textTertiary,
             size: DsSizes.iconMd,
           ),
@@ -273,7 +273,7 @@ class SettingsVoiceBody extends StatelessWidget {
           dense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: DsSpacing.lg),
           leading: Icon(
-            Icons.check_circle_outline,
+            DsIcons.checkCircle,
             color: colors.safeText,
             size: DsSizes.iconMd,
           ),
@@ -302,7 +302,7 @@ class SettingsVoiceBody extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Icon(
-                Icons.offline_bolt_outlined,
+                DsIcons.warning,
                 color: colors.cautionText,
                 size: DsSizes.iconMd,
               ),
@@ -321,14 +321,14 @@ class SettingsVoiceBody extends StatelessWidget {
             const SizedBox(height: DsSpacing.sm),
             SettingsNoticeBanner(
               status: DsStatus.alarm,
-              icon: Icons.error_outline,
+              icon: DsIcons.warning,
               text: downloadError!,
             ),
           ],
           const SizedBox(height: DsSpacing.md),
           CommandButton(
             label: '下载本地模型',
-            icon: Icons.download_outlined,
+            icon: DsIcons.download,
             variant: CommandButtonVariant.secondary,
             expanded: true,
             onPressed: onDownloadModel,
@@ -379,28 +379,28 @@ class SettingsAlertBody extends StatelessWidget {
     return Column(
       children: <Widget>[
         SettingsSwitchRow(
-          icon: Icons.volume_up_outlined,
+          icon: DsIcons.volumeUp,
           title: '语音播报',
           value: ttsEnabled,
           onChanged: onToggleTts,
         ),
         divider,
         SettingsSwitchRow(
-          icon: Icons.notifications_none_outlined,
+          icon: DsIcons.alerts,
           title: '报警音',
           value: alarmSoundEnabled,
           onChanged: onToggleAlarmSound,
         ),
         divider,
         SettingsSwitchRow(
-          icon: Icons.light_mode_outlined,
+          icon: DsIcons.sun,
           title: '屏幕常亮',
           value: keepScreenOn,
           onChanged: onToggleKeepScreenOn,
         ),
         divider,
         SettingsSwitchRow(
-          icon: Icons.shield_moon_outlined,
+          icon: DsIcons.moon,
           title: '后台值守模式',
           value: keepAliveEnabled,
           onChanged: onToggleKeepAlive,
@@ -425,7 +425,7 @@ class SettingsAlertBody extends StatelessWidget {
           _permTile(
             context,
             divider,
-            icon: Icons.notifications_off_outlined,
+            icon: DsIcons.alertsOff,
             title: '精确闹钟权限未开启',
             subtitle: '后台提醒可能延迟，点击去系统设置检查',
             onTap: onOpenAlarmsSettings,
@@ -434,7 +434,7 @@ class SettingsAlertBody extends StatelessWidget {
           _permTile(
             context,
             divider,
-            icon: Icons.do_not_disturb_on_outlined,
+            icon: DsIcons.forbid,
             title: '勿扰访问未开启',
             subtitle: '勿扰模式下报警提醒可能被静音',
             onTap: onOpenPolicySettings,
@@ -443,7 +443,7 @@ class SettingsAlertBody extends StatelessWidget {
           _permTile(
             context,
             divider,
-            icon: Icons.fullscreen_exit_outlined,
+            icon: DsIcons.alerts,
             title: '全屏通知未开启',
             subtitle: '后台报警不会弹出全屏提醒',
             onTap: onOpenNotificationSettings,

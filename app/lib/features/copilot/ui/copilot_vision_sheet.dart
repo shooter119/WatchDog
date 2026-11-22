@@ -19,7 +19,7 @@ Future<ImageSource?> showCopilotVisionSourceSheet(BuildContext context) {
         children: <Widget>[
           _VisionSourceTile(
             key: const Key('chat-vision-source-camera'),
-            icon: Icons.camera_alt_outlined,
+            icon: DsIcons.camera,
             title: '拍照',
             subtitle: '立即拍摄现场危化标识、烟势或建筑结构',
             onTap: () => Navigator.of(sheetContext).pop(ImageSource.camera),
@@ -27,7 +27,7 @@ Future<ImageSource?> showCopilotVisionSourceSheet(BuildContext context) {
           const SizedBox(height: DsSpacing.md),
           _VisionSourceTile(
             key: const Key('chat-vision-source-gallery'),
-            icon: Icons.photo_library_outlined,
+            icon: DsIcons.photoLibrary,
             title: '从相册选择',
             subtitle: '选取本机已有现场照片进行风险研判',
             onTap: () => Navigator.of(sheetContext).pop(ImageSource.gallery),
@@ -94,7 +94,7 @@ Future<String?> showCopilotVisionPromptSheet(
                   Row(
                     children: <Widget>[
                       Icon(
-                        Icons.fact_check_outlined,
+                        DsIcons.checkCircle,
                         size: DsSizes.iconSm,
                         color: colors.brandText,
                       ),
@@ -215,7 +215,7 @@ class _VisionSourceTile extends StatelessWidget {
             ),
             const SizedBox(width: DsSpacing.sm),
             Icon(
-              Icons.chevron_right_rounded,
+              DsIcons.chevronRight,
               size: DsSizes.iconMd,
               color: colors.textTertiary,
             ),

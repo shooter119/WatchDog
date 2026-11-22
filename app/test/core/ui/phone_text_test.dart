@@ -24,7 +24,7 @@ void main() {
       );
 
       expect(find.text('示例路站现场一切正常，无需支援'), findsOneWidget);
-      expect(find.byIcon(Icons.phone_in_talk_outlined), findsNothing);
+      expect(find.byIcon(DsIcons.phone), findsNothing);
     });
 
     testWidgets('包含手机号时按当前 DS 主题色高亮并支持点击图标和号码文本拨号', (
@@ -44,7 +44,7 @@ void main() {
         ),
       );
 
-      final iconFinder = find.byIcon(Icons.phone_in_talk_outlined);
+      final iconFinder = find.byIcon(DsIcons.phone);
       expect(iconFinder, findsOneWidget);
       final iconWidget = tester.widget<Icon>(iconFinder);
       expect(iconWidget.color, DsColors.daylight.brandText);
@@ -92,7 +92,7 @@ void main() {
         ),
       );
 
-      final icons = find.byIcon(Icons.phone_in_talk_outlined);
+      final icons = find.byIcon(DsIcons.phone);
       expect(icons, findsNWidgets(2));
 
       await tester.tap(icons.first);
@@ -120,7 +120,7 @@ void main() {
         ),
       );
 
-      expect(find.byIcon(Icons.phone_in_talk_outlined), findsNothing);
+      expect(find.byIcon(DsIcons.phone), findsNothing);
       final richText = tester.widget<Text>(find.byType(Text));
       final rootSpan = richText.textSpan! as TextSpan;
       final phoneSpan = rootSpan.children!
@@ -153,7 +153,7 @@ void main() {
 
       await tester.pumpWidget(_wrapWithDs(const PhoneText('值班电话 13912345678')));
 
-      await tester.longPress(find.byIcon(Icons.phone_in_talk_outlined));
+      await tester.longPress(find.byIcon(DsIcons.phone));
       await tester.pump();
 
       expect(copiedText, '13912345678');
@@ -169,7 +169,7 @@ void main() {
       );
 
       final darkIcon = tester.widget<Icon>(
-        find.byIcon(Icons.phone_in_talk_outlined),
+        find.byIcon(DsIcons.phone),
       );
       expect(darkIcon.color, DsColors.night.brandText);
 
@@ -182,7 +182,7 @@ void main() {
       );
 
       expect(find.text('已解除警情'), findsOneWidget);
-      expect(find.byIcon(Icons.phone_in_talk_outlined), findsNothing);
+      expect(find.byIcon(DsIcons.phone), findsNothing);
     });
   });
 }

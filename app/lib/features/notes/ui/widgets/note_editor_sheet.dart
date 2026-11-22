@@ -96,7 +96,7 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
         CommandButton(
           key: const Key('note-editor-save-btn'),
           label: isEditing ? '保存修改' : '保存到日志',
-          icon: Icons.check_circle_outline_rounded,
+          icon: DsIcons.checkCircle,
           variant: CommandButtonVariant.primary,
           size: CommandButtonSize.large,
           expanded: true,
@@ -160,7 +160,7 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
             CommandButton(
               key: const Key('note-editor-delete-btn'),
               label: '删除这条日志',
-              icon: Icons.delete_outline_rounded,
+              icon: DsIcons.delete,
               variant: CommandButtonVariant.danger,
               size: CommandButtonSize.standard,
               expanded: true,

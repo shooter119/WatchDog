@@ -193,7 +193,7 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
               color: colors.brand.withValues(alpha: 0.12),
               borderRadius: DsRadius.borderMd,
             ),
-            child: Icon(Icons.local_fire_department_outlined, color: colors.brandText, size: 22),
+            child: Icon(DsIcons.categoryFire, color: colors.brandText, size: 22),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -227,11 +227,11 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
             decoration: InputDecoration(
               hintText: '搜索灾情事件、地点、出动队站或编号…',
               hintStyle: typo.body.copyWith(color: colors.textTertiary),
-              prefixIcon: Icon(Icons.search_rounded, size: DsSizes.iconMd, color: colors.textTertiary),
+              prefixIcon: Icon(DsIcons.search, size: DsSizes.iconMd, color: colors.textTertiary),
               suffixIcon: _searchKeyword.isNotEmpty
                   ? IconButton(
                       tooltip: '清除搜索',
-                      icon: Icon(Icons.clear_rounded, size: 18, color: colors.textTertiary),
+                      icon: Icon(DsIcons.closeCircle, size: 18, color: colors.textTertiary),
                       onPressed: () {
                         _searchController.clear();
                         setState(() => _searchKeyword = '');
@@ -258,7 +258,7 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
         IconButton(
           key: const Key('incident-picker-refresh-btn'),
           tooltip: '刷新派警列表',
-          icon: const Icon(Icons.refresh_rounded, size: DsSizes.iconMd),
+          icon: const Icon(DsIcons.refresh, size: DsSizes.iconMd),
           onPressed: (_busy || widget.externalLoading) ? null : _refreshExternal,
           style: IconButton.styleFrom(
             backgroundColor: colors.surfaceMuted,
@@ -292,7 +292,7 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
           CommandButton(
             key: const Key('incident-picker-create-btn'),
             label: '新建警情',
-            icon: Icons.add_rounded,
+            icon: DsIcons.add,
             variant: CommandButtonVariant.primary,
             size: CommandButtonSize.large,
             expanded: true,
@@ -304,7 +304,7 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
             CommandButton(
               key: const Key('incident-picker-enter-without-btn'),
               label: '直接进入 App',
-              icon: Icons.arrow_forward_outlined,
+              icon: DsIcons.arrowRight,
               variant: CommandButtonVariant.secondary,
               size: CommandButtonSize.standard,
               expanded: true,
@@ -399,7 +399,7 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Icon(Icons.error_outline_rounded, size: 18, color: colors.alarmText),
+                            Icon(DsIcons.warning, size: 18, color: colors.alarmText),
                             const SizedBox(width: DsSpacing.sm),
                             Expanded(
                               child: Text(
@@ -430,7 +430,7 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
                               ? const _LoadingIncidentPlaceholder()
                               : const SingleChildScrollView(
                                   child: StatePlaceholder.empty(
-                                    icon: Icons.folder_copy_outlined,
+                                    icon: DsIcons.archive,
                                     message: '当前没有进行中的警情',
                                     detail: '如果你是第一位到达的用户，可以新建警情；也可以直接进入 App。',
                                   ),
@@ -477,7 +477,7 @@ class _LoadingIncidentPlaceholder extends StatelessWidget {
             key: const Key('incident-selection-loading-placeholder'),
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.cloud_sync_outlined, size: 56, color: colors.textTertiary),
+              Icon(DsIcons.sync, size: 48, color: colors.textTertiary),
               const SizedBox(height: DsSpacing.md),
               Text('正在拉取警情信息', style: typo.title.copyWith(color: colors.textPrimary)),
               const SizedBox(height: 6),

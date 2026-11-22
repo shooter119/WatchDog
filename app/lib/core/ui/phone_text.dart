@@ -147,7 +147,7 @@ class _PhoneTextState extends State<PhoneText> {
                   },
                   onLongPress: () => _copyToClipboard(matchedPhone),
                   child: Icon(
-                    Icons.phone_in_talk_outlined,
+                    DsIcons.phone,
                     size: DsSizes.iconSm,
                     color: highlightColor,
                   ),

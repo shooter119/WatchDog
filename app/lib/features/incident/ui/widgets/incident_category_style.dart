@@ -41,9 +41,9 @@ class IncidentCategoryStyle {
       };
 
   static IconData iconOf(DsIncidentCategory category) => switch (category) {
-    DsIncidentCategory.fire => Icons.local_fire_department_rounded,
-    DsIncidentCategory.rescue => Icons.handyman_rounded,
-    DsIncidentCategory.aid => Icons.medical_services_outlined,
+    DsIncidentCategory.fire => DsIcons.categoryFire,
+    DsIncidentCategory.rescue => DsIcons.categoryRescue,
+    DsIncidentCategory.aid => DsIcons.categoryAid,
   };
 
   /// 按当前 [DsColors] 动态解析分类色板。

@@ -21,12 +21,12 @@ const Map<String, String> keySiteModules = <String, String>{
 
 /// 重点单位模块对应图标。
 IconData keySiteModuleIcon(String key) => switch (key) {
-  'cards' => Icons.badge_outlined,
-  'maps' => Icons.map_outlined,
-  'plans' => Icons.assignment_outlined,
-  'organization' => Icons.account_tree_outlined,
-  'hazards' => Icons.science_outlined,
-  _ => Icons.description_outlined,
+  'cards' => DsIcons.idCard,
+  'maps' => DsIcons.toolSceneMap,
+  'plans' => DsIcons.clipboard,
+  'organization' => DsIcons.orgTree,
+  'hazards' => DsIcons.toolHazmat,
+  _ => DsIcons.toolTacticalBrief,
 };
 
 /// 重点单位在线请求与权限校验网关（零 `AppController` / `ApiClient` 耦合）。
@@ -175,7 +175,7 @@ class KeySiteStatusBanner extends StatelessWidget {
     super.key,
     required this.message,
     this.status = DsStatus.caution,
-    this.icon = Icons.warning_amber_rounded,
+    this.icon = DsIcons.warning,
     this.actionLabel,
     this.onAction,
   });
@@ -261,7 +261,7 @@ class KeySiteGate extends StatelessWidget {
           return CommandScaffold(
             appBar: AppBar(title: const Text('重点单位')),
             body: const StatePlaceholder.empty(
-              icon: Icons.verified_user_outlined,
+              icon: DsIcons.verified,
               message: '仅已认证的有效成员可查阅',
               detail: '请加入单位或重新完成认证',
             ),

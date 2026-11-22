@@ -184,7 +184,7 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
                 ),
               ),
               onPressed: _handleOpenAdmin,
-              icon: const Icon(Icons.tune_rounded),
+              icon: const Icon(DsIcons.tune),
             ),
         ],
       ),
@@ -223,7 +223,7 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
             SurfaceCard(
               padding: EdgeInsets.zero,
               child: StatePlaceholder.error(
-                icon: Icons.cloud_off_outlined,
+                icon: DsIcons.connOffline,
                 title: '视频资源加载失败',
                 reason: store.error!,
                 retryLabel: '重新加载',
@@ -235,7 +235,7 @@ class _VideoResourcesPageState extends State<VideoResourcesPage> {
           ],
           if (!store.loading && store.error == null && resources.isEmpty)
             const StatePlaceholder.empty(
-              icon: Icons.video_library_outlined,
+              icon: DsIcons.videoLibrary,
               message: '暂无可用视频资源',
               detail: '管理员可在设置页添加并启用视频资源',
             ),
@@ -289,7 +289,7 @@ class _AuthRequiredView extends StatelessWidget {
                   border: Border.all(color: colors.border, width: 1),
                 ),
                 child: Icon(
-                  Icons.lock_outline_rounded,
+                  DsIcons.lock,
                   size: DsSizes.iconLg,
                   color: colors.textSecondary,
                 ),
@@ -309,7 +309,7 @@ class _AuthRequiredView extends StatelessWidget {
               const SizedBox(height: DsSpacing.lg),
               CommandButton(
                 label: '去完成认证',
-                icon: Icons.verified_user_outlined,
+                icon: DsIcons.verified,
                 variant: CommandButtonVariant.primary,
                 size: CommandButtonSize.large,
                 onPressed: onAuthenticate == null

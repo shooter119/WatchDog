@@ -236,20 +236,10 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
     IncidentCardViewModel data,
     String compactForces,
   ) {
-    final ds = context.ds;
-    final colors = ds.colors;
-    final typo = ds.typography;
-
+    final colors = context.ds.colors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
-        IncidentCategoryIconBadge(
-          key: Key('incident-category-badge-${data.category.name}'),
-          category: data.category,
-          size: 30,
-          iconSize: 16,
-        ),
-        const SizedBox(width: DsSpacing.sm),
         Expanded(
           child: InkWell(
             key: const Key('incident-collapse-pill'),
@@ -260,60 +250,15 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        if (data.hasRealLocation)
-                          IncidentAntiOrphanText(
-                            text: data.locationText,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: typo.caption.copyWith(
-                              color: colors.textSecondary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        if (!_expanded && compactForces.isNotEmpty)
-                          Row(
-                            key: const Key('incident-collapsed-forces'),
-                            children: <Widget>[
-                              Icon(
-                                Icons.local_shipping_outlined,
-                                size: DsSizes.iconSm,
-                                color: colors.textSecondary,
-                              ),
-                              const SizedBox(width: DsSpacing.xs),
-                              Expanded(
-                                child: Text(
-                                  compactForces,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: typo.caption.copyWith(
-                                    color: colors.textSecondary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          )
-                        else if (!data.hasRealLocation)
-                          Text(
-                            _expanded ? '收起警情详情' : '展开警情管理与力量',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: typo.caption.copyWith(
-                              color: colors.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                      ],
+                    child: IncidentCollapsedLocationForces(
+                      hasRealLocation: data.hasRealLocation,
+                      locationText: data.locationText,
+                      expanded: _expanded,
+                      compactForces: compactForces,
                     ),
                   ),
                   Icon(
-                    _expanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
+                    _expanded ? DsIcons.chevronUp : DsIcons.chevronDown,
                     size: DsSizes.iconMd,
                     color: colors.textSecondary,
                   ),
@@ -358,25 +303,25 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
             if (data.officialStatus.isNotEmpty)
               StatusPill(
                 status: DsStatus.neutral,
-                icon: Icons.flag_outlined,
+                icon: DsIcons.flag,
                 label: '官方状态: ${data.officialStatus}',
               ),
             for (final tag in data.extraTags)
               StatusPill(
                 status: DsStatus.neutral,
-                icon: Icons.label_outline_rounded,
+                icon: DsIcons.statusNeutral,
                 label: tag,
               ),
             if (widget.forces.isNotEmpty)
               StatusPill(
                 status: DsStatus.neutral,
-                icon: Icons.groups_outlined,
+                icon: DsIcons.roster,
                 label: '${widget.forces.length}支队伍',
               )
             else if (showPendingForcePill)
               const StatusPill(
                 status: DsStatus.caution,
-                icon: Icons.pending_actions_rounded,
+                icon: DsIcons.hourglass,
                 label: '力量待登记',
               ),
           ],
@@ -457,7 +402,7 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
                   ),
                 ),
                 Icon(
-                  Icons.chevron_right_rounded,
+                  DsIcons.chevronRight,
                   size: DsSizes.iconMd,
                   color: colors.brandText,
                 ),
@@ -476,7 +421,7 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 Icon(
-                  Icons.keyboard_arrow_up_rounded,
+                  DsIcons.chevronUp,
                   size: DsSizes.iconMd,
                   color: colors.textSecondary,
                 ),

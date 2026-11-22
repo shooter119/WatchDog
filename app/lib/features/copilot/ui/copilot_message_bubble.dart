@@ -6,7 +6,7 @@ import '../../../design_system/design_system.dart';
 import '../data/models/chat_message.dart';
 import '../state/copilot_reply_parser.dart';
 
-/// 水元素辅助头像（单层圆形容器 + 1px 语义描边，适配昼白/暗曜双主题）。
+/// 水元素辅助头像（直接复用 Design System 统一纯矢量 `AssistantAvatar`）。
 class CopilotAvatar extends StatelessWidget {
   const CopilotAvatar({super.key, this.size = 56, this.margin});
 
@@ -15,28 +15,7 @@ class CopilotAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.ds.colors;
-    return Container(
-      margin: margin,
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: colors.surfaceMuted,
-        shape: BoxShape.circle,
-        border: Border.all(color: colors.border, width: 1),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Image.asset(
-        'assets/avatars/water-element-avatar-selected.png',
-        fit: BoxFit.cover,
-        filterQuality: FilterQuality.medium,
-        errorBuilder: (_, _, _) => Icon(
-          Icons.water_drop_rounded,
-          size: size * 0.5,
-          color: colors.brandText,
-        ),
-      ),
-    );
+    return AssistantAvatar(size: size, margin: margin);
   }
 }
 
@@ -214,7 +193,7 @@ class CopilotMessageBubble extends StatelessWidget {
                               onPressed: onCopy == null || body.trim().isEmpty
                                   ? null
                                   : () => onCopy!(body),
-                              icon: const Icon(Icons.copy_rounded),
+                              icon: const Icon(DsIcons.copy),
                               tooltip: '复制',
                               iconSize: DsSizes.iconMd,
                               constraints: const BoxConstraints(
@@ -349,7 +328,7 @@ class _FollowUpCapsule extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Icon(
-                  Icons.north_east_rounded,
+                  DsIcons.arrowUpRight,
                   size: DsSizes.iconSm,
                   color: colors.brandText,
                 ),

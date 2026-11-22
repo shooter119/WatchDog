@@ -154,9 +154,9 @@ class _MembershipPendingPageState extends State<MembershipPendingPage>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     const AuthHeaderBadgeRow(
-                      icon: Icons.hourglass_top_rounded,
+                      icon: DsIcons.hourglass,
                       pillLabel: '等待站长审批',
-                      pillIcon: Icons.schedule_rounded,
+                      pillIcon: DsIcons.time,
                       pillStatus: DsStatus.caution,
                       useCautionIconTone: true,
                     ),
@@ -225,7 +225,7 @@ class _MembershipPendingPageState extends State<MembershipPendingPage>
                     const SizedBox(height: DsSpacing.md),
                     const AuthNoticeBanner(
                       status: DsStatus.neutral,
-                      icon: Icons.lightbulb_outline_rounded,
+                      icon: DsIcons.lightbulb,
                       message:
                           '站长在手机 App【我的 → 入队审批】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
                     ),
@@ -250,7 +250,7 @@ class _MembershipPendingPageState extends State<MembershipPendingPage>
                     CommandButton(
                       key: const Key('pending-check-status'),
                       label: '检查审批状态',
-                      icon: Icons.refresh_rounded,
+                      icon: DsIcons.refresh,
                       variant: CommandButtonVariant.primary,
                       size: CommandButtonSize.large,
                       expanded: true,
@@ -263,7 +263,7 @@ class _MembershipPendingPageState extends State<MembershipPendingPage>
                       CommandButton(
                         key: const Key('pending-guest-mode'),
                         label: '先以游客身份体验',
-                        icon: Icons.explore_outlined,
+                        icon: DsIcons.compass,
                         variant: CommandButtonVariant.secondary,
                         size: CommandButtonSize.large,
                         expanded: true,
@@ -275,7 +275,7 @@ class _MembershipPendingPageState extends State<MembershipPendingPage>
                     CommandButton(
                       key: const Key('pending-cancel-app'),
                       label: '切换账号 / 撤销申请并重新填写',
-                      icon: Icons.swap_horiz_rounded,
+                      icon: DsIcons.swap,
                       variant: CommandButtonVariant.ghost,
                       size: CommandButtonSize.standard,
                       expanded: true,

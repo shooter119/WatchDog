@@ -5,6 +5,7 @@ import '../components/incident_header.dart';
 import '../components/timeline_list.dart';
 import '../components/tool_grid.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 
 /// 指挥台与现场监控原型使用的脱敏警情摘要。
 @immutable
@@ -187,7 +188,7 @@ abstract final class PreviewFixtures {
     })>[
       (
         id: 'map',
-        icon: Icons.map_outlined,
+        icon: DsIcons.toolSceneMap,
         label: '地图',
         badge: null,
         badgeStatus: DsStatus.alarm,
@@ -195,7 +196,7 @@ abstract final class PreviewFixtures {
       ),
       (
         id: 'watermark_camera',
-        icon: Icons.photo_camera_outlined,
+        icon: DsIcons.camera,
         label: '水印相机',
         badge: null,
         badgeStatus: DsStatus.alarm,
@@ -203,7 +204,7 @@ abstract final class PreviewFixtures {
       ),
       (
         id: 'video',
-        icon: Icons.videocam_outlined,
+        icon: DsIcons.video,
         label: '视频监控',
         badge: '2',
         badgeStatus: DsStatus.alarm,
@@ -211,7 +212,7 @@ abstract final class PreviewFixtures {
       ),
       (
         id: 'key_sites',
-        icon: Icons.domain_outlined,
+        icon: DsIcons.toolKeySites,
         label: '重点单位',
         badge: null,
         badgeStatus: DsStatus.alarm,
@@ -219,7 +220,7 @@ abstract final class PreviewFixtures {
       ),
       (
         id: 'hazmat',
-        icon: Icons.science_outlined,
+        icon: DsIcons.toolHazmat,
         label: '危化品',
         badge: '1',
         badgeStatus: DsStatus.caution,
@@ -227,7 +228,7 @@ abstract final class PreviewFixtures {
       ),
       (
         id: 'traffic',
-        icon: Icons.traffic_outlined,
+        icon: DsIcons.traffic,
         label: '路况',
         badge: null,
         badgeStatus: DsStatus.alarm,
@@ -235,7 +236,7 @@ abstract final class PreviewFixtures {
       ),
       (
         id: 'orthophoto',
-        icon: Icons.satellite_alt_outlined,
+        icon: DsIcons.satellite,
         label: '正射图',
         badge: null,
         badgeStatus: DsStatus.alarm,
@@ -243,7 +244,7 @@ abstract final class PreviewFixtures {
       ),
       (
         id: 'location_share',
-        icon: Icons.share_location_outlined,
+        icon: DsIcons.toolLocationShare,
         label: '位置共享',
         badge: null,
         badgeStatus: DsStatus.alarm,
@@ -291,7 +292,7 @@ abstract final class PreviewFixtures {
     })>[
       (
         timestamp: DateTime(2026, 11, 21, 14, 22, 48),
-        icon: Icons.timer_off_rounded,
+        icon: DsIcons.statusTimeout,
         title: '张三空呼计时超时 01:24，请立即核实位置并安排接应',
         subtitle: '示例路站 · 内攻一组 · 剩余压力 5.8 MPa',
         status: DsStatus.timeout,
@@ -299,7 +300,7 @@ abstract final class PreviewFixtures {
       ),
       (
         timestamp: DateTime(2026, 11, 21, 14, 22, 12),
-        icon: Icons.notifications_active_rounded,
+        icon: DsIcons.statusAlarm,
         title: '李四报压 9.2 MPa，已触发余气告警阈值',
         subtitle: '示例路站 · 内攻一组 · 语音自动解析',
         status: DsStatus.alarm,
@@ -307,7 +308,7 @@ abstract final class PreviewFixtures {
       ),
       (
         timestamp: DateTime(2026, 11, 21, 14, 18, 30),
-        icon: Icons.local_fire_department_outlined,
+        icon: DsIcons.categoryFireLine,
         title: '东侧排烟口已打开，库房顶部温度明显下降',
         subtitle: '现场指令随手记 · 指挥员确认',
         status: DsStatus.caution,
@@ -315,7 +316,7 @@ abstract final class PreviewFixtures {
       ),
       (
         timestamp: DateTime(2026, 11, 21, 14, 12, 5),
-        icon: Icons.group_add_outlined,
+        icon: DsIcons.userAdd,
         title: '王五进场、赵六进场（内攻二组北侧通道）',
         subtitle: '已开启同步空呼倒计时与安全员复核',
         status: DsStatus.safe,
@@ -323,7 +324,7 @@ abstract final class PreviewFixtures {
       ),
       (
         timestamp: DateTime(2026, 11, 21, 14, 2, 15),
-        icon: Icons.flag_outlined,
+        icon: DsIcons.flag,
         title: '张三进场、李四进场（内攻一组东侧通道）',
         subtitle: '参战力量 3 车 18 人已就位并建立前方供水',
         status: DsStatus.neutral,

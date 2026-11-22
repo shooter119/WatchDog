@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/ds_theme.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_sizes.dart';
 import '../tokens/ds_spacing.dart';
 
@@ -94,7 +95,7 @@ class _OfflineBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Icon(
-            Icons.warning_amber_rounded,
+            DsIcons.warning,
             size: DsSizes.iconMd,
             color: fg,
           ),
@@ -111,7 +112,7 @@ class _OfflineBanner extends StatelessWidget {
           if (onTap != null) ...<Widget>[
             const SizedBox(width: DsSpacing.xs),
             Icon(
-              Icons.chevron_right_rounded,
+              DsIcons.chevronRight,
               size: DsSizes.iconMd,
               color: fg,
             ),

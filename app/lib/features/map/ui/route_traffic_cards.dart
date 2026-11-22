@@ -40,12 +40,12 @@ class RouteOverviewCard extends StatelessWidget {
     switch (status) {
       case DsStatus.timeout:
       case DsStatus.alarm:
-        return Icons.traffic_rounded;
+        return DsIcons.traffic;
       case DsStatus.caution:
-        return Icons.warning_amber_rounded;
+        return DsIcons.warning;
       case DsStatus.safe:
       case DsStatus.neutral:
-        return Icons.check_circle_rounded;
+        return DsIcons.checkCircleFill;
     }
   }
 
@@ -251,8 +251,8 @@ class RouteCongestionCard extends StatelessWidget {
             children: [
               Icon(
                 hasJam
-                    ? Icons.warning_amber_rounded
-                    : Icons.check_circle_outline_rounded,
+                    ? DsIcons.warning
+                    : DsIcons.checkCircle,
                 size: DsSizes.iconMd,
                 color: hasJam ? colors.cautionText : colors.safeText,
               ),
@@ -356,7 +356,7 @@ class RouteRoadsCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                Icons.alt_route_rounded,
+                DsIcons.altRoute,
                 size: DsSizes.iconMd,
                 color: colors.brand,
               ),
@@ -381,7 +381,7 @@ class RouteRoadsCard extends StatelessWidget {
                 for (var i = 0; i < route.roads.length; i++) ...[
                   if (i > 0)
                     Icon(
-                      Icons.arrow_forward_rounded,
+                      DsIcons.arrowRight,
                       size: 14,
                       color: colors.textSecondary,
                     ),
@@ -434,8 +434,8 @@ class RouteRoadsCard extends StatelessWidget {
                     ),
                     Icon(
                       stepsExpanded
-                          ? Icons.expand_less_rounded
-                          : Icons.expand_more_rounded,
+                          ? DsIcons.chevronUp
+                          : DsIcons.chevronDown,
                       color: colors.brandText,
                       size: DsSizes.iconMd,
                     ),

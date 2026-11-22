@@ -96,7 +96,7 @@ class IncidentImportConfirmView extends StatelessWidget {
             StatusPill(
               status: DsStatus.caution,
               label: '等待确认提交结果',
-              icon: Icons.sync_problem_rounded,
+              icon: DsIcons.warning,
             ),
             const SizedBox(height: DsSpacing.md),
             Text(
@@ -148,7 +148,7 @@ class IncidentImportConfirmView extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(Icons.warning_amber_rounded, size: 18, color: colors.cautionText),
+                Icon(DsIcons.warning, size: 18, color: colors.cautionText),
                 const SizedBox(width: DsSpacing.sm),
                 Expanded(
                   child: Text(
@@ -336,7 +336,7 @@ class IncidentImportConfirmView extends StatelessWidget {
                       minHeight: DsSizes.touchTarget,
                     ),
                     onPressed: () => onEditForce(i),
-                    icon: Icon(Icons.edit_outlined, color: colors.textPrimary),
+                    icon: Icon(DsIcons.edit, color: colors.textPrimary),
                   ),
                 ],
               ),
@@ -403,7 +403,7 @@ class IncidentImportConfirmView extends StatelessWidget {
                   for (final p in pages)
                     CommandButton(
                       label: '第${p['index']}页原图',
-                      icon: Icons.image_outlined,
+                      icon: DsIcons.photoLibrary,
                       variant: CommandButtonVariant.ghost,
                       size: CommandButtonSize.standard,
                       onPressed: () =>

@@ -63,10 +63,10 @@ class AuthNoticeBanner extends StatelessWidget {
     final resolvedIcon =
         icon ??
         switch (status) {
-          DsStatus.alarm || DsStatus.timeout => Icons.error_outline_rounded,
-          DsStatus.caution => Icons.badge_outlined,
-          DsStatus.safe => Icons.check_circle_outline_rounded,
-          DsStatus.neutral => Icons.lightbulb_outline_rounded,
+          DsStatus.alarm || DsStatus.timeout => DsIcons.warning,
+          DsStatus.caution => DsIcons.idCard,
+          DsStatus.safe => DsIcons.checkCircle,
+          DsStatus.neutral => DsIcons.lightbulb,
         };
 
     return SurfaceCard(
@@ -187,7 +187,7 @@ class AuthSuggestionChips extends StatelessWidget {
                 ActionChip(
                   key: ValueKey<String>('auth-suggestion-$candidate'),
                   avatar: Icon(
-                    Icons.person_outline_rounded,
+                    DsIcons.user,
                     size: DsSizes.iconSm,
                     color: colors.brandText,
                   ),

@@ -56,7 +56,7 @@ class _OrthomapPageState extends State<OrthomapPage> {
           final maps = snapshot.data!;
           if (maps.isEmpty) {
             return const StatePlaceholder.empty(
-              icon: Icons.map_outlined,
+              icon: DsIcons.toolSceneMap,
               message: '本单位暂无地图，请联系管理员导入影像',
             );
           }
@@ -82,7 +82,7 @@ class _OrthomapPageState extends State<OrthomapPage> {
                     child: Row(
                       children: [
                         Icon(
-                          Icons.warning_amber_rounded,
+                          DsIcons.warning,
                           size: DsSizes.iconMd,
                           color: cautionPair.text,
                         ),
@@ -134,7 +134,7 @@ class _OrthomapPageState extends State<OrthomapPage> {
                             borderRadius: DsRadius.borderSm,
                           ),
                           child: Icon(
-                            Icons.map_outlined,
+                            DsIcons.toolSceneMap,
                             size: DsSizes.iconMd,
                             color: colors.textSecondary,
                           ),
@@ -162,7 +162,7 @@ class _OrthomapPageState extends State<OrthomapPage> {
                                     const StatusPill(
                                       status: DsStatus.neutral,
                                       label: '演示',
-                                      icon: Icons.visibility_outlined,
+                                      icon: DsIcons.eye,
                                     ),
                                 ],
                               ),
@@ -180,7 +180,7 @@ class _OrthomapPageState extends State<OrthomapPage> {
                         ),
                         const SizedBox(width: DsSpacing.sm),
                         Icon(
-                          Icons.chevron_right_rounded,
+                          DsIcons.chevronRight,
                           size: DsSizes.iconMd,
                           color: colors.textTertiary,
                         ),

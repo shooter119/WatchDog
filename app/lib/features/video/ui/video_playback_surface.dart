@@ -118,7 +118,7 @@ class _VideoFullscreenScreenState extends State<VideoFullscreenScreen> {
               child: PlayerOverlayButton(
                 key: const Key('video-fullscreen-exit'),
                 tooltip: '退出全屏',
-                icon: Icons.fullscreen_exit_rounded,
+                icon: DsIcons.fullscreenExit,
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -128,7 +128,7 @@ class _VideoFullscreenScreenState extends State<VideoFullscreenScreen> {
               child: PlayerOverlayButton(
                 key: const Key('video-fullscreen-close'),
                 tooltip: '关闭视频',
-                icon: Icons.close_rounded,
+                icon: DsIcons.close,
                 onPressed: () {
                   widget.session.stop();
                   unawaited(syncVideoSystemPip(widget.session));
@@ -186,7 +186,7 @@ class FloatingVideoOverlay extends StatelessWidget {
               child: PlayerOverlayButton(
                 key: const Key('video-floating-fullscreen'),
                 tooltip: '全屏播放',
-                icon: Icons.fullscreen_rounded,
+                icon: DsIcons.fullscreen,
                 onPressed: onFullscreen ?? () {},
               ),
             ),
@@ -196,7 +196,7 @@ class FloatingVideoOverlay extends StatelessWidget {
               child: PlayerOverlayButton(
                 key: const Key('video-floating-close'),
                 tooltip: '关闭浮窗视频',
-                icon: Icons.close_rounded,
+                icon: DsIcons.close,
                 side: BorderSide(
                   color: Colors.white.withValues(alpha: 0.7),
                   width: 1.5,
@@ -269,7 +269,7 @@ class _PlayerFailure extends StatelessWidget {
             foregroundColor: Colors.white,
             minimumSize: const Size(DsSizes.touchTarget, DsSizes.touchTarget),
           ),
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const Icon(DsIcons.refresh),
         ),
       );
     }
@@ -285,7 +285,7 @@ class _PlayerFailure extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               const Icon(
-                Icons.videocam_off_outlined,
+                DsIcons.videoOff,
                 color: Colors.white,
                 size: 32,
               ),
@@ -310,7 +310,7 @@ class _PlayerFailure extends StatelessWidget {
                     vertical: DsSpacing.sm,
                   ),
                 ),
-                icon: const Icon(Icons.refresh_rounded, size: DsSizes.iconMd),
+                icon: const Icon(DsIcons.refresh, size: DsSizes.iconMd),
                 label: const Text('重新连接'),
               ),
             ],

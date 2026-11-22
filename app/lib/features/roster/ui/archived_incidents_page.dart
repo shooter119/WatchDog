@@ -60,33 +60,26 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
   }
 
   Future<void> _rename(ArchivedIncidentView incident) async {
-    final input = TextEditingController(text: incident.title ?? '');
-    final value = await showCommandSheet<String?>(
+    final capturedTheme = Theme.of(context);
+    final capturedMediaQuery = MediaQuery.of(context);
+    final value = await showModalBottomSheet<String?>(
       context: context,
-      title: '修改警情名称',
-      subtitle: '留空则显示默认警情名称',
-      builder: (BuildContext sheetContext) => TextField(
-        controller: input,
-        autofocus: true,
-        maxLength: 120,
-        decoration: const InputDecoration(hintText: '留空则显示默认警情名称'),
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      builder: (BuildContext routeContext) => Theme(
+        data: capturedTheme,
+        child: MediaQuery(
+          data: capturedMediaQuery.copyWith(
+            viewInsets: MediaQuery.viewInsetsOf(routeContext),
+            padding: MediaQuery.paddingOf(routeContext),
+            viewPadding: MediaQuery.viewPaddingOf(routeContext),
+          ),
+          child: _ArchiveIncidentRenameSheet(initialTitle: incident.title ?? ''),
+        ),
       ),
-      actionsBuilder: (BuildContext sheetContext) => <Widget>[
-        CommandButton(
-          label: '取消',
-          variant: CommandButtonVariant.secondary,
-          size: CommandButtonSize.large,
-          onPressed: () => Navigator.of(sheetContext).pop(),
-        ),
-        CommandButton(
-          label: '保存',
-          variant: CommandButtonVariant.primary,
-          size: CommandButtonSize.large,
-          onPressed: () => Navigator.of(sheetContext).pop(input.text.trim()),
-        ),
-      ],
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) => input.dispose());
     if (value == null) return;
     try {
       final updated = await widget.gateway.renameIncident(incident, value);
@@ -120,7 +113,7 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
               minHeight: DsSizes.touchTarget,
             ),
             onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh_rounded),
+            icon: const Icon(DsIcons.refresh),
           ),
         ],
       ),
@@ -146,7 +139,7 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
                     const SliverFillRemaining(
                       hasScrollBody: false,
                       child: StatePlaceholder.empty(
-                        icon: Icons.inventory_2_outlined,
+                        icon: DsIcons.archive,
                         message: '暂无归档警情',
                       ),
                     )
@@ -184,6 +177,65 @@ class _ArchivedIncidentsPageState extends State<ArchivedIncidentsPage> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _ArchiveIncidentRenameSheet extends StatefulWidget {
+  const _ArchiveIncidentRenameSheet({required this.initialTitle});
+
+  final String initialTitle;
+
+  @override
+  State<_ArchiveIncidentRenameSheet> createState() =>
+      _ArchiveIncidentRenameSheetState();
+}
+
+class _ArchiveIncidentRenameSheetState extends State<_ArchiveIncidentRenameSheet> {
+  late final TextEditingController _input;
+
+  @override
+  void initState() {
+    super.initState();
+    _input = TextEditingController(text: widget.initialTitle);
+  }
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  void _close([String? value]) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CommandSheet(
+      title: '修改警情名称',
+      subtitle: '留空则显示默认警情名称',
+      actions: <Widget>[
+        CommandButton(
+          label: '取消',
+          variant: CommandButtonVariant.secondary,
+          size: CommandButtonSize.large,
+          onPressed: () => _close(),
+        ),
+        CommandButton(
+          label: '保存',
+          variant: CommandButtonVariant.primary,
+          size: CommandButtonSize.large,
+          onPressed: () => _close(_input.text.trim()),
+        ),
+      ],
+      child: TextField(
+        controller: _input,
+        autofocus: true,
+        maxLength: 120,
+        decoration: const InputDecoration(hintText: '留空则显示默认警情名称'),
+      ),
     );
   }
 }

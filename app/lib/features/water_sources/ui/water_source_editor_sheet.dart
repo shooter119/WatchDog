@@ -189,7 +189,7 @@ Future<void> showWaterSourceEditorSheet(
                     child: Row(
                       children: [
                         Icon(
-                          Icons.error_outline_rounded,
+                          DsIcons.warning,
                           size: DsSizes.iconMd,
                           color: alarmPair.text,
                         ),

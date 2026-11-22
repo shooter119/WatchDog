@@ -102,8 +102,8 @@ class _OpLogGroupCardState extends State<OpLogGroupCard> {
                       children: <Widget>[
                         Icon(
                           hasProblem
-                              ? Icons.error_outline
-                              : Icons.check_circle_outline,
+                              ? DsIcons.warning
+                              : DsIcons.checkCircle,
                           size: 18,
                           color: hasProblem
                               ? colors.cautionText
@@ -135,7 +135,7 @@ class _OpLogGroupCardState extends State<OpLogGroupCard> {
                         ),
                         const SizedBox(width: DsSpacing.sm),
                         Icon(
-                          _expanded ? Icons.expand_less : Icons.expand_more,
+                          _expanded ? DsIcons.chevronUp : DsIcons.chevronDown,
                           size: DsSizes.iconMd,
                           color: colors.textTertiary,
                         ),
@@ -204,7 +204,7 @@ class _StepRow extends StatelessWidget {
           Padding(
             padding: EdgeInsets.only(top: entry.level == 'error' ? 2 : 4),
             child: entry.level == 'error'
-                ? Icon(Icons.error, size: 12, color: colors.alarmText)
+                ? Icon(DsIcons.statusAlarm, size: 12, color: colors.alarmText)
                 : Container(
                     width: 8,
                     height: 8,

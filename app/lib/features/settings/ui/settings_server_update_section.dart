@@ -48,7 +48,7 @@ class SettingsServerBody extends StatelessWidget {
         ),
         const SettingsNoticeBanner(
           status: DsStatus.safe,
-          icon: Icons.sync_outlined,
+          icon: DsIcons.sync,
           title: '现场协同同步已开启',
           text: '本机修改优先保存，联网后自动与现场协同服务器同步。',
         ),

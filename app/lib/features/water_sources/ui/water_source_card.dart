@@ -81,8 +81,8 @@ class WaterSourceCard extends StatelessWidget {
                 onPressed: onQuickToggleStatus,
                 icon: Icon(
                   item.isAvailable
-                      ? Icons.toggle_on_rounded
-                      : Icons.toggle_off_outlined,
+                      ? DsIcons.toggleOn
+                      : DsIcons.toggleOff,
                   color: item.isAvailable ? colors.safeText : colors.alarmText,
                   size: 28,
                 ),
@@ -147,8 +147,8 @@ class WaterSourceStatusPill extends StatelessWidget {
       status: available ? DsStatus.safe : DsStatus.alarm,
       solid: !available,
       icon: available
-          ? Icons.check_circle_rounded
-          : Icons.cancel_rounded,
+          ? DsIcons.checkCircleFill
+          : DsIcons.cancelFill,
       label: status.label,
     );
   }
@@ -172,13 +172,13 @@ class WaterSourceCategoryBadge extends StatelessWidget {
     final Color color;
     switch (category) {
       case WaterSourceCategory.hydrant:
-        icon = Icons.fire_hydrant_alt_outlined;
+        icon = DsIcons.hydrant;
         color = available ? colors.brandText : colors.alarmText;
       case WaterSourceCategory.natural:
-        icon = Icons.water_drop_outlined;
+        icon = DsIcons.toolWaterSources;
         color = available ? colors.safeText : colors.alarmText;
       case WaterSourceCategory.pumpConnector:
-        icon = Icons.plumbing_outlined;
+        icon = DsIcons.plumbing;
         color = available ? colors.cautionText : colors.alarmText;
     }
 

@@ -190,7 +190,7 @@ class _AppearanceOptionTile extends StatelessWidget {
                     const Spacer(),
                     if (selected)
                       Icon(
-                        Icons.check_circle_rounded,
+                        DsIcons.checkCircleFill,
                         size: 14,
                         color: colors.brandText,
                       ),

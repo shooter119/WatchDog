@@ -253,7 +253,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
               minHeight: DsSizes.touchTarget,
             ),
             onPressed: _purge,
-            icon: const Icon(Icons.cleaning_services_outlined),
+            icon: const Icon(DsIcons.cleanSweep),
           ),
         ],
       ),
@@ -278,7 +278,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
       ),
       children: [
         StatePlaceholder.empty(
-          icon: Icons.photo_library_outlined,
+          icon: DsIcons.photoLibrary,
           message: hasIncident ? '还没有拍摄现场照片或录像' : '还没有当前警情',
           detail: hasIncident
               ? '在首页点「水印相机」，文件会保存在这台设备上'
@@ -317,7 +317,7 @@ class _MediaGalleryPageState extends State<MediaGalleryPage> {
         const SizedBox(height: DsSpacing.md),
         if (visibleIncident.isEmpty && visibleUnlinked.isEmpty)
           StatePlaceholder.empty(
-            icon: Icons.filter_alt_outlined,
+            icon: DsIcons.filter,
             message: _filter == MediaGalleryFilter.incident
                 ? '当前警情下暂无现场资料'
                 : '暂无未关联警情的现场资料',

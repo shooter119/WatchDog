@@ -215,13 +215,13 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
                 minHeight: DsSizes.touchTarget,
               ),
               onPressed: _creating ? null : () => _edit(),
-              icon: const Icon(Icons.add_rounded, size: DsSizes.iconLg),
+              icon: const Icon(DsIcons.add, size: DsSizes.iconLg),
             ),
         ],
       ),
       body: !widget.canManage
           ? const StatePlaceholder.empty(
-              icon: Icons.lock_outline_rounded,
+              icon: DsIcons.lock,
               message: '仅管理员可维护视频资源',
             )
           : RefreshIndicator(
@@ -254,7 +254,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
                     SurfaceCard(
                       padding: EdgeInsets.zero,
                       child: StatePlaceholder.error(
-                        icon: Icons.cloud_off_outlined,
+                        icon: DsIcons.connOffline,
                         title: '加载失败',
                         reason: _error!,
                         retryLabel: '重新加载',
@@ -266,7 +266,7 @@ class _VideoResourceAdminPageState extends State<VideoResourceAdminPage> {
                   ],
                   if (!_loading && _error == null && _resources.isEmpty)
                     const StatePlaceholder.empty(
-                      icon: Icons.video_library_outlined,
+                      icon: DsIcons.videoLibrary,
                       message: '尚未添加视频资源',
                     ),
                   for (final resource in _resources) ...<Widget>[
@@ -414,8 +414,8 @@ class _AdminResourceCard extends StatelessWidget {
         children: <Widget>[
           Icon(
             resource.active
-                ? Icons.videocam_rounded
-                : Icons.videocam_off_outlined,
+                ? DsIcons.video
+                : DsIcons.videoOff,
             color: resource.active ? colors.brandText : colors.textTertiary,
             size: DsSizes.iconLg,
           ),
@@ -446,8 +446,8 @@ class _AdminResourceCard extends StatelessWidget {
                               ? DsStatus.safe
                               : DsStatus.neutral,
                           icon: resource.active
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.videocam_off_outlined,
+                              ? DsIcons.checkCircle
+                              : DsIcons.videoOff,
                           label: resource.active ? '已启用' : '已停用',
                         ),
                         Text(

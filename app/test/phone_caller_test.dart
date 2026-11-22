@@ -50,7 +50,7 @@ void main() {
       );
 
       expect(find.text('现场一切正常，无需支援'), findsOneWidget);
-      expect(find.byIcon(Icons.phone_in_talk_outlined), findsNothing);
+      expect(find.byIcon(DsIcons.phone), findsNothing);
     });
 
     testWidgets('包含手机号时高亮且点击呼叫小图标触发拨号', (tester) async {
@@ -72,10 +72,10 @@ void main() {
       );
 
       // 文本拆分为富文本，应渲染电话小图标
-      expect(find.byIcon(Icons.phone_in_talk_outlined), findsOneWidget);
+      expect(find.byIcon(DsIcons.phone), findsOneWidget);
 
       // 点击电话小图标
-      await tester.tap(find.byIcon(Icons.phone_in_talk_outlined));
+      await tester.tap(find.byIcon(DsIcons.phone));
       await tester.pumpAndSettle();
 
       expect(dialedUri, isNotNull);

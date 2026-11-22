@@ -19,6 +19,7 @@ export 'preview/preview_fixtures.dart';
 export 'theme/build_command_theme.dart';
 export 'theme/ds_theme.dart';
 export 'tokens/ds_colors.dart';
+export 'tokens/ds_icons.dart';
 export 'tokens/ds_motion.dart';
 export 'tokens/ds_radius.dart';
 export 'tokens/ds_sizes.dart';
