@@ -110,6 +110,7 @@ class CommandHomeAssembly {
     );
 
     final tools = FieldToolsGridSection.buildDefaultTools(
+      guestMode: controller.isGuest,
       onKeySites: () => unawaited(toolsRouter.openKeySites(context)),
       onHazmat: () => unawaited(toolsRouter.openHazmat(context)),
       onCamera: () => unawaited(toolsRouter.openCamera(context)),

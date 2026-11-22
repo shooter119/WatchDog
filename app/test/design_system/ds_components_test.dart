@@ -1696,6 +1696,127 @@ void main() {
       }
     });
   });
+
+  group('ToolGrid 现场工具锁定态组件测试', () {
+    testWidgets('locked=true 渲染中性灰阶底框、锁头徽标与无障碍提示，且保持可点击并兼容 badge 优先级', (
+      tester,
+    ) async {
+      final semanticsHandle = tester.ensureSemantics();
+      try {
+        var lockedTapped = 0;
+        var openTapped = 0;
+
+        await tester.pumpWidget(
+          _wrapWithDsTheme(
+            brightness: Brightness.light,
+            child: ToolGrid(
+              columns: 3,
+              items: <DsToolItem>[
+                DsToolItem(
+                  id: 'open',
+                  icon: DsIcons.toolHazmat,
+                  label: '危化速查',
+                  onTap: () => openTapped++,
+                ),
+                DsToolItem(
+                  id: 'locked',
+                  icon: DsIcons.toolKeySites,
+                  label: '重点单位库',
+                  locked: true,
+                  onTap: () => lockedTapped++,
+                ),
+                DsToolItem(
+                  id: 'badged-locked',
+                  icon: DsIcons.toolVideoResources,
+                  label: '视频资源',
+                  badge: '新',
+                  locked: true,
+                  onTap: () {},
+                ),
+              ],
+            ),
+          ),
+        );
+
+        expect(find.byKey(const Key('ds-tool-lock-open')), findsNothing);
+        expect(find.byKey(const Key('ds-tool-lock-locked')), findsOneWidget);
+        expect(find.byKey(const Key('ds-tool-lock-badged-locked')), findsNothing);
+        expect(find.text('新'), findsOneWidget);
+
+        final lockedSemantics = tester.getSemantics(
+          find.byKey(const Key('ds-tool-locked')),
+        );
+        expect(lockedSemantics.label, '重点单位库，需单位认证后使用');
+
+        await tester.tap(find.byKey(const Key('ds-tool-locked')));
+        await tester.tap(find.byKey(const Key('ds-tool-open')));
+        await tester.pump();
+        expect(lockedTapped, 1);
+        expect(openTapped, 1);
+
+        final colors = DsColors.of(Brightness.light);
+        final lockedLabel = tester.widget<Text>(find.text('重点单位库'));
+        expect(lockedLabel.style?.color, colors.textSecondary);
+      } finally {
+        semanticsHandle.dispose();
+      }
+    });
+
+    testWidgets('360dp 窄屏 + 130% 字体缩放在昼白与暗曜模式下含锁定工具宫格零溢出', (
+      tester,
+    ) async {
+      for (final brightness in Brightness.values) {
+        await tester.pumpWidget(
+          _wrapWithDsTheme(
+            brightness: brightness,
+            textScale: 1.3,
+            surfaceSize: const Size(360, 740),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(DsSpacing.pageMargin),
+              child: ToolGrid(
+                columns: 4,
+                items: <DsToolItem>[
+                  DsToolItem(
+                    id: 'a',
+                    icon: DsIcons.toolKeySites,
+                    label: '重点单位库',
+                    locked: true,
+                    onTap: () {},
+                  ),
+                  DsToolItem(
+                    id: 'b',
+                    icon: DsIcons.toolHazmat,
+                    label: '危化速查',
+                    onTap: () {},
+                  ),
+                  DsToolItem(
+                    id: 'c',
+                    icon: DsIcons.toolVideoResources,
+                    label: '视频资源',
+                    locked: true,
+                    onTap: () {},
+                  ),
+                  DsToolItem(
+                    id: 'd',
+                    icon: DsIcons.toolSceneMap,
+                    label: '现场地图',
+                    locked: true,
+                    onTap: () {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '$brightness 模式下 ToolGrid 锁定态不应发生溢出或异常',
+        );
+      }
+    });
+  });
 }
 
 class DsBrightnessCheck {

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../theme/ds_theme.dart';
 import '../tokens/ds_colors.dart';
+import '../tokens/ds_icons.dart';
 import '../tokens/ds_radius.dart';
 import '../tokens/ds_sizes.dart';
 import '../tokens/ds_spacing.dart';
@@ -17,6 +18,7 @@ class DsToolItem {
     this.badge,
     this.badgeStatus = DsStatus.alarm,
     this.enabled = true,
+    this.locked = false,
     this.onTap,
   });
 
@@ -26,6 +28,7 @@ class DsToolItem {
   final String? badge;
   final DsStatus badgeStatus;
   final bool enabled;
+  final bool locked;
   final VoidCallback? onTap;
 }
 
@@ -101,13 +104,36 @@ class _ToolGridCell extends StatelessWidget {
     final colors = ds.colors;
     final typo = ds.typography;
     final bool interactive = item.enabled && item.onTap != null;
+    final bool isLocked = item.enabled && item.locked;
     final badgePair = colors.statusColors(item.badgeStatus);
     final hasBadge = item.badge != null && item.badge!.isNotEmpty;
+    final Color iconBoxBg = !item.enabled
+        ? colors.surface
+        : (isLocked
+              ? colors.surfaceMuted
+              : colors.brand.withValues(alpha: 0.08));
+    final Color iconBoxBorder = !item.enabled || isLocked
+        ? colors.border
+        : colors.brand.withValues(alpha: 0.14);
+    final Color iconColor = !item.enabled
+        ? colors.textTertiary
+        : (isLocked ? colors.textSecondary : colors.brandText);
+    final Color labelColor = !item.enabled
+        ? colors.textTertiary
+        : (isLocked ? colors.textSecondary : colors.textPrimary);
+    final String semanticBase = hasBadge
+        ? '${item.label}，${item.badge}'
+        : item.label;
+    final String semanticLabel = isLocked
+        ? '$semanticBase，需单位认证后使用'
+        : semanticBase;
 
     return Semantics(
+      container: true,
+      excludeSemantics: true,
       button: true,
       enabled: interactive,
-      label: hasBadge ? '${item.label}，${item.badge}' : item.label,
+      label: semanticLabel,
       child: Material(
         key: Key('ds-tool-${item.id}'),
         color: item.enabled ? colors.surface : colors.surfaceMuted,
@@ -146,23 +172,17 @@ class _ToolGridCell extends StatelessWidget {
                           width: 38,
                           height: 38,
                           decoration: BoxDecoration(
-                            color: item.enabled
-                                ? colors.brand.withValues(alpha: 0.08)
-                                : colors.surface,
+                            color: iconBoxBg,
                             borderRadius: DsRadius.borderMd,
                             border: Border.all(
-                              color: item.enabled
-                                  ? colors.brand.withValues(alpha: 0.14)
-                                  : colors.border,
+                              color: iconBoxBorder,
                               width: 1,
                             ),
                           ),
                           child: Icon(
                             item.icon,
                             size: 20,
-                            color: item.enabled
-                                ? colors.brandText
-                                : colors.textTertiary,
+                            color: iconColor,
                           ),
                         ),
                         if (hasBadge)
@@ -193,6 +213,29 @@ class _ToolGridCell extends StatelessWidget {
                                 ),
                               ),
                             ),
+                          )
+                        else if (isLocked)
+                          Positioned(
+                            top: -2,
+                            right: -4,
+                            child: Container(
+                              key: Key('ds-tool-lock-${item.id}'),
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: colors.surface,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: colors.border,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Icon(
+                                DsIcons.lock,
+                                size: 10,
+                                color: colors.textSecondary,
+                              ),
+                            ),
                           ),
                       ],
                     ),
@@ -204,9 +247,7 @@ class _ToolGridCell extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: typo.caption.copyWith(
-                      color: item.enabled
-                          ? colors.textPrimary
-                          : colors.textTertiary,
+                      color: labelColor,
                       fontWeight: FontWeight.w500,
                     ),
                   ),

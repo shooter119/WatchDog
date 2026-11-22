@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '../../design_system/design_system.dart';
 
 import '../../features/command_home/ui/sheets/tactical_brief_command_sheet.dart';
 import '../../features/hazmat/ui/hazmat_page.dart';
@@ -50,11 +54,59 @@ class FieldToolsRouter {
   final IncidentImportOpener onOpenIncidentImport;
   final FieldToolsGateways gateways;
 
-  Future<void> openKeySites(BuildContext context) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => KeySitesPage(gateway: gateways.buildKeySiteGateway()),
-    ),
-  );
+  Future<bool> _ensureFormalMember(
+    BuildContext context, {
+    required String toolName,
+    required String reason,
+  }) async {
+    if (!controller.isGuest) return true;
+    final goAuth = await showCommandSheet<bool>(
+      context: context,
+      title: '需要转为正式队员',
+      subtitle: '「$toolName」仅向已认证单位成员开放',
+      builder: (BuildContext sheetContext) {
+        final ds = sheetContext.ds;
+        return Text(
+          reason,
+          style: ds.typography.body.copyWith(color: ds.colors.textSecondary),
+        );
+      },
+      actionsBuilder: (BuildContext sheetContext) => <Widget>[
+        CommandButton(
+          key: const Key('guest-tool-gate-cancel-btn'),
+          label: '暂不认证',
+          variant: CommandButtonVariant.secondary,
+          onPressed: () => Navigator.of(sheetContext).pop(false),
+        ),
+        CommandButton(
+          key: const Key('guest-tool-gate-auth-btn'),
+          label: '去完成认证',
+          variant: CommandButtonVariant.primary,
+          onPressed: () => Navigator.of(sheetContext).pop(true),
+        ),
+      ],
+    );
+    if (goAuth == true) {
+      unawaited(controller.leaveUnit());
+    }
+    return false;
+  }
+
+  Future<void> openKeySites(BuildContext context) async {
+    if (!await _ensureFormalMember(
+      context,
+      toolName: '重点单位库',
+      reason: '重点单位库包含辖区预案与内部建筑图纸资料，请先登录或加入救援单位后再查阅。',
+    )) {
+      return;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => KeySitesPage(gateway: gateways.buildKeySiteGateway()),
+      ),
+    );
+  }
 
   Future<KeySiteCandidate?> pickKeySiteForIncident(BuildContext context) async {
     final picked = await Navigator.of(context).push<KeySiteSummary>(
@@ -145,59 +197,95 @@ class FieldToolsRouter {
         readIncidentName: () => controller.currentIncident?.displayName ?? '',
       );
 
-  Future<void> openVideoResources(BuildContext context) =>
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => _VideoResourcesRouteHost(
-            controller: controller,
-            gateways: gateways,
-            videoPlayback: videoPlayback,
-            onOpenAdmin: onOpenVideoResourceAdmin,
-            onVideoFloating: onVideoFloating,
-          ),
+  Future<void> openVideoResources(BuildContext context) async {
+    if (!await _ensureFormalMember(
+      context,
+      toolName: '视频资源',
+      reason: '实时视频与监控通道仅限已认证单位内部调度查看，请先登录或加入救援单位。',
+    )) {
+      return;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _VideoResourcesRouteHost(
+          controller: controller,
+          gateways: gateways,
+          videoPlayback: videoPlayback,
+          onOpenAdmin: onOpenVideoResourceAdmin,
+          onVideoFloating: onVideoFloating,
         ),
-      );
+      ),
+    );
+  }
 
-  Future<void> openRouteTraffic(BuildContext context) =>
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (BuildContext routeCtx) => RouteTrafficPage(
-            gateway: gateways.buildRouteTrafficGateway(),
-            readCurrentIncident: gateways.readRouteIncidentContext,
-            onRequestIncidentSelection: () {
-              Navigator.of(routeCtx).pop();
-              controller.requestIncidentSelection();
-            },
-            onEditIncidentDetails: () => onOpenIncidentDetails(routeCtx),
-            onImportIncidentDetails: () async {
-              final applied = await onOpenIncidentImport(
-                routeCtx,
-                chooseSourceOnOpen: false,
-              );
-              final inc = controller.currentIncident;
-              if (applied == true && inc != null) {
-                await controller.refreshIncidentData(inc.id);
-              }
-            },
-          ),
+  Future<void> openRouteTraffic(BuildContext context) async {
+    if (!await _ensureFormalMember(
+      context,
+      toolName: '路况查询',
+      reason: '火场救援路径研判与警情联动信息仅对已认证单位成员开放，请先完成认证。',
+    )) {
+      return;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext routeCtx) => RouteTrafficPage(
+          gateway: gateways.buildRouteTrafficGateway(),
+          readCurrentIncident: gateways.readRouteIncidentContext,
+          onRequestIncidentSelection: () {
+            Navigator.of(routeCtx).pop();
+            controller.requestIncidentSelection();
+          },
+          onEditIncidentDetails: () => onOpenIncidentDetails(routeCtx),
+          onImportIncidentDetails: () async {
+            final applied = await onOpenIncidentImport(
+              routeCtx,
+              chooseSourceOnOpen: false,
+            );
+            final inc = controller.currentIncident;
+            if (applied == true && inc != null) {
+              await controller.refreshIncidentData(inc.id);
+            }
+          },
         ),
-      );
+      ),
+    );
+  }
 
-  Future<void> openTacticalBrief(BuildContext context) {
+  Future<void> openTacticalBrief(BuildContext context) async {
+    if (!await _ensureFormalMember(
+      context,
+      toolName: '警情上报',
+      reason: '正式作战简报上报涉及单位指挥链条核验，请先转为正式队员后再生成上报。',
+    )) {
+      return;
+    }
+    if (!context.mounted) return;
     final brief = TacticalBriefEngine.formatObjectiveBrief(
       incident: controller.currentIncident,
       forces: controller.forces,
       entries: controller.entries,
       notes: controller.notes,
     );
-    return showTacticalBriefCommandSheet(context, briefText: brief);
+    await showTacticalBriefCommandSheet(context, briefText: brief);
   }
 
-  Future<void> openSceneMap(BuildContext context) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => SceneMapPage(gateway: gateways.buildSceneMapGateway()),
-    ),
-  );
+  Future<void> openSceneMap(BuildContext context) async {
+    if (!await _ensureFormalMember(
+      context,
+      toolName: '现场地图',
+      reason: '现场作战态势标注涉及协同图层权限，请先完成单位认证后再使用。',
+    )) {
+      return;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SceneMapPage(gateway: gateways.buildSceneMapGateway()),
+      ),
+    );
+  }
 
   Future<void> openOrthomap(BuildContext context) => Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -205,13 +293,22 @@ class FieldToolsRouter {
     ),
   );
 
-  Future<void> openWaterSources(BuildContext context) =>
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) =>
-              WaterSourcesPage(gateway: gateways.buildWaterSourcesGateway()),
-        ),
-      );
+  Future<void> openWaterSources(BuildContext context) async {
+    if (!await _ensureFormalMember(
+      context,
+      toolName: '周边水源',
+      reason: '辖区消火栓与战备水源台账属单位执勤数据，请先登录或加入单位后再查看。',
+    )) {
+      return;
+    }
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            WaterSourcesPage(gateway: gateways.buildWaterSourcesGateway()),
+      ),
+    );
+  }
 }
 
 class _VideoResourcesRouteHost extends StatefulWidget {

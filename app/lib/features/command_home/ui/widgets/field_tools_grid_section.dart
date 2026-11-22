@@ -13,6 +13,7 @@ class FieldToolSpec {
     this.badge,
     this.badgeStatus = DsStatus.alarm,
     this.enabled = true,
+    this.locked = false,
     this.onTap,
   });
 
@@ -23,12 +24,14 @@ class FieldToolSpec {
   final String? badge;
   final DsStatus badgeStatus;
   final bool enabled;
+  final bool locked;
   final VoidCallback? onTap;
 }
 
 /// 指挥台现场工具宫格区块（基于 M0 [ToolGrid]，默认 4 列自适应防溢出）。
 ///
-/// 无论当前是否选中警情均可随时访问全部现场工具（含周边水源入口），
+/// 无论当前是否选中警情均可随时展示全部 9 项现场工具（含周边水源入口），
+/// 游客模式下按「六锁三开」规则对涉敏/单位业务入口显示锁定标识；
 /// 同时保留全部既有语义 `Key('tool-<keyId>')` 与 `Key('command-tools-grid')`。
 class FieldToolsGridSection extends StatelessWidget {
   const FieldToolsGridSection({
@@ -40,6 +43,7 @@ class FieldToolsGridSection extends StatelessWidget {
 
   /// 构建标准 9 项现场工具默认清单，由调用方注入各路由回调（零跨 Feature 耦合）。
   static List<FieldToolSpec> buildDefaultTools({
+    bool guestMode = false,
     VoidCallback? onKeySites,
     VoidCallback? onHazmat,
     VoidCallback? onCamera,
@@ -50,12 +54,14 @@ class FieldToolsGridSection extends StatelessWidget {
     VoidCallback? onSceneMap,
     VoidCallback? onWaterSources,
   }) {
+    const String guestLockedSubtitle = '需完成单位认证后使用';
     return <FieldToolSpec>[
       FieldToolSpec(
         keyId: '重点单位',
         label: '重点单位库',
-        subtitle: '预案与作战资料',
+        subtitle: guestMode ? guestLockedSubtitle : '预案与作战资料',
         icon: DsIcons.toolKeySites,
+        locked: guestMode,
         onTap: onKeySites,
       ),
       FieldToolSpec(
@@ -82,36 +88,41 @@ class FieldToolsGridSection extends StatelessWidget {
       FieldToolSpec(
         keyId: '视频资源',
         label: '视频资源',
-        subtitle: '授权监控与实况',
+        subtitle: guestMode ? guestLockedSubtitle : '授权监控与实况',
         icon: DsIcons.toolVideoResources,
+        locked: guestMode,
         onTap: onVideoResources,
       ),
       FieldToolSpec(
         keyId: '路况查询',
         label: '路况查询',
-        subtitle: '路线耗时与天气',
+        subtitle: guestMode ? guestLockedSubtitle : '路线耗时与天气',
         icon: DsIcons.toolRouteTraffic,
+        locked: guestMode,
         onTap: onRouteTraffic,
       ),
       FieldToolSpec(
         keyId: '警情上报',
         label: '警情上报',
-        subtitle: '一键生成公文简报',
+        subtitle: guestMode ? guestLockedSubtitle : '一键生成公文简报',
         icon: DsIcons.toolTacticalBrief,
+        locked: guestMode,
         onTap: onTacticalBrief,
       ),
       FieldToolSpec(
         keyId: '现场地图',
         label: '现场地图',
-        subtitle: '实时定位与卫星图',
+        subtitle: guestMode ? guestLockedSubtitle : '实时定位与卫星图',
         icon: DsIcons.toolSceneMap,
+        locked: guestMode,
         onTap: onSceneMap,
       ),
       FieldToolSpec(
         keyId: '周边水源',
         label: '周边水源',
-        subtitle: '自建消火栓与水源',
+        subtitle: guestMode ? guestLockedSubtitle : '自建消火栓与水源',
         icon: DsIcons.toolWaterSources,
+        locked: guestMode,
         onTap: onWaterSources,
       ),
     ];
@@ -173,6 +184,7 @@ class FieldToolsGridSection extends StatelessWidget {
                                     badge: rows[r][c]!.badge,
                                     badgeStatus: rows[r][c]!.badgeStatus,
                                     enabled: rows[r][c]!.enabled,
+                                    locked: rows[r][c]!.locked,
                                     onTap: rows[r][c]!.onTap,
                                   ),
                                 ],

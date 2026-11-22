@@ -12,9 +12,12 @@ import 'package:watchdog/features/hazmat/ui/hazmat_page.dart';
 import 'package:watchdog/features/incident/ui/incident_details_screen.dart';
 import 'package:watchdog/features/incident/ui/widgets/incident_situation_card.dart';
 import 'package:watchdog/features/key_sites/ui/key_sites_page.dart';
+import 'package:watchdog/features/map/ui/route_traffic_page.dart';
+import 'package:watchdog/features/map/ui/scene_map_page.dart';
 import 'package:watchdog/features/notes/ui/notes_timeline_screen.dart';
 import 'package:watchdog/features/video/ui/video_playback_surface.dart';
 import 'package:watchdog/features/video/ui/video_resources_page.dart';
+import 'package:watchdog/features/water_sources/ui/water_sources_page.dart';
 import 'package:watchdog/models/models.dart';
 import 'package:watchdog/models/video_resources.dart';
 import 'package:watchdog/services/system_pip.dart';
@@ -38,6 +41,7 @@ class _AssemblyFakeController extends AppController {
 
   final bool _guest;
   int requestIncidentSelectionCalls = 0;
+  int leaveUnitCalls = 0;
 
   @override
   bool get needsAuthentication => false;
@@ -72,6 +76,11 @@ class _AssemblyFakeController extends AppController {
   @override
   void requestIncidentSelection() {
     requestIncidentSelectionCalls++;
+  }
+
+  @override
+  Future<void> leaveUnit() async {
+    leaveUnitCalls++;
   }
 
   @override
@@ -204,10 +213,10 @@ void main() {
       expect(find.text('北侧二楼已出一支水枪堵截火势'), findsOneWidget);
     });
 
-    testWidgets('无警情时仍展示 9 项现场工具（含周边水源）并可正常调度警情上报/危化/重点单位/视频资源', (
+    testWidgets('无警情但已认证时展示 9 项无锁现场工具并可正常调度警情上报/危化/重点单位/视频资源', (
       tester,
     ) async {
-      final controller = _AssemblyFakeController(guest: true);
+      final controller = _AssemblyFakeController(guest: false);
       addTearDown(controller.dispose);
 
       await tester.pumpWidget(_buildAssemblyShell(controller));
@@ -226,6 +235,7 @@ void main() {
         '周边水源',
       ]) {
         expect(find.byKey(Key('tool-$toolId')), findsOneWidget);
+        expect(find.byKey(Key('ds-tool-lock-$toolId')), findsNothing);
       }
 
       // 1. 警情上报 -> TacticalBriefCommandSheet
@@ -242,7 +252,7 @@ void main() {
       Navigator.of(tester.element(find.byType(HazmatPage))).pop();
       await tester.pumpAndSettle();
 
-      // 3. 重点单位库 -> DS v3.0 KeySitesPage（游客受 KeySiteGate 保护）
+      // 3. 重点单位库 -> DS v3.0 KeySitesPage
       await tester.tap(find.byKey(const Key('tool-重点单位')));
       await tester.pumpAndSettle();
       expect(find.byType(KeySitesPage), findsOneWidget);
@@ -260,6 +270,91 @@ void main() {
       await tester.tap(find.byKey(const Key('choose-incident-from-home')));
       await tester.pumpAndSettle();
       expect(controller.requestIncidentSelectionCalls, 1);
+    });
+
+    testWidgets('游客模式现场工具实行六锁三开门禁：6项加锁拦截并引导认证，3项开放直达', (
+      tester,
+    ) async {
+      final controller = _AssemblyFakeController(guest: true);
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(_buildAssemblyShell(controller));
+      await tester.pumpAndSettle();
+
+      const lockedTools = <String>[
+        '重点单位',
+        '视频资源',
+        '路况查询',
+        '警情上报',
+        '现场地图',
+        '周边水源',
+      ];
+      const openTools = <String>[
+        '危化速查',
+        '水印相机',
+        '定位分享',
+      ];
+
+      for (final toolId in lockedTools) {
+        expect(
+          find.byKey(Key('tool-$toolId')),
+          findsOneWidget,
+          reason: '锁定工具 $toolId 应在宫格中保留展示',
+        );
+        expect(
+          find.byKey(Key('ds-tool-lock-$toolId')),
+          findsOneWidget,
+          reason: '游客模式下 $toolId 应展示锁定角标',
+        );
+      }
+      for (final toolId in openTools) {
+        expect(find.byKey(Key('tool-$toolId')), findsOneWidget);
+        expect(
+          find.byKey(Key('ds-tool-lock-$toolId')),
+          findsNothing,
+          reason: '游客开放工具 $toolId 不应展示锁定角标',
+        );
+      }
+
+      // 逐一验证 6 项锁定工具均被统一门禁拦截且点击「暂不认证」不触发导航
+      for (final toolId in lockedTools) {
+        await tester.ensureVisible(find.byKey(Key('tool-$toolId')));
+        await tester.tap(find.byKey(Key('tool-$toolId')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('需要转为正式队员'),
+          findsOneWidget,
+          reason: '点击 $toolId 应弹出认证引导抽屉',
+        );
+        expect(find.byType(KeySitesPage), findsNothing);
+        expect(find.byType(VideoResourcesPage), findsNothing);
+        expect(find.byType(RouteTrafficPage), findsNothing);
+        expect(find.byType(TacticalBriefCommandSheet), findsNothing);
+        expect(find.byType(SceneMapPage), findsNothing);
+        expect(find.byType(WaterSourcesPage), findsNothing);
+
+        await tester.tap(find.byKey(const Key('guest-tool-gate-cancel-btn')));
+        await tester.pumpAndSettle();
+        expect(find.text('需要转为正式队员'), findsNothing);
+        expect(controller.leaveUnitCalls, 0);
+      }
+
+      // 验证点击「去完成认证」调用 controller.leaveUnit() 返回认证流程
+      await tester.tap(find.byKey(const Key('tool-重点单位')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('guest-tool-gate-auth-btn')));
+      await tester.pumpAndSettle();
+      expect(controller.leaveUnitCalls, 1);
+      expect(find.byType(KeySitesPage), findsNothing);
+
+      // 验证开放工具可正常进入（危化速查 -> HazmatPage）
+      await tester.tap(find.byKey(const Key('tool-危化速查')));
+      await tester.pumpAndSettle();
+      expect(find.text('需要转为正式队员'), findsNothing);
+      expect(find.byType(HazmatPage), findsOneWidget);
+      Navigator.of(tester.element(find.byType(HazmatPage))).pop();
+      await tester.pumpAndSettle();
     });
 
     testWidgets('展开态势卡可进入 DS v3.0 IncidentDetailsScreen 且点击连接状态弹出 ConnectionDetailSheet', (
