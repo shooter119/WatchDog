@@ -339,9 +339,13 @@ class SceneMapTelemetryCard extends StatelessWidget {
                 height: 9,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: store.locStatus == SceneMapLocStatus.ok
-                      ? colors.safeFill
-                      : colors.cautionFill,
+                  color: switch (store.locStatus) {
+                    SceneMapLocStatus.ok => colors.safeFill,
+                    SceneMapLocStatus.permissionDenied ||
+                    SceneMapLocStatus.serviceDisabled ||
+                    SceneMapLocStatus.fixFailed => colors.alarmFill,
+                    SceneMapLocStatus.unknown => colors.cautionFill,
+                  },
                 ),
               ),
               const SizedBox(width: DsSpacing.sm),
@@ -349,9 +353,13 @@ class SceneMapTelemetryCard extends StatelessWidget {
                 child: Text(
                   store.myAddress?.isNotEmpty == true
                       ? store.myAddress!
-                      : (store.locStatus == SceneMapLocStatus.ok
-                            ? '实时定位已开启'
-                            : '正在获取当前位置…'),
+                      : switch (store.locStatus) {
+                          SceneMapLocStatus.ok => '实时定位已开启',
+                          SceneMapLocStatus.permissionDenied => '未授予定位权限',
+                          SceneMapLocStatus.serviceDisabled => '系统定位服务未开启',
+                          SceneMapLocStatus.fixFailed => '暂未获取到位置',
+                          SceneMapLocStatus.unknown => '正在获取当前位置…',
+                        },
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: ds.typography.body.copyWith(

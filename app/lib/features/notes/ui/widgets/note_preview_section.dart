@@ -89,6 +89,7 @@ class NotePreviewSection extends StatelessWidget {
         if (visibleNotes.isEmpty)
           SurfaceCard(
             level: DsSurfaceLevel.outlined,
+            onTap: onSeeAll,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[

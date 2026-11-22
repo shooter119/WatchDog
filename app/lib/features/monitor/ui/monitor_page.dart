@@ -305,7 +305,7 @@ class _MonitorPageState extends State<MonitorPage> {
         : widget.onGoVoice;
     final String? actionLabel = action == null
         ? null
-        : (widget.requiresIncident ? '选择或新建警情' : '去警情处置');
+        : (widget.requiresIncident ? '选择或新建警情' : '去指挥台');
 
     return SingleChildScrollView(
       key: const Key('monitor-empty-state'),

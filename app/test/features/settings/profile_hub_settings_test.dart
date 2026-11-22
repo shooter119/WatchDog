@@ -79,6 +79,7 @@ void main() {
   group('ProfileHubPage 设置与入口', () {
     testWidgets('发现新版本时更新卡片保持单行标题', (tester) async {
       final store = SettingsStore(
+        gateway: const SettingsGateway(isDebugMode: false),
         update: const SettingsUpdateSnapshot(
           pendingUpdate: UpdateInfo(tagName: 'v9.9.9+99', apkUrl: 'x'),
           checkDone: true,
@@ -91,6 +92,22 @@ void main() {
       expect(find.textContaining('发现新版本 v9.9.9+99'), findsNothing);
       expect(find.text('版本更新'), findsOneWidget);
       expect(find.textContaining('有新版 · v$appVersion'), findsOneWidget);
+    });
+
+    testWidgets('测试版环境不显示有新版红点与提示', (tester) async {
+      final store = SettingsStore(
+        gateway: const SettingsGateway(isDebugMode: true),
+        update: const SettingsUpdateSnapshot(
+          pendingUpdate: UpdateInfo(tagName: 'v9.9.9+99', apkUrl: 'x'),
+          checkDone: true,
+        ),
+      );
+      addTearDown(store.dispose);
+      await _pumpProfileHub(tester, store);
+      final list = find.byType(ListView).first;
+      await _scrollToVisible(tester, list, find.text('版本更新'));
+      expect(find.textContaining('有新版'), findsNothing);
+      expect(find.text('测试版 · v$appVersion'), findsOneWidget);
     });
 
     testWidgets('检查失败时更新卡片仍保持单行入口', (tester) async {

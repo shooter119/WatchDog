@@ -25,6 +25,9 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
   final TextEditingController _unitName = TextEditingController();
   final TextEditingController _realName = TextEditingController();
   final TextEditingController _unitCode = TextEditingController();
+  final FocusNode _unitNameFocus = FocusNode();
+  final FocusNode _realNameFocus = FocusNode();
+  final FocusNode _unitCodeFocus = FocusNode();
   bool _obscureUnitCode = true;
   bool _appliedUnitDefault = false;
   bool _appliedRealNameDefault = false;
@@ -52,6 +55,9 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
     _unitName.dispose();
     _realName.dispose();
     _unitCode.dispose();
+    _unitNameFocus.dispose();
+    _realNameFocus.dispose();
+    _unitCodeFocus.dispose();
     super.dispose();
   }
 
@@ -296,9 +302,13 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    _buildHero(context, compact: hasKeyboard),
+                    KeyedSubtree(
+                      key: const ValueKey<String>('auth-hero'),
+                      child: _buildHero(context, compact: hasKeyboard),
+                    ),
                     SizedBox(height: hasKeyboard ? DsSpacing.md : DsSpacing.xl),
                     SurfaceCard(
+                      key: const ValueKey<String>('auth-form-card'),
                       level: DsSurfaceLevel.outlined,
                       padding: const EdgeInsets.all(DsSpacing.lg),
                       child: Column(
@@ -307,6 +317,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                           TextField(
                             key: const Key('auth-unit-name'),
                             controller: _unitName,
+                            focusNode: _unitNameFocus,
                             enabled: !store.busy,
                             maxLength: 120,
                             textInputAction: TextInputAction.next,
@@ -323,6 +334,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                           TextField(
                             key: const Key('auth-real-name'),
                             controller: _realName,
+                            focusNode: _realNameFocus,
                             enabled: !store.busy,
                             maxLength: 20,
                             textInputAction: TextInputAction.next,
@@ -345,6 +357,7 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                           TextField(
                             key: const Key('auth-unit-code'),
                             controller: _unitCode,
+                            focusNode: _unitCodeFocus,
                             enabled: !store.busy,
                             maxLength: 12,
                             obscureText: _obscureUnitCode,

@@ -213,13 +213,15 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
   Widget build(BuildContext context) {
     final store = widget.store;
     final id = store.identity;
-    final pendingUpdate = store.update.pendingUpdate;
+    final pendingUpdate = store.isDebugMode ? null : store.update.pendingUpdate;
     final displayVer = store.displayVersion(appVersion);
     final versionSummary = store.checkingUpdate
         ? '检查中 · v$displayVer'
         : pendingUpdate != null
         ? '有新版 · v$displayVer'
-        : '${store.isDebugMode ? '测试版 ' : ''}v$displayVer';
+        : store.isDebugMode
+        ? '测试版 · v$displayVer'
+        : 'v$displayVer';
 
     return CommandScaffold(
       body: ListView(
@@ -469,12 +471,19 @@ class _ProfileHubPageState extends State<ProfileHubPage> {
           );
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
-        Text('我的', style: ds.typography.display.copyWith(color: ds.colors.textPrimary)),
+        Expanded(
+          child: Row(
+            children: <Widget>[
+              Text('我的', style: ds.typography.display.copyWith(color: ds.colors.textPrimary)),
+              const SizedBox(width: DsSpacing.sm),
+              Flexible(child: SettingsSaveStatusBadge(state: widget.store.saveState)),
+            ],
+          ),
+        ),
         const SizedBox(width: DsSpacing.sm),
-        SettingsSaveStatusBadge(state: widget.store.saveState),
-        const Spacer(),
-        Flexible(child: pill),
+        pill,
       ],
     );
   }

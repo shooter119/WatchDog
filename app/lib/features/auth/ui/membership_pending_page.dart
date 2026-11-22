@@ -227,7 +227,7 @@ class _MembershipPendingPageState extends State<MembershipPendingPage>
                       status: DsStatus.neutral,
                       icon: Icons.lightbulb_outline_rounded,
                       message:
-                          '站长在手机 App【设置 → 入队审批】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
+                          '站长在手机 App【我的 → 入队审批】中点击同意后，切回本页面或点击下方按钮即可自动完成登录。',
                     ),
                     if (store.silentChecking) ...<Widget>[
                       const SizedBox(height: DsSpacing.sm),

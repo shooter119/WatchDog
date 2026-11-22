@@ -150,7 +150,10 @@ class _AppearanceOptionTile extends StatelessWidget {
               ? Duration.zero
               : DsMotion.resolve(context, DsMotion.fast),
           constraints: const BoxConstraints(minHeight: DsSizes.touchTarget),
-          padding: const EdgeInsets.all(DsSpacing.md),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: DsSpacing.md,
+          ),
           decoration: BoxDecoration(
             color: selected ? colors.surfaceMuted : colors.surface,
             borderRadius: DsRadius.borderMd,
@@ -162,36 +165,37 @@ class _AppearanceOptionTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Expanded(
-                    child: Wrap(
-                      spacing: DsSpacing.xs,
-                      runSpacing: DsSpacing.xs,
+              SizedBox(
+                height: 16,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        for (final swatch in preset.swatches)
+                        for (var i = 0; i < preset.swatches.length; i++) ...<Widget>[
+                          if (i > 0) const SizedBox(width: 3),
                           Container(
-                            width: 14,
-                            height: 14,
+                            width: 10,
+                            height: 10,
                             decoration: BoxDecoration(
-                              color: swatch,
-                              borderRadius: BorderRadius.circular(4),
+                              color: preset.swatches[i],
+                              borderRadius: BorderRadius.circular(3),
                               border: Border.all(color: preset.swatchBorder),
                             ),
                           ),
+                        ],
                       ],
                     ),
-                  ),
-                  if (selected) ...<Widget>[
-                    const SizedBox(width: DsSpacing.xs),
-                    Icon(
-                      Icons.check_circle_rounded,
-                      size: DsSizes.iconSm,
-                      color: colors.brandText,
-                    ),
+                    const Spacer(),
+                    if (selected)
+                      Icon(
+                        Icons.check_circle_rounded,
+                        size: 14,
+                        color: colors.brandText,
+                      ),
                   ],
-                ],
+                ),
               ),
               const SizedBox(height: DsSpacing.sm),
               Text(

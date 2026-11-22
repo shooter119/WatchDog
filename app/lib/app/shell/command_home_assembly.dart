@@ -174,6 +174,7 @@ class CommandHomeAssembly {
       highestRiskStatus: _highestRiskStatus(airSummary),
       connectionState: connState,
       pendingSyncCount: controller.offlineReviewCount,
+      showConnectionPill: false,
       onConnectionTap: () => unawaited(openConnectionDetail(context)),
       onRename: incidentActions.renameIncident,
       onAddForce: () => unawaited(incidentActions.editForce(context)),

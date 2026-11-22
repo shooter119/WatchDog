@@ -48,7 +48,7 @@ Future<bool?> showRosterOnlyApplySheet(
       status: DsStatus.caution,
       icon: Icons.badge_outlined,
       message:
-          '「$realName」已在语音识别名单中，但还没有登录权限。请提交入队申请，管理员在「设置 → 入队审批」批准后即可登录。',
+          '「$realName」已在语音识别名单中，但还没有登录权限。请提交入队申请，管理员在「我的 → 入队审批」批准后即可登录。',
     ),
     actionsBuilder: (BuildContext ctx) => <Widget>[
       CommandButton(
@@ -304,7 +304,7 @@ class _MembershipApplyFormSheetState extends State<_MembershipApplyFormSheet> {
     final textStyle = ds.typography.body.copyWith(color: ds.colors.textPrimary);
     return CommandSheet(
       title: '提交入队申请',
-      subtitle: '提交后由本单位管理员在「设置 → 入队审批」审核通过',
+      subtitle: '提交后由本单位管理员在「我的 → 入队审批」审核通过',
       actions: <Widget>[
         CommandButton(
           label: '取消',

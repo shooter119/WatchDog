@@ -128,7 +128,7 @@ void main() {
       expect(find.text('--'), findsOneWidget);
       expect(find.byKey(const Key('monitor-empty-state')), findsOneWidget);
       expect(find.text('暂无人员在场'), findsOneWidget);
-      expect(find.text('去警情处置'), findsOneWidget);
+      expect(find.text('去指挥台'), findsOneWidget);
     });
 
     testWidgets('有危险人员时显示 monitor-danger-banner，全安全时隐藏', (tester) async {

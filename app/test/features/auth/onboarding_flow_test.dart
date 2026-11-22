@@ -6,6 +6,8 @@ import 'package:watchdog/core/network/network.dart';
 import 'package:watchdog/design_system/design_system.dart';
 import 'package:watchdog/features/auth/state/onboarding_flow_store.dart';
 import 'package:watchdog/features/auth/ui/onboarding_flow_shell.dart';
+import 'package:watchdog/features/auth/ui/unit_auth_page.dart';
+import 'package:watchdog/features/incident/ui/incident_picker_page.dart';
 import 'package:watchdog/services/settings.dart';
 
 Widget _wrapApp(
@@ -592,6 +594,172 @@ void main() {
         find.byKey(const Key('pending-check-status')),
       );
       expect(checkSize.height, greaterThanOrEqualTo(DsSizes.primaryAction));
+    });
+
+    testWidgets('软键盘弹出切换紧凑布局时 UnitAuthPage 输入框保持同一 State 且不失焦', (
+      tester,
+    ) async {
+      final viewInsets = ValueNotifier<EdgeInsets>(EdgeInsets.zero);
+      addTearDown(viewInsets.dispose);
+      final store = OnboardingFlowStore(
+        authenticationRequired: true,
+        pendingPollInterval: null,
+        onAuthenticate: (_, _, _) async {},
+        onEnterGuestMode: () async {},
+      );
+      addTearDown(store.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: buildCommandTheme(Brightness.light),
+          themeAnimationDuration: Duration.zero,
+          builder: (BuildContext context, Widget? appChild) {
+            return ValueListenableBuilder<EdgeInsets>(
+              valueListenable: viewInsets,
+              builder: (BuildContext context, EdgeInsets insets, _) {
+                final mq = MediaQuery.of(context);
+                return MediaQuery(
+                  data: mq.copyWith(
+                    viewInsets: insets,
+                    disableAnimations: true,
+                  ),
+                  child: appChild!,
+                );
+              },
+            );
+          },
+          home: UnitAuthPage(store: store),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final unitFieldFinder = find.byKey(const Key('auth-unit-name'));
+      final editableFinder = find.descendant(
+        of: unitFieldFinder,
+        matching: find.byType(EditableText),
+      );
+      await tester.tap(unitFieldFinder);
+      await tester.pump();
+
+      final initialEditable = tester.widget<EditableText>(editableFinder);
+      final initialState = tester.state<EditableTextState>(editableFinder);
+      expect(FocusManager.instance.primaryFocus, isNotNull);
+      expect(initialEditable.focusNode.hasFocus, isTrue);
+      expect(find.byKey(const Key('auth-guest-mode')), findsOneWidget);
+
+      // 模拟系统软键盘弹出（viewInsets.bottom > 80），触发紧凑态重排
+      viewInsets.value = const EdgeInsets.only(bottom: 320);
+      await tester.pump();
+
+      expect(find.byKey(const Key('auth-guest-mode')), findsNothing);
+      final afterOpenEditable = tester.widget<EditableText>(editableFinder);
+      final afterOpenState = tester.state<EditableTextState>(editableFinder);
+      expect(identical(afterOpenState, initialState), isTrue);
+      expect(afterOpenEditable.focusNode.hasFocus, isTrue);
+
+      await tester.enterText(unitFieldFinder, '示例市消防救援支队');
+      await tester.pump();
+      expect(find.text('示例市消防救援支队'), findsOneWidget);
+
+      // 来回切换键盘收起/再次弹出，焦点的同一性与已输入内容均不丢失
+      viewInsets.value = EdgeInsets.zero;
+      await tester.pump();
+      expect(find.byKey(const Key('auth-guest-mode')), findsOneWidget);
+      expect(
+        identical(tester.state<EditableTextState>(editableFinder), initialState),
+        isTrue,
+      );
+      expect(
+        tester.widget<EditableText>(editableFinder).focusNode.hasFocus,
+        isTrue,
+      );
+
+      viewInsets.value = const EdgeInsets.only(bottom: 320);
+      await tester.pump();
+      expect(find.byKey(const Key('auth-guest-mode')), findsNothing);
+      expect(
+        identical(tester.state<EditableTextState>(editableFinder), initialState),
+        isTrue,
+      );
+      expect(
+        tester.widget<EditableText>(editableFinder).focusNode.hasFocus,
+        isTrue,
+      );
+      expect(find.text('示例市消防救援支队'), findsOneWidget);
+    });
+
+    testWidgets('加载态收敛与软键盘弹出时 IncidentPickerPage 搜索框保持聚焦', (
+      tester,
+    ) async {
+      final viewInsets = ValueNotifier<EdgeInsets>(EdgeInsets.zero);
+      final loading = ValueNotifier<bool>(true);
+      addTearDown(viewInsets.dispose);
+      addTearDown(loading.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: buildCommandTheme(Brightness.light),
+          themeAnimationDuration: Duration.zero,
+          builder: (BuildContext context, Widget? appChild) {
+            return ValueListenableBuilder<EdgeInsets>(
+              valueListenable: viewInsets,
+              builder: (BuildContext context, EdgeInsets insets, _) {
+                final mq = MediaQuery.of(context);
+                return MediaQuery(
+                  data: mq.copyWith(
+                    viewInsets: insets,
+                    disableAnimations: true,
+                  ),
+                  child: appChild!,
+                );
+              },
+            );
+          },
+          home: ValueListenableBuilder<bool>(
+            valueListenable: loading,
+            builder: (BuildContext context, bool isLoading, _) {
+              return IncidentPickerPage(
+                activeIncidents: const [],
+                loading: isLoading,
+                userUnitName: '示例市消防救援支队',
+                onSelect: (_) async {},
+                onCreate: () async {},
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final searchFinder = find.byKey(const Key('incident-picker-search-field'));
+      final editableFinder = find.descendant(
+        of: searchFinder,
+        matching: find.byType(EditableText),
+      );
+      await tester.tap(searchFinder);
+      await tester.pump();
+
+      final initialState = tester.state<EditableTextState>(editableFinder);
+      expect(
+        tester.widget<EditableText>(editableFinder).focusNode.hasFocus,
+        isTrue,
+      );
+
+      loading.value = false;
+      viewInsets.value = const EdgeInsets.only(bottom: 320);
+      await tester.pump();
+
+      expect(find.byKey(const Key('incident-picker-create-btn')), findsNothing);
+      expect(
+        identical(tester.state<EditableTextState>(editableFinder), initialState),
+        isTrue,
+      );
+      expect(
+        tester.widget<EditableText>(editableFinder).focusNode.hasFocus,
+        isTrue,
+      );
     });
   });
 }

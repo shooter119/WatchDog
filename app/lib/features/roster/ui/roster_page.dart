@@ -306,7 +306,7 @@ class _RosterPageState extends State<RosterPage>
   Widget _buildNotice(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: DsSpacing.md),
     child: Text(
-      '本名单只用于提升语音识别准确率，不授予登录权限；成员能否登录由『设置 → 入队审批』批准决定。',
+      '本名单只用于提升语音识别准确率，不授予登录权限；成员能否登录由『我的 → 入队审批』批准决定。',
       style: context.ds.typography.caption.copyWith(
         color: context.ds.colors.textTertiary,
         height: 1.45,
@@ -314,19 +314,24 @@ class _RosterPageState extends State<RosterPage>
     ),
   );
 
-  Widget _buildPendingBanner(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: DsSpacing.md),
-    child: CommandButton(
-      label: '入队审批 (${widget.gateway.pendingMemberCount})',
-      icon: Icons.how_to_reg_outlined,
-      variant: CommandButtonVariant.primary,
-      size: CommandButtonSize.large,
-      expanded: true,
-      onPressed: widget.onOpenMemberReview == null
-          ? null
-          : () => unawaited(widget.onOpenMemberReview!(context)),
-    ),
-  );
+  Widget _buildPendingBanner(BuildContext context) {
+    final hasPending = widget.gateway.pendingMemberCount > 0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DsSpacing.md),
+      child: CommandButton(
+        label: '入队审批 (${widget.gateway.pendingMemberCount})',
+        icon: Icons.how_to_reg_outlined,
+        variant: hasPending
+            ? CommandButtonVariant.primary
+            : CommandButtonVariant.secondary,
+        size: hasPending ? CommandButtonSize.large : CommandButtonSize.standard,
+        expanded: true,
+        onPressed: widget.onOpenMemberReview == null
+            ? null
+            : () => unawaited(widget.onOpenMemberReview!(context)),
+      ),
+    );
+  }
 
   Widget _buildTabList(BuildContext context, {required bool isFirefighter}) {
     final firefighters = widget.gateway.firefighters;

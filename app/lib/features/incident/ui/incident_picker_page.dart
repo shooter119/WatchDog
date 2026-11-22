@@ -415,6 +415,7 @@ class _IncidentPickerPageState extends State<IncidentPickerPage> {
                       ),
                     ),
                   Padding(
+                    key: const ValueKey<String>('incident-picker-search-slot'),
                     padding: const EdgeInsets.fromLTRB(
                       DsSpacing.lg,
                       DsSpacing.md,

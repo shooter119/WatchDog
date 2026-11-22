@@ -289,7 +289,7 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
               message: '还没有日志记录',
               detail: widget.requiresIncident
                   ? '请先选择或新建警情，再记录火场日志'
-                  : '按住底部语音按钮说话，或点击右下角加号手动记录',
+                  : '点击右下角加号手动记录，或返回指挥台长按语音键说话',
             ),
           ),
         ),
@@ -372,16 +372,9 @@ class _FilterPill extends StatelessWidget {
       button: true,
       selected: selected,
       label: label,
+      excludeSemantics: true,
       child: Material(
-        color: selected ? colors.brand : colors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: DsRadius.borderPill,
-          side: BorderSide(
-            color: selected ? colors.brand : colors.border,
-            width: 1,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
+        type: MaterialType.transparency,
         child: InkWell(
           borderRadius: DsRadius.borderPill,
           onTap: onTap,
@@ -390,13 +383,21 @@ class _FilterPill extends StatelessWidget {
               minHeight: DsSizes.touchTarget,
               minWidth: DsSizes.touchTarget,
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: DsSpacing.md,
-                vertical: DsSpacing.sm,
-              ),
-              child: Center(
-                widthFactor: 1,
+            child: Center(
+              widthFactor: 1,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: selected ? colors.brand : colors.surface,
+                  borderRadius: DsRadius.borderPill,
+                  border: Border.all(
+                    color: selected ? colors.brand : colors.border,
+                    width: 1,
+                  ),
+                ),
                 child: Text(
                   label,
                   style: ds.typography.caption.copyWith(

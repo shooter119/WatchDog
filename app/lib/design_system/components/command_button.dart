@@ -208,6 +208,7 @@ class CommandButton extends StatelessWidget {
       button: true,
       enabled: isInteractive,
       label: label,
+      excludeSemantics: true,
       child: Material(
         color: bg,
         type: bg == Colors.transparent

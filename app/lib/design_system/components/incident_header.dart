@@ -39,6 +39,7 @@ class IncidentHeader extends StatelessWidget {
     this.highestRiskLabel,
     required this.connectionState,
     this.pendingSyncCount = 0,
+    this.showConnectionPill = true,
     this.onTap,
     this.onConnectionTap,
   });
@@ -52,6 +53,7 @@ class IncidentHeader extends StatelessWidget {
   final String? highestRiskLabel;
   final DsConnectionState connectionState;
   final int pendingSyncCount;
+  final bool showConnectionPill;
   final VoidCallback? onTap;
   final VoidCallback? onConnectionTap;
 
@@ -136,11 +138,12 @@ class IncidentHeader extends StatelessWidget {
                     ],
                   ),
                 ),
-                ConnectionPill(
-                  state: connectionState,
-                  pendingCount: pendingSyncCount,
-                  onTap: onConnectionTap,
-                ),
+                if (showConnectionPill)
+                  ConnectionPill(
+                    state: connectionState,
+                    pendingCount: pendingSyncCount,
+                    onTap: onConnectionTap,
+                  ),
               ],
             ),
           ),

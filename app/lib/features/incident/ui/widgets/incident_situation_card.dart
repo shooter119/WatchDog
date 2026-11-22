@@ -28,6 +28,7 @@ class IncidentSituationCard extends StatefulWidget {
     this.highestRiskLabel,
     this.connectionState = DsConnectionState.online,
     this.pendingSyncCount = 0,
+    this.showConnectionPill = true,
     this.onConnectionTap,
     this.initialExpanded,
     this.onExpandedChanged,
@@ -48,7 +49,7 @@ class IncidentSituationCard extends StatefulWidget {
 
   final Incident incident;
   final List<IncidentForce> forces;
-  final bool hasActiveEntries;
+  final bool hasActiveEntries, showConnectionPill;
   final DsStatus highestRiskStatus;
   final String? highestRiskLabel;
   final DsConnectionState connectionState;
@@ -203,6 +204,7 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
             highestRiskLabel: riskLabel,
             connectionState: widget.connectionState,
             pendingSyncCount: widget.pendingSyncCount,
+            showConnectionPill: widget.showConnectionPill,
             onTap: _toggleExpanded,
             onConnectionTap: widget.onConnectionTap,
           ),
@@ -210,10 +212,7 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
         const SizedBox(height: DsSpacing.xs),
         SurfaceCard(
           level: DsSurfaceLevel.outlined,
-          padding: const EdgeInsets.symmetric(
-            horizontal: DsSpacing.md,
-            vertical: DsSpacing.xs,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: DsSpacing.md, vertical: DsSpacing.xs),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,

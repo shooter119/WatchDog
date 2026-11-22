@@ -436,14 +436,14 @@ class _CommandAppShellState extends State<CommandAppShell>
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
-              Scaffold(
-                backgroundColor: context.ds.colors.canvas,
-                body: body,
-                bottomNavigationBar: ExcludeSemantics(
-                  excluding: locked,
-                  child: IgnorePointer(
-                    ignoring: locked,
-                    child: ShellCommandNavBar(
+              ExcludeSemantics(
+                excluding: locked,
+                child: IgnorePointer(
+                  ignoring: locked,
+                  child: Scaffold(
+                    backgroundColor: context.ds.colors.canvas,
+                    body: body,
+                    bottomNavigationBar: ShellCommandNavBar(
                       tabs: _buildNavTabs(),
                       selectedIndex: _tab,
                       voiceBridge: _voiceBridge,

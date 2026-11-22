@@ -166,7 +166,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('本名单只用于提升语音识别准确率，不授予登录权限；成员能否登录由『设置 → 入队审批』批准决定。'),
+      find.text('本名单只用于提升语音识别准确率，不授予登录权限；成员能否登录由『我的 → 入队审批』批准决定。'),
       findsOneWidget,
     );
     expect(find.text('张伟'), findsOneWidget);
