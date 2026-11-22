@@ -11,7 +11,7 @@
 | [AGENTS.md](AGENTS.md) | 当前协作、验证、发版与部署约定 | 当前权威规则 |
 | [README.md](README.md) | 面向使用者的产品介绍、功能和开发入口 | 当前产品说明 |
 | [STATUS.md](STATUS.md) | 项目状态、架构与开发验证概况 | 状态快照，需结合当前代码阅读 |
-| [fire-rescue-safety-app-ui-spec-v2.0.md](fire-rescue-safety-app-ui-spec-v2.0.md) | 现行 V2.0 全局设计规范（Tokens v2、三套调色板、零重影卡片、主页/看板职责解耦） | 当前唯一 UI 规范（旧版 V0.1/V0.2 已清理） |
+| `fire-rescue-safety-app-ui-spec-v3.0.md`（本地规范文档） | 现行 V3.0 全局设计规范（Design System v3.0、Tokens 与组件库，对应 `app/lib/design_system/`） | 当前唯一 UI 规范（旧版 V0.1/V0.2/V2.0 已清理） |
 
 ## 项目演进
 
@@ -56,7 +56,7 @@
 
 - **产品平台**：Android 优先，iOS 暂缓。
 - **核心数据模型**：同一警情档案协同；现场操作具备幂等、审计、离线补传与实时同步能力。
-- **界面依据**：V0.2 设计文档提供后续设计背景，当前 Flutter 实现是实际行为依据。
+- **界面依据**：以 Design System v3.0（本地 `fire-rescue-safety-app-ui-spec-v3.0.md` 与 `app/lib/design_system/`）及当前 Flutter 实现为实际行为依据。
 - **研发与发布门禁**：依照 [AGENTS.md](AGENTS.md)；代码修改不自动提交或部署，发布版本号由用户决定。
 - **版本现状**：此索引整理时仓库 HEAD 标记为 `v1.7.1+69`；后续请以 `git describe --tags --always` 和 App 配置核对。
 
