@@ -1053,11 +1053,13 @@ function listNotes(options = {}) {
   const { scene = 'default', limit = 500 } = opts;
   return db
     .prepare('SELECT * FROM notes WHERE scene = ? ORDER BY created_at DESC LIMIT ?')
-    .all(scene, limitOf(limit, 500, 2000));
+    .all(scene, limitOf(limit, 500, 2000))
+    .map((row) => ({ ...row, media: [] }));
 }
 
 function getNote(id) {
-  return db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
+  const row = db.prepare('SELECT * FROM notes WHERE id = ?').get(id);
+  return row ? { ...row, media: [] } : undefined;
 }
 
 function createNote({ id, scene = 'default', text, category = '其他', author = '', createdAt = Date.now() }) {

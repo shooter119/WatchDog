@@ -93,7 +93,7 @@ class _ComponentGalleryPageState extends State<ComponentGalleryPage> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '组件总览 · 指挥台与现场监控原型（昼白 / 暗曜 · 130% 字号）',
+                              '组件总览 · 指挥台与安全管控原型（昼白 / 暗曜 · 130% 字号）',
                               style: ds.typography.caption.copyWith(
                                 color: colors.textSecondary,
                               ),

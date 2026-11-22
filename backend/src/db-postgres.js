@@ -1,5 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const db = require('./postgres-store');
+const { publicNoteMedia } = require('./note-media');
 const { checkEntryVersion, entryError } = require('./entry-concurrency');
 const { durationMinutes, exitAtMs: calculateExitAt, measuredConsumptionLpm } = require('./calc');
 const { forceError, forceFields } = require('./force-fields');
@@ -779,19 +780,80 @@ async function purgeOldSyncEvents(days = 7) {
   })).changes;
 }
 
+async function attachNoteMedia(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const noteIds = rows.map((row) => row.id).filter(Boolean);
+  if (noteIds.length === 0) return rows.map((row) => ({ ...row, media: [] }));
+  const mediaRows = await db.select('note_media', {
+    filters: { note_id: { op: 'in', value: noteIds } },
+    order: 'created_at.asc',
+  });
+  const byNote = new Map();
+  for (const mediaRow of mediaRows) {
+    const formatted = publicNoteMedia(mediaRow);
+    if (!formatted) continue;
+    const list = byNote.get(mediaRow.note_id) || [];
+    list.push(formatted);
+    byNote.set(mediaRow.note_id, list);
+  }
+  return rows.map((row) => ({ ...row, media: byNote.get(row.id) || [] }));
+}
+
 async function listNotes(options = {}) {
   const opts = typeof options === 'string' ? { scene: options } : (options || {});
   const { scene = 'default', limit = 500 } = opts;
-  return db.select('notes', { filters: { scene }, order: 'created_at.desc', limit: limitOf(limit, 500, 2000) });
+  const rows = await db.select('notes', { filters: { scene }, order: 'created_at.desc', limit: limitOf(limit, 500, 2000) });
+  return attachNoteMedia(rows);
 }
 
 async function getNote(id) {
-  return db.select('notes', { filters: { id }, single: true });
+  const row = await db.select('notes', { filters: { id }, single: true });
+  if (!row) return undefined;
+  const [enriched] = await attachNoteMedia([row]);
+  return enriched;
 }
 
 async function createNote({ id, scene = 'default', text, category = '其他', author = '', createdAt = Date.now() }) {
   const now = Number(createdAt) || Date.now();
-  return insertOne('notes', { id, scene, text, category, author, created_at: now, updated_at: now });
+  const created = await insertOne('notes', { id, scene, text, category, author, created_at: now, updated_at: now });
+  return created ? { ...created, media: [] } : created;
+}
+
+async function getNoteMedia(id) {
+  return db.select('note_media', { filters: { id: String(id || '') }, single: true });
+}
+
+async function listNoteMediaByNoteId(noteId) {
+  if (!noteId) return [];
+  return db.select('note_media', {
+    filters: { note_id: String(noteId) },
+    order: 'created_at.asc',
+  });
+}
+
+async function hasIncidentObservationByMediaRef(incidentId, mediaRef) {
+  if (!incidentId || !mediaRef) return false;
+  const row = await db.select('incident_observations', {
+    select: 'id',
+    filters: { incident_id: String(incidentId), media_ref: String(mediaRef) },
+    single: true,
+  });
+  return Boolean(row);
+}
+
+async function createNoteWithMediaAndEvent({ note, media, event = null, activityAt = null } = {}) {
+  return db.transaction(async () => {
+    const createdNote = await createNote(note);
+    const createdMedia = await insertOne('note_media', media);
+    if (activityAt != null) await touchIncidentActivity(event ? event.incidentId : note.scene, activityAt);
+    const recorded = event ? await appendIncidentEvent(event) : null;
+    const formatted = publicNoteMedia(createdMedia);
+    return {
+      note: { ...createdNote, media: formatted ? [formatted] : [] },
+      media: createdMedia,
+      event: recorded,
+    };
+  });
 }
 
 async function listIncidentObservations({ incidentId = '', limit = 20 } = {}) {
@@ -1493,7 +1555,8 @@ module.exports = {
   getEntry, createEntry, createEntryWithEvent, markExited, markExitedIfActive, exitEntryWithEvent, updatePressureWithEvent, findActiveByName, updateEntry, addPressureSample,
   lastPressureSample, listPressureSamples, listFirefighters, addFirefighter, removeFirefighter,
   listHotwords, addHotword, removeHotword, purgeOldExited, addLog, addLogs, listLogs, clearLogs,
-  purgeOldLogs, purgeOldSyncEvents, listNotes, getNote, createNote, createNoteWithEvent,
+  purgeOldLogs, purgeOldSyncEvents, listNotes, getNote, createNote, createNoteWithEvent, createNoteWithMediaAndEvent,
+  getNoteMedia, listNoteMediaByNoteId, hasIncidentObservationByMediaRef,
   listIncidentObservations, createIncidentObservation, updateNote, updateNoteWithEvent, deleteNote, deleteNoteWithEvent, purgeOldNotes,
   listChatMessages, createChatMessage, clearChatMessages, purgeOldChatMessages, getUserSettings,
   saveUserSettings, ready,

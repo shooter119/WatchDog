@@ -469,7 +469,7 @@ void main() {
                       badgeCount: 3,
                     ),
                     CommandNavTab(
-                      label: '现场监控',
+                      label: '安全管控',
                       icon: Icons.monitor_heart_outlined,
                       hasAlert: true,
                     ),
@@ -694,13 +694,13 @@ void main() {
         await tester.tap(find.text('关闭'));
         await tester.pumpAndSettle();
 
-        // 切换至指挥台原型与现场监控原型
+        // 切换至指挥台原型与安全管控原型
         await tester.tap(find.text('指挥台原型'));
         await tester.pumpAndSettle();
         expect(find.byType(CommandHomePreview), findsOneWidget);
         _expectNoOverflowOrTruncation(tester, errors);
 
-        await tester.tap(find.text('现场监控原型'));
+        await tester.tap(find.text('安全管控原型'));
         await tester.pumpAndSettle();
         expect(find.byType(MonitorPreview), findsOneWidget);
         _expectNoOverflowOrTruncation(tester, errors);

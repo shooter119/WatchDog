@@ -188,11 +188,14 @@ const Set<String> _expectedApiPublicMethods = <String>{
   'cancelIncidentImport',
   'applyIncidentImport',
   'fetchIncidentImports',
-  // NotesRepository (4)
+  // NotesRepository (7)
   'fetchNotes',
   'createNote',
   'updateNote',
   'deleteNote',
+  'uploadNoteMedia',
+  'noteMediaUrl',
+  'noteMediaHeaders',
   // VoiceRepository (5; realtimeAsrUri 已计入门面自身)
   'realtimeAsrUris',
   'realtimeAsrHeaders',
@@ -838,7 +841,7 @@ void main() {
       expect(violations, isEmpty, reason: '存在行数超标文件:\n${violations.join('\n')}');
     });
 
-    test('5. 门面与转发出口符号完整性校验（30 模型 + 17 其他模型 + 6 附带类 + 115 方法 + 9 字段 + schema 首行）', () {
+    test('5. 门面与转发出口符号完整性校验（30 模型 + 17 其他模型 + 6 附带类 + 118 方法 + 9 字段 + schema 首行）', () {
       // 5a. models/models.dart 严格导出 30 个历史顶层类（不多不少）
       final exportedModels = _collectExportedClasses(libDir, 'models/models.dart');
       expect(
@@ -901,7 +904,7 @@ void main() {
             'ApiClient 公开方法偏差: 缺失=${_expectedApiPublicMethods.difference(declaredMethods)}, '
             '多余=${declaredMethods.difference(_expectedApiPublicMethods)}',
       );
-      expect(declaredMethods.length, 115);
+      expect(declaredMethods.length, 118);
 
       // 5e. models/key_site_schema.dart 首行保持生成标记注释
       final schemaFile = File('${libDir.path}/models/key_site_schema.dart');

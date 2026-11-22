@@ -15,6 +15,28 @@ enum MediaReviewOutcome {
   sharedWatermarkedOnly,
 }
 
+/// 水印相机保存或分享时入队同步至火场日志的结果。
+enum MediaNoteSyncOutcome {
+  enqueued,
+  skippedGuest,
+  skippedNoIncident,
+  failed,
+}
+
+typedef MediaNoteSyncCallback =
+    Future<MediaNoteSyncOutcome> Function({
+      required String kind,
+      required String filePath,
+      String thumbPath,
+      required String transcript,
+      required int durationMs,
+      required int capturedAt,
+      String address,
+      String weather,
+      required String localMediaId,
+      bool syncObservation,
+    });
+
 /// 媒体域可见的当前警情轻量快照，避免跨 Feature 直接依赖 `incident` 模型或旧 `AppController`。
 @immutable
 class MediaIncidentRef {
@@ -56,6 +78,7 @@ class MediaGateway {
     this.fetchWeather,
     this.isObservationApiAvailable,
     this.createIncidentObservation,
+    this.enqueueMediaNoteUpload,
     this.refreshIncidentData,
     this.deriveMedia,
     this.transcribeMediaAudio,
@@ -77,6 +100,9 @@ class MediaGateway {
 
   /// 将核对后的口述写入指定警情。
   final MediaObservationSubmitter? createIncidentObservation;
+
+  /// 将带水印成片（及视频转写）入队异步上传至火场日志。
+  final MediaNoteSyncCallback? enqueueMediaNoteUpload;
 
   /// 写入成功后刷新当前警情数据。
   final Future<void> Function(String incidentId)? refreshIncidentData;

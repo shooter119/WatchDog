@@ -186,6 +186,7 @@ mixin _AppControllerSyncMixin on _AppControllerBase {
     );
     if (state == SyncConnectionState.connected) {
       _reportMainSnapshotToKeepAlive();
+      unawaited(drainNoteMediaUploads());
     }
     _notify();
   }
@@ -219,6 +220,9 @@ mixin _AppControllerSyncMixin on _AppControllerBase {
         await OfflineQueue.instance.drain(
           (id) => a.forIncident(id),
           allowedIncidentIds: allowedIncidentIds,
+        );
+        unawaited(
+          drainNoteMediaUploads(allowedIncidentIds: allowedIncidentIds),
         );
         final reviewCount =
             (await OfflineQueue.instance.reviewOperations()).length +
@@ -338,6 +342,7 @@ mixin _AppControllerSyncMixin on _AppControllerBase {
   @override
   Future<void> refreshNow() async {
     unawaited(_ensureOptionalServices(force: true));
+    unawaited(drainNoteMediaUploads());
     if (_disposed || _isGuest) return;
     final opToken = ++_nextSyncOpToken;
     _activeManualRefreshOps.add(opToken);

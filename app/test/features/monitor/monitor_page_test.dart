@@ -100,7 +100,7 @@ Future<({MonitorStore monitor, AlertClockStore clock})> _pumpMonitorPage(
 }
 
 void main() {
-  group('MonitorPage 现场监控看板', () {
+  group('MonitorPage 安全管控看板', () {
     testWidgets('统计在场人数 / 需关注 / 最早到期与 D6 分级胶囊', (tester) async {
       await _pumpMonitorPage(
         tester,

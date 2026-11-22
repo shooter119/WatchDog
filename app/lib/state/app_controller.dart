@@ -26,6 +26,7 @@ import '../services/media_capture_service.dart';
 import '../services/local_parser.dart';
 import '../services/op_log_service.dart';
 import '../services/offline_queue.dart';
+import '../services/note_media_upload_queue.dart';
 import '../services/screen_on.dart';
 import '../services/settings.dart';
 import '../services/scoped_json_cache.dart';
@@ -96,7 +97,9 @@ class AppController extends _AppControllerBase
     @visibleForTesting super.apiFactory,
     @visibleForTesting super.nowMs,
     super.appScope,
-  });
+  }) {
+    NoteMediaUploadQueue.instance.addListener(_onNoteMediaQueueChanged);
+  }
 
   /// 通知只在 exitAt 变化时重排；同一到期时间重复同步不得反复 cancel+schedule。
   @visibleForTesting
@@ -123,6 +126,7 @@ class AppController extends _AppControllerBase
   @override
   void dispose() {
     _disposed = true;
+    NoteMediaUploadQueue.instance.removeListener(_onNoteMediaQueueChanged);
     _adminCapabilityTimer?.cancel();
     _sessionGeneration++;
     _activeManualRefreshOps.clear();

@@ -209,5 +209,68 @@ void main() {
         expect(tester.takeException(), isNull);
       }
     });
+
+    testWidgets('现场工具首项名称统一为4字「重点单位」', (WidgetTester tester) async {
+      final tools = FieldToolsGridSection.buildDefaultTools();
+      expect(tools.first.label, '重点单位');
+      expect(tools.every((t) => t.label.length == 4), isTrue);
+
+      await tester.pumpWidget(
+        _wrap(CommandHomePage(hasIncident: false, tools: tools)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('重点单位'), findsOneWidget);
+      expect(find.text('重点单位库'), findsNothing);
+    });
+
+    testWidgets('大字号与窄屏下指挥台与连接状态胶囊始终保持单行左右对齐', (
+      WidgetTester tester,
+    ) async {
+      const scenarios = <(Size size, double scale, DsConnectionState state, int pending)>[
+        (Size(360, 780), 1.3, DsConnectionState.online, 0),
+        (Size(360, 780), 1.5, DsConnectionState.reconnecting, 0),
+        (Size(320, 680), 1.3, DsConnectionState.offline, 99),
+      ];
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      for (final (size, scale, state, pending) in scenarios) {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1.0;
+        for (final brightness in Brightness.values) {
+          await tester.pumpWidget(
+            _wrap(
+              CommandHomePage(
+                hasIncident: false,
+                connectionState: state,
+                pendingSyncCount: pending,
+                tools: FieldToolsGridSection.buildDefaultTools(),
+              ),
+              brightness: brightness,
+              textScale: scale,
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: '$size @ ${scale}x $state ($brightness) 不应溢出',
+          );
+
+          final titleRect = tester.getRect(
+            find.byKey(const Key('command-header-title')),
+          );
+          final pillRect = tester.getRect(find.byType(ConnectionPill));
+          expect(
+            (titleRect.center.dy - pillRect.center.dy).abs(),
+            lessThan(8.0),
+            reason: '$size @ ${scale}x $state 标题与状态胶囊应同一水平行居中对齐',
+          );
+          expect(titleRect.left, lessThan(pillRect.left));
+          expect(titleRect.right, lessThanOrEqualTo(pillRect.left + 0.1));
+        }
+      }
+    });
   });
 }

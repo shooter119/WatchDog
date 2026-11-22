@@ -224,5 +224,148 @@ mixin _AppControllerNotesChatMixin on _AppControllerBase {
     _notify();
   }
 
+  /// 带本地后台待传队列投影的火场日志列表（供首页预览与时间线页面共享）。
+  List<Note> get displayNotes {
+    final incidentId = currentIncident?.id ?? '';
+    final activeApi = api;
+    if (incidentId.isEmpty || _isGuest || activeApi == null) {
+      return notes;
+    }
+    final pending = NoteMediaUploadQueue.instance.pendingNotesForIncident(
+      incidentId: incidentId,
+      unitId: activeApi.unitId,
+      memberId: _noteMediaMemberId,
+    );
+    if (pending.isEmpty) return notes;
+    return <Note>[...pending, ...notes];
+  }
+
+  String noteMediaUrl(String relativePath) =>
+      api?.noteMediaUrl(relativePath) ?? '';
+
+  Map<String, String> noteMediaHeaders() =>
+      api?.noteMediaHeaders() ?? const <String, String>{};
+
+  void _onNoteMediaQueueChanged() {
+    if (_disposed) return;
+    _notify();
+  }
+
+  /// 将水印相机拍摄的带水印成片（照片或视频+转写）入队后台同步至火场日志。
+  Future<NoteMediaEnqueueOutcome> enqueueWatermarkMediaForNote({
+    required String kind,
+    required String filePath,
+    String thumbPath = '',
+    required String transcript,
+    required int durationMs,
+    required int capturedAt,
+    String address = '',
+    String weather = '',
+    required String localMediaId,
+    bool syncObservation = false,
+  }) async {
+    if (_isGuest) return NoteMediaEnqueueOutcome.skippedGuest;
+    final incident = currentIncident;
+    final activeApi = api;
+    if (incident == null || activeApi == null || activeApi.unitId.isEmpty) {
+      return NoteMediaEnqueueOutcome.skippedNoIncident;
+    }
+    try {
+      final memberId = await Settings.memberId;
+      final author = await Settings.realName;
+      _noteMediaMemberId = memberId;
+      await NoteMediaUploadQueue.instance.enqueue(
+        unitId: activeApi.unitId,
+        memberId: memberId,
+        incidentId: incident.id,
+        localMediaId: localMediaId,
+        kind: kind,
+        sourceFilePath: filePath,
+        sourceThumbPath: thumbPath,
+        text: transcript,
+        author: author,
+        durationMs: durationMs,
+        capturedAt: capturedAt,
+        address: address,
+        weather: weather,
+        syncObservation: syncObservation,
+      );
+      unawaited(drainNoteMediaUploads());
+      return NoteMediaEnqueueOutcome.enqueued;
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Watermark media note enqueue failed',
+        tag: 'notes',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return NoteMediaEnqueueOutcome.failed;
+    }
+  }
+
+  @override
+  Future<void> drainNoteMediaUploads({Set<String>? allowedIncidentIds}) async {
+    final activeApi = api;
+    if (_disposed ||
+        _isGuest ||
+        activeApi == null ||
+        _offlineQueueDrainer != null) {
+      return;
+    }
+    try {
+      final memberId = _noteMediaMemberId.isNotEmpty
+          ? _noteMediaMemberId
+          : await Settings.memberId;
+      _noteMediaMemberId = memberId;
+      await NoteMediaUploadQueue.instance.drain(
+        (NoteMediaUploadTask task) async {
+          final scoped = activeApi.forIncident(task.incidentId);
+          try {
+            return await scoped.uploadNoteMedia(
+              kind: task.kind,
+              filePath: task.filePath,
+              thumbPath: task.thumbPath,
+              text: task.text,
+              category: task.category,
+              author: task.author,
+              durationMs: task.durationMs,
+              capturedAt: task.capturedAt,
+              address: task.address,
+              weather: task.weather,
+              mediaRef: task.localMediaId,
+              syncObservation: task.syncObservation,
+              opId: task.id,
+            );
+          } finally {
+            scoped.dispose();
+          }
+        },
+        unitId: activeApi.unitId,
+        memberId: memberId,
+        allowedIncidentIds: allowedIncidentIds,
+        onUploaded: (Note syncedNote, NoteMediaUploadTask task) {
+          if (_disposed || api != activeApi) return;
+          if (currentIncident?.id != task.incidentId) return;
+          notes = <Note>[
+            syncedNote,
+            ...notes.where((item) => item.id != syncedNote.id),
+          ];
+          _notify();
+        },
+      );
+    } catch (error) {
+      AppLogger.error('Note media upload drain failed', tag: 'notes', error: error);
+    }
+  }
+
+  Future<void> retryNoteMediaUpload(String taskId) async {
+    await NoteMediaUploadQueue.instance.retryTask(taskId);
+    unawaited(drainNoteMediaUploads());
+  }
+
+  Future<void> discardNoteMediaUpload(String taskId) async {
+    await NoteMediaUploadQueue.instance.discardTask(taskId);
+  }
+
   /// 当前认证单位的名单/热词本地缓存。缓存必须绑定 unitId，不能跨单位复用。
 }

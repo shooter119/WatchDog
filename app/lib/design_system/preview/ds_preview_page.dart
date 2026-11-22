@@ -172,7 +172,7 @@ class _DsPreviewPageState extends State<DsPreviewPage> {
                     setState(() => _activeView = DsPreviewView.commandHome),
               ),
               _PreviewChip(
-                label: '现场监控原型',
+                label: '安全管控原型',
                 selected: _activeView == DsPreviewView.monitor,
                 onTap: () =>
                     setState(() => _activeView = DsPreviewView.monitor),

@@ -16,6 +16,7 @@ import '../../services/camera_bridge.dart';
 import '../../services/local_media_store.dart';
 import '../../services/location_share_service.dart';
 import '../../services/media_capture_service.dart';
+import '../../services/note_media_upload_queue.dart';
 import '../../services/screen_on.dart';
 import '../../state/app_controller.dart';
 
@@ -180,6 +181,39 @@ class FieldToolsGateways {
         } finally {
           scoped.dispose();
         }
+      },
+      enqueueMediaNoteUpload: ({
+        required String kind,
+        required String filePath,
+        String thumbPath = '',
+        required String transcript,
+        required int durationMs,
+        required int capturedAt,
+        String address = '',
+        String weather = '',
+        required String localMediaId,
+        bool syncObservation = false,
+      }) async {
+        final outcome = await controller.enqueueWatermarkMediaForNote(
+          kind: kind,
+          filePath: filePath,
+          thumbPath: thumbPath,
+          transcript: transcript,
+          durationMs: durationMs,
+          capturedAt: capturedAt,
+          address: address,
+          weather: weather,
+          localMediaId: localMediaId,
+          syncObservation: syncObservation,
+        );
+        return switch (outcome) {
+          NoteMediaEnqueueOutcome.enqueued => MediaNoteSyncOutcome.enqueued,
+          NoteMediaEnqueueOutcome.skippedGuest =>
+            MediaNoteSyncOutcome.skippedGuest,
+          NoteMediaEnqueueOutcome.skippedNoIncident =>
+            MediaNoteSyncOutcome.skippedNoIncident,
+          NoteMediaEnqueueOutcome.failed => MediaNoteSyncOutcome.failed,
+        };
       },
       refreshIncidentData: controller.refreshIncidentData,
       deriveMedia: (

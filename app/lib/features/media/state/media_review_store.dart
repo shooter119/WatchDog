@@ -13,11 +13,15 @@ import 'media_gateway.dart';
 /// 导出/分享操作返回结果。
 @immutable
 class MediaExportResult {
-  const MediaExportResult.completed(this.outcome) : errorMessage = null;
-  const MediaExportResult.failed(this.errorMessage) : outcome = null;
+  const MediaExportResult.completed(this.outcome, {this.notice})
+    : errorMessage = null;
+  const MediaExportResult.failed(this.errorMessage)
+    : outcome = null,
+      notice = null;
 
   final MediaReviewOutcome? outcome;
   final String? errorMessage;
+  final String? notice;
 
   bool get succeeded => outcome != null;
 }
@@ -59,6 +63,7 @@ class MediaReviewStore extends ChangeNotifier {
   bool _deriving;
   bool _submitted;
   bool _pairSaved = false;
+  bool _mediaNoteEnqueued = false;
   String _stage = '';
   String? _deriveError;
   int _deriveRun = 0;
@@ -296,13 +301,69 @@ class MediaReviewStore extends ChangeNotifier {
     return saved;
   }
 
+  Future<MediaNoteSyncOutcome?> _enqueueNoteMediaUpload() async {
+    final enqueue = gateway.enqueueMediaNoteUpload;
+    if (enqueue == null) return null;
+    if (_mediaNoteEnqueued) return MediaNoteSyncOutcome.enqueued;
+    try {
+      var thumbPath = firstExistingFramePath ?? '';
+      if (_media.isVideo && thumbPath.isEmpty && File(_media.path).existsSync()) {
+        try {
+          final extracted = await CameraBridge.extractFrames(
+            _media.path,
+            count: 1,
+          );
+          if (extracted.isNotEmpty && File(extracted.first).existsSync()) {
+            thumbPath = extracted.first;
+          }
+        } catch (_) {
+          // 抽帧失败不阻断视频本身入队上传。
+        }
+      }
+      final outcome = await enqueue(
+        kind: _media.kind,
+        filePath: _media.path,
+        thumbPath: thumbPath,
+        transcript: transcriptController.text.trim(),
+        durationMs: _media.durationMs,
+        capturedAt: _media.capturedAt,
+        address: _media.address,
+        weather: _media.weather,
+        localMediaId: _media.id,
+        syncObservation: !_submitted && hasText,
+      );
+      if (outcome == MediaNoteSyncOutcome.enqueued) {
+        _mediaNoteEnqueued = true;
+      }
+      return outcome;
+    } catch (_) {
+      return MediaNoteSyncOutcome.failed;
+    }
+  }
+
+  static String? _syncNoticeFor(MediaNoteSyncOutcome? outcome) =>
+      switch (outcome) {
+        MediaNoteSyncOutcome.enqueued => '已保存到相册，正在后台同步至火场日志',
+        MediaNoteSyncOutcome.skippedGuest => '已保存到相册（游客模式不上传至火场日志）',
+        MediaNoteSyncOutcome.skippedNoIncident => '已保存到相册（未关联警情，未同步至火场日志）',
+        MediaNoteSyncOutcome.failed => '已保存到相册，火场日志后台队列入队失败',
+        null => null,
+      };
+
+  Future<MediaNoteSyncOutcome?> _syncToNotesAfterSave() async {
+    final syncOutcome = await _enqueueNoteMediaUpload();
+    if (syncOutcome == null || syncOutcome == MediaNoteSyncOutcome.failed) {
+      await _autoSubmitIfNeeded();
+    }
+    return syncOutcome;
+  }
+
   Future<MediaExportResult?> saveOnly() async {
     if (_busy || _deriving) return null;
     final paired = _media.sourcePath.isNotEmpty;
     _busy = true;
     _emit();
     await flushDraft();
-    await _autoSubmitIfNeeded();
     final saved = await _savePair();
     if (!saved) {
       if (!_disposed) {
@@ -311,10 +372,12 @@ class MediaReviewStore extends ChangeNotifier {
       }
       return const MediaExportResult.failed('两份相册文件保存失败，已回滚，核对页仍保留');
     }
+    final syncOutcome = await _syncToNotesAfterSave();
     return MediaExportResult.completed(
       paired
           ? MediaReviewOutcome.saved
           : MediaReviewOutcome.savedWatermarkedOnly,
+      notice: _syncNoticeFor(syncOutcome),
     );
   }
 
@@ -324,7 +387,6 @@ class MediaReviewStore extends ChangeNotifier {
     _busy = true;
     _emit();
     await flushDraft();
-    await _autoSubmitIfNeeded();
     final saved = await _savePair();
     if (!saved) {
       if (!_disposed) {
@@ -333,6 +395,7 @@ class MediaReviewStore extends ChangeNotifier {
       }
       return const MediaExportResult.failed('两份相册文件保存失败，已回滚，未打开分享');
     }
+    final syncOutcome = await _syncToNotesAfterSave();
     try {
       await MediaShareService.shareWatermarked(_media.path);
     } catch (_) {
@@ -346,6 +409,7 @@ class MediaReviewStore extends ChangeNotifier {
       paired
           ? MediaReviewOutcome.shared
           : MediaReviewOutcome.sharedWatermarkedOnly,
+      notice: _syncNoticeFor(syncOutcome),
     );
   }
 

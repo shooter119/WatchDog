@@ -7,6 +7,8 @@ import '../../../../design_system/design_system.dart';
 import '../../../../services/phone_caller.dart';
 import '../../data/models/note.dart';
 import '../../data/models/note_category.dart';
+import '../../data/models/note_media.dart';
+import 'note_media_strip.dart';
 
 /// 火场日志文本中的电话号码正则（手机号 / 带区号座机）。
 final RegExp notePhoneRegex = RegExp(
@@ -64,6 +66,11 @@ class NotePreviewSection extends StatelessWidget {
     required this.onSeeAll,
     this.onNoteTap,
     this.phoneLauncher,
+    this.resolveMediaUrl,
+    this.mediaHeaders = const <String, String>{},
+    this.onOpenMedia,
+    this.onRetryMediaUpload,
+    this.onDiscardMediaUpload,
     this.maxItems = 5,
     this.requiresIncident = false,
     this.now,
@@ -73,6 +80,11 @@ class NotePreviewSection extends StatelessWidget {
   final VoidCallback onSeeAll;
   final ValueChanged<Note>? onNoteTap;
   final PhoneLauncher? phoneLauncher;
+  final String Function(String relativePath)? resolveMediaUrl;
+  final Map<String, String> mediaHeaders;
+  final ValueChanged<NoteMediaAttachment>? onOpenMedia;
+  final ValueChanged<String>? onRetryMediaUpload;
+  final ValueChanged<String>? onDiscardMediaUpload;
   final int maxItems;
   final bool requiresIncident;
   final DateTime? now;
@@ -165,22 +177,111 @@ class NotePreviewSection extends StatelessWidget {
       timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
       icon: icon,
       title: note.text,
-      footer: phones.isEmpty
-          ? null
-          : NotePhoneChips(
-              phones: phones,
-              onCall: (String phone) => PhoneCaller.dial(
-                context,
-                phone,
-                launcher: phoneLauncher,
-              ),
-              onLongPress: (String phone) =>
-                  unawaited(_copyPhone(context, phone)),
-            ),
+      footer: NoteEntryFooter.maybeBuild(
+        context: context,
+        note: note,
+        phones: phones,
+        compact: true,
+        phoneLauncher: phoneLauncher,
+        onCopyPhone: (String phone) => _copyPhone(context, phone),
+        resolveMediaUrl: resolveMediaUrl,
+        mediaHeaders: mediaHeaders,
+        onOpenMedia: onOpenMedia,
+        onRetryMediaUpload: onRetryMediaUpload,
+        onDiscardMediaUpload: onDiscardMediaUpload,
+      ),
       subtitle: formatNoteSubtitle(note, now: now),
       status: status,
       categoryLabel: note.category,
       onTap: onNoteTap != null ? () => onNoteTap!(note) : null,
+    );
+  }
+}
+
+/// 统一装配单条日志卡片底部的媒体缩略条与电话芯片组，避免预览区与时间线页重复拼装。
+class NoteEntryFooter extends StatelessWidget {
+  const NoteEntryFooter({
+    super.key,
+    required this.attachments,
+    required this.phones,
+    required this.onCallPhone,
+    required this.onLongPressPhone,
+    this.compact = false,
+    this.resolveMediaUrl,
+    this.mediaHeaders = const <String, String>{},
+    this.onOpenMedia,
+    this.onRetryMediaUpload,
+    this.onDiscardMediaUpload,
+  });
+
+  static Widget? maybeBuild({
+    required BuildContext context,
+    required Note note,
+    required List<String> phones,
+    required bool compact,
+    required PhoneLauncher? phoneLauncher,
+    required ValueChanged<String> onCopyPhone,
+    String Function(String relativePath)? resolveMediaUrl,
+    Map<String, String> mediaHeaders = const <String, String>{},
+    ValueChanged<NoteMediaAttachment>? onOpenMedia,
+    ValueChanged<String>? onRetryMediaUpload,
+    ValueChanged<String>? onDiscardMediaUpload,
+  }) {
+    if (note.media.isEmpty && phones.isEmpty) return null;
+    return NoteEntryFooter(
+      attachments: note.media,
+      phones: phones,
+      compact: compact,
+      resolveMediaUrl: resolveMediaUrl,
+      mediaHeaders: mediaHeaders,
+      onOpenMedia: onOpenMedia,
+      onRetryMediaUpload: onRetryMediaUpload,
+      onDiscardMediaUpload: onDiscardMediaUpload,
+      onCallPhone: (String phone) => PhoneCaller.dial(
+        context,
+        phone,
+        launcher: phoneLauncher,
+      ),
+      onLongPressPhone: onCopyPhone,
+    );
+  }
+
+  final List<NoteMediaAttachment> attachments;
+  final List<String> phones;
+  final ValueChanged<String> onCallPhone;
+  final ValueChanged<String> onLongPressPhone;
+  final bool compact;
+  final String Function(String relativePath)? resolveMediaUrl;
+  final Map<String, String> mediaHeaders;
+  final ValueChanged<NoteMediaAttachment>? onOpenMedia;
+  final ValueChanged<String>? onRetryMediaUpload;
+  final ValueChanged<String>? onDiscardMediaUpload;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (attachments.isNotEmpty)
+          NoteMediaStrip(
+            attachments: attachments,
+            resolveMediaUrl: resolveMediaUrl,
+            mediaHeaders: mediaHeaders,
+            compact: compact,
+            onOpenMedia: onOpenMedia,
+            onRetryUpload: onRetryMediaUpload,
+            onDiscardUpload: onDiscardMediaUpload,
+          ),
+        if (attachments.isNotEmpty && phones.isNotEmpty)
+          const SizedBox(height: DsSpacing.sm),
+        if (phones.isNotEmpty)
+          NotePhoneChips(
+            phones: phones,
+            onCall: onCallPhone,
+            onLongPress: onLongPressPhone,
+          ),
+      ],
     );
   }
 }
@@ -246,14 +347,17 @@ class NotePhoneChips extends StatelessWidget {
                               color: colors.brandText,
                             ),
                             const SizedBox(width: DsSpacing.xs),
-                            Text(
-                              phone,
-                              style: typo.captionTabular.copyWith(
-                                color: colors.brandText,
-                                fontWeight: FontWeight.w600,
-                                decoration: TextDecoration.underline,
-                                decorationColor:
-                                    colors.brandText.withValues(alpha: 0.6),
+                            Flexible(
+                              child: Text(
+                                phone,
+                                softWrap: true,
+                                style: typo.captionTabular.copyWith(
+                                  color: colors.brandText,
+                                  fontWeight: FontWeight.w600,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor:
+                                      colors.brandText.withValues(alpha: 0.6),
+                                ),
                               ),
                             ),
                           ],

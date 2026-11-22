@@ -4731,10 +4731,16 @@ app.delete('/api/notes/:id', async (req, res, next) => {
         before: { text: note.text, category: note.category, author: note.author },
       },
     };
+    const linkedMedia = typeof db.listNoteMediaByNoteId === 'function'
+      ? await db.listNoteMediaByNoteId(note.id)
+      : [];
     const atomicResult = typeof db.deleteNoteWithEvent === 'function'
       ? await db.deleteNoteWithEvent({ id: note.id, incidentId: incident.id, event: noteEventArgs, activityAt: Date.now() })
       : null;
     const n = atomicResult ? (atomicResult.changed ? 1 : 0) : await db.deleteNote(req.params.id);
+    if (n > 0 && noteMediaService && linkedMedia.length > 0) {
+      await noteMediaService.deleteNoteMediaFiles(linkedMedia);
+    }
     await logOp(req, 'info', 'note_deleted', '已删除随手记', { noteId: req.params.id });
     let event = atomicResult?.event || null;
     if (!atomicResult && incident) {
@@ -4752,6 +4758,29 @@ app.delete('/api/notes/:id', async (req, res, next) => {
     next(e);
   }
 });
+
+let noteMediaService = null;
+if (['postgres', 'postgresql'].includes(String(process.env.WATCHDOG_DB_DRIVER || (process.env.NODE_ENV === 'test' ? 'sqlite' : 'postgres')).toLowerCase())) {
+  noteMediaService = require('./note-media').registerNoteMediaRoutes(app, {
+    db,
+    store: require('./postgres-store'),
+    requireIncident,
+    ensureOperationScope,
+    beginTrackedOperation,
+    completeTrackedOperation,
+    releaseTrackedOperation,
+    cleanCategory,
+    actorName,
+    deviceKey,
+    opKey,
+    appendEvent,
+    logOp,
+    withWriteMetadata,
+    logger,
+    syncSupported,
+    unitAuthRequired: UNIT_AUTH_REQUIRED,
+  });
+}
 
 // 用户设置云同步：以 X-Device-Id（Android ID 加盐哈希）识别用户，按场景隔离
 // GET 拉取；PUT 全量覆盖。仅接受白名单键，值限 number/boolean
@@ -4949,11 +4978,17 @@ if (require.main === module) {
     } catch (e) {
       logger.error('清理旧日志失败', errorSummary(e));
     }
-    try {
-      const n = await db.purgeOldNotes(logPurgeDays);
-      if (n > 0) logger.info(`已清理 ${n} 条超过 ${logPurgeDays} 天的随手记`);
-    } catch (e) {
-      logger.error('清理旧随手记失败', errorSummary(e));
+    if (noteMediaService) {
+      try {
+        const cleaned = await noteMediaService.purgeArchived();
+        if (cleaned.expiredCount > 0 || cleaned.quotaCount > 0 || cleaned.orphanCount > 0) {
+          logger.info(
+            `已清理归档火场日志媒体：过期=${cleaned.expiredCount}，超限=${cleaned.quotaCount}，孤儿=${cleaned.orphanCount}，释放=${cleaned.freedBytes}B`,
+          );
+        }
+      } catch (e) {
+        logger.error('清理归档日志媒体失败', errorSummary(e));
+      }
     }
     try {
       const n = await db.purgeOldChatMessages(logPurgeDays);

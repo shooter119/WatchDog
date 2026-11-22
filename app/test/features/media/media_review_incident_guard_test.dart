@@ -108,10 +108,14 @@ void main() {
   late bool apiAvailable;
   late bool submitFails;
 
-  MediaGateway buildGateway({MediaDeriveCallback? deriveMedia}) {
+  MediaGateway buildGateway({
+    MediaDeriveCallback? deriveMedia,
+    MediaNoteSyncCallback? enqueueMediaNoteUpload,
+  }) {
     return MediaGateway(
       readCurrentIncident: () => currentIncident,
       isObservationApiAvailable: () => apiAvailable,
+      enqueueMediaNoteUpload: enqueueMediaNoteUpload,
       createIncidentObservation: ({
         required String incidentId,
         required String transcript,
@@ -176,6 +180,7 @@ void main() {
     LocalMedia? media,
     bool deriving = false,
     MediaDeriveCallback? deriveMedia,
+    MediaNoteSyncCallback? enqueueMediaNoteUpload,
     double textScale = 1.0,
     Brightness brightness = Brightness.light,
   }) async {
@@ -198,7 +203,10 @@ void main() {
                   await Navigator.of(context).push<MediaReviewOutcome>(
                     MaterialPageRoute<MediaReviewOutcome>(
                       builder: (_) => MediaReviewPage(
-                        gateway: buildGateway(deriveMedia: deriveMedia),
+                        gateway: buildGateway(
+                          deriveMedia: deriveMedia,
+                          enqueueMediaNoteUpload: enqueueMediaNoteUpload,
+                        ),
                         media: target,
                         deriving: deriving,
                       ),
@@ -527,4 +535,153 @@ void main() {
       );
     });
   }
+
+  testWidgets('已选警情点击仅保存（照片）将带水印照片入队火场日志并弹出非阻塞提示', (tester) async {
+    joinIncident();
+    final enqueued = <Map<String, Object?>>[];
+    final results = await openReview(
+      tester,
+      media: _sampleMedia(
+        kind: 'photo',
+        path: '/tmp/watchdog-test/PHOTO_WM.jpg',
+        sourcePath: '/tmp/watchdog-test/PHOTO_SRC.jpg',
+        transcript: '',
+      ),
+      enqueueMediaNoteUpload: ({
+        required String kind,
+        required String filePath,
+        String thumbPath = '',
+        required String transcript,
+        required int durationMs,
+        required int capturedAt,
+        String address = '',
+        String weather = '',
+        required String localMediaId,
+        bool syncObservation = false,
+      }) async {
+        enqueued.add(<String, Object?>{
+          'kind': kind,
+          'filePath': filePath,
+          'transcript': transcript,
+          'syncObservation': syncObservation,
+          'localMediaId': localMediaId,
+        });
+        return MediaNoteSyncOutcome.enqueued;
+      },
+    );
+
+    await tester.tap(find.text('仅保存'));
+    await _pumpAsyncAction(tester);
+
+    expect(enqueued, hasLength(1));
+    expect(enqueued.single['kind'], 'photo');
+    expect(enqueued.single['filePath'], '/tmp/watchdog-test/PHOTO_WM.jpg');
+    expect(enqueued.single['transcript'], '');
+    expect(enqueued.single['syncObservation'], isFalse);
+    expect(submittedTranscripts, isEmpty);
+    await tester.pump();
+    expect(find.text('已保存到相册，正在后台同步至火场日志'), findsOneWidget);
+    await expectSavedAndPopped(tester, results);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('已选警情点击保存并分享（带口述视频）先成对保存再入队视频与转写文本后打开系统分享', (tester) async {
+    joinIncident();
+    final events = <String>[];
+    final enqueued = <Map<String, Object?>>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          mediaCalls.add(call);
+          if (call.method == 'savePairToGallery') {
+            events.add('pair');
+            return const [
+              'content://media/video/wm',
+              'content://media/video/src',
+            ];
+          }
+          return null;
+        });
+    MediaShareService.overrideShare = (params) async {
+      events.add('share');
+      shareCalls.add(params);
+      return const ShareResult('', ShareResultStatus.dismissed);
+    };
+
+    final results = await openReview(
+      tester,
+      media: _sampleMedia(
+        kind: 'video',
+        durationMs: 12000,
+        path: '/tmp/watchdog-test/VID_SHARE_WM.mp4',
+        sourcePath: '/tmp/watchdog-test/VID_SHARE_SRC.mp4',
+        transcript: '二楼东北角浓烟封门，请求破拆支援',
+      ),
+      enqueueMediaNoteUpload: ({
+        required String kind,
+        required String filePath,
+        String thumbPath = '',
+        required String transcript,
+        required int durationMs,
+        required int capturedAt,
+        String address = '',
+        String weather = '',
+        required String localMediaId,
+        bool syncObservation = false,
+      }) async {
+        events.add('enqueue');
+        enqueued.add(<String, Object?>{
+          'kind': kind,
+          'filePath': filePath,
+          'transcript': transcript,
+          'durationMs': durationMs,
+          'syncObservation': syncObservation,
+        });
+        return MediaNoteSyncOutcome.enqueued;
+      },
+    );
+
+    await tester.tap(find.text('保存并分享'));
+    await _pumpAsyncAction(tester);
+
+    expect(events, const ['pair', 'enqueue', 'share']);
+    expect(enqueued.single['kind'], 'video');
+    expect(enqueued.single['transcript'], '二楼东北角浓烟封门，请求破拆支援');
+    expect(enqueued.single['durationMs'], 12000);
+    expect(enqueued.single['syncObservation'], isTrue);
+    expect(shareCalls.single.files!.single.path, '/tmp/watchdog-test/VID_SHARE_WM.mp4');
+    await tester.pump();
+    expect(find.text('已保存到相册，正在后台同步至火场日志'), findsOneWidget);
+    await expectSavedAndPopped(
+      tester,
+      results,
+      expected: MediaReviewOutcome.shared,
+    );
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('游客或未选警情点击保存不阻塞相册导出并给出跳过日志提示', (tester) async {
+    final results = await openReview(
+      tester,
+      enqueueMediaNoteUpload: ({
+        required String kind,
+        required String filePath,
+        String thumbPath = '',
+        required String transcript,
+        required int durationMs,
+        required int capturedAt,
+        String address = '',
+        String weather = '',
+        required String localMediaId,
+        bool syncObservation = false,
+      }) async => MediaNoteSyncOutcome.skippedGuest,
+    );
+
+    await tester.tap(find.text('仅保存'));
+    await _pumpAsyncAction(tester);
+
+    await tester.pump();
+    expect(find.text('已保存到相册（游客模式不上传至火场日志）'), findsOneWidget);
+    await expectSavedAndPopped(tester, results);
+    await tester.pump(const Duration(seconds: 5));
+  });
 }

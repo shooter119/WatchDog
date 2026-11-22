@@ -5,7 +5,9 @@ import '../../../design_system/design_system.dart';
 import '../../../services/phone_caller.dart';
 import '../data/models/note.dart';
 import '../data/models/note_category.dart';
+import '../data/models/note_media.dart';
 import '../state/notes_store.dart';
+import 'note_media_viewer_page.dart';
 import 'widgets/note_editor_sheet.dart';
 import 'widgets/note_preview_section.dart';
 
@@ -27,6 +29,11 @@ class NotesTimelineScreen extends StatefulWidget {
     this.onConnectionTap,
     this.onRequestIncidentSelection,
     this.phoneLauncher,
+    this.resolveMediaUrl,
+    this.mediaHeaders = const <String, String>{},
+    this.onOpenMedia,
+    this.onRetryMediaUpload,
+    this.onDiscardMediaUpload,
     this.now,
   });
 
@@ -40,6 +47,11 @@ class NotesTimelineScreen extends StatefulWidget {
   final VoidCallback? onConnectionTap;
   final VoidCallback? onRequestIncidentSelection;
   final PhoneLauncher? phoneLauncher;
+  final String Function(String relativePath)? resolveMediaUrl;
+  final Map<String, String> mediaHeaders;
+  final ValueChanged<NoteMediaAttachment>? onOpenMedia;
+  final ValueChanged<String>? onRetryMediaUpload;
+  final ValueChanged<String>? onDiscardMediaUpload;
   final DateTime? now;
 
   static final RegExp phoneRegex = notePhoneRegex;
@@ -83,6 +95,10 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
   Future<void> _openEditor(Note? note) async {
     if (note == null && widget.requiresIncident) {
       widget.onRequestIncidentSelection?.call();
+      return;
+    }
+    if (note != null && note.hasPendingMediaUpload) {
+      _showToast('该条媒体日志同步完成后可编辑');
       return;
     }
     final result = await showNoteEditorSheet(context, note: note);
@@ -304,6 +320,24 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
     );
   }
 
+  void _handleOpenMedia(NoteMediaAttachment attachment) {
+    final override = widget.onOpenMedia;
+    if (override != null) {
+      override(attachment);
+      return;
+    }
+    if (!attachment.available && !attachment.isPendingUpload) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NoteMediaViewerPage(
+          attachment: attachment,
+          resolvedFileUrl: widget.resolveMediaUrl?.call(attachment.fileUrl) ?? '',
+          mediaHeaders: widget.mediaHeaders,
+        ),
+      ),
+    );
+  }
+
   DsTimelineEntry _toEntry(BuildContext context, Note note) {
     final (status, icon) = noteCategoryVisual(note.category);
     final ts = note.updatedAt > note.createdAt ? note.updatedAt : note.createdAt;
@@ -312,17 +346,19 @@ class _NotesTimelineScreenState extends State<NotesTimelineScreen> {
       timestamp: DateTime.fromMillisecondsSinceEpoch(ts),
       icon: icon,
       title: note.text,
-      footer: phones.isEmpty
-          ? null
-          : NotePhoneChips(
-              phones: phones,
-              onCall: (String phone) => PhoneCaller.dial(
-                context,
-                phone,
-                launcher: widget.phoneLauncher,
-              ),
-              onLongPress: _copyPhone,
-            ),
+      footer: NoteEntryFooter.maybeBuild(
+        context: context,
+        note: note,
+        phones: phones,
+        compact: false,
+        phoneLauncher: widget.phoneLauncher,
+        onCopyPhone: _copyPhone,
+        resolveMediaUrl: widget.resolveMediaUrl,
+        mediaHeaders: widget.mediaHeaders,
+        onOpenMedia: _handleOpenMedia,
+        onRetryMediaUpload: widget.onRetryMediaUpload,
+        onDiscardMediaUpload: widget.onDiscardMediaUpload,
+      ),
       subtitle: formatNoteSubtitle(note, now: widget.now),
       status: status,
       categoryLabel: note.category,

@@ -29,7 +29,7 @@ void main() {
       );
 
       expect(find.byKey(const Key('command-glance-card')), findsOneWidget);
-      expect(find.text('现场监控'), findsOneWidget);
+      expect(find.text('安全管控'), findsOneWidget);
       expect(find.text('暂无在场人员'), findsOneWidget);
       expect(find.text('查看看板'), findsOneWidget);
     });

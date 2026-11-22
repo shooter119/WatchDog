@@ -252,7 +252,7 @@ void main() {
       Navigator.of(tester.element(find.byType(HazmatPage))).pop();
       await tester.pumpAndSettle();
 
-      // 3. 重点单位库 -> DS v3.0 KeySitesPage
+      // 3. 重点单位 -> DS v3.0 KeySitesPage
       await tester.tap(find.byKey(const Key('tool-重点单位')));
       await tester.pumpAndSettle();
       expect(find.byType(KeySitesPage), findsOneWidget);

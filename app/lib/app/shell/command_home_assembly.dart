@@ -12,7 +12,9 @@ import '../../features/incident/data/models/incident_force.dart';
 import '../../features/incident/ui/incident_details_screen.dart';
 import '../../features/incident/ui/widgets/incident_situation_card.dart';
 import '../../features/notes/data/models/note.dart';
+import '../../features/notes/data/models/note_media.dart';
 import '../../features/notes/state/notes_store.dart';
+import '../../features/notes/ui/note_media_viewer_page.dart';
 import '../../features/notes/ui/notes_timeline_screen.dart';
 import '../../features/notes/ui/widgets/note_preview_section.dart';
 import '../../services/tactical_brief_engine.dart';
@@ -150,6 +152,14 @@ class CommandHomeAssembly {
       notesPreviewSlot: NotePreviewSection(
         notes: _notesStore.notes,
         requiresIncident: controller.requiresIncident,
+        resolveMediaUrl: controller.noteMediaUrl,
+        mediaHeaders: controller.noteMediaHeaders(),
+        onOpenMedia: (NoteMediaAttachment item) =>
+            _openNoteMediaViewer(context, item),
+        onRetryMediaUpload: (String id) =>
+            unawaited(controller.retryNoteMediaUpload(id)),
+        onDiscardMediaUpload: (String id) =>
+            unawaited(controller.discardNoteMediaUpload(id)),
         onSeeAll: onOpenNotes,
         onNoteTap: (_) => onOpenNotes(),
       ),
@@ -212,6 +222,22 @@ class CommandHomeAssembly {
     );
   }
 
+  void _openNoteMediaViewer(
+    BuildContext context,
+    NoteMediaAttachment attachment,
+  ) {
+    if (!attachment.available && !attachment.isPendingUpload) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NoteMediaViewerPage(
+          attachment: attachment,
+          resolvedFileUrl: controller.noteMediaUrl(attachment.fileUrl),
+          mediaHeaders: controller.noteMediaHeaders(),
+        ),
+      ),
+    );
+  }
+
   /// 构建 DS v3.0 火场日志全量时间线二级页路由。
   Route<void> buildNotesRoute() {
     return MaterialPageRoute<void>(
@@ -224,6 +250,14 @@ class CommandHomeAssembly {
           pendingSyncCount: controller.offlineReviewCount,
           isOffline: controller.connectionLost,
           onRefresh: controller.refreshNow,
+          resolveMediaUrl: controller.noteMediaUrl,
+          mediaHeaders: controller.noteMediaHeaders(),
+          onOpenMedia: (NoteMediaAttachment item) =>
+              _openNoteMediaViewer(context, item),
+          onRetryMediaUpload: (String id) =>
+              unawaited(controller.retryNoteMediaUpload(id)),
+          onDiscardMediaUpload: (String id) =>
+              unawaited(controller.discardNoteMediaUpload(id)),
           onOpenTacticalBrief: () =>
               unawaited(toolsRouter.openTacticalBrief(context)),
           onConnectionTap: () => unawaited(openConnectionDetail(context)),
@@ -277,13 +311,13 @@ class CommandHomeAssembly {
 
 class _ControllerNotesStore extends NotesStore {
   _ControllerNotesStore(this._controller)
-    : super(initialNotes: _controller.notes);
+    : super(initialNotes: _controller.displayNotes);
 
   final AppController _controller;
 
   void syncFromController() {
     if (disposed) return;
-    setNotes(_controller.notes, notify: true);
+    setNotes(_controller.displayNotes, notify: true);
   }
 
   @override

@@ -11,7 +11,7 @@ import 'sheets/pressure_report_sheet.dart';
 import 'widgets/monitor_risk_bar.dart';
 import 'widgets/personnel_countdown_card.dart';
 
-/// 现场监控主页面（Tab 1 空呼安全看板）。
+/// 安全管控主页面（Tab 1 空呼安全看板）。
 ///
 /// 架构与性能要点：
 /// - 列表层仅监听低频 [MonitorStore]、[SyncStore] 与 [AlertClockStore]（报警音开关）；
@@ -248,7 +248,7 @@ class _MonitorPageState extends State<MonitorPage> {
         MediaQuery.textScalerOf(context).scale(1.0) > 1.25;
 
     final title = Text(
-      '现场监控',
+      '安全管控',
       style: ds.typography.display.copyWith(color: colors.textPrimary),
     );
 

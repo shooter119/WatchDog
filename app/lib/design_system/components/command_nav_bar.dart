@@ -61,7 +61,7 @@ class CommandNavBar extends StatelessWidget {
       activeIcon: DsIcons.navCommandFill,
     ),
     CommandNavTab(
-      label: '现场监控',
+      label: '安全管控',
       icon: DsIcons.navMonitorLine,
       activeIcon: DsIcons.navMonitorFill,
     ),

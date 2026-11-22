@@ -187,7 +187,7 @@ void main() {
 
       expect(currentStack().index, 0);
       expect(find.text('指挥台'), findsOneWidget);
-      expect(find.text('现场监控'), findsOneWidget);
+      expect(find.text('安全管控'), findsOneWidget);
       expect(find.text('智能辅助'), findsOneWidget);
       expect(find.text('我的'), findsOneWidget);
 

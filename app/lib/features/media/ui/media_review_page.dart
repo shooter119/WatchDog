@@ -102,7 +102,7 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       if (result.errorMessage != null) _toast(result.errorMessage!);
       return;
     }
-    Navigator.of(context).pop(result.outcome);
+    _popWithNotice(result);
     await _store.cleanupLocalCopy();
   }
 
@@ -113,8 +113,26 @@ class _MediaReviewPageState extends State<MediaReviewPage> {
       if (result.errorMessage != null) _toast(result.errorMessage!);
       return;
     }
-    Navigator.of(context).pop(result.outcome);
+    _popWithNotice(result);
     await _store.cleanupLocalCopy();
+  }
+
+  void _popWithNotice(MediaExportResult result) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final notice = result.notice;
+    Navigator.of(context).pop(result.outcome);
+    if (notice != null && notice.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        messenger
+          ?..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(notice),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+      });
+    }
   }
 
   Future<void> _openMedia() async {

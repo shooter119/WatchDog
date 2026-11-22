@@ -95,8 +95,8 @@ class FieldToolsRouter {
   Future<void> openKeySites(BuildContext context) async {
     if (!await _ensureFormalMember(
       context,
-      toolName: '重点单位库',
-      reason: '重点单位库包含辖区预案与内部建筑图纸资料，请先登录或加入救援单位后再查阅。',
+      toolName: '重点单位',
+      reason: '重点单位资料包含辖区预案与内部建筑图纸，请先登录或加入救援单位后再查阅。',
     )) {
       return;
     }

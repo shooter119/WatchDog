@@ -5,9 +5,10 @@ const logger = require('./logger');
 
 const tables = new Set([
   'units', 'unit_members', 'auth_sessions', 'incidents', 'entries', 'pressure_samples',
-  'notes', 'firefighters', 'hotwords', 'stations', 'incident_forces', 'incident_events',
-  'operation_ledger', 'device_profiles', 'user_settings', 'logs', 'chat_messages',
-  'sync_streams', 'sync_events', 'external_incidents',
+  'notes', 'note_media', 'incident_observations', 'firefighters', 'hotwords', 'stations',
+  'incident_forces', 'incident_events', 'operation_ledger', 'device_profiles',
+  'user_settings', 'logs', 'chat_messages', 'sync_streams', 'sync_events',
+  'external_incidents',
 ]);
 
 const databaseUrl = process.env.DATABASE_URL ||
@@ -37,6 +38,7 @@ const numericColumns = new Set([
   'duration_min', 'auto_archived', 'unresolved_active_count', 'version',
   'vehicle_count', 'personnel_count', 'roster_version',
   'register_time', 'ai_organized_at', 'scraped_at',
+  'size_bytes', 'duration_ms', 'width', 'height', 'captured_at', 'purged_at',
 ]);
 
 function normalizeRow(row) {

@@ -58,7 +58,7 @@ class FieldToolsGridSection extends StatelessWidget {
     return <FieldToolSpec>[
       FieldToolSpec(
         keyId: '重点单位',
-        label: '重点单位库',
+        label: '重点单位',
         subtitle: guestMode ? guestLockedSubtitle : '预案与作战资料',
         icon: DsIcons.toolKeySites,
         locked: guestMode,

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../design_system/design_system.dart';
@@ -153,11 +155,12 @@ class _CommandHeaderBar extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final compact =
-            constraints.maxWidth < 300 ||
-            MediaQuery.textScalerOf(context).scale(1.0) >= 1.25;
+        final double maxPillWidth = constraints.hasBoundedWidth
+            ? math.max(0.0, constraints.maxWidth * 0.62)
+            : double.infinity;
         final titleWidget = Text(
           title,
+          key: const Key('command-header-title'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: typo.display.copyWith(
@@ -166,23 +169,16 @@ class _CommandHeaderBar extends StatelessWidget {
             color: colors.textPrimary,
           ),
         );
-        final pill = ConnectionPill(
-          state: connectionState,
-          pendingCount: pendingSyncCount,
-          onTap: onConnectionTap,
+        final pill = ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxPillWidth),
+          child: ConnectionPill(
+            state: connectionState,
+            pendingCount: pendingSyncCount,
+            onTap: onConnectionTap,
+          ),
         );
-        if (compact) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              titleWidget,
-              const SizedBox(height: DsSpacing.xs),
-              Align(alignment: Alignment.centerRight, child: pill),
-            ],
-          );
-        }
         return Row(
+          key: const Key('command-header-bar'),
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             Expanded(child: titleWidget),

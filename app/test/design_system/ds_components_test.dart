@@ -1449,11 +1449,11 @@ void main() {
         );
 
         expect(tester.takeException(), isNull);
-        for (final label in const <String>['指挥台', '现场监控', '智能辅助', '我的']) {
+        for (final label in const <String>['指挥台', '安全管控', '智能辅助', '我的']) {
           expect(find.text(label), findsOneWidget);
         }
 
-        final selectedTabText = tester.widget<Text>(find.text('现场监控'));
+        final selectedTabText = tester.widget<Text>(find.text('安全管控'));
         expect(selectedTabText.style?.color, colors.brandText);
 
         final voiceRect =
@@ -1721,7 +1721,7 @@ void main() {
                 DsToolItem(
                   id: 'locked',
                   icon: DsIcons.toolKeySites,
-                  label: '重点单位库',
+                  label: '重点单位',
                   locked: true,
                   onTap: () => lockedTapped++,
                 ),
@@ -1746,7 +1746,7 @@ void main() {
         final lockedSemantics = tester.getSemantics(
           find.byKey(const Key('ds-tool-locked')),
         );
-        expect(lockedSemantics.label, '重点单位库，需单位认证后使用');
+        expect(lockedSemantics.label, '重点单位，需单位认证后使用');
 
         await tester.tap(find.byKey(const Key('ds-tool-locked')));
         await tester.tap(find.byKey(const Key('ds-tool-open')));
@@ -1755,7 +1755,7 @@ void main() {
         expect(openTapped, 1);
 
         final colors = DsColors.of(Brightness.light);
-        final lockedLabel = tester.widget<Text>(find.text('重点单位库'));
+        final lockedLabel = tester.widget<Text>(find.text('重点单位'));
         expect(lockedLabel.style?.color, colors.textSecondary);
       } finally {
         semanticsHandle.dispose();
@@ -1779,7 +1779,7 @@ void main() {
                   DsToolItem(
                     id: 'a',
                     icon: DsIcons.toolKeySites,
-                    label: '重点单位库',
+                    label: '重点单位',
                     locked: true,
                     onTap: () {},
                   ),

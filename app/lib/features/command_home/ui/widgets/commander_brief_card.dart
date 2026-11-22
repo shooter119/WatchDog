@@ -6,7 +6,7 @@ import '../../../../services/tactical_brief_engine.dart';
 /// 指挥员 3 秒态势卡（Design System v3.0）。
 ///
 /// 展示在场内攻人数、木桶最短板余量、双通道状态胶囊与最新实质战术进展，
-/// 点击直跳 Tab 1 现场监控看板。通过 [AirSafetySummary] 接收纯值数据，
+/// 点击直跳 Tab 1 安全管控看板。通过 [AirSafetySummary] 接收纯值数据，
 /// 保持 `features/command_home/` 零跨 Feature 依赖。
 class CommanderBriefCard extends StatelessWidget {
   const CommanderBriefCard({
@@ -109,7 +109,7 @@ class CommanderBriefCard extends StatelessWidget {
               const SizedBox(width: DsSpacing.sm),
               Expanded(
                 child: Text(
-                  '现场监控',
+                  '安全管控',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: typo.title.copyWith(color: colors.textPrimary),

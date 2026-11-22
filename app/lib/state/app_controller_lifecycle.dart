@@ -114,6 +114,9 @@ mixin _AppControllerLifecycleMixin on _AppControllerBase {
     // 现场媒体按保留期自动清理；并补登记上次异常退出遗留的拍摄文件。
     unawaited(_purgeExpiredMedia());
     unawaited(_recoverMediaFiles());
+    if (_offlineQueueDrainer == null) {
+      unawaited(NoteMediaUploadQueue.instance.loadCache().catchError((_) {}));
+    }
     // 先建立 API 客户端。首次安装必须先完成单位认证，认证前不拉取业务数据。
     await refreshConfig();
     if (_disposed) return;
@@ -124,6 +127,7 @@ mixin _AppControllerLifecycleMixin on _AppControllerBase {
         (await Settings.unitName).isNotEmpty &&
         sessionToken.isNotEmpty;
     if (_authenticated) {
+      _noteMediaMemberId = await Settings.memberId;
       final expiresAt = await Settings.sessionExpiresAt;
       final now = DateTime.now().millisecondsSinceEpoch;
       if (expiresAt > 0 && expiresAt <= now) {

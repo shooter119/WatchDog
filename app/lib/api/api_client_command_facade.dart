@@ -154,6 +154,40 @@ mixin _CommandApiFacade on _ApiClientBase {
 
   Future<void> deleteNote(String id) => _notes.deleteNote(id);
 
+  Future<Note> uploadNoteMedia({
+    required String kind,
+    required String filePath,
+    String? thumbPath,
+    String text = '',
+    String? category,
+    String? author,
+    int durationMs = 0,
+    int capturedAt = 0,
+    String address = '',
+    String weather = '',
+    String mediaRef = '',
+    bool syncObservation = false,
+    String? opId,
+  }) => _notes.uploadNoteMedia(
+    kind: kind,
+    filePath: filePath,
+    thumbPath: thumbPath,
+    text: text,
+    category: category,
+    author: author,
+    durationMs: durationMs,
+    capturedAt: capturedAt,
+    address: address,
+    weather: weather,
+    mediaRef: mediaRef,
+    syncObservation: syncObservation,
+    opId: opId,
+  );
+
+  String noteMediaUrl(String relativePath) => _notes.mediaUrl(relativePath);
+
+  Map<String, String> noteMediaHeaders() => _notes.mediaAuthHeaders();
+
   // ---- VoiceRepository (5; realtimeAsrUri stays polymorphic on ApiClient) ----
 
   List<Uri> realtimeAsrUris() => _voice.realtimeAsrUris();

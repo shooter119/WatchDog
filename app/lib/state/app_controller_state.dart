@@ -242,6 +242,7 @@ abstract class _AppControllerBase extends ChangeNotifier {
   int _memberReviewGeneration = 0;
   bool _appInForeground = true;
   bool _pipActive = false;
+  String _noteMediaMemberId = '';
 
   @visibleForTesting
   Duration get tickInterval => (_appInForeground || _pipActive)
@@ -350,4 +351,5 @@ abstract class _AppControllerBase extends ChangeNotifier {
   Future<void> _ensureLocalRoster();
   Future<void> _clearRosterCache();
   Future<Note> addNote(String text, {String? category, String? opId});
+  Future<void> drainNoteMediaUploads({Set<String>? allowedIncidentIds});
 }
