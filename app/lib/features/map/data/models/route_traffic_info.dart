@@ -69,6 +69,39 @@ class RouteTrafficInfo {
     );
   }
 
+  String get _searchKeyword {
+    final query = destination?.queryAddress.trim() ?? '';
+    if (query.isNotEmpty) return query;
+    return destination?.displayAddress.trim() ?? '';
+  }
+
+  /// 根据事发地点关键词构造高德地图网页版与 Android 原生关键词检索 URI。
+  static ({Uri? webUri, Uri? nativeUri}) buildKeywordSearchUris(String keyword) {
+    final trimmed = keyword.trim();
+    if (trimmed.isEmpty) return (webUri: null, nativeUri: null);
+    return (
+      webUri: Uri.https('uri.amap.com', '/search', {
+        'keyword': trimmed,
+        'src': 'watchdog',
+        'callnative': '1',
+      }),
+      nativeUri: Uri(
+        scheme: 'androidamap',
+        host: 'poi',
+        queryParameters: {
+          'sourceApplication': 'watchdog',
+          'keywords': trimmed,
+          'dev': '0',
+        },
+      ),
+    );
+  }
+
+  Uri? get amapSearchWebUri => buildKeywordSearchUris(_searchKeyword).webUri;
+
+  Uri? get nativeAndroidAmapSearchUri =>
+      buildKeywordSearchUris(_searchKeyword).nativeUri;
+
   static String formatDuration(int durationSeconds) {
     final totalMinutes = durationSeconds <= 0
         ? 1
@@ -99,7 +132,14 @@ class RouteTrafficInfo {
     }
     final destAddr = destination?.displayAddress ?? '';
     if (destAddr.isNotEmpty) {
-      lines.add('事发地点：$destAddr');
+      if (destination?.isCoarse == true) {
+        final level = destination!.precisionLevel.trim().isNotEmpty
+            ? destination!.precisionLevel.trim()
+            : '乡镇';
+        lines.add('事发地点：$destAddr（当前仅定位至$level级，请核对具体路段）');
+      } else {
+        lines.add('事发地点：$destAddr');
+      }
     }
     final originAddr = origin?.address.trim() ?? '';
     if (originAddr.isNotEmpty) {

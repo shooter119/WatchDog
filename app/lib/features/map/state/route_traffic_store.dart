@@ -130,7 +130,7 @@ class RouteTrafficStore extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> load() async {
+  Future<void> load({bool forceRefreshDetails = false}) async {
     final gen = ++_loadGeneration;
     final incident = readCurrentIncident();
     if (incident == null) {
@@ -140,6 +140,11 @@ class RouteTrafficStore extends ChangeNotifier {
       _missingLocation = false;
       _notify();
       return;
+    }
+
+    if (forceRefreshDetails) {
+      _selectedCandidate = null;
+      _candidateDialogPrompted = false;
     }
 
     _loading = true;
@@ -152,7 +157,8 @@ class RouteTrafficStore extends ChangeNotifier {
     var officialLat = incident.officialLat;
     var officialLon = incident.officialLon;
 
-    if ((location.isEmpty ||
+    if ((forceRefreshDetails ||
+            location.isEmpty ||
             city.isEmpty ||
             officialLat == null ||
             officialLon == null) &&
@@ -161,14 +167,36 @@ class RouteTrafficStore extends ChangeNotifier {
         final details = await gateway.fetchIncidentDetails!(incident.id);
         if (details['data'] is Map) {
           final data = Map<String, dynamic>.from(details['data'] as Map);
-          if (location.isEmpty) {
-            location = (data['location']?.toString() ?? '').trim();
+          final freshLoc = [
+            data['location'],
+            data['address'],
+            data['location_display'],
+            data['crime_address'],
+          ]
+              .map((v) => (v?.toString() ?? '').trim())
+              .firstWhere(
+                (v) => v.isNotEmpty && v != '地点待补充' && v != 'null',
+                orElse: () => '',
+              );
+          final freshCity =
+              (data['administrative_area']?.toString() ?? '').trim();
+          if (forceRefreshDetails) {
+            if (freshLoc.isNotEmpty) location = freshLoc;
+            if (freshCity.isNotEmpty) city = freshCity;
+            officialLat = double.tryParse(data['latitude']?.toString() ?? '');
+            officialLon = double.tryParse(data['longitude']?.toString() ?? '');
+          } else {
+            if (location.isEmpty && freshLoc.isNotEmpty) {
+              location = freshLoc;
+            }
+            if (city.isEmpty && freshCity.isNotEmpty) {
+              city = freshCity;
+            }
+            officialLat ??=
+                double.tryParse(data['latitude']?.toString() ?? '');
+            officialLon ??=
+                double.tryParse(data['longitude']?.toString() ?? '');
           }
-          if (city.isEmpty) {
-            city = (data['administrative_area']?.toString() ?? '').trim();
-          }
-          officialLat ??= double.tryParse(data['latitude']?.toString() ?? '');
-          officialLon ??= double.tryParse(data['longitude']?.toString() ?? '');
         }
       } catch (_) {}
     }
@@ -278,6 +306,31 @@ class RouteTrafficStore extends ChangeNotifier {
     );
     await gateway.copyText(text);
     return '路况简报已复制';
+  }
+
+  Future<String?> openAmapKeywordSearch() async {
+    final fallbackUris = RouteTrafficInfo.buildKeywordSearchUris(_targetLocation);
+    final webUri = _info?.amapSearchWebUri ?? fallbackUris.webUri;
+    final nativeUri =
+        _info?.nativeAndroidAmapSearchUri ?? fallbackUris.nativeUri;
+    if (webUri == null) return '暂无可用于搜索的事发地点';
+
+    var ok = false;
+    if (defaultTargetPlatform == TargetPlatform.android && nativeUri != null) {
+      try {
+        ok = await gateway.launchNavigation(nativeUri);
+      } catch (_) {
+        ok = false;
+      }
+    }
+    if (!ok) {
+      try {
+        ok = await gateway.launchNavigation(webUri);
+      } catch (_) {
+        ok = false;
+      }
+    }
+    return ok ? null : '无法打开高德地图搜索';
   }
 
   Future<String?> startNavigation() async {

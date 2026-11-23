@@ -464,5 +464,167 @@ void main() {
       expect(fallbackSurface?.lastLoadedHtml, contains('appmaptile?style=6'));
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets(
+      '粗粒度降级时展示预警与完整地址，支持高德搜原址与候选点切换重定位',
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+      (tester) async {
+        final launched = <Uri>[];
+        final candidateRequests = <
+          ({double? lat, double? lon, String? name, String? adcode})
+        >[];
+        SceneMapSurfaceController? surfaceCtrl;
+
+        final gateway = SceneMapGateway(
+          requestPermission: () async => true,
+          locationServiceEnabled: () async => true,
+          currentLocation: () async => const LocationFix(
+            lat: 29.020000,
+            lon: 119.170000,
+            accuracyMeters: 10,
+            provider: 'gps',
+            ageMs: 100,
+          ),
+          watchLocation: () => const Stream.empty(),
+          fetchMapBootstrap: () async => const SceneMapBootstrap(
+            configured: false,
+            code: 'AMAP_JS_NOT_CONFIGURED',
+          ),
+          fetchAddress: (_, _) async =>
+              const SceneMapAddressResult(address: '示例省示例市示例县示例路1号'),
+          fetchIncidentRouteInfo: ({
+            required String address,
+            String? city,
+            double? destLat,
+            double? destLon,
+          }) async => const RouteTrafficInfo(),
+          fetchIncidentRouteInfoWithCandidate: ({
+            required String address,
+            String? city,
+            double? destLat,
+            double? destLon,
+            String? destName,
+            String? destAdcode,
+          }) async {
+            candidateRequests.add((
+              lat: destLat,
+              lon: destLon,
+              name: destName,
+              adcode: destAdcode,
+            ));
+            if (destLat != null &&
+                destLon != null &&
+                (destLat - 28.864321).abs() < 0.001) {
+              return RouteTrafficInfo(
+                destination: RouteEndpointInfo(
+                  queryAddress: address,
+                  formattedAddress: '示例省示例市示例县示例镇示例垄路段',
+                  precision: 'exact',
+                  precisionLevel: '兴趣点',
+                  precisionDegraded: false,
+                  location: const AmapLocation(
+                    lat: 28.864321,
+                    lon: 119.156789,
+                    coordinate: 'gcj02',
+                  ),
+                ),
+              );
+            }
+            return RouteTrafficInfo(
+              destination: RouteEndpointInfo(
+                queryAddress: address,
+                formattedAddress: '示例省示例市示例县351国道示例镇示例垄路段',
+                precision: 'coarse',
+                precisionLevel: '乡镇',
+                precisionDegraded: true,
+                resolvedAddress: '示例省示例市示例县示例镇',
+                location: const AmapLocation(
+                  lat: 28.900000,
+                  lon: 119.110000,
+                  coordinate: 'gcj02',
+                ),
+              ),
+              candidates: const [
+                RouteDestinationCandidate(
+                  name: '示例镇人民政府',
+                  formattedAddress: '示例省示例市示例县示例镇人民政府',
+                  district: '示例县',
+                  adcode: '330825',
+                  location: AmapLocation(
+                    lat: 28.900000,
+                    lon: 119.110000,
+                    coordinate: 'gcj02',
+                  ),
+                ),
+                RouteDestinationCandidate(
+                  name: '示例垄',
+                  formattedAddress: '示例省示例市示例县示例镇示例垄',
+                  district: '示例县',
+                  adcode: '330825',
+                  location: AmapLocation(
+                    lat: 28.864321,
+                    lon: 119.156789,
+                    coordinate: 'gcj02',
+                  ),
+                ),
+              ],
+            );
+          },
+          openAppSettings: () async {},
+          openLocationSettings: () async {},
+          launchNavigation: (uri) async {
+            launched.add(uri);
+            return true;
+          },
+          now: DateTime.now,
+          isAuthenticated: () => true,
+          readBaseUrl: () => 'https://api.example.test',
+          readCurrentIncident: () => const SceneMapIncidentContext(
+            id: 'inc-coarse-map',
+            displayName: '货车轮胎起火',
+            effectiveLocation: '示例县351国道示例镇示例垄路段',
+            administrativeArea: '示例县',
+          ),
+          mapSurfaceBuilder: (context, surface, _) {
+            surfaceCtrl = surface;
+            return const SizedBox.expand(key: Key('fake-map-surface'));
+          },
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildCommandTheme(Brightness.light),
+            home: SceneMapPage(gateway: gateway),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('示例省示例市示例县351国道示例镇示例垄路段'), findsOneWidget);
+        expect(find.byKey(const Key('scene-map-coarse-warning')), findsOneWidget);
+        expect(find.text('仅定位至乡镇级，坐标可能偏移'), findsOneWidget);
+        expect(find.byKey(const Key('scene-map-amap-search')), findsOneWidget);
+        expect(find.byKey(const Key('scene-map-switch-candidate')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byKey(const Key('scene-map-amap-search')));
+        await tester.pumpAndSettle();
+        expect(launched.last.scheme, 'androidamap');
+        expect(launched.last.host, 'poi');
+        expect(launched.last.queryParameters['keywords'], '示例县351国道示例镇示例垄路段');
+
+        await tester.tap(find.byKey(const Key('scene-map-switch-candidate')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('scene-map-candidate-item-1')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('scene-map-candidate-item-1')));
+        await tester.pumpAndSettle();
+
+        expect(candidateRequests.last.lat, closeTo(28.864321, 0.0001));
+        expect(candidateRequests.last.lon, closeTo(119.156789, 0.0001));
+        expect(candidateRequests.last.name, '示例垄');
+        expect(find.byKey(const Key('scene-map-coarse-warning')), findsNothing);
+        expect(surfaceCtrl!.evaluatedScripts.last, contains('119.156789, 28.864321'));
+      },
+    );
   });
 }

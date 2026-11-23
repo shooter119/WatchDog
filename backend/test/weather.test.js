@@ -17,6 +17,10 @@ const {
   normalizeNaturalVillage,
   extractPrefixWord,
   completeFormattedAddress,
+  parseAddressComponents,
+  isGeocodeCoarseOrTruncated,
+  buildRefineQueries,
+  parseCandidatesFromPoi,
   weatherLine,
   lookupResponse,
   validCoord,
@@ -1332,4 +1336,235 @@ test('hasHighway 与「不走高速」「躲避拥堵」真实性校验', () => 
   assert.notEqual(ranked[1].strategy, '不走高速', '含高速特征路线禁止标为不走高速');
   assert.equal(ranked[1].strategy, '备选路线');
   assert.equal(ranked[2].strategy, '躲避拥堵', '拥堵里程少于首条路线应有效推断为躲避拥堵');
+});
+
+test('复合公路乡镇地址拆解、精度降级识别与 completeFormattedAddress 后段保留', () => {
+  const addr = '示例县351国道示例镇示例垄路段';
+  const parts = parseAddressComponents(addr);
+  assert.equal(parts.district, '示例县');
+  assert.equal(parts.township, '示例镇');
+  assert.equal(parts.townPrefix, '示例');
+  assert.deepEqual(parts.roads, ['351国道']);
+  assert.equal(parts.coreLandmark, '示例垄');
+  assert.equal(parts.hasDetailedTail, true);
+  assert.equal(extractPrefixWord(addr), '示例');
+
+  const queries = buildRefineQueries(addr, parts);
+  assert.equal(queries[0], '示例镇示例垄');
+  assert.ok(queries.includes('351国道示例垄'));
+  assert.ok(queries.includes('示例垄'));
+
+  const coarseGeo = parseGeocode({
+    status: '1',
+    geocodes: [{
+      formatted_address: '示例省示例市示例县示例镇',
+      province: '示例省',
+      city: '示例市',
+      district: '示例县',
+      adcode: '330825',
+      level: '乡镇',
+      location: '119.120000,28.910000',
+    }],
+  });
+  assert.equal(coarseGeo.level, '乡镇');
+  assert.equal(isGeocodeCoarseOrTruncated(coarseGeo, addr), true);
+
+  assert.equal(
+    completeFormattedAddress('示例省示例市示例县示例镇', addr),
+    '示例省示例市示例县351国道示例镇示例垄路段',
+  );
+  assert.equal(
+    completeFormattedAddress('示例省示例市示例县示例镇示例垄', addr),
+    '示例省示例市示例县示例镇示例垄路段',
+  );
+});
+
+test('lookupRouteTraffic：高德 geocode/geo 静默降级至乡镇时自动触发 POI 精查救回自然村/路段坐标', async () => {
+  clearCaches();
+  const calls = [];
+  const fetchImpl = (url) => {
+    calls.push(url);
+    const u = new URL(url);
+    if (u.pathname === '/v3/geocode/geo') {
+      const addr = u.searchParams.get('address') || '';
+      if (addr === '示例县') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: '1',
+            geocodes: [{
+              formatted_address: '示例省示例市示例县',
+              province: '示例省',
+              city: '示例市',
+              district: '示例县',
+              adcode: '330825',
+              level: '区县',
+              location: '119.17,29.02',
+            }],
+          }),
+        });
+      }
+      // 模拟高德对「示例县351国道示例镇示例垄路段」直接向上降级返回乡镇中心
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          status: '1',
+          geocodes: [{
+            formatted_address: '示例省示例市示例县示例镇',
+            province: '示例省',
+            city: '示例市',
+            district: '示例县',
+            adcode: '330825',
+            level: '乡镇',
+            location: '119.110000,28.900000',
+          }],
+        }),
+      });
+    }
+    if (u.pathname === '/v3/place/text') {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          status: '1',
+          pois: [
+            {
+              name: '示例垄',
+              pname: '示例省',
+              cityname: '示例市',
+              adname: '示例县',
+              adcode: '330825',
+              address: '示例镇',
+              type: '地名地址信息;普通地名;村庄级地名',
+              location: '119.156789,28.864321',
+            },
+            {
+              name: '示例镇人民政府',
+              pname: '示例省',
+              cityname: '示例市',
+              adname: '示例县',
+              adcode: '330825',
+              address: [],
+              type: '政府机构及社会团体;政府机关;乡镇级政府及事业单位',
+              location: '119.110000,28.900000',
+            },
+          ],
+        }),
+      });
+    }
+    if (u.pathname === '/v3/assistant/inputtips') {
+      return Promise.resolve({ ok: true, json: async () => ({ status: '1', tips: [] }) });
+    }
+    if (u.pathname === '/v3/weather/weatherInfo' && u.searchParams.get('extensions') === 'base') {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    if (u.pathname === '/v3/weather/weatherInfo' && u.searchParams.get('extensions') === 'all') {
+      return Promise.resolve({ ok: true, json: async () => FORECAST_OK });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+
+  const res = await lookupRouteTraffic({
+    address: '示例县351国道示例镇示例垄路段',
+    city: '示例县',
+    unitName: '示例县消防救援大队',
+    key: 'test-key',
+    fetchImpl,
+  });
+
+  assert.equal(calls.some((c) => c.includes('/v3/place/text')), true, '必须触发 POI 二次精查');
+  assert.equal(res.destination.precision, 'exact');
+  assert.equal(res.destination.precisionDegraded, false);
+  assert.equal(res.destination.location.lat, 28.864321);
+  assert.equal(res.destination.location.lon, 119.156789);
+  assert.ok(res.destination.formattedAddress.includes('示例垄'));
+});
+
+test('lookupRouteTraffic：全接口无精确地标收录时保留完整地址并明确返回粗粒度降级标记', async () => {
+  clearCaches();
+  const fetchImpl = (url) => {
+    const u = new URL(url);
+    if (u.pathname === '/v3/geocode/geo') {
+      const addr = u.searchParams.get('address') || '';
+      if (addr === '示例县') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: '1',
+            geocodes: [{
+              formatted_address: '示例省示例市示例县',
+              province: '示例省',
+              city: '示例市',
+              district: '示例县',
+              adcode: '330825',
+              level: '区县',
+              location: '119.17,29.02',
+            }],
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          status: '1',
+          geocodes: [{
+            formatted_address: '示例省示例市示例县示例镇',
+            province: '示例省',
+            city: '示例市',
+            district: '示例县',
+            adcode: '330825',
+            level: '乡镇',
+            location: '119.110000,28.900000',
+          }],
+        }),
+      });
+    }
+    if (u.pathname === '/v3/place/text') {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          status: '1',
+          pois: [{
+            name: '示例镇人民政府',
+            pname: '示例省',
+            cityname: '示例市',
+            adname: '示例县',
+            adcode: '330825',
+            address: [],
+            location: '119.110000,28.900000',
+          }],
+        }),
+      });
+    }
+    if (u.pathname === '/v3/assistant/inputtips') {
+      return Promise.resolve({ ok: true, json: async () => ({ status: '1', tips: [] }) });
+    }
+    if (u.pathname === '/v3/weather/weatherInfo') {
+      return Promise.resolve({ ok: true, json: async () => WEATHER_OK });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
+  };
+
+  const res = await lookupRouteTraffic({
+    address: '示例县351国道示例镇未收录小地名路段',
+    city: '示例县',
+    unitName: '示例县消防救援大队',
+    key: 'test-key',
+    fetchImpl,
+  });
+
+  assert.equal(res.destination.precision, 'coarse');
+  assert.equal(res.destination.precisionLevel, '乡镇');
+  assert.equal(res.destination.precisionDegraded, true);
+  assert.equal(res.destination.resolvedAddress, '示例省示例市示例县示例镇');
+  assert.equal(
+    res.destination.formattedAddress,
+    '示例省示例市示例县351国道示例镇未收录小地名路段',
+    '降级场景不得丢弃原始地址后段详情',
+  );
+  assert.equal(res.candidates.length, 1);
+  assert.equal(
+    res.candidates[0].formattedAddress,
+    '示例省示例市示例县示例镇人民政府',
+    '未命中核心地标的粗粒度候选不得硬拼原地址后段',
+  );
 });

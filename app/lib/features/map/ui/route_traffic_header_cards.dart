@@ -241,7 +241,7 @@ class RouteEndpointsCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   destAddr,
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: ds.typography.body.copyWith(
                     fontWeight: FontWeight.w700,
@@ -334,6 +334,114 @@ class RouteEndpointsCard extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 定位精度降级预警横幅（当仅落点至乡镇/区县时保留原址并引导高德搜原址或切换候选）。
+class RouteCoarsePrecisionBanner extends StatelessWidget {
+  final RouteEndpointInfo destination;
+  final bool hasCandidates;
+  final VoidCallback onAmapSearch;
+  final VoidCallback onOpenCandidates;
+
+  const RouteCoarsePrecisionBanner({
+    super.key,
+    required this.destination,
+    required this.hasCandidates,
+    required this.onAmapSearch,
+    required this.onOpenCandidates,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    final colors = ds.colors;
+    final cautionPair = colors.statusColors(DsStatus.caution);
+    final level = destination.precisionLevel.trim().isNotEmpty
+        ? destination.precisionLevel.trim()
+        : '乡镇/区县';
+    final resolved = destination.resolvedAddress.trim();
+    final display = destination.displayAddress.trim();
+    final resolvedNote = resolved.isNotEmpty && resolved != display
+        ? '（当前坐标落于$resolved）'
+        : '';
+
+    return SurfaceCard(
+      key: const Key('route-traffic-coarse-banner'),
+      accentStatus: DsStatus.caution,
+      padding: const EdgeInsets.symmetric(
+        horizontal: DsSpacing.md,
+        vertical: DsSpacing.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  DsIcons.warning,
+                  size: DsSizes.iconSm,
+                  color: cautionPair.text,
+                ),
+              ),
+              const SizedBox(width: DsSpacing.sm),
+              Expanded(
+                child: Text(
+                  '定位精度降级：仅定位至$level级$resolvedNote，坐标可能偏移，请核对上方完整原址或用高德搜原址。',
+                  style: ds.typography.caption.copyWith(
+                    color: cautionPair.text,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: DsSpacing.xs),
+          Wrap(
+            spacing: DsSpacing.sm,
+            runSpacing: DsSpacing.xs,
+            children: [
+              TextButton.icon(
+                key: const Key('route-traffic-amap-search'),
+                style: TextButton.styleFrom(
+                  foregroundColor: colors.brandText,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: DsSpacing.sm,
+                    vertical: 4,
+                  ),
+                  minimumSize: const Size(0, DsSizes.touchTarget - 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: onAmapSearch,
+                icon: Icon(DsIcons.search, size: DsSizes.iconSm),
+                label: const Text('高德搜原址'),
+              ),
+              if (hasCandidates)
+                TextButton.icon(
+                  key: const Key('route-traffic-coarse-switch-candidate'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: colors.brandText,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: DsSpacing.sm,
+                      vertical: 4,
+                    ),
+                    minimumSize: const Size(0, DsSizes.touchTarget - 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: onOpenCandidates,
+                  icon: Icon(DsIcons.swap, size: DsSizes.iconSm),
+                  label: const Text('切换候选点'),
+                ),
+            ],
+          ),
         ],
       ),
     );

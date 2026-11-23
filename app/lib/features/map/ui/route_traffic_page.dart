@@ -94,14 +94,23 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
     final cb = widget.onEditIncidentDetails;
     if (cb == null) return;
     await cb();
-    if (mounted) unawaited(_store.load());
+    if (mounted) unawaited(_store.load(forceRefreshDetails: true));
   }
 
   Future<void> _handleImportDetails() async {
     final cb = widget.onImportIncidentDetails;
     if (cb == null) return;
     await cb();
-    if (mounted) unawaited(_store.load());
+    if (mounted) unawaited(_store.load(forceRefreshDetails: true));
+  }
+
+  Future<void> _handleAmapKeywordSearch() async {
+    final errorMsg = await _store.openAmapKeywordSearch();
+    if (errorMsg != null && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(errorMsg)));
+    }
   }
 
   Future<void> _handleCopySummary() async {
@@ -298,6 +307,16 @@ class _RouteTrafficPageState extends State<RouteTrafficPage> {
                 onOpenCandidates: () =>
                     unawaited(_openCandidatePicker(info.candidates)),
               ),
+              if (info.destination?.isCoarse == true) ...[
+                const SizedBox(height: DsSpacing.md),
+                RouteCoarsePrecisionBanner(
+                  destination: info.destination!,
+                  hasCandidates: info.candidates.isNotEmpty,
+                  onAmapSearch: () => unawaited(_handleAmapKeywordSearch()),
+                  onOpenCandidates: () =>
+                      unawaited(_openCandidatePicker(info.candidates)),
+                ),
+              ],
               if (selectedRoute != null) ...[
                 const SizedBox(height: DsSpacing.md),
                 RouteOverviewCard(

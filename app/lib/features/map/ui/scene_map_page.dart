@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../design_system/design_system.dart';
 import '../state/scene_map_store.dart';
+import 'route_destination_picker_sheet.dart';
 import 'scene_map_controls.dart';
 import 'scene_map_surface.dart';
 
@@ -73,6 +74,30 @@ class _SceneMapPageState extends State<SceneMapPage>
     }
   }
 
+  Future<void> _handleAmapKeywordSearch() async {
+    final errorMsg = await _store.openAmapKeywordSearch();
+    if (errorMsg != null && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(errorMsg)));
+    }
+  }
+
+  Future<void> _handleOpenCandidates() async {
+    final candidates = _store.incidentInfo?.candidates ?? const [];
+    if (candidates.isEmpty) return;
+    final picked = await showRouteDestinationPickerSheet(
+      context,
+      candidates: candidates,
+      selectedCandidate: _store.selectedCandidate,
+      title: '发现多处候选地点，请确认目的地',
+      itemKeyPrefix: 'scene-map-candidate-item',
+    );
+    if (picked != null && mounted) {
+      await _store.selectCandidate(picked);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return CommandScaffold(
@@ -127,6 +152,8 @@ class _SceneMapPageState extends State<SceneMapPage>
                   SceneMapTelemetryCard(
                     store: _store,
                     onNavigate: () => unawaited(_handleNavigate()),
+                    onAmapSearch: () => unawaited(_handleAmapKeywordSearch()),
+                    onOpenCandidates: () => unawaited(_handleOpenCandidates()),
                   ),
                 ],
               ),

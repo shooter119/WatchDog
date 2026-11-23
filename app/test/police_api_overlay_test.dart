@@ -65,6 +65,22 @@ void main() {
         registerTime: 1786177140000,
       );
       expect(boilerplateOnly.effectiveEventTitle, '社会救助（马蜂窝）');
+
+      const dispatchWithBranchCenter = ExternalIncident(
+        externalId: 'ext-clean-5',
+        incidentNumber: '202611230539',
+        detachmentName: '示例支队',
+        brigadeName: '示例县大队',
+        squadronName: '示例路站',
+        districtName: '示例县',
+        incidentType: '火灾扑救',
+        crimeAddress: '示例县351国道示例镇示例垄路段',
+        locationDisplay: '示例县351国道示例镇示例垄路段',
+        incidentDescribe:
+            '示例路站警情出动（一级火灾扑救）:2026年11月23日05时39分，示例县大队分指挥中心接到报警称:示例县351国道示例镇示例垄路段货车轮胎起火',
+        registerTime: 1795393200000,
+      );
+      expect(dispatchWithBranchCenter.effectiveEventTitle, '货车轮胎起火');
     });
   });
 }

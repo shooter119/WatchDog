@@ -1643,3 +1643,122 @@ test('external-incident-organizer syncIncidents 批量 upsert 落库且支持 li
   });
   assert.deepEqual(recent.map((r) => r.external_id), ['batch-1', 'batch-2']);
 });
+
+test('复合警情描述地址补全、AI 防截断护栏与旧缓存自愈', async () => {
+  const {
+    extractLocationFromDescribe,
+    chooseMoreSpecificLocation,
+    buildRuleFallbackStructured,
+    organizeWithDeepSeek,
+    rowToNormalizedPatch,
+  } = require('../src/external-incident-organizer');
+
+  const rawDescribe =
+    '示例路站警情出动（一级火灾扑救）:2026年11月23日05时39分，示例县大队分指挥中心接到报警称:示例县351国道示例镇示例垄路段货车轮胎起火';
+
+  // 1. 从带队站出动通报头与分指挥中心的警情描述中干净提取完整路段地址
+  assert.equal(
+    extractLocationFromDescribe(rawDescribe, '示例县'),
+    '示例县351国道示例镇示例垄路段',
+  );
+
+  // 2. 上游 crime_address 仅到乡镇时，规则兜底自动从描述补全完整后段，同时正确提炼事件标题
+  const ruleBuilt = buildRuleFallbackStructured({
+    external_id: 'ext-compound-1',
+    incident_number: '202611230539',
+    district_name: '示例县',
+    incident_type: '火灾扑救',
+    incident_level: '一级',
+    crime_address: '示例县示例镇',
+    incident_describe: rawDescribe,
+  });
+  assert.equal(ruleBuilt.location_display, '示例县351国道示例镇示例垄路段');
+  assert.equal(ruleBuilt.event_summary, '货车轮胎起火');
+
+  // 3. 上游 crime_address 本身已含精确门牌时，不被描述中的灾情词覆盖污染
+  const exactKept = buildRuleFallbackStructured({
+    external_id: 'ext-compound-2',
+    incident_number: '202611230540',
+    district_name: '示例县',
+    incident_type: '火灾扑救',
+    crime_address: '示例县示范路16号',
+    incident_describe: '沿街餐饮店厨房油烟管道起火，无人员被困',
+  });
+  assert.equal(exactKept.location_display, '示例县示范路16号');
+
+  // 4. chooseMoreSpecificLocation 与 AI 重组防截断护栏：AI 截成「示例县示例镇」时保留完整地址
+  assert.equal(
+    chooseMoreSpecificLocation('示例县示例镇', '示例县351国道示例镇示例垄路段', '示例县'),
+    '示例县351国道示例镇示例垄路段',
+  );
+  const aiGuarded = await organizeWithDeepSeek({
+    apiKey: 'test-key',
+    rawMergedText: ruleBuilt.raw_merged_text,
+    fallback: ruleBuilt,
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                event_summary: '351国道货车轮胎起火',
+                disaster_category: 'fire',
+                specific_type: '汽车火灾',
+                incident_level: '一级',
+                location_display: '示例县示例镇',
+                district_name: '示例县',
+                situation_detail: '351国道示例镇示例垄路段货车轮胎起火',
+              }),
+            },
+          }],
+        };
+      },
+    }),
+  });
+  assert.equal(aiGuarded.ai_status, 'ready');
+  assert.equal(aiGuarded.location_display, '示例县351国道示例镇示例垄路段');
+
+  // 5. AI 合理补全更多细节时正常采纳
+  const baseShort = buildRuleFallbackStructured({
+    external_id: 'ext-compound-3',
+    district_name: '示例县',
+    crime_address: '示例县示例镇',
+    incident_describe: '车辆起火',
+  });
+  const aiEnriched = await organizeWithDeepSeek({
+    apiKey: 'test-key',
+    rawMergedText: '警情描述: 示例县351国道示例镇示例垄路段货车起火',
+    fallback: baseShort,
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                event_summary: '货车轮胎起火',
+                disaster_category: 'fire',
+                location_display: '示例县351国道示例镇示例垄路段',
+                district_name: '示例县',
+              }),
+            },
+          }],
+        };
+      },
+    }),
+  });
+  assert.equal(aiEnriched.location_display, '示例县351国道示例镇示例垄路段');
+
+  // 6. rowToNormalizedPatch 读取旧数据库截断缓存时自动恢复为实时完整地址
+  const healed = rowToNormalizedPatch(
+    {
+      location_display: '示例县示例镇',
+      district_name: '示例县',
+      event_summary: '351国道货车轮胎起火',
+      ai_status: 'ready',
+    },
+    ruleBuilt,
+  );
+  assert.equal(healed.location_display, '示例县351国道示例镇示例垄路段');
+});

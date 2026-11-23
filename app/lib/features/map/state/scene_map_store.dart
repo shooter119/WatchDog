@@ -4,12 +4,14 @@ import 'package:flutter/foundation.dart';
 
 import '../../../services/camera_bridge.dart';
 import '../../../services/china_coord.dart';
+import '../data/models/route_models.dart';
 import '../data/models/route_traffic_info.dart';
 import '../data/models/scene_map_bootstrap.dart';
 import '../ui/scene_map_html_builder.dart';
 import '../ui/scene_map_surface.dart';
 import 'scene_map_gateway.dart';
 
+export '../data/models/route_models.dart' show RouteDestinationCandidate;
 export '../ui/scene_map_html_builder.dart'
     show SceneMapLayerMode, buildSceneMapHtml, sceneMapSafeJsonEncode;
 export '../ui/scene_map_surface.dart' show SceneMapSurfaceController;
@@ -43,6 +45,7 @@ class SceneMapStore extends ChangeNotifier {
   bool _regeoInFlight = false;
 
   RouteTrafficInfo? _incidentInfo;
+  RouteDestinationCandidate? _selectedCandidate;
   String? _incidentDisplayLocation;
   ({double lat, double lon})? _incidentGcj;
 
@@ -64,6 +67,7 @@ class SceneMapStore extends ChangeNotifier {
   ({double lat, double lon})? get myGcj => _myGcj;
   String? get myAddress => _myAddress;
   RouteTrafficInfo? get incidentInfo => _incidentInfo;
+  RouteDestinationCandidate? get selectedCandidate => _selectedCandidate;
   String? get incidentDisplayLocation => _incidentDisplayLocation;
   ({double lat, double lon})? get incidentGcj => _incidentGcj;
   String get incidentName => gateway.readCurrentIncident()?.displayName ?? '';
@@ -102,6 +106,7 @@ class SceneMapStore extends ChangeNotifier {
     _bootstrapError = null;
     _scriptError = null;
     _htmlLoaded = false;
+    _selectedCandidate = null;
     _notify();
     await Future.wait([
       _loadBootstrap(gen),
@@ -246,6 +251,12 @@ class SceneMapStore extends ChangeNotifier {
     );
   }
 
+  Future<void> selectCandidate(RouteDestinationCandidate candidate) async {
+    _selectedCandidate = candidate;
+    _notify();
+    await _loadIncidentPoint(_generation);
+  }
+
   Future<void> _loadIncidentPoint(int gen) async {
     final incident = gateway.readCurrentIncident();
     if (incident == null) {
@@ -257,52 +268,37 @@ class SceneMapStore extends ChangeNotifier {
       return;
     }
 
-    var location = incident.effectiveLocation.trim();
-    var city = incident.administrativeArea.trim();
-    var officialLat = incident.officialLat;
-    var officialLon = incident.officialLon;
-
-    if ((location.isEmpty ||
-            city.isEmpty ||
-            officialLat == null ||
-            officialLon == null) &&
-        gateway.fetchIncidentDetails != null &&
-        gateway.isAuthenticated()) {
-      try {
-        final details = await gateway.fetchIncidentDetails!(incident.id);
-        if (details['data'] is Map) {
-          final data = Map<String, dynamic>.from(details['data'] as Map);
-          if (location.isEmpty) {
-            location = (data['location']?.toString() ?? '').trim();
-          }
-          if (city.isEmpty) {
-            city = (data['administrative_area']?.toString() ?? '').trim();
-          }
-          officialLat ??= double.tryParse(data['latitude']?.toString() ?? '');
-          officialLon ??= double.tryParse(data['longitude']?.toString() ?? '');
-        }
-      } catch (_) {}
-    }
-
+    final resolved = await resolveSceneMapIncidentEndpoint(
+      gateway: gateway,
+      incident: incident,
+    );
     if (_disposed || gen != _generation) return;
-    if (location.isEmpty && (officialLat == null || officialLon == null)) return;
 
-    if (officialLat != null && officialLon != null) {
-      _incidentDisplayLocation = location.isNotEmpty
-          ? location
-          : incident.displayName;
-      _incidentGcj = (lat: officialLat, lon: officialLon);
+    final location = resolved.location;
+    final city = resolved.city;
+    final reqDestLat = _selectedCandidate?.location?.lat ?? resolved.lat;
+    final reqDestLon = _selectedCandidate?.location?.lon ?? resolved.lon;
+    if (location.isEmpty && (reqDestLat == null || reqDestLon == null)) return;
+
+    if (reqDestLat != null && reqDestLon != null) {
+      final candidateLabel = _selectedCandidate?.displayAddress ?? '';
+      _incidentDisplayLocation = candidateLabel.isNotEmpty
+          ? candidateLabel
+          : (location.isNotEmpty ? location : incident.displayName);
+      _incidentGcj = (lat: reqDestLat, lon: reqDestLon);
       _notify();
       _pushIncidentToMap();
     }
 
     if (!gateway.isAuthenticated() || location.isEmpty) return;
     try {
-      final info = await gateway.fetchIncidentRouteInfo(
+      final info = await fetchSceneMapIncidentRoute(
+        gateway: gateway,
         address: location,
         city: city.isNotEmpty ? city : null,
-        destLat: officialLat,
-        destLon: officialLon,
+        destLat: reqDestLat,
+        destLon: reqDestLon,
+        candidate: _selectedCandidate,
       );
       if (_disposed || gen != _generation) return;
       final loc = info.destination?.location;
@@ -450,6 +446,25 @@ class SceneMapStore extends ChangeNotifier {
     _pushIncidentToMap();
   }
 
+  Future<String?> openAmapKeywordSearch() async {
+    final fallbackAddress =
+        (_incidentDisplayLocation ??
+                gateway.readCurrentIncident()?.effectiveLocation ??
+                '')
+            .trim();
+    final uris = resolveSceneMapSearchUris(
+      info: _incidentInfo,
+      fallbackAddress: fallbackAddress,
+    );
+    if (uris.webUri == null) return '暂无可用于搜索的事发地点';
+    final ok = await launchExternalAmapUris(
+      launcher: gateway.launchNavigation,
+      webUri: uris.webUri,
+      nativeUri: uris.nativeUri,
+    );
+    return ok ? null : '无法打开高德地图搜索';
+  }
+
   Future<String?> startNavigation() async {
     final destName =
         (_incidentDisplayLocation ??
@@ -462,23 +477,11 @@ class SceneMapStore extends ChangeNotifier {
       destName: destName,
     );
     if (uris.webUri == null) return '未获取到事发地点坐标，无法导航';
-
-    var ok = false;
-    if (defaultTargetPlatform == TargetPlatform.android &&
-        uris.nativeUri != null) {
-      try {
-        ok = await gateway.launchNavigation(uris.nativeUri!);
-      } catch (_) {
-        ok = false;
-      }
-    }
-    if (!ok) {
-      try {
-        ok = await gateway.launchNavigation(uris.webUri!);
-      } catch (_) {
-        ok = false;
-      }
-    }
+    final ok = await launchExternalAmapUris(
+      launcher: gateway.launchNavigation,
+      webUri: uris.webUri,
+      nativeUri: uris.nativeUri,
+    );
     return ok ? null : '无法打开外部地图导航应用';
   }
 

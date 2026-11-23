@@ -252,6 +252,15 @@ async function updateDetails({unitId,incidentId,actorId,actorName,opId,body}) {
     const current=await details(unitId,incidentId);
     if(body.expected_version!==current.version) throw forceError('警情资料已修改，请刷新','VERSION_CONFLICT',409);
     const data=detailPatch(body.data,current.data),now=Date.now(),version=current.version+1;
+    const prevLoc=String(current.data?.location||'').trim();
+    const nextLoc=String(data.location||'').trim();
+    const hasExplicitCoord=
+      Object.hasOwn(body.data||{},'latitude')&&String(body.data.latitude||'').trim()!==''&&
+      Object.hasOwn(body.data||{},'longitude')&&String(body.data.longitude||'').trim()!=='';
+    if(nextLoc&&nextLoc!==prevLoc&&!hasExplicitCoord){
+      delete data.latitude;
+      delete data.longitude;
+    }
     await db.beginOperation({unitId,clientOpId:opId,incidentId,operationType:'incident_details',requestHash:hash,actorDeviceId:actorId,actorName});
     await store.query('INSERT INTO incident_details(incident_id,unit_id,data,version,updated_at,updated_by) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(incident_id) DO UPDATE SET data=EXCLUDED.data,version=EXCLUDED.version,updated_at=EXCLUDED.updated_at,updated_by=EXCLUDED.updated_by',[incidentId,unitId,JSON.stringify(data),version,now,actorId]);
     await store.query('INSERT INTO incident_detail_history(id,incident_id,unit_id,before_data,after_data,actor_id,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)',[randomUUID(),incidentId,unitId,JSON.stringify(current.data),JSON.stringify(data),actorId,now]);

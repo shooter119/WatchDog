@@ -222,7 +222,119 @@ function classifyDisasterCategory({
   return 'fire';
 }
 
-function buildAddressStripCandidates(rawAddress = '', addrClean = '') {
+function stripLeadingIncidentPreamble(rawDesc = '') {
+  let desc = String(rawDesc || '').trim();
+  if (!desc) return '';
+  const leadingDispatchHeaderRe =
+    /^(?:[\u4e00-\u9fa5A-Za-z0-9]{1,24}(?:消防救援站|专职消防队|专职队|特勤站|战保站|消防站|救援站|中队|大队|支队|站|队))?警情出动(?:[（(][^）)\n]{1,30}[）)])?\s*[：:，,、\s]*/;
+  const leadingDateTimeRe =
+    /^(?:(?:\d{4}年\s*)?\d{1,2}月\s*\d{1,2}[日号](?:\s*\d{1,2}[时:：]\d{1,2}(?:分(?:\d{1,2}秒)?)?)?|\d{4}年(?:\d{1,2}月(?:\d{1,2}[日号])?)?(?:\s*\d{1,2}[时:：]\d{1,2}(?:分(?:\d{1,2}秒)?)?)?|\d{1,2}\s*[时:：]\s*\d{1,2}(?:\s*分(?:\s*\d{1,2}\s*秒)?)?)(?:\s*[许左右])?[，,。；;：:\s]*/;
+  const leadingBoilerplateRe =
+    /^(?:[\u4e00-\u9fa5A-Za-z0-9]{0,24}(?:消防救援支队|消防救援大队|分指挥中心|指挥中心|调度中心|接警中心|值班室|支队|大队|中队|救援站))*\s*(?:接到?(?:群众|市民|路人|110|119|上级|指挥中心|分指挥中心|报警人)?(?:电话|转警|报警|警情|通知|指令)|接到|接警|接报|转警|接群众报警|接110转警|收到警情)\s*(?:称有|称|反映|求助)?\s*[：:，,、\s]*/;
+  const leadingRefAddrRe = /^(?:[（(]?位于[)）]?\s*)?(?:上述地址|上址|该地址)\s*[：:，,、\s]*/;
+
+  for (let round = 0; round < 3; round++) {
+    const before = desc;
+    desc = desc.replace(leadingDispatchHeaderRe, '');
+    desc = desc.replace(leadingDateTimeRe, '');
+    desc = desc.replace(leadingBoilerplateRe, '');
+    desc = desc.replace(leadingRefAddrRe, '');
+    if (desc === before) break;
+  }
+  return desc.trim();
+}
+
+function extractAddressTailDetail(address = '') {
+  let s = String(address || '').replace(/\s+/g, '').trim();
+  if (!s) return '';
+  s = s.replace(/^[\u4e00-\u9fa5]{2,5}(?:省|自治区)/, '');
+  s = s.replace(/^[\u4e00-\u9fa5]{2,5}市(?=[\u4e00-\u9fa5A-Za-z0-9]{2,})/, '');
+  s = s.replace(/^[\u4e00-\u9fa5]{2,5}?(?:自治县|自治旗|区|县|旗)/, '');
+  if (!s) return '';
+  if (/^[\u4e00-\u9fa5]{1,8}(?:省|自治区|市|区|县|旗|镇|乡|街道)$/.test(s)) {
+    return '';
+  }
+  const strippedLeadingTown = s.replace(/^[\u4e00-\u9fa5]{1,8}?(?:镇|乡|街道)/, '');
+  if (strippedLeadingTown && strippedLeadingTown.length >= 2) {
+    return strippedLeadingTown;
+  }
+  return s;
+}
+
+const LOCATION_EVENT_STOP_RE =
+  /(?:发生|发现|有一[辆台架间栋幢座起处名位个]|一辆|一台|一起|一名|沿街|餐饮|餐馆|饭店|厨房|客厅|卧室|阳台|楼顶|车库|仓库|厂房|民房|住宅|商铺|店铺|门店|超市|货车|大货车|小货车|半挂车|槽罐车|轿车|小轿车|小车|客车|大巴|面包车|电瓶车|电动车|三轮车|摩托车|汽车|车辆|轮胎|发动机|起火|着火|冒烟|燃烧|火灾|爆炸|闪爆|漏气|泄漏|漏油|被困|受伤|坠落|坠井|落水|溺水|追尾|碰撞|相撞|侧翻|翻车|车祸|交通事故|倒伏|坍塌|塌方|油锅|杂物|杂草|草坪|草堆|荒草|垃圾|柴草|山林|马蜂|蜂窝|抓蛇|捕蛇|开门|开锁|电梯|戒指|卡手|有人|人员|群众|居民|老人|小孩|儿童|男子|女子|请求|求助|报警|反映)/;
+
+const LOCATION_FEATURE_RE =
+  /(?:路段|路口|交叉口|大桥|桥|隧道|收费站|服务区|互通|高速|国道|省道|县道|乡道|大道|路|街|巷|弄|号|栋|幢|单元|室|楼|村|社|组|屯|垄|坞|岙|坑|坪|湾|工业园|产业园|园区|小区|花园|广场|市场|学校|医院|厂|K\d+)/;
+
+function extractLocationFromDescribe(describe = '', districtName = '') {
+  let desc = stripLeadingIncidentPreamble(describe);
+  if (!desc) return '';
+  desc = desc.replace(/^[（(]?位于[)）]?\s*/, '').replace(/^在\s*/, '').trim();
+  if (!desc) return '';
+
+  // 截取首句并排除尾部出动时间线，避免后段救援语句干扰
+  let head = desc
+    .replace(/[，,。；;\s]*(?:(?:\d{4}年)?(?:\d{1,2}月)?(?:\d{1,2}[日号])?\s*\d{1,2}[时:：]\d{1,2}(?:分)?(?:\s*许)?\s*[，,、\s]*)?(?:支队|大队|指挥中心|分指挥中心)?接到?(?:110|119|群众)?(?:报警|转警|警情|指令|通知)后[\s\S]*$/, '')
+    .split(/[。；;\n]/)[0]
+    .trim();
+  if (!head) return '';
+
+  const stopMatch = head.match(LOCATION_EVENT_STOP_RE);
+  if (!stopMatch || stopMatch.index == null) return '';
+
+  let candidate = head.slice(0, stopMatch.index).trim();
+  candidate = candidate.split(/[，,]/)[0].trim();
+  candidate = candidate.replace(/[，,、：:\s的处]+$/, '').trim();
+  candidate = candidate
+    .replace(
+      /(?<=[\u4e00-\u9fa5]{2,}(?:路段|路口|大桥|桥|村|社|组|镇|乡|街道|路|街|巷|弄|号|栋|幢|单元|室|楼|小区|园区|广场|市场))[一某]$/,
+      '',
+    )
+    .trim();
+  if (candidate.length < 4 || candidate.length > 60) return '';
+  if (!LOCATION_FEATURE_RE.test(candidate)) return '';
+  if (extractAddressTailDetail(candidate).length < 2) return '';
+
+  return cleanIncidentLocation(candidate, districtName);
+}
+
+function chooseMoreSpecificLocation(preferred = '', baseline = '', districtName = '') {
+  const pref = cleanIncidentLocation(preferred, districtName);
+  const base = cleanIncidentLocation(baseline, districtName);
+  if (!pref) return base;
+  if (!base) return pref;
+  if (pref === base) return pref;
+
+  const prefTail = extractAddressTailDetail(pref);
+  const baseTail = extractAddressTailDetail(base);
+
+  if (!prefTail && baseTail) return base;
+  if (prefTail && !baseTail) return pref;
+
+  if (base.includes(pref) && base.length > pref.length) return base;
+  if (pref.includes(base) && pref.length > base.length) return pref;
+
+  const roadCodes = base.match(/(?:\d{2,4}(?:国道|省道|县道)|[GSX]\d{1,4})/g) || [];
+  if (roadCodes.some((code) => !pref.includes(code)) && prefTail.length <= baseTail.length) {
+    return base;
+  }
+
+  const afterTownMatch = base.match(/(?:镇|乡|街道)([\u4e00-\u9fa5A-Za-z0-9]{2,})/);
+  if (afterTownMatch) {
+    const afterTownTail = afterTownMatch[1].replace(/(?:路段|附近|一带|旁边|对面)$/, '');
+    if (afterTownTail.length >= 2 && !pref.includes(afterTownTail)) {
+      return base;
+    }
+  }
+
+  if (baseTail.length > prefTail.length && !pref.includes(baseTail)) {
+    return base;
+  }
+  return pref;
+}
+
+function buildAddressStripCandidates(rawAddress = '', addrClean = '', extraAddress = '') {
   const candidates = new Set();
   const add = (val) => {
     const s = String(val || '').trim();
@@ -230,7 +342,8 @@ function buildAddressStripCandidates(rawAddress = '', addrClean = '') {
   };
   add(rawAddress);
   add(addrClean);
-  for (const base of [String(rawAddress || '').trim(), addrClean]) {
+  add(extraAddress);
+  for (const base of [String(rawAddress || '').trim(), addrClean, String(extraAddress || '').trim()]) {
     if (!base) continue;
     const noProvCity = base
       .replace(/^[\u4e00-\u9fa5]{2,5}(?:省|自治区)/, '')
@@ -250,6 +363,7 @@ function cleanIncidentEvent({
   disposal_object_name = '',
   incident_describe = '',
   crime_address = '',
+  location_display = '',
 } = {}) {
   const type = String(incident_type || '').trim();
   const obj = String(disposal_object_name || '').trim();
@@ -257,25 +371,15 @@ function cleanIncidentEvent({
   const addrClean = cleanIncidentLocation(crime_address);
 
   if (desc) {
-    // 1) 循环（最多2轮）剥离前导日期时间戳、支队/大队/指挥中心接警套话、以及（位于）上述地址/上址前缀
-    const leadingDateTimeRe = /^(?:(?:\d{4}年\s*)?\d{1,2}月\s*\d{1,2}[日号](?:\s*\d{1,2}[时:：]\d{1,2}(?:分(?:\d{1,2}秒)?)?)?|\d{4}年(?:\d{1,2}月(?:\d{1,2}[日号])?)?(?:\s*\d{1,2}[时:：]\d{1,2}(?:分(?:\d{1,2}秒)?)?)?|\d{1,2}\s*[时:：]\s*\d{1,2}(?:\s*分(?:\s*\d{1,2}\s*秒)?)?)(?:\s*[许左右])?[，,。；;：:\s]*/;
-    const leadingBoilerplateRe = /^(?:[\u4e00-\u9fa5A-Za-z0-9]{0,20}(?:消防救援支队|消防救援大队|支队|大队|指挥中心|接警中心|值班室|中队|救援站))?\s*(?:接到?(?:群众|市民|路人|110|119|上级|指挥中心|报警人)?(?:电话|转警|报警|警情|通知|指令)|接到|接警|接报|转警|接群众报警|接110转警|收到警情)\s*(?:称有|称|反映|求助)?\s*[：:，,、\s]*/;
-    const leadingRefAddrRe = /^(?:[（(]?位于[)）]?\s*)?(?:上述地址|上址|该地址)\s*[：:，,、\s]*/;
-
-    for (let round = 0; round < 2; round++) {
-      const before = desc;
-      desc = desc.replace(leadingDateTimeRe, '');
-      desc = desc.replace(leadingBoilerplateRe, '');
-      desc = desc.replace(leadingRefAddrRe, '');
-      if (desc === before) break;
-    }
+    // 1) 循环剥离前导警情出动通报头、日期时间戳、支队/大队/分指挥中心接警套话及（位于）上述地址前缀
+    desc = stripLeadingIncidentPreamble(desc);
 
     // 2) 去掉前导“位于”后，若以完整地址或剥离省市区前缀后的街道门牌子串(>=4字)开头且剥离后仍余>=4个有效字，则剥离重复地址
     const withoutLocated = desc.replace(/^[（(]?位于[)）]?\s*/, '');
     if (withoutLocated !== desc && withoutLocated.replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '').length >= 4) {
       desc = withoutLocated;
     }
-    const addrCandidates = buildAddressStripCandidates(crime_address, addrClean);
+    const addrCandidates = buildAddressStripCandidates(crime_address, addrClean, location_display);
     for (const prefix of addrCandidates) {
       if (prefix.length >= 4 && desc.startsWith(prefix)) {
         const rest = desc.slice(prefix.length).replace(/^[，,。；;：:、\s的]+/, '');
@@ -649,6 +753,18 @@ function mergeHomeInfoIntoIncident(ext = {}, homeInfoData = null) {
   if (descBackfilled) {
     base.incident_describe = homeDesc;
   }
+  const district = resolveDistrict(base);
+  const existingAddr = String(base.crime_address || '').trim();
+  const homeAddr = String(homeInfoData.crimeAddress || '').trim();
+  const mergedAddr = homeAddr
+    ? chooseMoreSpecificLocation(homeAddr, existingAddr, district)
+    : '';
+  const addrBackfilled = Boolean(
+    mergedAddr && mergedAddr !== cleanIncidentLocation(existingAddr, district),
+  );
+  if (addrBackfilled) {
+    base.crime_address = mergedAddr;
+  }
 
   const fallbackStatus = inferDeploymentStatus(
     sanitizeOfficialStatus(base.incident_status),
@@ -721,7 +837,14 @@ function mergeHomeInfoIntoIncident(ext = {}, homeInfoData = null) {
     dispatched_forces: mergedForces.length > 0 ? mergedForces : base.dispatched_forces,
   };
 
-  if (descBackfilled) {
+  if (descBackfilled || addrBackfilled) {
+    if (addrBackfilled) {
+      nextInput.location_display = chooseMoreSpecificLocation(
+        mergedAddr,
+        base.location_display,
+        district,
+      );
+    }
     if (!hasValidAiSummary) {
       delete nextInput.event_summary;
       delete nextInput.situation_detail;
@@ -890,12 +1013,30 @@ function buildRuleFallbackStructured(ext = {}, rawItem = null) {
   };
 
   const district = resolveDistrict(enrichedExt);
-  const locationDisplay = cleanIncidentLocation(
+  const rawBaseLocation = cleanIncidentLocation(
     cleanText(enrichedExt.location_display, 300) || enrichedExt.crime_address,
     district,
   );
+  const describedLocation = extractLocationFromDescribe(enrichedExt.incident_describe, district);
+  let locationDisplay = rawBaseLocation;
+  if (describedLocation) {
+    const rawTail = extractAddressTailDetail(rawBaseLocation);
+    const descTail = extractAddressTailDetail(describedLocation);
+    const rawTownMatch = rawBaseLocation.match(/([\u4e00-\u9fa5]{1,8}?(?:镇|乡|街道))/);
+    const sharesTownAnchor = Boolean(rawTownMatch && describedLocation.includes(rawTownMatch[1]));
+    if (
+      !rawBaseLocation ||
+      !rawTail ||
+      (describedLocation.includes(rawBaseLocation) && describedLocation.length > rawBaseLocation.length) ||
+      (sharesTownAnchor && descTail.length > rawTail.length)
+    ) {
+      locationDisplay = chooseMoreSpecificLocation(describedLocation, rawBaseLocation, district);
+    }
+  }
   const officialStatus = sanitizeOfficialStatus(enrichedExt.incident_status);
-  const eventSummary = cleanText(enrichedExt.event_summary, 60) || cleanIncidentEvent(enrichedExt);
+  const eventSummary =
+    cleanText(enrichedExt.event_summary, 60) ||
+    cleanIncidentEvent({ ...enrichedExt, location_display: locationDisplay });
   const disasterCategory = classifyDisasterCategory({
     disaster_category: enrichedExt.disaster_category,
     incident_type: enrichedExt.incident_type,
@@ -959,7 +1100,7 @@ const ORGANIZE_SYSTEM_PROMPT = `你是消防救援指挥中心的警情信息重
    - disaster_category：必须是 "fire"（火灾扑救）、"rescue"（抢险救援）或 "aid"（社会救助）之一。
    - specific_type：具体处置对象或细分灾情类型（不超过30字）。
    - incident_level：警情等级（如“一级”“二级”，无则空字符串）。
-   - location_display：规范化事发地点，去除冗余省/地级市与重复县区前缀，但务必完整保留区县、乡镇街道、村社、路名门牌与楼栋详情。
+   - location_display：规范化事发地点，去除冗余省/地级市与重复县区前缀；严禁截断或省略国道/省道/高速桩号、乡镇街道、行政村、自然村、路段、桥涵、门牌与楼栋等任何后段细节；若原始地址较粗略而警情描述有更具体位置，必须融合补全为完整纯地址（不含灾情动词）。
    - district_name：所属区县名称（如“示例县”，无则空字符串）。
    - situation_detail：简明清晰的现场情况汇总。
    - trapped / injured / hazardous_materials：明确提及的被困、受伤、危化品情况原文摘录，未提及留空字符串。
@@ -1047,11 +1188,12 @@ async function organizeWithDeepSeek({
         event_summary: eventSummary,
         incident_describe: fallback.incident_describe,
       });
-    const locationDisplay = cleanIncidentLocation(
-      cleanText(parsed.location_display, 300) || fallback.location_display,
-      cleanText(parsed.district_name, 40) || fallback.district_name,
-    );
     const districtName = cleanText(parsed.district_name, 40) || fallback.district_name;
+    const locationDisplay = chooseMoreSpecificLocation(
+      cleanText(parsed.location_display, 300),
+      fallback.location_display,
+      districtName,
+    );
     const specificType = cleanText(parsed.specific_type, 80) || fallback.specific_type;
     const incidentLevel = cleanText(parsed.incident_level, 40) || fallback.incident_level;
     const situationDetail = cleanText(parsed.situation_detail, 1500) || fallback.situation_detail;
@@ -1123,7 +1265,11 @@ function rowToNormalizedPatch(row, liveFallback) {
     incident_level: row.incident_level || liveFallback.incident_level,
     // 官方状态以实时抓取值优先，保障状态变化零延迟反映
     official_status: liveFallback.official_status || sanitizeOfficialStatus(row.official_status),
-    location_display: row.location_display || liveFallback.location_display,
+    location_display: chooseMoreSpecificLocation(
+      row.location_display,
+      liveFallback.location_display,
+      row.district_name || liveFallback.district_name,
+    ),
     district_name: row.district_name || liveFallback.district_name,
     situation_detail: row.situation_detail || liveFallback.situation_detail,
     trapped: row.trapped || liveFallback.trapped,
@@ -1460,6 +1606,10 @@ function createExternalIncidentOrganizer({
 module.exports = {
   cleanIncidentLocation,
   cleanIncidentEvent,
+  stripLeadingIncidentPreamble,
+  extractAddressTailDetail,
+  extractLocationFromDescribe,
+  chooseMoreSpecificLocation,
   buildSituationDescription,
   extractContacts,
   buildDispatchSummary,

@@ -161,6 +161,58 @@ void main() {
       expect(parsed.destination?.queryAddress, '某地点');
       expect(parsed.routes.single.distanceMeters, 1000);
     });
+
+    test('RouteEndpointInfo 解析粗粒度精度字段并生成高德搜原址 URI 与简报附注', () {
+      const coarseEndpoint = RouteEndpointInfo(
+        queryAddress: '示例县351国道示例镇示例垄路段',
+        formattedAddress: '示例省示例市示例县351国道示例镇示例垄路段',
+        precision: 'coarse',
+        precisionLevel: '乡镇',
+        precisionDegraded: true,
+        resolvedAddress: '示例省示例市示例县示例镇',
+        location: AmapLocation(lat: 28.9, lon: 119.11, coordinate: 'gcj02'),
+      );
+      expect(coarseEndpoint.isCoarse, isTrue);
+
+      final parsed = RouteEndpointInfo.fromJson({
+        'queryAddress': '示例县351国道示例镇示例垄路段',
+        'formattedAddress': '示例省示例市示例县351国道示例镇示例垄路段',
+        'precision': 'coarse',
+        'precisionLevel': '乡镇',
+        'precisionDegraded': true,
+        'resolvedAddress': '示例省示例市示例县示例镇',
+        'location': {'lat': 28.9, 'lon': 119.11, 'coordinate': 'gcj02'},
+      });
+      expect(parsed, isNotNull);
+      expect(parsed!.isCoarse, isTrue);
+      expect(parsed.precisionLevel, '乡镇');
+      expect(parsed.resolvedAddress, '示例省示例市示例县示例镇');
+
+      final parsedDefault = RouteEndpointInfo.fromJson({
+        'queryAddress': '示例路1号',
+        'formattedAddress': '示例县示例路1号',
+      });
+      expect(parsedDefault!.isCoarse, isFalse);
+      expect(parsedDefault.precision, 'exact');
+
+      const coarseRoute = RouteTrafficInfo(destination: coarseEndpoint);
+      expect(coarseRoute.amapSearchWebUri?.host, 'uri.amap.com');
+      expect(coarseRoute.amapSearchWebUri?.path, '/search');
+      expect(
+        coarseRoute.amapSearchWebUri?.queryParameters['keyword'],
+        '示例县351国道示例镇示例垄路段',
+      );
+      expect(coarseRoute.nativeAndroidAmapSearchUri?.scheme, 'androidamap');
+      expect(coarseRoute.nativeAndroidAmapSearchUri?.host, 'poi');
+      expect(
+        coarseRoute.nativeAndroidAmapSearchUri?.queryParameters['keywords'],
+        '示例县351国道示例镇示例垄路段',
+      );
+      expect(
+        coarseRoute.toSummaryText(incidentName: '货车轮胎起火'),
+        contains('当前仅定位至乡镇级，请核对具体路段'),
+      );
+    });
   });
 
   group('RouteTrafficPage 界面测试', () {
@@ -590,6 +642,189 @@ void main() {
         expect(find.textContaining('方案1'), findsNothing);
         expect(tester.takeException(), isNull);
       }
+    });
+
+    testWidgets(
+      '精度降级至乡镇时保留完整地址、展示预警横幅并支持高德搜原址（原生失败回退网页）',
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 740);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final launched = <Uri>[];
+        var allowNativeSearch = true;
+
+        const coarseInfo = RouteTrafficInfo(
+          destination: RouteEndpointInfo(
+            queryAddress: '示例县351国道示例镇示例垄路段',
+            formattedAddress: '示例省示例市示例县351国道示例镇示例垄路段',
+            precision: 'coarse',
+            precisionLevel: '乡镇',
+            precisionDegraded: true,
+            resolvedAddress: '示例省示例市示例县示例镇',
+            location: AmapLocation(
+              lat: 28.900000,
+              lon: 119.110000,
+              coordinate: 'gcj02',
+            ),
+          ),
+          candidates: [
+            RouteDestinationCandidate(
+              name: '示例镇人民政府',
+              formattedAddress: '示例省示例市示例县示例镇人民政府',
+              district: '示例县',
+              location: AmapLocation(
+                lat: 28.900000,
+                lon: 119.110000,
+                coordinate: 'gcj02',
+              ),
+            ),
+            RouteDestinationCandidate(
+              name: '示例垄',
+              formattedAddress: '示例省示例市示例县示例镇示例垄',
+              district: '示例县',
+              location: AmapLocation(
+                lat: 28.864321,
+                lon: 119.156789,
+                coordinate: 'gcj02',
+              ),
+            ),
+          ],
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: buildCommandTheme(Brightness.light),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(1.3)),
+              child: child!,
+            ),
+            home: RouteTrafficPage(
+              gateway: _makeGateway(
+                fetchRouteTraffic: ({
+                  required address,
+                  city,
+                  originLat,
+                  originLon,
+                  destLat,
+                  destLon,
+                  destName,
+                  destAdcode,
+                }) async => coarseInfo,
+                launchNavigation: (uri) async {
+                  launched.add(uri);
+                  if (uri.scheme == 'androidamap') return allowNativeSearch;
+                  return true;
+                },
+              ),
+              readCurrentIncident: () => const RouteTrafficIncidentContext(
+                id: 'inc-coarse-1',
+                displayName: '货车轮胎起火',
+                location: '示例县351国道示例镇示例垄路段',
+                administrativeArea: '示例县',
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('示例省示例市示例县351国道示例镇示例垄路段'), findsOneWidget);
+        expect(find.byKey(const Key('route-traffic-coarse-banner')), findsOneWidget);
+        expect(find.textContaining('定位精度降级：仅定位至乡镇级'), findsOneWidget);
+        expect(find.byKey(const Key('route-traffic-amap-search')), findsOneWidget);
+        expect(
+          find.byKey(const Key('route-traffic-coarse-switch-candidate')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.byKey(const Key('route-traffic-amap-search')));
+        await tester.pumpAndSettle();
+        expect(launched.last.scheme, 'androidamap');
+        expect(launched.last.host, 'poi');
+        expect(
+          launched.last.queryParameters['keywords'],
+          '示例县351国道示例镇示例垄路段',
+        );
+
+        allowNativeSearch = false;
+        await tester.tap(find.byKey(const Key('route-traffic-amap-search')));
+        await tester.pumpAndSettle();
+        expect(launched.last.scheme, 'https');
+        expect(launched.last.host, 'uri.amap.com');
+        expect(launched.last.path, '/search');
+      },
+    );
+
+    testWidgets('编辑详情改址后强制拉取最新详情且清除旧坐标', (tester) async {
+      var detailsCalls = 0;
+      final routeCoords = <({double? lat, double? lon})>[];
+      var edited = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildCommandTheme(Brightness.light),
+          home: RouteTrafficPage(
+            gateway: _makeGateway(
+              fetchIncidentDetails: (id) async {
+                detailsCalls++;
+                return {
+                  'data': edited
+                      ? {
+                          'location': '示例镇工业园8号',
+                          'administrative_area': '示例县',
+                          'latitude': '',
+                          'longitude': '',
+                        }
+                      : {
+                          'location': '示例路1号',
+                          'administrative_area': '示例县',
+                          'latitude': '29.100000',
+                          'longitude': '119.200000',
+                        },
+                };
+              },
+              fetchRouteTraffic: ({
+                required address,
+                city,
+                originLat,
+                originLon,
+                destLat,
+                destLon,
+                destName,
+                destAdcode,
+              }) async {
+                routeCoords.add((lat: destLat, lon: destLon));
+                return mockRouteInfo;
+              },
+            ),
+            readCurrentIncident: () => const RouteTrafficIncidentContext(
+              id: 'inc-edit-clear',
+              displayName: '厂房冒烟',
+              location: '示例路1号',
+              administrativeArea: '示例县',
+              officialLat: 29.100000,
+              officialLon: 119.200000,
+            ),
+            onEditIncidentDetails: () async {
+              edited = true;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(detailsCalls, 0);
+      expect(routeCoords.last, (lat: 29.100000, lon: 119.200000));
+
+      await tester.tap(find.text('修改'));
+      await tester.pumpAndSettle();
+      expect(detailsCalls, 1);
+      expect(routeCoords.last.lat, isNull);
+      expect(routeCoords.last.lon, isNull);
     });
   });
 }

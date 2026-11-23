@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../../services/camera_bridge.dart';
+import '../data/models/route_models.dart';
 import '../data/models/route_traffic_info.dart';
 import '../data/models/scene_map_bootstrap.dart';
 import '../ui/scene_map_html_builder.dart';
@@ -61,6 +63,15 @@ class SceneMapGateway {
     double? destLon,
   })
   fetchIncidentRouteInfo;
+  final Future<RouteTrafficInfo> Function({
+    required String address,
+    String? city,
+    double? destLat,
+    double? destLon,
+    String? destName,
+    String? destAdcode,
+  })?
+  fetchIncidentRouteInfoWithCandidate;
   final Future<Map<String, dynamic>> Function(String incidentId)?
   fetchIncidentDetails;
   final Future<void> Function() openAppSettings;
@@ -85,6 +96,7 @@ class SceneMapGateway {
     required this.fetchMapBootstrap,
     required this.fetchAddress,
     required this.fetchIncidentRouteInfo,
+    this.fetchIncidentRouteInfoWithCandidate,
     this.fetchIncidentDetails,
     required this.openAppSettings,
     required this.openLocationSettings,
@@ -133,6 +145,107 @@ class SceneMapGateway {
               },
             ));
   return (webUri: webUri, nativeUri: nativeUri);
+}
+
+/// 解析高德原址关键词检索 Web 与 Android 原生 URI。
+({Uri? webUri, Uri? nativeUri}) resolveSceneMapSearchUris({
+  required RouteTrafficInfo? info,
+  required String fallbackAddress,
+}) {
+  final infoWeb = info?.amapSearchWebUri;
+  final infoNative = info?.nativeAndroidAmapSearchUri;
+  if (infoWeb != null || infoNative != null) {
+    return (webUri: infoWeb, nativeUri: infoNative);
+  }
+  return RouteTrafficInfo.buildKeywordSearchUris(fallbackAddress);
+}
+
+/// 按 Android 原生优先、失败回退网页的策略拉起外部高德链接。
+Future<bool> launchExternalAmapUris({
+  required Future<bool> Function(Uri uri) launcher,
+  required Uri? webUri,
+  required Uri? nativeUri,
+}) async {
+  var ok = false;
+  if (defaultTargetPlatform == TargetPlatform.android && nativeUri != null) {
+    try {
+      ok = await launcher(nativeUri);
+    } catch (_) {
+      ok = false;
+    }
+  }
+  if (!ok && webUri != null) {
+    try {
+      ok = await launcher(webUri);
+    } catch (_) {
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+/// 补拉警情详情并融合基线位置、行政区与坐标。
+Future<({String location, String city, double? lat, double? lon})>
+resolveSceneMapIncidentEndpoint({
+  required SceneMapGateway gateway,
+  required SceneMapIncidentContext incident,
+}) async {
+  var location = incident.effectiveLocation.trim();
+  var city = incident.administrativeArea.trim();
+  var officialLat = incident.officialLat;
+  var officialLon = incident.officialLon;
+
+  if ((location.isEmpty ||
+          city.isEmpty ||
+          officialLat == null ||
+          officialLon == null) &&
+      gateway.fetchIncidentDetails != null &&
+      gateway.isAuthenticated()) {
+    try {
+      final details = await gateway.fetchIncidentDetails!(incident.id);
+      if (details['data'] is Map) {
+        final data = Map<String, dynamic>.from(details['data'] as Map);
+        if (location.isEmpty) {
+          location = (data['location']?.toString() ?? '').trim();
+        }
+        if (city.isEmpty) {
+          city = (data['administrative_area']?.toString() ?? '').trim();
+        }
+        officialLat ??= double.tryParse(data['latitude']?.toString() ?? '');
+        officialLon ??= double.tryParse(data['longitude']?.toString() ?? '');
+      }
+    } catch (_) {}
+  }
+
+  return (location: location, city: city, lat: officialLat, lon: officialLon);
+}
+
+/// 查询现场地图事发地路由与候选信息，优先走支持候选点的接口并向后兼容旧注入网关。
+Future<RouteTrafficInfo> fetchSceneMapIncidentRoute({
+  required SceneMapGateway gateway,
+  required String address,
+  String? city,
+  double? destLat,
+  double? destLon,
+  RouteDestinationCandidate? candidate,
+}) {
+  final withCandidate = gateway.fetchIncidentRouteInfoWithCandidate;
+  if (withCandidate != null) {
+    return withCandidate(
+      address: address,
+      city: city,
+      destLat: destLat,
+      destLon: destLon,
+      destName: candidate?.name,
+      destAdcode: candidate?.adcode,
+    );
+  }
+  return gateway.fetchIncidentRouteInfo(
+    address: address,
+    city: city,
+    destLat: destLat,
+    destLon: destLon,
+  );
 }
 
 /// 构建现场地图 WebView JS 桥接调用脚本。

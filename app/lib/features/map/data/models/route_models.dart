@@ -8,6 +8,10 @@ class RouteEndpointInfo {
   final String district;
   final String adcode;
   final AmapLocation? location;
+  final String precision;
+  final String precisionLevel;
+  final bool precisionDegraded;
+  final String resolvedAddress;
 
   const RouteEndpointInfo({
     required this.queryAddress,
@@ -17,14 +21,25 @@ class RouteEndpointInfo {
     this.district = '',
     this.adcode = '',
     this.location,
+    this.precision = 'exact',
+    this.precisionLevel = '',
+    this.precisionDegraded = false,
+    this.resolvedAddress = '',
   });
 
   String get displayAddress =>
       formattedAddress.trim().isNotEmpty ? formattedAddress.trim() : queryAddress.trim();
 
+  bool get isCoarse =>
+      precisionDegraded ||
+      precision == 'coarse' ||
+      precision == 'township' ||
+      precision == 'district';
+
   static RouteEndpointInfo? fromJson(Object? raw) {
     if (raw is! Map) return null;
     final json = Map<String, dynamic>.from(raw);
+    final rawPrecision = json['precision']?.toString().trim() ?? '';
     return RouteEndpointInfo(
       queryAddress: json['queryAddress']?.toString().trim() ?? '',
       formattedAddress: json['formattedAddress']?.toString().trim() ?? '',
@@ -33,6 +48,10 @@ class RouteEndpointInfo {
       district: json['district']?.toString().trim() ?? '',
       adcode: json['adcode']?.toString().trim() ?? '',
       location: AmapLocation.fromJson(json['location']),
+      precision: rawPrecision.isNotEmpty ? rawPrecision : 'exact',
+      precisionLevel: json['precisionLevel']?.toString().trim() ?? '',
+      precisionDegraded: json['precisionDegraded'] == true,
+      resolvedAddress: json['resolvedAddress']?.toString().trim() ?? '',
     );
   }
 }

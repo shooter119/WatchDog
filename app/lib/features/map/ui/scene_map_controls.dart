@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../design_system/design_system.dart';
 import '../../../services/china_coord.dart';
 import '../state/scene_map_store.dart';
+import 'scene_map_coarse_warning.dart';
 
 /// 现场地图顶部悬浮控制条（图层切换、实时路况开关、定位告警与底图错误条）。
 class SceneMapTopOverlay extends StatelessWidget {
@@ -301,11 +302,15 @@ class _MapActionButton extends StatelessWidget {
 class SceneMapTelemetryCard extends StatelessWidget {
   final SceneMapStore store;
   final VoidCallback onNavigate;
+  final VoidCallback? onAmapSearch;
+  final VoidCallback? onOpenCandidates;
 
   const SceneMapTelemetryCard({
     super.key,
     required this.store,
     required this.onNavigate,
+    this.onAmapSearch,
+    this.onOpenCandidates,
   });
 
   @override
@@ -431,7 +436,7 @@ class SceneMapTelemetryCard extends StatelessWidget {
                                 Text(
                                   store.incidentDisplayLocation ??
                                       store.incidentName,
-                                  maxLines: 1,
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: ds.typography.caption.copyWith(
                                     color: colors.textPrimary,
@@ -468,6 +473,11 @@ class SceneMapTelemetryCard extends StatelessWidget {
                   ),
                 ],
               ],
+            ),
+            SceneMapTelemetryAlertSection(
+              info: store.incidentInfo,
+              onAmapSearch: onAmapSearch,
+              onOpenCandidates: onOpenCandidates,
             ),
           ],
         ],

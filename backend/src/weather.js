@@ -89,7 +89,7 @@ function parseWeather(payload) {
   };
 }
 
-/** 解析高德地理编码响应（地址 -> GCJ-02 坐标 + 行政区划）。 */
+/** 解析高德地理编码响应（地址 -> GCJ-02 坐标 + 行政区划 + 匹配精度级别）。 */
 function parseGeocode(payload) {
   if (!payload || String(payload.status) !== '1') return null;
   const item = Array.isArray(payload.geocodes) ? payload.geocodes[0] : null;
@@ -102,6 +102,7 @@ function parseGeocode(payload) {
   const city = strOrEmpty(item.city) || province;
   const district = strOrEmpty(item.district);
   const adcode = strOrEmpty(item.adcode);
+  const level = strOrEmpty(item.level);
   const formattedAddress = strOrEmpty(item.formatted_address) ||
     [province, city !== province ? city : '', district].filter(Boolean).join('');
   return {
@@ -110,6 +111,7 @@ function parseGeocode(payload) {
     city,
     district,
     adcode,
+    ...(level ? { level } : {}),
     location: { lat, lon, coordinate: 'gcj02' },
   };
 }
@@ -746,7 +748,117 @@ function normalizeNaturalVillage(address) {
   });
 }
 
-/** 提取地址中的乡镇/片区前置限定词（如「示例镇示范村4村」中的「示例镇」）。 */
+const COARSE_GEOCODE_LEVELS = new Set([
+  '国家',
+  '省',
+  '市',
+  '区县',
+  '开发区',
+  '乡镇',
+  '街道',
+]);
+
+const NON_ADMIN_DISTRICT_SUFFIX_RE = /(?:小区|社区|园区|工业区|开发区|商贸区|生活区|住宅区|集聚区|风景名胜区|风景区|旅游区|保护区|服务区|休息区|厂区|港区|校区|院区|营区)$/;
+
+/** 拆解地址的区县、乡镇、编号道路与后段核心地标，用于检测高德降级与二次精查。 */
+function parseAddressComponents(address) {
+  const clean = strOrEmpty(address);
+  if (!clean) {
+    return {
+      clean: '',
+      district: '',
+      township: '',
+      townPrefix: '',
+      roads: [],
+      afterTown: '',
+      tailDetail: '',
+      coreLandmark: '',
+      coreLandmarkBase: '',
+      hasDetailedTail: false,
+    };
+  }
+
+  let rest = clean
+    .replace(/^[\u4e00-\u9fa5]{2,5}(?:省|自治区)/, '')
+    .replace(/^[\u4e00-\u9fa5]{2,5}市(?=[\u4e00-\u9fa5A-Za-z0-9]{2,})/, '');
+
+  let district = '';
+  const distMatch = rest.match(/^([\u4e00-\u9fa5]{2,6}?(?:自治县|自治旗|区|县|旗))/);
+  if (distMatch && !NON_ADMIN_DISTRICT_SUFFIX_RE.test(distMatch[1])) {
+    district = distMatch[1];
+    rest = rest.slice(district.length);
+  }
+
+  // 提取道路（编号国道/省道/县道、高速及常规路街巷）
+  const roadMatches =
+    rest.match(
+      /(?:[GSX]\d{1,4}(?:线|国道|省道|高速)?|\d{2,4}(?:国道|省道|县道)|[\u4e00-\u9fa5]{2,8}(?:大道|高速|公路|快速路|东路|西路|南路|北路|中路|路(?![段口])|街(?![道])|巷|弄))/g,
+    ) || [];
+  const roads = [...new Set(roadMatches)];
+
+  // 支持行首乡镇及夹在国道/道路后的乡镇（如「351国道示例镇示例垄路段」），贪婪吞到最后一个路名/行政边界防误捕获「国道XX镇」
+  let township = '';
+  let townPrefix = '';
+  let afterTown = '';
+  const townMatch = rest.match(
+    /^(?:.*(?:国道|省道|县道|乡道|高速|公路|快速路|大道|东路|西路|南路|北路|中路|号|省|市|区|县|旗|\d))?([\u4e00-\u9fa5]{1,5}?)(镇|乡|街道)/,
+  );
+  if (townMatch) {
+    townPrefix = townMatch[1];
+    township = `${townMatch[1]}${townMatch[2]}`;
+    const idx = rest.indexOf(township);
+    if (idx >= 0) {
+      afterTown = rest.slice(idx + township.length);
+    }
+  }
+
+  let tailDetail = '';
+  if (afterTown) {
+    tailDetail = afterTown;
+  } else if (township) {
+    const idx = rest.indexOf(township);
+    const beforeTown = idx > 0 ? rest.slice(0, idx) : '';
+    tailDetail = beforeTown;
+  } else {
+    tailDetail = rest;
+  }
+  tailDetail = tailDetail.trim();
+
+  let coreLandmark = tailDetail
+    .replace(/(?:附近|一带|旁边|对面|周边|出口|入口|方向|往[\u4e00-\u9fa5]{1,8}方向)+$/g, '')
+    .replace(/(?:路段|交叉口|交界处|路口)+$/g, '')
+    .trim();
+
+  if (!coreLandmark && roads.length > 0) {
+    coreLandmark = roads[0];
+  }
+
+  let coreLandmarkBase = coreLandmark
+    .replace(/(?:\d+|[一二三四五六七八九十]+)(?:栋|幢|号楼|座|单元|楼|层|室|号).*$/, '')
+    .replace(/(?:\d+|[一二三四五六七八九十]+)(?:村|组|队|弄)$/, '')
+    .trim();
+  if (coreLandmarkBase.length < 2) {
+    coreLandmarkBase = coreLandmark;
+  }
+
+  const hasDetailedTail =
+    Boolean(coreLandmark && coreLandmark.length >= 2) || roads.length > 0;
+
+  return {
+    clean,
+    district,
+    township,
+    townPrefix,
+    roads,
+    afterTown,
+    tailDetail,
+    coreLandmark,
+    coreLandmarkBase,
+    hasDetailedTail,
+  };
+}
+
+/** 提取地址中的乡镇/片区前置限定词（如「云溪示范村4村」或「示例县351国道示例镇示例垄路段」中的乡镇词）。 */
 function extractPrefixWord(address) {
   const clean = strOrEmpty(address);
   if (!clean) return '';
@@ -754,7 +866,78 @@ function extractPrefixWord(address) {
   if (townMatch) return townMatch[1];
   const villagePrefixMatch = clean.match(/^([\u4e00-\u9fa5]{2,4})(?=[\u4e00-\u9fa5]{2,4}村)/);
   if (villagePrefixMatch) return villagePrefixMatch[1];
+  const parts = parseAddressComponents(clean);
+  if (parts.townPrefix && parts.townPrefix.length >= 2) {
+    return parts.townPrefix;
+  }
   return '';
+}
+
+/** 判断高德地理编码结果是否被向上降级为粗粒度行政中心或丢失后段地标。 */
+function isGeocodeCoarseOrTruncated(geocode, rawAddress) {
+  if (!geocode) return true;
+  const parts = parseAddressComponents(rawAddress);
+  if (!parts.hasDetailedTail) return false;
+
+  if (geocode.level && COARSE_GEOCODE_LEVELS.has(geocode.level)) {
+    return true;
+  }
+
+  const fmt = strOrEmpty(geocode.formattedAddress);
+  if (!fmt) return true;
+  if (
+    (parts.coreLandmark && parts.coreLandmark.length >= 2 && fmt.includes(parts.coreLandmark)) ||
+    (parts.coreLandmarkBase && parts.coreLandmarkBase.length >= 2 && fmt.includes(parts.coreLandmarkBase))
+  ) {
+    return false;
+  }
+
+  if (
+    /(?:省|自治区|市|区|县|旗|镇|乡|街道)$/.test(fmt) &&
+    parts.coreLandmark.length >= 2
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** 构建用于二次精查的有序检索词清单（最多 4 项，兼顾精度与配额）。 */
+function buildRefineQueries(cleanAddress, parts = parseAddressComponents(cleanAddress)) {
+  const queries = [];
+  const pushUnique = (q) => {
+    const clean = strOrEmpty(q);
+    if (clean.length >= 2 && !queries.includes(clean)) {
+      queries.push(clean);
+    }
+  };
+
+  if (parts.township && parts.coreLandmark && !parts.coreLandmark.includes(parts.township)) {
+    pushUnique(`${parts.township}${parts.coreLandmark}`);
+  }
+  if (parts.roads.length > 0 && parts.coreLandmark && !parts.coreLandmark.includes(parts.roads[0]) && !parts.roads[0].includes(parts.coreLandmark)) {
+    pushUnique(`${parts.roads[0]}${parts.coreLandmark}`);
+  }
+  if (parts.coreLandmark && parts.coreLandmark !== cleanAddress) {
+    pushUnique(parts.coreLandmark);
+  }
+  if (parts.coreLandmarkBase && parts.coreLandmarkBase !== parts.coreLandmark && parts.coreLandmarkBase.length >= 2) {
+    pushUnique(parts.coreLandmarkBase);
+  }
+
+  const normalized = normalizeNaturalVillage(cleanAddress)
+    .replace(/(?:附近|一带|旁边|对面|路段)$/g, '')
+    .trim();
+  if (normalized && normalized !== cleanAddress) {
+    pushUnique(normalized);
+  } else if (queries.length === 0) {
+    pushUnique(cleanAddress);
+  }
+
+  if (parts.roads.length > 0 && parts.township) {
+    pushUnique(`${parts.roads[0]}${parts.township}`);
+  }
+
+  return queries.slice(0, 4);
 }
 
 /** 计算两个经纬度坐标之间的球面距离（米）。 */
@@ -769,19 +952,71 @@ function geoDistance(lat1, lon1, lat2, lon2) {
   return Math.round(R * c);
 }
 
-/** 保留原始输入中的细分后缀（如「4村」、「四村」、「12号」），避免高德截断。 */
+/** 保留原始输入中的细分后缀（如「4村」、「2栋3单元」、「示例垄路段」），避免高德返回结果截断后段。 */
 function completeFormattedAddress(formattedAddress, rawAddress) {
   const base = strOrEmpty(formattedAddress);
   const raw = strOrEmpty(rawAddress);
   if (!base || !raw) return base || raw;
+
+  let result = base;
+
+  // 1. 保留细分村组弄号后缀（例如「4村」「12号」）
   const tailMatch = raw.match(/(\d+|[一二三四五六七八九十]+)(村|组|队|弄|号)$/);
   if (tailMatch) {
     const tail = tailMatch[0];
-    if (!base.endsWith(tail)) {
-      return `${base}${tail}`;
+    if (!result.endsWith(tail) && !result.includes(tail)) {
+      result = `${result}${tail}`;
     }
   }
-  return base;
+
+  // 2. 保留楼栋单元室详情（例如「示范小区2栋3单元」被高德返回为「...示范小区」时补全「2栋3单元」）
+  const buildingMatch = raw.match(/(?:\d+|[一二三四五六七八九十]+)(?:栋|幢|号楼|座|单元|楼|层|室).*$/);
+  if (buildingMatch) {
+    const buildingTail = buildingMatch[0];
+    if (!result.includes(buildingTail)) {
+      result = `${result}${buildingTail}`;
+    }
+  }
+
+  // 3. 若原始输入包含国道/乡镇后段详情，防止高德返回的乡镇级地址丢弃后段或道路/路段详情
+  const parts = parseAddressComponents(raw);
+  if (parts.hasDetailedTail) {
+    const prefix = extractPrefixWord(raw);
+    const stripPrefix = (val) => (prefix && val.startsWith(prefix) ? val.slice(prefix.length) : val);
+    const coreCandidates = [
+      parts.coreLandmark,
+      parts.coreLandmarkBase,
+      stripPrefix(parts.coreLandmark),
+      stripPrefix(parts.coreLandmarkBase),
+    ].filter((c) => c && c.length >= 2);
+    const hasCore = coreCandidates.some((c) => result.includes(c));
+
+    if (!hasCore) {
+      if (/(?:省|自治区|市|区|县|旗|镇|乡|街道)$/.test(result)) {
+        if (parts.district && raw.includes(parts.district)) {
+          const distIdx = result.indexOf(parts.district);
+          const prefixBeforeDist = distIdx > 0 ? result.slice(0, distIdx) : '';
+          return `${prefixBeforeDist}${raw}`;
+        }
+        if (parts.afterTown && parts.township && result.endsWith(parts.township)) {
+          return `${result}${parts.afterTown}`;
+        }
+        if (parts.tailDetail && !result.includes(parts.tailDetail)) {
+          return `${result}${parts.tailDetail}`;
+        }
+      }
+      if (!result.includes(parts.coreLandmark) && parts.tailDetail && !result.includes(parts.tailDetail)) {
+        return `${result}${parts.tailDetail}`;
+      }
+    } else if (/(?:路段|路口)$/.test(raw)) {
+      const roadSuffix = raw.match(/(?:路段|路口)$/)?.[0] || '';
+      if (roadSuffix && !result.endsWith(roadSuffix) && !result.includes(roadSuffix)) {
+        result = `${result}${roadSuffix}`;
+      }
+    }
+  }
+
+  return result;
 }
 
 /** 从 inputtips 响应中提取有效地理候选点。 */
@@ -806,7 +1041,55 @@ function parseCandidatesFromTips(payload) {
       province: '',
       city: '',
       district,
+      addressDetail: addr,
       adcode: strOrEmpty(tip.adcode),
+      source: 'tips',
+      location: { lat, lon, coordinate: 'gcj02' },
+    });
+  }
+  return candidates;
+}
+
+/** 从高德关键字 POI 搜索响应（/v3/place/text）中提取有效地理候选点。 */
+function parseCandidatesFromPoi(payload) {
+  if (!payload || String(payload.status) !== '1') return [];
+  const pois = Array.isArray(payload.pois) ? payload.pois : [];
+  const candidates = [];
+  for (const poi of pois) {
+    const rawLoc = strOrEmpty(poi.location);
+    if (!rawLoc) continue;
+    const parts = rawLoc.split(',').map((p) => Number(p.trim()));
+    if (parts.length !== 2) continue;
+    const [lon, lat] = parts;
+    if (!validCoord(lat, lon)) continue;
+    const name = strOrEmpty(poi.name);
+    const pname = strOrEmpty(poi.pname);
+    const cityname = strOrEmpty(poi.cityname);
+    const adname = strOrEmpty(poi.adname);
+    const addr = Array.isArray(poi.address) ? poi.address.join('') : strOrEmpty(poi.address);
+    const prefixParts = [];
+    if (pname) prefixParts.push(pname);
+    if (cityname && cityname !== pname) prefixParts.push(cityname);
+    if (adname && adname !== cityname) prefixParts.push(adname);
+    const prefix = prefixParts.join('');
+    const detailParts = prefix ? [prefix] : [];
+    if (addr && !prefix.includes(addr) && !name.includes(addr) && addr !== name) {
+      detailParts.push(addr);
+    }
+    if (name && !detailParts.join('').includes(name)) {
+      detailParts.push(name);
+    }
+    const formattedAddress = detailParts.join('') || name || addr;
+    candidates.push({
+      name,
+      formattedAddress,
+      province: pname,
+      city: cityname || pname,
+      district: adname || prefix,
+      addressDetail: addr,
+      adcode: strOrEmpty(poi.adcode),
+      type: strOrEmpty(poi.type),
+      source: 'poi',
       location: { lat, lon, coordinate: 'gcj02' },
     });
   }
@@ -908,128 +1191,276 @@ async function lookupRouteTraffic({
       effectiveCity = unitJurisdiction.city;
     }
 
+    const parts = parseAddressComponents(cleanAddress);
     const prefixWord = extractPrefixWord(cleanAddress);
     const normalizedAddress = normalizeNaturalVillage(cleanAddress);
     const targetDistrict = (cleanCity && (cleanCity.endsWith('县') || cleanCity.endsWith('区')) ? cleanCity : '') || unitDistrict || '';
     const needsPrefix = Boolean(targetDistrict && !cleanAddress.includes(targetDistrict));
+    const isShortVillage = cleanAddress.length <= 6 && cleanAddress.endsWith('村') && !cleanAddress.includes('镇') && !cleanAddress.includes('街道');
 
-    // 2. 尝试常规地理编码查询
-    const geocodeKey = `${effectiveCity}::${cleanAddress}`;
-    let primaryGeocode = geoStore.get(geocodeKey, now);
-    if (!primaryGeocode) {
-      const cityParam = effectiveCity ? `&city=${encodeURIComponent(effectiveCity)}` : '';
-      // 优先尝试带属地前缀检索（如「示例县示范小区2栋3单元」），强效防止同名小区漂移至外省
-      let searchAddress = cleanAddress;
-      if (needsPrefix) {
-        searchAddress = `${targetDistrict}${cleanAddress}`;
-      }
-      let url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(searchAddress)}` +
-        `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
-      primaryGeocode = parseGeocode(await fetchJson(url, fetchImpl));
-
-      if (!primaryGeocode && searchAddress !== cleanAddress) {
-        url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(cleanAddress)}` +
+    const refinedKey = `refined::${effectiveCity}::${cleanAddress}`;
+    const cachedRefined = geoStore.get(refinedKey, now);
+    if (cachedRefined && cachedRefined.geocode) {
+      geocode = cachedRefined.geocode;
+      ambiguous = Boolean(cachedRefined.ambiguous);
+      candidates = Array.isArray(cachedRefined.candidates) ? cachedRefined.candidates : [];
+    } else {
+      // 2. 尝试常规地理编码查询
+      const geocodeKey = `${effectiveCity}::${cleanAddress}`;
+      let primaryGeocode = geoStore.get(geocodeKey, now);
+      if (!primaryGeocode) {
+        const cityParam = effectiveCity ? `&city=${encodeURIComponent(effectiveCity)}` : '';
+        // 优先尝试带属地前缀检索（如「示例县示范小区2栋3单元」），强效防止同名小区漂移至外省
+        let searchAddress = cleanAddress;
+        if (needsPrefix) {
+          searchAddress = `${targetDistrict}${cleanAddress}`;
+        }
+        let url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(searchAddress)}` +
           `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
         primaryGeocode = parseGeocode(await fetchJson(url, fetchImpl));
-      }
-      if (!primaryGeocode && normalizedAddress !== cleanAddress) {
-        const urlNorm = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(normalizedAddress)}` +
-          `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
-        primaryGeocode = parseGeocode(await fetchJson(urlNorm, fetchImpl));
-      }
-      if (primaryGeocode) geoStore.set(geocodeKey, primaryGeocode, now);
-    }
 
-    // 检查地理编码结果是否出现跨市或前缀丢失（例如输入包含「示范镇」，结果却跳到「异地市」且无「示范镇」）
-    let isPrimaryValid = Boolean(primaryGeocode);
-    if (primaryGeocode) {
-      const fullText = `${primaryGeocode.formattedAddress}${primaryGeocode.province}${primaryGeocode.city}${primaryGeocode.district}`;
-      if (prefixWord && !fullText.includes(prefixWord)) {
-        isPrimaryValid = false;
+        if (!primaryGeocode && searchAddress !== cleanAddress) {
+          url = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(cleanAddress)}` +
+            `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
+          primaryGeocode = parseGeocode(await fetchJson(url, fetchImpl));
+        }
+        if (!primaryGeocode && normalizedAddress !== cleanAddress) {
+          const urlNorm = `${AMAP_BASE}/v3/geocode/geo?address=${encodeURIComponent(normalizedAddress)}` +
+            `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
+          primaryGeocode = parseGeocode(await fetchJson(urlNorm, fetchImpl));
+        }
+        if (primaryGeocode) geoStore.set(geocodeKey, primaryGeocode, now);
       }
-      const regionText = `${primaryGeocode.province}${primaryGeocode.city}${primaryGeocode.district}`;
-      if (effectiveCity && !regionText.includes(effectiveCity) && !effectiveCity.includes(primaryGeocode.city || '') && !effectiveCity.includes(primaryGeocode.district || '')) {
-        isPrimaryValid = false;
-      }
-    }
 
-    // 3. 在需要消歧、多候选发现或初次地理编码不合格时查询候选建议
-    let tipCandidates = [];
-    const isShortVillage = cleanAddress.length <= 6 && cleanAddress.endsWith('村') && !cleanAddress.includes('镇') && !cleanAddress.includes('街道');
-    const needCandidatesLookup = !isPrimaryValid || isShortVillage;
-    if (needCandidatesLookup) {
-      try {
-        const tipsQuery = prefixWord ? `${prefixWord}${normalizedAddress.replace(prefixWord, '')}` : normalizedAddress;
+      // 检查地理编码结果是否出现跨市、前缀丢失或粗粒度向上降级（例如只定位到乡镇中心）
+      let isPrimaryValid = Boolean(primaryGeocode);
+      if (primaryGeocode) {
+        const fullText = `${primaryGeocode.formattedAddress}${primaryGeocode.province}${primaryGeocode.city}${primaryGeocode.district}`;
+        if (prefixWord && !fullText.includes(prefixWord)) {
+          isPrimaryValid = false;
+        }
+        const regionText = `${primaryGeocode.province}${primaryGeocode.city}${primaryGeocode.district}`;
+        if (effectiveCity && !regionText.includes(effectiveCity) && !effectiveCity.includes(primaryGeocode.city || '') && !effectiveCity.includes(primaryGeocode.district || '')) {
+          isPrimaryValid = false;
+        }
+      }
+      const isPrimaryCoarse = isPrimaryValid
+        ? isGeocodeCoarseOrTruncated(primaryGeocode, cleanAddress)
+        : false;
+
+      // 3. 在主地理编码无效、发生粗粒度降级或存在同名短村名歧义时，结合 POI 关键字与输入提示二次精查
+      const rawCandidates = [];
+      const COARSE_POI_NAME_RE =
+        /^(?:[\u4e00-\u9fa5]{1,10}(?:省|市|区|县|旗|镇|乡|街道))(?:人民政府|政府|办事处|镇政府|乡政府|街道办)?$/;
+
+      if (!isPrimaryValid || isPrimaryCoarse) {
         const cityParam = effectiveCity ? `&city=${encodeURIComponent(effectiveCity)}&citylimit=true` : '';
-        const tipsUrl = `${AMAP_BASE}/v3/assistant/inputtips?keywords=${encodeURIComponent(tipsQuery)}` +
-          `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
-        tipCandidates = parseCandidatesFromTips(await fetchJson(tipsUrl, fetchImpl));
-      } catch (_) {}
-    }
+        const refineQueries = buildRefineQueries(cleanAddress, parts);
+        if (refineQueries.length === 0) {
+          refineQueries.push(prefixWord ? `${prefixWord}${normalizedAddress.replace(prefixWord, '')}` : normalizedAddress);
+        }
 
-    // 对候选建议打分和排序
-    const scoredCandidates = [];
-    for (const cand of tipCandidates) {
-      let score = 0;
-      const candFull = `${cand.formattedAddress}${cand.name}${cand.district}`;
-      if (prefixWord && candFull.includes(prefixWord)) score += 100;
-      if (unitDistrict && (cand.district.includes(unitDistrict) || candFull.includes(unitDistrict))) score += 30;
-      if (effectiveCity && (cand.district.includes(effectiveCity) || candFull.includes(effectiveCity))) score += 15;
-      if (cand.name === cleanAddress || cand.name === normalizedAddress) score += 20;
-      scoredCandidates.push({ ...cand, score });
-    }
-    scoredCandidates.sort((a, b) => b.score - a.score);
+        for (const q of refineQueries) {
+          const poiUrl = `${AMAP_BASE}/v3/place/text?keywords=${encodeURIComponent(q)}` +
+            `${cityParam}&offset=8&page=1&output=JSON&key=${encodeURIComponent(key)}`;
+          const tipsUrl = `${AMAP_BASE}/v3/assistant/inputtips?keywords=${encodeURIComponent(q)}` +
+            `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
+          const [poiRes, tipsRes] = await Promise.allSettled([
+            fetchJson(poiUrl, fetchImpl),
+            fetchJson(tipsUrl, fetchImpl),
+          ]);
+          const batch = [
+            ...(poiRes.status === 'fulfilled' ? parseCandidatesFromPoi(poiRes.value) : []),
+            ...(tipsRes.status === 'fulfilled' ? parseCandidatesFromTips(tipsRes.value) : []),
+          ];
+          rawCandidates.push(...batch);
 
-    // 去除相距过近（< 1500米）且名字相似的重复候选
-    const dedupedCandidates = [];
-    for (const item of scoredCandidates) {
-      const dup = dedupedCandidates.some((existing) =>
-        geoDistance(existing.location.lat, existing.location.lon, item.location.lat, item.location.lon) < 1500 &&
-        (existing.name.includes(item.name) || item.name.includes(existing.name))
+          // 若当前批次已在本市范围内精准命中核心地标（非政府驻地中心），立即停止后续查词节省配额
+          const hasExactHit = batch.some((cand) => {
+            if (effectiveCity && cand.city && !cand.city.includes(effectiveCity) && !effectiveCity.includes(cand.city)) {
+              return false;
+            }
+            const candText = `${cand.formattedAddress}${cand.name}${cand.district}${cand.addressDetail || ''}`;
+            const hitsCore = Boolean(
+              (parts.coreLandmark && parts.coreLandmark.length >= 2 && candText.includes(parts.coreLandmark)) ||
+              (parts.coreLandmarkBase && parts.coreLandmarkBase.length >= 2 && candText.includes(parts.coreLandmarkBase)),
+            );
+            const coarseAdmin = COARSE_POI_NAME_RE.test(cand.name);
+            return hitsCore && !coarseAdmin;
+          });
+          if (hasExactHit) break;
+        }
+      } else if (isShortVillage) {
+        try {
+          const tipsQuery = prefixWord ? `${prefixWord}${normalizedAddress.replace(prefixWord, '')}` : normalizedAddress;
+          const cityParam = effectiveCity ? `&city=${encodeURIComponent(effectiveCity)}&citylimit=true` : '';
+          const tipsUrl = `${AMAP_BASE}/v3/assistant/inputtips?keywords=${encodeURIComponent(tipsQuery)}` +
+            `${cityParam}&output=JSON&key=${encodeURIComponent(key)}`;
+          rawCandidates.push(...parseCandidatesFromTips(await fetchJson(tipsUrl, fetchImpl)));
+        } catch (_) {}
+      }
+
+      // 对候选建议进行属地过滤、核心地标打分和排序
+      const scoredCandidates = [];
+      for (const cand of rawCandidates) {
+        if (effectiveCity && cand.city && !cand.city.includes(effectiveCity) && !effectiveCity.includes(cand.city)) {
+          continue;
+        }
+        if (effectiveCity && !cand.city && cand.district) {
+          const otherCities = cand.district.match(/([\u4e00-\u9fa5]{2,5}市)/g);
+          if (otherCities && !otherCities.some((c) => effectiveCity.includes(c) || c.includes(effectiveCity))) {
+            continue;
+          }
+        }
+
+        let score = 0;
+        const candFull = `${cand.formattedAddress}${cand.name}${cand.district}${cand.addressDetail || ''}`;
+        const matchedCore = Boolean(
+          (parts.coreLandmark && parts.coreLandmark.length >= 2 && (cand.name.includes(parts.coreLandmark) || candFull.includes(parts.coreLandmark))) ||
+          (parts.coreLandmarkBase && parts.coreLandmarkBase.length >= 2 && (cand.name.includes(parts.coreLandmarkBase) || candFull.includes(parts.coreLandmarkBase))),
+        );
+        const matchedRoad = parts.roads.some((r) => candFull.includes(r));
+        const isCoarsePoint = parts.hasDetailedTail && !matchedCore && COARSE_POI_NAME_RE.test(cand.name);
+
+        if (parts.coreLandmark && (cand.name === parts.coreLandmark || cand.name === normalizeNaturalVillage(parts.coreLandmark))) {
+          score += 140;
+        } else if (parts.coreLandmark && cand.name.includes(parts.coreLandmark)) {
+          score += 110;
+        } else if (matchedCore) {
+          score += 80;
+        }
+
+        if (matchedRoad) score += 40;
+        if (parts.township && candFull.includes(parts.township)) {
+          score += 60;
+        } else if (prefixWord && candFull.includes(prefixWord)) {
+          score += isShortVillage || !parts.coreLandmark ? 100 : 50;
+        }
+        if (targetDistrict && (cand.district.includes(targetDistrict) || candFull.includes(targetDistrict))) {
+          score += 35;
+        } else if (unitDistrict && (cand.district.includes(unitDistrict) || candFull.includes(unitDistrict))) {
+          score += 30;
+        }
+        if (effectiveCity && (cand.district.includes(effectiveCity) || candFull.includes(effectiveCity))) {
+          score += 15;
+        }
+        if (cand.name === cleanAddress || cand.name === normalizedAddress) score += 20;
+        if (cand.source === 'poi') score += 10;
+        if (isCoarsePoint) score -= 80;
+
+        scoredCandidates.push({
+          ...cand,
+          score,
+          matchedCore,
+          matchedRoad,
+          isCoarsePoint,
+        });
+      }
+      scoredCandidates.sort((a, b) => b.score - a.score);
+
+      // 去除相距过近（< 1500米）且名字相似的重复候选
+      const dedupedCandidates = [];
+      for (const item of scoredCandidates) {
+        const dup = dedupedCandidates.some((existing) =>
+          geoDistance(existing.location.lat, existing.location.lon, item.location.lat, item.location.lon) < 1500 &&
+          (existing.name.includes(item.name) || item.name.includes(existing.name))
+        );
+        if (!dup) dedupedCandidates.push(item);
+      }
+
+      const preciseCandidates = dedupedCandidates.filter(
+        (c) => !c.isCoarsePoint && (!parts.hasDetailedTail || c.matchedCore || c.matchedRoad),
       );
-      if (!dup) dedupedCandidates.push(item);
-    }
+      const candidatePool = preciseCandidates.length > 0 ? preciseCandidates : dedupedCandidates;
 
-    // 判断是否存在多个同名且无法排除的候选点
-    if (dedupedCandidates.length >= 2) {
-      const first = dedupedCandidates[0];
-      const second = dedupedCandidates[1];
-      const dist = geoDistance(first.location.lat, first.location.lon, second.location.lat, second.location.lon);
-      // 若前两位得分差距不显著（如缺少前缀区分）且相距超过 2000 米，判定为同名村歧义
-      if (dist > 2000 && Math.abs(first.score - second.score) < 50) {
-        ambiguous = true;
-        candidates = dedupedCandidates.slice(0, 6).map((c) => ({
+      const hasNumberedVillageTail = /(\d+|[一二三四五六七八九十]+)(村|组|队|弄|号)$/.test(cleanAddress);
+      const formatCandidateList = (list) =>
+        list.slice(0, 6).map((c) => ({
           name: c.name,
-          formattedAddress: completeFormattedAddress(c.formattedAddress, cleanAddress),
+          formattedAddress:
+            c.matchedCore || isShortVillage || hasNumberedVillageTail
+              ? completeFormattedAddress(c.formattedAddress, cleanAddress)
+              : c.formattedAddress,
           province: c.province || '',
           city: c.city || effectiveCity,
           district: c.district || '',
           adcode: c.adcode || '',
           location: c.location,
         }));
-      }
-    }
 
-    if (isPrimaryValid) {
-      geocode = {
-        ...primaryGeocode,
-        formattedAddress: completeFormattedAddress(primaryGeocode.formattedAddress, cleanAddress),
-      };
-    } else if (dedupedCandidates.length > 0) {
-      const best = dedupedCandidates[0];
-      geocode = {
-        formattedAddress: completeFormattedAddress(best.formattedAddress, cleanAddress),
-        province: best.province || '',
-        city: best.city || effectiveCity,
-        district: best.district || '',
-        adcode: best.adcode || '',
-        location: best.location,
-      };
-    } else if (primaryGeocode && isPrimaryValid) {
-      geocode = {
-        ...primaryGeocode,
-        formattedAddress: completeFormattedAddress(primaryGeocode.formattedAddress, cleanAddress),
-      };
+      // 判断是否存在多个相距较远且分差微小的同名候选点
+      if (candidatePool.length >= 2) {
+        const first = candidatePool[0];
+        const second = candidatePool[1];
+        const dist = geoDistance(first.location.lat, first.location.lon, second.location.lat, second.location.lon);
+        if (dist > 2000 && Math.abs(first.score - second.score) < 50) {
+          ambiguous = true;
+          candidates = formatCandidateList(candidatePool);
+        }
+      }
+
+      if (isPrimaryValid && !isPrimaryCoarse) {
+        geocode = {
+          ...primaryGeocode,
+          formattedAddress: completeFormattedAddress(primaryGeocode.formattedAddress, cleanAddress),
+          precision: 'exact',
+          precisionLevel: primaryGeocode.level || '',
+          precisionDegraded: false,
+          resolvedAddress: primaryGeocode.formattedAddress,
+        };
+      } else if (preciseCandidates.length > 0) {
+        const best = preciseCandidates[0];
+        const bestHasCore = best.matchedCore || !parts.coreLandmark;
+        if (!ambiguous && preciseCandidates.length > 1) {
+          candidates = formatCandidateList(preciseCandidates);
+        }
+        geocode = {
+          formattedAddress: completeFormattedAddress(best.formattedAddress, cleanAddress),
+          province: best.province || primaryGeocode?.province || '',
+          city: best.city || effectiveCity,
+          district: best.district || primaryGeocode?.district || '',
+          adcode: best.adcode || primaryGeocode?.adcode || '',
+          location: best.location,
+          precision: bestHasCore ? 'exact' : 'coarse',
+          precisionLevel: bestHasCore ? (best.source === 'poi' ? '兴趣点' : '推荐地点') : '道路/乡镇',
+          precisionDegraded: !bestHasCore,
+          resolvedAddress: best.formattedAddress,
+        };
+      } else if (isPrimaryValid && primaryGeocode) {
+        if (dedupedCandidates.length > 0 && candidates.length === 0) {
+          candidates = formatCandidateList(dedupedCandidates);
+        }
+        geocode = {
+          ...primaryGeocode,
+          formattedAddress: completeFormattedAddress(primaryGeocode.formattedAddress, cleanAddress),
+          precision: 'coarse',
+          precisionLevel: primaryGeocode.level || '乡镇',
+          precisionDegraded: true,
+          resolvedAddress: primaryGeocode.formattedAddress,
+        };
+      } else if (dedupedCandidates.length > 0) {
+        const best = dedupedCandidates[0];
+        if (candidates.length === 0 && dedupedCandidates.length > 1) {
+          candidates = formatCandidateList(dedupedCandidates);
+        }
+        const isBestCoarse = Boolean(best.isCoarsePoint || (parts.hasDetailedTail && !best.matchedCore));
+        geocode = {
+          formattedAddress: completeFormattedAddress(best.formattedAddress, cleanAddress),
+          province: best.province || '',
+          city: best.city || effectiveCity,
+          district: best.district || '',
+          adcode: best.adcode || '',
+          location: best.location,
+          precision: isBestCoarse ? 'coarse' : 'exact',
+          precisionLevel: isBestCoarse ? '乡镇' : (best.source === 'poi' ? '兴趣点' : '推荐地点'),
+          precisionDegraded: isBestCoarse,
+          resolvedAddress: best.formattedAddress,
+        };
+      }
+
+      if (geocode) {
+        geoStore.set(refinedKey, { geocode, ambiguous, candidates }, now);
+      }
     }
   }
 
@@ -1121,6 +1552,10 @@ async function lookupRouteTraffic({
       district: geocode.district,
       adcode: geocode.adcode,
       location: geocode.location,
+      precision: geocode.precision || 'exact',
+      precisionLevel: geocode.precisionLevel || '',
+      precisionDegraded: Boolean(geocode.precisionDegraded),
+      resolvedAddress: geocode.resolvedAddress || geocode.formattedAddress,
     },
     ambiguous,
     candidates,
@@ -1148,10 +1583,15 @@ module.exports = {
   parseForecast,
   parseDrivingRoute,
   DRIVING_STRATEGIES,
+  COARSE_GEOCODE_LEVELS,
   hasHighway,
   routeSignature,
   mergeAndRankDrivingRoutes,
   parseCandidatesFromTips,
+  parseCandidatesFromPoi,
+  parseAddressComponents,
+  isGeocodeCoarseOrTruncated,
+  buildRefineQueries,
   resolveUnitJurisdiction,
   cleanUnitJurisdictionName,
   normalizeNaturalVillage,

@@ -321,3 +321,36 @@ test('常用队伍别名匹配稳定身份，相似名称只建议且跨单位�
   const other=await db.createIncident({unitId:'unit-directory-b'});
   await assert.rejects(db.upsertIncidentForce({incidentId:other.id,stationName:'测试队',unitStationId:unit.id}),{code:'FORCE_NOT_FOUND'});
 });
+
+test('updateDetails 修改 location 且未传新坐标时自动清除旧经纬度，传新坐标时保留',async()=>{
+  const incident=await db.createIncident({unitId:'unit-test',createdAt:14000});
+  await store.query(
+    'INSERT INTO incident_details(incident_id,unit_id,data,version,updated_at,updated_by) VALUES($1,$2,$3,1,$4,$5)',
+    [incident.id,'unit-test',JSON.stringify({location:'示例县示例镇',latitude:'28.90',longitude:'119.11'}),Date.now(),'seed'],
+  );
+  await imports.updateDetails({
+    unitId:'unit-test',
+    incidentId:incident.id,
+    actorId:'editor-1',
+    actorName:'测试员',
+    opId:`details-clear-coord-${incident.id}`,
+    body:{expected_version:1,data:{location:'示例县351国道示例镇示例垄路段'}},
+  });
+  const afterLocChange=await imports.details('unit-test',incident.id);
+  assert.equal(afterLocChange.data.location,'示例县351国道示例镇示例垄路段');
+  assert.equal(afterLocChange.data.latitude,undefined);
+  assert.equal(afterLocChange.data.longitude,undefined);
+
+  await imports.updateDetails({
+    unitId:'unit-test',
+    incidentId:incident.id,
+    actorId:'editor-1',
+    actorName:'测试员',
+    opId:`details-with-coord-${incident.id}`,
+    body:{expected_version:2,data:{location:'示例县新址88号',latitude:'28.864',longitude:'119.156'}},
+  });
+  const withNewCoord=await imports.details('unit-test',incident.id);
+  assert.equal(withNewCoord.data.location,'示例县新址88号');
+  assert.equal(withNewCoord.data.latitude,'28.864');
+  assert.equal(withNewCoord.data.longitude,'119.156');
+});

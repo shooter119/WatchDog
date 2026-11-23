@@ -8,10 +8,12 @@ Future<RouteDestinationCandidate?> showRouteDestinationPickerSheet(
   BuildContext context, {
   required List<RouteDestinationCandidate> candidates,
   required RouteDestinationCandidate? selectedCandidate,
+  String title = '发现多处同名地点，请确认目的地',
+  String itemKeyPrefix = 'route-candidate-item',
 }) {
   return showCommandSheet<RouteDestinationCandidate>(
     context: context,
-    title: '发现多处同名地点，请确认目的地',
+    title: title,
     builder: (sheetContext) {
       final ds = sheetContext.ds;
       final colors = ds.colors;
@@ -22,7 +24,7 @@ Future<RouteDestinationCandidate?> showRouteDestinationPickerSheet(
           for (var index = 0; index < candidates.length; index++) ...[
             if (index > 0) const SizedBox(height: DsSpacing.sm),
             _CandidateTile(
-              key: Key('route-candidate-item-$index'),
+              key: Key('$itemKeyPrefix-$index'),
               candidate: candidates[index],
               isSelected:
                   selectedCandidate?.formattedAddress ==
