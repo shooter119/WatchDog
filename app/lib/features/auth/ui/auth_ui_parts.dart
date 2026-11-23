@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../design_system/design_system.dart';
 
-/// 认证模块通用 DS v3.0 输入框装饰。
+/// 认证模块通用 DS v3.0 输入框装饰（配合 [AuthLabeledField] 框外顶部标签使用）。
 InputDecoration authInputDecoration(
   BuildContext context, {
-  required String label,
   required String hint,
   required IconData icon,
   Widget? suffixIcon,
@@ -17,10 +16,8 @@ InputDecoration authInputDecoration(
     borderSide: BorderSide(color: colors.border),
   );
   return InputDecoration(
-    labelText: label,
     hintText: hint,
-    labelStyle: ds.typography.body.copyWith(color: colors.textSecondary),
-    hintStyle: ds.typography.caption.copyWith(color: colors.textTertiary),
+    hintStyle: ds.typography.body.copyWith(color: colors.textTertiary),
     prefixIcon: Icon(icon, size: DsSizes.iconMd, color: colors.textTertiary),
     suffixIcon: suffixIcon,
     filled: true,
@@ -37,6 +34,42 @@ InputDecoration authInputDecoration(
       borderSide: BorderSide(color: colors.brand, width: 1.5),
     ),
   );
+}
+
+/// 认证表单字段容器：框外顶部固定标签 + 灰底描边输入框，
+/// 避免 Material 浮动标签骑在灰白交界线上造成的视觉截断。
+class AuthLabeledField extends StatelessWidget {
+  const AuthLabeledField({
+    super.key,
+    required this.label,
+    required this.child,
+  });
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ds = context.ds;
+    final colors = ds.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: DsSpacing.xs + 2),
+          child: Text(
+            label,
+            style: ds.typography.caption.copyWith(
+              color: colors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
 }
 
 /// 认证与扫码模块统一的高对比语义提示横幅（图标 + 文字双通道）。

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:watchdog/core/network/network.dart';
 import 'package:watchdog/design_system/design_system.dart';
 import 'package:watchdog/features/auth/state/onboarding_flow_store.dart';
+import 'package:watchdog/features/auth/ui/auth_ui_parts.dart';
 import 'package:watchdog/features/auth/ui/onboarding_flow_shell.dart';
 import 'package:watchdog/features/auth/ui/unit_auth_page.dart';
 import 'package:watchdog/features/incident/ui/incident_picker_page.dart';
@@ -760,6 +761,83 @@ void main() {
         tester.widget<EditableText>(editableFinder).focusNode.hasFocus,
         isTrue,
       );
+    });
+
+    testWidgets('UnitAuthPage 展示火场智控品牌页头、框外固定标签与紧凑态 Logo', (
+      tester,
+    ) async {
+      final viewInsets = ValueNotifier<EdgeInsets>(EdgeInsets.zero);
+      addTearDown(viewInsets.dispose);
+      final store = OnboardingFlowStore(
+        authenticationRequired: true,
+        pendingPollInterval: null,
+        onAuthenticate: (_, _, _) async {},
+        onEnterGuestMode: () async {},
+      );
+      addTearDown(store.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: buildCommandTheme(Brightness.light),
+          themeAnimationDuration: Duration.zero,
+          builder: (BuildContext context, Widget? appChild) {
+            return ValueListenableBuilder<EdgeInsets>(
+              valueListenable: viewInsets,
+              builder: (BuildContext context, EdgeInsets insets, _) {
+                final mq = MediaQuery.of(context);
+                return MediaQuery(
+                  data: mq.copyWith(
+                    viewInsets: insets,
+                    disableAnimations: true,
+                  ),
+                  child: appChild!,
+                );
+              },
+            );
+          },
+          home: UnitAuthPage(store: store),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. 常态渲染 FireControlLogo 32dp + 「火场智控」品牌行 + 精简副标题，且移除静态「单位实名接入」胶囊
+      expect(find.byKey(const Key('auth-brand-row')), findsOneWidget);
+      final normalLogo = tester.widget<FireControlLogo>(
+        find.byType(FireControlLogo),
+      );
+      expect(normalLogo.size, 32);
+      expect(find.text('火场智控'), findsOneWidget);
+      expect(find.text('先完成用户认证'), findsOneWidget);
+      expect(find.text('认证后同步查看并记录本单位警情与空呼。'), findsOneWidget);
+      expect(find.byType(StatusPill), findsNothing);
+      expect(find.text('单位实名接入'), findsNothing);
+
+      // 2. 三个表单项均使用框外固定标签，且 TextField 内部无浮动 labelText
+      expect(find.byType(AuthLabeledField), findsNWidgets(3));
+      expect(find.text('单位名称'), findsOneWidget);
+      expect(find.text('真实姓名'), findsOneWidget);
+      expect(find.text('单位验证码'), findsOneWidget);
+
+      for (final fieldKey in const <Key>[
+        Key('auth-unit-name'),
+        Key('auth-real-name'),
+        Key('auth-unit-code'),
+      ]) {
+        final field = tester.widget<TextField>(find.byKey(fieldKey));
+        expect(field.decoration?.labelText, isNull);
+      }
+
+      // 3. 软键盘弹出进入紧凑态时展示 FireControlLogo 36dp 与「用户认证」标题
+      viewInsets.value = const EdgeInsets.only(bottom: 320);
+      await tester.pump();
+      expect(find.byKey(const Key('auth-brand-row')), findsNothing);
+      final compactLogo = tester.widget<FireControlLogo>(
+        find.byType(FireControlLogo),
+      );
+      expect(compactLogo.size, 36);
+      expect(find.text('用户认证'), findsOneWidget);
+      expect(find.text('使用单位账号继续'), findsOneWidget);
     });
   });
 }

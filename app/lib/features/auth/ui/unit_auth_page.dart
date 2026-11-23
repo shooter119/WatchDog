@@ -210,26 +210,9 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
     final ds = context.ds;
     final colors = ds.colors;
     if (compact) {
-      final brandTint = Color.alphaBlend(
-        colors.brand.withValues(alpha: 0.12),
-        colors.surface,
-      );
       return Row(
         children: <Widget>[
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: brandTint,
-              borderRadius: DsRadius.borderMd,
-              border: Border.all(color: colors.brand.withValues(alpha: 0.28)),
-            ),
-            child: Icon(
-              DsIcons.verified,
-              size: DsSizes.iconMd,
-              color: colors.brandText,
-            ),
-          ),
+          const FireControlLogo(size: 36),
           const SizedBox(width: DsSpacing.md),
           Expanded(
             child: Column(
@@ -257,19 +240,30 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const AuthHeaderBadgeRow(
-          icon: DsIcons.verified,
-          pillLabel: '单位实名接入',
-          pillIcon: DsIcons.shield,
+        Row(
+          key: const Key('auth-brand-row'),
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            const FireControlLogo(size: 32),
+            const SizedBox(width: DsSpacing.sm + 2),
+            Text(
+              '火场智控',
+              style: ds.typography.title.copyWith(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: DsSpacing.lg),
         Text(
           '先完成用户认证',
           style: ds.typography.display.copyWith(color: colors.textPrimary),
         ),
-        const SizedBox(height: DsSpacing.xs),
+        const SizedBox(height: DsSpacing.xs + 2),
         Text(
-          '认证后即可同步查看和记录本单位的现场警情与空呼监控数据。',
+          '认证后同步查看并记录本单位警情与空呼。',
           style: ds.typography.body.copyWith(color: colors.textSecondary),
         ),
       ],
@@ -314,37 +308,41 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
-                          TextField(
-                            key: const Key('auth-unit-name'),
-                            controller: _unitName,
-                            focusNode: _unitNameFocus,
-                            enabled: !store.busy,
-                            maxLength: 120,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) => store.clearError(),
-                            style: fieldStyle,
-                            decoration: authInputDecoration(
-                              context,
-                              label: '单位名称',
-                              hint: '请输入所属消防救援单位全称',
-                              icon: DsIcons.unit,
+                          AuthLabeledField(
+                            label: '单位名称',
+                            child: TextField(
+                              key: const Key('auth-unit-name'),
+                              controller: _unitName,
+                              focusNode: _unitNameFocus,
+                              enabled: !store.busy,
+                              maxLength: 120,
+                              textInputAction: TextInputAction.next,
+                              onChanged: (_) => store.clearError(),
+                              style: fieldStyle,
+                              decoration: authInputDecoration(
+                                context,
+                                hint: '请输入所属消防救援单位全称',
+                                icon: DsIcons.unit,
+                              ),
                             ),
                           ),
                           const SizedBox(height: DsSpacing.md),
-                          TextField(
-                            key: const Key('auth-real-name'),
-                            controller: _realName,
-                            focusNode: _realNameFocus,
-                            enabled: !store.busy,
-                            maxLength: 20,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) => store.clearError(),
-                            style: fieldStyle,
-                            decoration: authInputDecoration(
-                              context,
-                              label: '真实姓名',
-                              hint: '请输入姓名，用于现场记录署名',
-                              icon: DsIcons.user,
+                          AuthLabeledField(
+                            label: '真实姓名',
+                            child: TextField(
+                              key: const Key('auth-real-name'),
+                              controller: _realName,
+                              focusNode: _realNameFocus,
+                              enabled: !store.busy,
+                              maxLength: 20,
+                              textInputAction: TextInputAction.next,
+                              onChanged: (_) => store.clearError(),
+                              style: fieldStyle,
+                              decoration: authInputDecoration(
+                                context,
+                                hint: '请输入姓名，用于现场记录署名',
+                                icon: DsIcons.user,
+                              ),
                             ),
                           ),
                           if (store.recentSuggestions.isNotEmpty)
@@ -354,39 +352,41 @@ class _UnitAuthPageState extends State<UnitAuthPage> {
                               onSelected: _applySuggestedName,
                             ),
                           const SizedBox(height: DsSpacing.md),
-                          TextField(
-                            key: const Key('auth-unit-code'),
-                            controller: _unitCode,
-                            focusNode: _unitCodeFocus,
-                            enabled: !store.busy,
-                            maxLength: 12,
-                            obscureText: _obscureUnitCode,
-                            keyboardType: TextInputType.number,
-                            textInputAction: TextInputAction.done,
-                            onSubmitted: (_) => unawaited(_submitAuth()),
-                            onChanged: (_) => store.clearError(),
-                            style: fieldStyle,
-                            decoration: authInputDecoration(
-                              context,
-                              label: '单位验证码',
-                              hint: '请输入单位验证码',
-                              icon: DsIcons.password,
-                              suffixIcon: IconButton(
-                                key: const Key('auth-code-visibility-toggle'),
-                                constraints: const BoxConstraints(
-                                  minWidth: DsSizes.touchTarget,
-                                  minHeight: DsSizes.touchTarget,
-                                ),
-                                icon: Icon(
-                                  _obscureUnitCode
-                                      ? DsIcons.eyeOff
-                                      : DsIcons.eye,
-                                  size: DsSizes.iconMd,
-                                  color: colors.textTertiary,
-                                ),
-                                tooltip: _obscureUnitCode ? '显示验证码' : '隐藏验证码',
-                                onPressed: () => setState(
-                                  () => _obscureUnitCode = !_obscureUnitCode,
+                          AuthLabeledField(
+                            label: '单位验证码',
+                            child: TextField(
+                              key: const Key('auth-unit-code'),
+                              controller: _unitCode,
+                              focusNode: _unitCodeFocus,
+                              enabled: !store.busy,
+                              maxLength: 12,
+                              obscureText: _obscureUnitCode,
+                              keyboardType: TextInputType.number,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => unawaited(_submitAuth()),
+                              onChanged: (_) => store.clearError(),
+                              style: fieldStyle,
+                              decoration: authInputDecoration(
+                                context,
+                                hint: '请输入单位验证码',
+                                icon: DsIcons.password,
+                                suffixIcon: IconButton(
+                                  key: const Key('auth-code-visibility-toggle'),
+                                  constraints: const BoxConstraints(
+                                    minWidth: DsSizes.touchTarget,
+                                    minHeight: DsSizes.touchTarget,
+                                  ),
+                                  icon: Icon(
+                                    _obscureUnitCode
+                                        ? DsIcons.eyeOff
+                                        : DsIcons.eye,
+                                    size: DsSizes.iconMd,
+                                    color: colors.textTertiary,
+                                  ),
+                                  tooltip: _obscureUnitCode ? '显示验证码' : '隐藏验证码',
+                                  onPressed: () => setState(
+                                    () => _obscureUnitCode = !_obscureUnitCode,
+                                  ),
                                 ),
                               ),
                             ),
