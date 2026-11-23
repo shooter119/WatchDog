@@ -545,6 +545,54 @@ async function fetchJson(url, fetchImpl) {
   }
 }
 
+function roundFineCoord(value) {
+  return Math.round(Number(value) * 1e7) / 1e7;
+}
+
+/**
+ * 解析并缓存 WGS-84 -> GCJ-02 坐标转换。
+ * 同一个约 110 米网格内复用已计算出的偏移量（dLat/dLon），
+ * 根据当前输入精确经纬度实时还原对应的 GCJ-02 坐标，避免同网格复用同一固定点产生百米级漂移。
+ */
+async function resolveAmapLocation({
+  latitude,
+  longitude,
+  key,
+  fetchImpl = fetch,
+  now = Date.now(),
+  coordinateStore = coordinateCache,
+}) {
+  const sourceKey = `${roundCoord(latitude)},${roundCoord(longitude)}`;
+  const cached = coordinateStore.get(sourceKey, now);
+  if (cached) {
+    if (Number.isFinite(cached.dLat) && Number.isFinite(cached.dLon)) {
+      return {
+        lat: roundFineCoord(latitude + cached.dLat),
+        lon: roundFineCoord(longitude + cached.dLon),
+        coordinate: cached.coordinate || 'gcj02',
+      };
+    }
+    if (Number.isFinite(cached.lat) && Number.isFinite(cached.lon)) {
+      return {
+        lat: cached.lat,
+        lon: cached.lon,
+        coordinate: cached.coordinate || 'gcj02',
+      };
+    }
+  }
+  const url = `${AMAP_BASE}/v3/assistant/coordinate/convert?locations=${longitude},${latitude}` +
+    `&coordsys=gps&output=JSON&key=${encodeURIComponent(key)}`;
+  const converted = parseCoordinateConversion(await fetchJson(url, fetchImpl));
+  if (converted) {
+    coordinateStore.set(sourceKey, {
+      dLat: converted.lat - latitude,
+      dLon: converted.lon - longitude,
+      coordinate: converted.coordinate || 'gcj02',
+    }, now);
+  }
+  return converted;
+}
+
 /**
  * 查询地址与天气。
  * @returns {Promise<{address:string|null,adcode:string|null,city:string|null,
@@ -569,18 +617,18 @@ async function lookup({
     throw error;
   }
 
-  const sourceKey = `${roundCoord(latitude)},${roundCoord(longitude)}`;
-  let amapLocation = coordinateStore.get(sourceKey, now);
-  if (!amapLocation) {
-    const url = `${AMAP_BASE}/v3/assistant/coordinate/convert?locations=${longitude},${latitude}` +
-      `&coordsys=gps&output=JSON&key=${encodeURIComponent(key)}`;
-    amapLocation = parseCoordinateConversion(await fetchJson(url, fetchImpl));
-    if (amapLocation) coordinateStore.set(sourceKey, amapLocation, now);
-  }
+  const amapLocation = await resolveAmapLocation({
+    latitude,
+    longitude,
+    key,
+    fetchImpl,
+    now,
+    coordinateStore,
+  });
   const coordinateDegraded = !amapLocation;
   const geoLat = amapLocation?.lat ?? latitude;
   const geoLon = amapLocation?.lon ?? longitude;
-  const addressKey = `${roundCoord(geoLat)},${roundCoord(geoLon)}`;
+  const addressKey = `${roundCoord(latitude)},${roundCoord(longitude)}${coordinateDegraded ? ':raw' : ''}`;
 
   let geo = addressStore.get(addressKey, now);
   if (!geo) {
@@ -1016,17 +1064,18 @@ async function lookupRouteTraffic({
   let originGeo = null;
   let routes = [];
   if (hasOrigin) {
-    const sourceKey = `${roundCoord(originLatitude)},${roundCoord(originLongitude)}`;
-    originAmapLocation = coordinateStore.get(sourceKey, now);
-    if (!originAmapLocation) {
-      const url = `${AMAP_BASE}/v3/assistant/coordinate/convert?locations=${originLongitude},${originLatitude}` +
-        `&coordsys=gps&output=JSON&key=${encodeURIComponent(key)}`;
-      originAmapLocation = parseCoordinateConversion(await fetchJson(url, fetchImpl));
-      if (originAmapLocation) coordinateStore.set(sourceKey, originAmapLocation, now);
-    }
+    originAmapLocation = await resolveAmapLocation({
+      latitude: originLatitude,
+      longitude: originLongitude,
+      key,
+      fetchImpl,
+      now,
+      coordinateStore,
+    });
     const originLatGcj = originAmapLocation?.lat ?? originLatitude;
     const originLonGcj = originAmapLocation?.lon ?? originLongitude;
-    const addressKey = `${roundCoord(originLatGcj)},${roundCoord(originLonGcj)}`;
+    const originGridKey = `${roundCoord(originLatitude)},${roundCoord(originLongitude)}${originAmapLocation ? '' : ':raw'}`;
+    const addressKey = originGridKey;
     originGeo = addressStore.get(addressKey, now);
     if (!originGeo) {
       const url = `${AMAP_BASE}/v3/geocode/regeo?location=${originLonGcj},${originLatGcj}` +
@@ -1037,7 +1086,7 @@ async function lookupRouteTraffic({
 
     const destLat = geocode.location.lat;
     const destLon = geocode.location.lon;
-    const routeKey = `${roundCoord(originLatGcj)},${roundCoord(originLonGcj)}->${roundCoord(destLat)},${roundCoord(destLon)}`;
+    const routeKey = `${originGridKey}->${roundCoord(destLat)},${roundCoord(destLon)}`;
     const cachedRoutes = rtStore.get(routeKey, now);
     if (cachedRoutes) {
       routes = cachedRoutes;

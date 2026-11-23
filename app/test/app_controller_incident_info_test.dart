@@ -6,6 +6,7 @@ import 'package:watchdog/api/api_client.dart';
 import 'package:watchdog/app/shell/incident_address_locator.dart';
 import 'package:watchdog/models/admin_login.dart';
 import 'package:watchdog/models/models.dart';
+import 'package:watchdog/services/china_coord.dart';
 import 'package:watchdog/services/realtime_sync_client.dart';
 import 'package:watchdog/services/scoped_json_cache.dart';
 import 'package:watchdog/state/app_controller.dart';
@@ -126,6 +127,14 @@ class _IncidentInfoFakeApi extends ApiClient {
     updatedDetailsData = Map<String, dynamic>.from(data);
     updatedDetailsExpectedVersion = version;
     _detailVersion = version + 1;
+    final nextInfo = <String, dynamic>{..._stored.info};
+    data.forEach((String k, dynamic v) {
+      if (v == null || (v is String && v.trim().isEmpty)) {
+        nextInfo.remove(k);
+      } else {
+        nextInfo[k] = v;
+      }
+    });
     _stored = Incident(
       id: _stored.id,
       number: _stored.number,
@@ -134,7 +143,7 @@ class _IncidentInfoFakeApi extends ApiClient {
       createdAt: _stored.createdAt,
       lastActivityAt: _stored.lastActivityAt,
       version: _stored.version,
-      info: <String, dynamic>{..._stored.info, ...data},
+      info: nextInfo,
     );
     return <String, dynamic>{'ok': true, 'version': _detailVersion};
   }
@@ -393,12 +402,51 @@ void main() {
         expect(controller.currentIncident?.info['latitude'], '30.123456');
         expect(controller.activeIncidents.first.effectiveLocation, '示例大道99号东门');
 
-        // 第二次更新仅修改坐标与地点应携带递增值 version = 1
+        // 第二次更新仅修改标题、未改地点时不应误删既有经纬度
         await controller.updateCurrentBasicInfo(
-          title: '示例物流园东门火灾',
+          title: '示例物流园东门火灾（复核）',
+          location: '示例大道99号东门',
+        );
+        expect(controller.currentIncident?.title, '示例物流园东门火灾（复核）');
+        expect(controller.currentIncident?.info['latitude'], '30.123456');
+        expect(controller.currentIncident?.info['longitude'], '120.654321');
+
+        // 第三次仅手动改写地点而不重新定位，应下发 null 清空旧坐标并按版本号 1 提交
+        await controller.updateCurrentBasicInfo(
+          title: '示例物流园东门火灾（复核）',
           location: '示例大道100号北门',
         );
         expect(api.updatedDetailsExpectedVersion, 1);
+        expect(api.updatedDetailsData, <String, dynamic>{
+          'location': '示例大道100号北门',
+          'latitude': null,
+          'longitude': null,
+        });
+        expect(controller.currentIncident?.effectiveLocation, '示例大道100号北门');
+        expect(
+          controller.currentIncident?.info.containsKey('latitude'),
+          isFalse,
+        );
+        expect(
+          controller.currentIncident?.info.containsKey('longitude'),
+          isFalse,
+        );
+
+        // 第四次重新定位写入新坐标，应按版本号 2 覆盖写入新经纬度
+        await controller.updateCurrentBasicInfo(
+          title: '示例物流园东门火灾（复核）',
+          location: '示例大道100号北门',
+          latitude: 30.222222,
+          longitude: 120.777777,
+        );
+        expect(api.updatedDetailsExpectedVersion, 2);
+        expect(api.updatedDetailsData, <String, dynamic>{
+          'location': '示例大道100号北门',
+          'latitude': '30.222222',
+          'longitude': '120.777777',
+        });
+        expect(controller.currentIncident?.info['latitude'], '30.222222');
+        expect(controller.currentIncident?.info['longitude'], '120.777777');
       } finally {
         controller.dispose();
         await tester.pump();
@@ -439,7 +487,7 @@ void main() {
         final timedOut = await locateCurrentIncidentAddress(controller);
         expect(timedOut.errorMessage, contains('定位超时或信号较弱'));
 
-        // 5. 成功获取位置与高德反地理地址及 GCJ-02 坐标
+        // 5. 成功获取位置与高德反地理地址，坐标统一使用端侧精确 WGS-84 -> GCJ-02 转换结果
         setupChannels(
           hasPermission: true,
           serviceEnabled: true,
@@ -451,19 +499,28 @@ void main() {
             'ageMs': 100,
           },
         );
+        final expectedGcj = ChinaCoord.wgs84ToGcj02(31.2304, 121.4737);
         final ok = await locateCurrentIncidentAddress(controller);
         expect(ok.errorMessage, isNull);
         expect(ok.address, '示例市示例区示范大道188号');
-        expect(ok.latitude, 31.234567);
-        expect(ok.longitude, 121.456789);
+        expect(ok.latitude, closeTo(expectedGcj.lat, 1e-9));
+        expect(ok.longitude, closeTo(expectedGcj.lon, 1e-9));
 
-        // 6. 反地理服务异常时保留坐标并提示手动补充
+        // 6. 反地理服务异常时保留准确 GCJ-02 坐标并提示手动补充街道名称
         api.failWeather = true;
         final fallback = await locateCurrentIncidentAddress(controller);
         expect(fallback.address, isEmpty);
-        expect(fallback.latitude, 31.2304);
-        expect(fallback.longitude, 121.4737);
-        expect(fallback.errorMessage, contains('已获取当前坐标'));
+        expect(fallback.latitude, closeTo(expectedGcj.lat, 1e-9));
+        expect(fallback.longitude, closeTo(expectedGcj.lon, 1e-9));
+        expect(fallback.errorMessage, contains('暂未解析出街道名称'));
+
+        // 7. 游客态/未连接服务（controller.api == null）时仍返回精确 GCJ-02 坐标并提示手动输入
+        controller.api = null;
+        final guest = await locateCurrentIncidentAddress(controller);
+        expect(guest.address, isEmpty);
+        expect(guest.latitude, closeTo(expectedGcj.lat, 1e-9));
+        expect(guest.longitude, closeTo(expectedGcj.lon, 1e-9));
+        expect(guest.errorMessage, contains('未连接服务时请手动输入事发地点'));
       } finally {
         debugDefaultTargetPlatformOverride = null;
         controller.dispose();

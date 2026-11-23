@@ -294,6 +294,22 @@ test('buildSituationDescription 与 detailPatch 后到智能覆盖', () => {
   assert.equal(merged.trapped, '无人员被困');
   assert.equal(merged.administrative_area, '示例县', '未提及字段应保留已有值');
   assert.equal(merged.received_at, '2026-11-06T06:13:46.000Z', '未提及字段应保留已有时间');
+
+  // 3. 手动改址传 null 显式清空旧坐标；空字符串仍保留旧坐标（AI 智能导入非空保护）
+  const withCoords = {
+    location: '示例路1号',
+    latitude: '29.030360',
+    longitude: '119.180420',
+  };
+  const aiPartialEmpty = detailPatch({ location: '示例路2号', latitude: '', longitude: '' }, withCoords);
+  assert.equal(aiPartialEmpty.location, '示例路2号');
+  assert.equal(aiPartialEmpty.latitude, '29.030360', '空串不应误删已有坐标');
+  assert.equal(aiPartialEmpty.longitude, '119.180420');
+
+  const manualCleared = detailPatch({ location: '示例街99号', latitude: null, longitude: null }, withCoords);
+  assert.equal(manualCleared.location, '示例街99号');
+  assert.equal(manualCleared.latitude, '', '显式传 null 应清空旧纬度');
+  assert.equal(manualCleared.longitude, '', '显式传 null 应清空旧经度');
 });
 
 test('extractContacts、buildDispatchSummary 与 sanitizeCoordinates 容错逻辑', () => {

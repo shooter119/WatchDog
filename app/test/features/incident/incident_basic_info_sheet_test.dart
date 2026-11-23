@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:watchdog/design_system/design_system.dart';
 import 'package:watchdog/features/incident/ui/sheets/incident_basic_info_sheet.dart';
+import 'package:watchdog/features/incident/ui/sheets/incident_details_edit_sheet.dart';
 
 Widget _wrapHost({
   required Widget child,
@@ -263,6 +264,147 @@ void main() {
       expect(result?.location, '示例镇示范村66号');
       expect(result?.latitude, 30.5);
       expect(result?.longitude, 120.2);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('一键定位回填后若人工改写事发地点，保存时旧定位坐标应失效置空', (
+      WidgetTester tester,
+    ) async {
+      IncidentBasicInfoResult? result;
+      await tester.pumpWidget(
+        _wrapHost(
+          child: Builder(
+            builder: (BuildContext context) => CommandButton(
+              label: '编辑警情',
+              onPressed: () async {
+                result = await showIncidentBasicInfoSheet(
+                  context,
+                  initialTitle: '警情A',
+                  initialLocation: '示例路1号',
+                  onLocateAddress: () async => const IncidentLocatedAddress(
+                    address: '示例镇示范村66号',
+                    latitude: 30.5,
+                    longitude: 120.2,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('编辑警情'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('incident-locate-btn')));
+      await tester.pumpAndSettle();
+      expect(find.text('示例镇示范村66号'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('incident-location-field')),
+        '手动修改示例街88号',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('incident-rename-save-btn')));
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 30));
+      }
+      await tester.pumpAndSettle();
+
+      expect(result?.location, '手动修改示例街88号');
+      expect(result?.latitude, isNull);
+      expect(result?.longitude, isNull);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('showIncidentDetailsEditSheet', () {
+    testWidgets('原有经纬度且手动修改事发地点时显式返回 latitude/longitude=null', (
+      WidgetTester tester,
+    ) async {
+      Map<String, dynamic>? result;
+      await tester.pumpWidget(
+        _wrapHost(
+          child: Builder(
+            builder: (BuildContext context) => CommandButton(
+              label: '修改资料',
+              onPressed: () async {
+                result = await showIncidentDetailsEditSheet(
+                  context,
+                  initialData: const <String, dynamic>{
+                    'location': '示例路1号',
+                    'event_summary': '厂房冒烟',
+                    'latitude': '30.500000',
+                    'longitude': '120.200000',
+                  },
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('修改资料'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('incident-detail-field-location')),
+        '手动改为示例街99号',
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('incident-details-edit-save-btn')));
+      await tester.pumpAndSettle();
+
+      expect(result?['location'], '手动改为示例街99号');
+      expect(result?.containsKey('latitude'), isTrue);
+      expect(result?.containsKey('longitude'), isTrue);
+      expect(result?['latitude'], isNull);
+      expect(result?['longitude'], isNull);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('仅修改非地点字段时不返回坐标清空字段', (WidgetTester tester) async {
+      Map<String, dynamic>? result;
+      await tester.pumpWidget(
+        _wrapHost(
+          child: Builder(
+            builder: (BuildContext context) => CommandButton(
+              label: '修改资料',
+              onPressed: () async {
+                result = await showIncidentDetailsEditSheet(
+                  context,
+                  initialData: const <String, dynamic>{
+                    'location': '示例路1号',
+                    'event_summary': '厂房冒烟',
+                    'latitude': '30.500000',
+                    'longitude': '120.200000',
+                  },
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('修改资料'));
+      await tester.pumpAndSettle();
+
+      final summaryFinder = find.byKey(
+        const Key('incident-detail-field-event_summary'),
+      );
+      await tester.ensureVisible(summaryFinder);
+      await tester.enterText(summaryFinder, '二楼仓库明火');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('incident-details-edit-save-btn')));
+      await tester.pumpAndSettle();
+
+      expect(result?['location'], '示例路1号');
+      expect(result?['event_summary'], '二楼仓库明火');
+      expect(result?.containsKey('latitude'), isFalse);
+      expect(result?.containsKey('longitude'), isFalse);
       expect(tester.takeException(), isNull);
     });
   });

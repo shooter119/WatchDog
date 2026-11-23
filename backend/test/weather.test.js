@@ -215,8 +215,45 @@ test('lookup：地址与天气都成功，且第二次命中缓存不再请求�
     addressStore, coordinateStore, weatherStore,
   });
   assert.equal(second.address, first.address);
-  assert.deepEqual(second.amapLocation, first.amapLocation);
+  assert.deepEqual(second.amapLocation, {
+    lat: 29.03046,
+    lon: 119.18052,
+    coordinate: 'gcj02',
+  }, '同一网格内复用偏移量后应基于新输入坐标精确还原 GCJ-02 点位');
   assert.equal(fetchImpl.calls.length, 3, '同一网格内应命中坐标、地址和天气缓存');
+});
+
+test('lookup：同网格内不同输入坐标应用同一偏移量还原而非返回首次缓存点', async () => {
+  const fetchImpl = fakeFetch({
+    '/v3/assistant/coordinate/convert': CONVERT_OK,
+    '/v3/geocode/regeo': REGEO_OK,
+    '/v3/weather/weatherInfo': WEATHER_OK,
+  });
+  const coordinateStore = new TtlCache(60_000);
+  const first = await lookup({
+    lat: 29.0300, lon: 119.1800, key: 'k', fetchImpl, now: 1000,
+    addressStore: new TtlCache(60_000), coordinateStore, weatherStore: new TtlCache(60_000),
+  });
+  const second = await lookup({
+    lat: 29.0303, lon: 119.1802, key: 'k', fetchImpl, now: 2000,
+    addressStore: new TtlCache(60_000), coordinateStore, weatherStore: new TtlCache(60_000),
+  });
+  assert.deepEqual(first.amapLocation, { lat: 29.03036, lon: 119.18042, coordinate: 'gcj02' });
+  assert.deepEqual(second.amapLocation, { lat: 29.03066, lon: 119.18062, coordinate: 'gcj02' });
+});
+
+test('lookup：coordinateStore 向后兼容历史 {lat,lon} 缓存格式', async () => {
+  const fetchImpl = fakeFetch({
+    '/v3/geocode/regeo': REGEO_OK,
+    '/v3/weather/weatherInfo': WEATHER_OK,
+  });
+  const coordinateStore = new TtlCache(60_000);
+  coordinateStore.set('29.03,119.18', { lat: 29.03036, lon: 119.18042, coordinate: 'gcj02' }, 1000);
+  const res = await lookup({
+    lat: 29.0301, lon: 119.1801, key: 'k', fetchImpl, now: 2000,
+    addressStore: new TtlCache(60_000), coordinateStore, weatherStore: new TtlCache(60_000),
+  });
+  assert.deepEqual(res.amapLocation, { lat: 29.03036, lon: 119.18042, coordinate: 'gcj02' });
 });
 
 test('lookup：天气失败时保留地址并标记降级', async () => {

@@ -235,7 +235,15 @@ mixin _AppControllerIncidentMixin on _AppControllerBase {
 
     final cleanLocation = location.trim();
     final existingLocation = (updated.info['location']?.toString() ?? '').trim();
+    final existingLat = (updated.info['latitude']?.toString() ?? '').trim();
+    final existingLon = (updated.info['longitude']?.toString() ?? '').trim();
+    final hadCoords = existingLat.isNotEmpty || existingLon.isNotEmpty;
     final hasCoords = latitude != null && longitude != null;
+    final locationChangedWithoutCoords =
+        cleanLocation.isNotEmpty &&
+        cleanLocation != existingLocation &&
+        !hasCoords &&
+        hadCoords;
     final shouldPatchLocation =
         cleanLocation.isNotEmpty &&
         (cleanLocation != existingLocation || hasCoords);
@@ -244,6 +252,9 @@ mixin _AppControllerIncidentMixin on _AppControllerBase {
       if (hasCoords) ...<String, dynamic>{
         'latitude': latitude.toStringAsFixed(6),
         'longitude': longitude.toStringAsFixed(6),
+      } else if (locationChangedWithoutCoords) ...<String, dynamic>{
+        'latitude': null,
+        'longitude': null,
       },
     };
 

@@ -21,7 +21,7 @@ const Map<String, String> incidentDetailFieldLabels = <String, String>{
 };
 
 /// 弹出基于 [CommandSheet] 的警情详细资料编辑表单。
-Future<Map<String, String>?> showIncidentDetailsEditSheet(
+Future<Map<String, dynamic>?> showIncidentDetailsEditSheet(
   BuildContext context, {
   required Map<String, dynamic> initialData,
   IncidentAddressLocator? onLocateAddress,
@@ -29,7 +29,7 @@ Future<Map<String, String>?> showIncidentDetailsEditSheet(
   final capturedTheme = Theme.of(context);
   final capturedMediaQuery = MediaQuery.of(context);
 
-  return showModalBottomSheet<Map<String, String>>(
+  return showModalBottomSheet<Map<String, dynamic>>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
@@ -90,18 +90,37 @@ class _IncidentDetailsEditSheetState extends State<_IncidentDetailsEditSheet> {
     super.dispose();
   }
 
-  void _close([Map<String, String>? value]) {
+  void _close([Map<String, dynamic>? value]) {
     FocusManager.instance.primaryFocus?.unfocus();
     Navigator.of(context).pop(value);
   }
 
   void _save() {
-    final result = <String, String>{
-      for (final entry in _controllers.entries) entry.key: entry.value.text.trim(),
-      if (_locatedLatitude != null && _locatedLongitude != null)
-        ...<String, String>{
+    final initialLocation =
+        (widget.initialData['location']?.toString() ?? '').trim();
+    final currentLocation = (_controllers['location']?.text ?? '').trim();
+    final initialHasCoords =
+        (widget.initialData['latitude']?.toString() ?? '').trim().isNotEmpty ||
+        (widget.initialData['longitude']?.toString() ?? '').trim().isNotEmpty;
+    final hasNewCoords =
+        _locatedLatitude != null && _locatedLongitude != null;
+    final locationChangedWithoutCoords =
+        currentLocation.isNotEmpty &&
+        currentLocation != initialLocation &&
+        !hasNewCoords &&
+        initialHasCoords;
+    final result = <String, dynamic>{
+      for (final entry in _controllers.entries)
+        entry.key: entry.value.text.trim(),
+      if (hasNewCoords)
+        ...<String, dynamic>{
           'latitude': _locatedLatitude!.toStringAsFixed(6),
           'longitude': _locatedLongitude!.toStringAsFixed(6),
+        }
+      else if (locationChangedWithoutCoords)
+        ...<String, dynamic>{
+          'latitude': null,
+          'longitude': null,
         },
     };
     _close(result);

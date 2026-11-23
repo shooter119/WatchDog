@@ -61,8 +61,24 @@ class _IncidentAddressFieldSectionState
     extends State<IncidentAddressFieldSection> {
   bool _locating = false;
   bool _hasLocatedCoords = false;
+  String? _locatedAddressText;
   String? _statusText;
   bool _isError = false;
+
+  void _invalidateLocatedCoords() {
+    if (!_hasLocatedCoords &&
+        _statusText == null &&
+        _locatedAddressText == null) {
+      return;
+    }
+    setState(() {
+      _hasLocatedCoords = false;
+      _locatedAddressText = null;
+      _statusText = null;
+      _isError = false;
+    });
+    widget.onCoordinatesChanged?.call(null, null);
+  }
 
   Future<void> _handleLocate() async {
     final locator = widget.onLocateAddress;
@@ -84,6 +100,7 @@ class _IncidentAddressFieldSectionState
       }
       if (res.hasCoordinates) {
         _hasLocatedCoords = true;
+        _locatedAddressText = addr.isNotEmpty ? addr : null;
         widget.onCoordinatesChanged?.call(res.latitude, res.longitude);
       }
       final err = res.errorMessage?.trim();
@@ -137,13 +154,15 @@ class _IncidentAddressFieldSectionState
               maxLines: widget.maxLines,
               maxLength: widget.maxLength,
               onChanged: (String text) {
-                if (text.trim().isEmpty && _hasLocatedCoords) {
-                  setState(() {
-                    _hasLocatedCoords = false;
-                    _statusText = null;
-                    _isError = false;
-                  });
-                  widget.onCoordinatesChanged?.call(null, null);
+                if (!_hasLocatedCoords) return;
+                final trimmed = text.trim();
+                final locatedAddr = _locatedAddressText;
+                final modifiedLocatedAddress =
+                    locatedAddr != null && trimmed != locatedAddr;
+                final clearedManualAddress =
+                    locatedAddr == null && trimmed.isEmpty;
+                if (modifiedLocatedAddress || clearedManualAddress) {
+                  _invalidateLocatedCoords();
                 }
               },
               style: typo.body.copyWith(color: colors.textPrimary),
@@ -172,14 +191,7 @@ class _IncidentAddressFieldSectionState
                         ),
                         onPressed: () {
                           widget.controller.clear();
-                          if (_hasLocatedCoords || _statusText != null) {
-                            setState(() {
-                              _hasLocatedCoords = false;
-                              _statusText = null;
-                              _isError = false;
-                            });
-                            widget.onCoordinatesChanged?.call(null, null);
-                          }
+                          _invalidateLocatedCoords();
                         },
                       )
                     : null,

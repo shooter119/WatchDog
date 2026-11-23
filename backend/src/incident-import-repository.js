@@ -124,11 +124,18 @@ function publicImport(row) {
   result.pages = row.pages.map(({ file_path, ...page }) => page);
   return result;
 }
+// 手动改址时允许前端传入 null 显式清空旧坐标，避免地图继续使用过期经纬度
+const CLEARABLE_COORD_FIELDS = new Set(['latitude', 'longitude']);
+
 function detailPatch(raw, current = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw forceError('警情资料格式无效');
   const validated = validateDetails(raw);
   const patch = {};
   for (const key of Object.keys(raw)) {
+    if (raw[key] === null && CLEARABLE_COORD_FIELDS.has(key)) {
+      patch[key] = '';
+      continue;
+    }
     if (Object.hasOwn(validated, key)) {
       const val = validated[key];
       // 智能非空覆盖：新导入提供的非空值覆盖已有值；空值不冲掉旧有效值
