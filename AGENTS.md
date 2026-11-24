@@ -67,6 +67,12 @@
   3. **双通道状态表达**：`StatusPill` 等状态指示必须**同时包含图标与文字**（严禁纯色表达），最小高度自适应字号且不截断；填充色与文本色双通道分离，满足 WCAG 对比度要求（文本及状态字 ≥ 4.5:1，`metric*` 关键读数 ≥ 7.0:1，由 `app/test/design_system/ds_contrast_test.dart` 校验）。
   4. **等宽数字**：压力、倒计时、时长、时间戳等所有数值读数统一启用 `FontFeature.tabularFigures()`（`DsTypography.metric` / `metricLarge` / `tabular(...)` / `MetricReadout`），确保跳秒时不左右抖动。
   5. **卡片层次与防误触**：卡片（`SurfaceCard`）统一采用 1px 细描边区分层次，严禁厚重阴影与双层边框叠加（仅 `CommandSheet`、中置语音键等浮层允许轻柔悬浮阴影）；危险/不可逆操作（如 `CommandButtonVariant.danger`）默认通过 `CommandSheet` 弹出**二次确认**后方可生效，关键操作配触感反馈。
+  6. **页面组合与数据展示规范（详见 `app/lib/design_system/README.md`）**：
+     - **同屏去重与语义色唯一**：同一属性不在同屏/展开卡片内重复展示，同类标签颜色保持一致；
+     - **卡片内去重框与层级分离**：主卡片内次级操作栏与条目使用无边框 `DsSurfaceLevel.flat` 或细分割线，严禁多层灰底描边盒子堆叠，同级区块标题字号统一，不重复摆放展开/收起按钮；
+     - **视觉锚点优先**：详情页主标题置顶，附属关联入口不越级排在标题上方；
+     - **低频终结操作克制**：详情页底部的低频危险操作优先使用 `CommandButtonVariant.dangerOutlined`（仍走二次确认），不以满宽实心红按钮抢占信息区重心；
+     - **展示层数据清洗与饱满数据验收**：时间戳须格式化为人类可读的等宽格式（禁裸露 ISO-8601 `T`/`+08:00`），拼接字段（如 `role · name`）须同值去重；UI 改动须在真机/模拟器载入**真实饱满数据**截屏验收。
 - **视觉回归（Golden）门禁**：
   1. `app/test/design_system/golden/` 通过目录级 `flutter_test_config.dart` 配置 **0.5% (`0.005`) 像素差异容差**比较器（作用域仅限 `test/design_system/golden/`，不影响其他测试），用于吸收同平台细微抗锯齿差异。
   2. **跨平台执行策略**：所有黄金截图测试文件均标注 `@Tags(['golden'])`；在 macOS 本机开发与验收阶段通过 `flutter test` 全量执行，在 Linux CI 中通过 `flutter test --exclude-tags golden` 排除，避免跨操作系统字体与光栅化差异导致的误报（且不触发 `skipped > 0` 门禁失败）。

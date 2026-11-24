@@ -20,6 +20,9 @@ enum CommandButtonVariant {
 
   /// 危险不可逆操作（`alarmFill` + `onAlarm`，默认触发二次确认弹窗）
   danger,
+
+  /// 低频克制危险操作（`surface` 底 + 1px 告警描边 + `alarmText`，默认触发二次确认弹窗）
+  dangerOutlined,
 }
 
 /// 按钮触控尺寸档位。
@@ -70,7 +73,10 @@ class CommandButton extends StatelessWidget {
   Future<void> _handleTap(BuildContext context) async {
     if (!enabled || onPressed == null || isLoading) return;
 
-    if (variant == CommandButtonVariant.danger && requireConfirmation) {
+    final isDangerVariant =
+        variant == CommandButtonVariant.danger ||
+        variant == CommandButtonVariant.dangerOutlined;
+    if (isDangerVariant && requireConfirmation) {
       HapticFeedback.mediumImpact();
       final confirmed = await showCommandSheet<bool>(
         context: context,
@@ -132,7 +138,9 @@ class CommandButton extends StatelessWidget {
           ? Colors.transparent
           : colors.surfaceMuted;
       fg = colors.textTertiary;
-      side = variant == CommandButtonVariant.secondary
+      side =
+          (variant == CommandButtonVariant.secondary ||
+              variant == CommandButtonVariant.dangerOutlined)
           ? BorderSide(color: colors.border, width: 1)
           : BorderSide.none;
     } else {
@@ -153,6 +161,13 @@ class CommandButton extends StatelessWidget {
           bg = colors.alarmFill;
           fg = colors.onAlarm;
           side = BorderSide.none;
+        case CommandButtonVariant.dangerOutlined:
+          bg = colors.surface;
+          fg = colors.alarmText;
+          side = BorderSide(
+            color: colors.alarmFill.withValues(alpha: 0.42),
+            width: 1,
+          );
       }
     }
 

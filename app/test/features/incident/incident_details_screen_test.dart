@@ -320,5 +320,81 @@ void main() {
       expect(updatedCount, 1);
       expect(find.text('示例区示范路168号'), findsOneWidget);
     });
+
+    testWidgets('主标题置顶于重点单位之上，清洗 ISO 接警时间、去重重复联系人与重复摘要，且归档按钮克制展示', (
+      WidgetTester tester,
+    ) async {
+      final repo = _FakeImportRepository()
+        ..detailPayload = <String, dynamic>{
+          'data': <String, dynamic>{
+            'location': '示例县示范街道1号楼',
+            'event_summary': '示范街道抢险救援',
+            'original_category': '火灾扑救',
+            'level': '一级',
+            'specific_type': '电线起火',
+            'received_at': '2026-11-24T21:19:40+08:00',
+            'administrative_area': '示例县',
+            'dispatch_summary': '3车 1站（主调：示例路站）',
+            'situation': '现场明火已扑灭，正在排烟降温。',
+            'contacts': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'role': '报警人',
+                'name': '报警人',
+                'phone': '13800138000',
+              },
+            ],
+          },
+          'version': 1,
+          'imports': const <dynamic>[],
+          'observations': const <dynamic>[],
+        };
+
+      await tester.pumpWidget(
+        _wrap(
+          IncidentDetailsScreen(
+            incident: _incident,
+            importRepository: repo,
+            keySiteSlot: const SurfaceCard(
+              key: Key('injected-key-site-slot'),
+              child: Text('重点单位槽位'),
+            ),
+            onExitIncident: () async {},
+            onArchiveIncident: () async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. 主标题位于重点单位槽位上方
+      final titleTop = tester
+          .getTopLeft(find.byKey(const Key('incident-details-title')))
+          .dy;
+      final keySiteTop = tester
+          .getTopLeft(find.byKey(const Key('injected-key-site-slot')))
+          .dy;
+      expect(titleTop, lessThan(keySiteTop));
+
+      // 2. 与主标题完全一致的事件摘要自动去重
+      expect(find.text('事件摘要'), findsNothing);
+
+      // 3. ISO-8601 接警时间已清洗为可读格式
+      expect(find.text('2026-11-24T21:19:40+08:00'), findsNothing);
+      expect(find.text('2026-11-24 21:19:40'), findsOneWidget);
+
+      // 4. 联系人 role 与 name 同值去重
+      expect(find.text('报警人 · 报警人'), findsNothing);
+      expect(find.text('报警人'), findsOneWidget);
+
+      // 5. 归档按钮使用克制的 dangerOutlined 变体
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('details-archive-incident')),
+        200,
+      );
+      final archiveBtn = tester.widget<CommandButton>(
+        find.byKey(const Key('details-archive-incident')),
+      );
+      expect(archiveBtn.variant, CommandButtonVariant.dangerOutlined);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

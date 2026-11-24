@@ -177,9 +177,13 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
         : (data['contacts'] as List? ?? const <dynamic>[]);
     final observations = _detail?['observations'] as List? ?? const <dynamic>[];
     final imports = _detail?['imports'] as List? ?? const <dynamic>[];
+    final normalizedDisplayName = widget.incident.displayName.trim();
     final basicFields = <MapEntry<String, String>>[
       for (final field in incidentDetailFieldLabels.entries)
-        if (data[field.key]?.toString().trim().isNotEmpty == true) field,
+        if (data[field.key]?.toString().trim().isNotEmpty == true &&
+            !(field.key == 'event_summary' &&
+                data[field.key].toString().trim() == normalizedDisplayName))
+          field,
     ];
 
     return CommandScaffold(
@@ -207,12 +211,9 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(DsSpacing.pageMargin),
         children: <Widget>[
-          if (widget.keySiteSlot != null) ...<Widget>[
-            widget.keySiteSlot!,
-            const SizedBox(height: DsSpacing.md),
-          ],
           Text(
             widget.incident.displayName,
+            key: const Key('incident-details-title'),
             style: typo.headline.copyWith(color: colors.textPrimary),
           ),
           const SizedBox(height: DsSpacing.md),
@@ -264,22 +265,15 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
                     : null,
               ),
             if (basicFields.isNotEmpty)
-              SurfaceCard(
-                level: DsSurfaceLevel.outlined,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    for (var i = 0; i < basicFields.length; i++) ...<Widget>[
-                      if (i > 0) const SizedBox(height: DsSpacing.md),
-                      IncidentDetailFieldBlock(
-                        label: basicFields[i].value,
-                        value: data[basicFields[i].key].toString(),
-                        phoneLauncher: widget.phoneLauncher,
-                      ),
-                    ],
-                  ],
-                ),
+              IncidentBasicFieldsCard(
+                basicFields: basicFields,
+                data: data,
+                phoneLauncher: widget.phoneLauncher,
               ),
+            if (widget.keySiteSlot != null) ...<Widget>[
+              const SizedBox(height: DsSpacing.md),
+              widget.keySiteSlot!,
+            ],
             if (contacts.isNotEmpty) ...<Widget>[
               const SizedBox(height: DsSpacing.lg),
               Text(
@@ -355,6 +349,10 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
                 ),
               ),
           ],
+          if (_detail == null && widget.keySiteSlot != null) ...<Widget>[
+            const SizedBox(height: DsSpacing.md),
+            widget.keySiteSlot!,
+          ],
           if (widget.incident.isActive &&
               (widget.onExitIncident != null ||
                   widget.onArchiveIncident != null)) ...<Widget>[
@@ -364,40 +362,32 @@ class _IncidentDetailsScreenState extends State<IncidentDetailsScreen> {
               style: typo.title.copyWith(color: colors.textPrimary),
             ),
             const SizedBox(height: DsSpacing.sm),
-            SurfaceCard(
-              level: DsSurfaceLevel.outlined,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  if (widget.onExitIncident != null)
-                    CommandButton(
-                      key: const Key('details-exit-incident'),
-                      label: '退出当前警情',
-                      icon: DsIcons.logout,
-                      variant: CommandButtonVariant.secondary,
-                      size: CommandButtonSize.standard,
-                      expanded: true,
-                      enabled: !_busy,
-                      onPressed: _confirmExit,
-                    ),
-                  if (widget.onExitIncident != null &&
-                      widget.onArchiveIncident != null)
-                    const SizedBox(height: DsSpacing.sm),
-                  if (widget.onArchiveIncident != null)
-                    CommandButton(
-                      key: const Key('details-archive-incident'),
-                      label: '归档警情',
-                      icon: DsIcons.archive,
-                      variant: CommandButtonVariant.danger,
-                      size: CommandButtonSize.standard,
-                      expanded: true,
-                      enabled: !_busy,
-                      requireConfirmation: false,
-                      onPressed: _confirmArchive,
-                    ),
-                ],
+            if (widget.onExitIncident != null)
+              CommandButton(
+                key: const Key('details-exit-incident'),
+                label: '退出当前警情',
+                icon: DsIcons.logout,
+                variant: CommandButtonVariant.secondary,
+                size: CommandButtonSize.standard,
+                expanded: true,
+                enabled: !_busy,
+                onPressed: _confirmExit,
               ),
-            ),
+            if (widget.onExitIncident != null &&
+                widget.onArchiveIncident != null)
+              const SizedBox(height: DsSpacing.sm),
+            if (widget.onArchiveIncident != null)
+              CommandButton(
+                key: const Key('details-archive-incident'),
+                label: '归档警情',
+                icon: DsIcons.archive,
+                variant: CommandButtonVariant.dangerOutlined,
+                size: CommandButtonSize.standard,
+                expanded: true,
+                enabled: !_busy,
+                requireConfirmation: false,
+                onPressed: _confirmArchive,
+              ),
           ],
         ],
       ),

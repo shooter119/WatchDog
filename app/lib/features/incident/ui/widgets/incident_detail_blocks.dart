@@ -5,22 +5,187 @@ import 'package:flutter/services.dart';
 import '../../../../design_system/design_system.dart';
 import '../../../../services/phone_caller.dart';
 
+/// 将 ISO-8601 原始接警时间清洗为人类易读的本地格式（无法解析时保留原文）。
+String formatIncidentReceivedAt(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return '';
+  if (!trimmed.contains('T')) return trimmed;
+  final parsed = DateTime.tryParse(trimmed);
+  if (parsed == null) return trimmed;
+  final local = parsed.isUtc ? parsed.toLocal() : parsed;
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${local.year}-${two(local.month)}-${two(local.day)} '
+      '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+}
+
+/// 警情详情基础资料分组卡片（核心通栏 → 短元数据响应式 2 列网格 → 现场态势通栏）。
+class IncidentBasicFieldsCard extends StatelessWidget {
+  const IncidentBasicFieldsCard({
+    super.key,
+    required this.basicFields,
+    required this.data,
+    this.phoneLauncher,
+  });
+
+  final List<MapEntry<String, String>> basicFields;
+  final Map<String, dynamic> data;
+  final PhoneLauncher? phoneLauncher;
+
+  static const Set<String> _primaryWideKeys = <String>{
+    'location',
+    'event_summary',
+  };
+
+  static const Set<String> _compactMetaKeys = <String>{
+    'original_category',
+    'level',
+    'specific_type',
+    'received_at',
+    'administrative_area',
+    'place_type',
+  };
+
+  Widget _buildField(MapEntry<String, String> field) {
+    final rawValue = data[field.key].toString();
+    final isReceivedAt = field.key == 'received_at';
+    return IncidentDetailFieldBlock(
+      label: field.value,
+      value: isReceivedAt ? formatIncidentReceivedAt(rawValue) : rawValue,
+      tabularValue: isReceivedAt,
+      phoneLauncher: phoneLauncher,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.ds.colors;
+    final primaryFields = <MapEntry<String, String>>[];
+    final metaFields = <MapEntry<String, String>>[];
+    final trailingFields = <MapEntry<String, String>>[];
+
+    for (final field in basicFields) {
+      if (_primaryWideKeys.contains(field.key)) {
+        primaryFields.add(field);
+      } else if (_compactMetaKeys.contains(field.key)) {
+        metaFields.add(field);
+      } else {
+        trailingFields.add(field);
+      }
+    }
+
+    final sections = <Widget>[];
+    if (primaryFields.isNotEmpty) {
+      sections.add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            for (var i = 0; i < primaryFields.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(height: DsSpacing.md),
+              _buildField(primaryFields[i]),
+            ],
+          ],
+        ),
+      );
+    }
+
+    if (metaFields.isNotEmpty) {
+      sections.add(
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final scaledBody = MediaQuery.textScalerOf(context).scale(14.0);
+            final useTwoColumns =
+                constraints.maxWidth >= 300 && scaledBody <= 16.5;
+            if (!useTwoColumns || metaFields.length < 2) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  for (var i = 0; i < metaFields.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(height: DsSpacing.md),
+                    _buildField(metaFields[i]),
+                  ],
+                ],
+              );
+            }
+            final rows = <Widget>[];
+            for (var i = 0; i < metaFields.length; i += 2) {
+              if (i > 0) rows.add(const SizedBox(height: DsSpacing.md));
+              final left = metaFields[i];
+              final right = i + 1 < metaFields.length
+                  ? metaFields[i + 1]
+                  : null;
+              rows.add(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(child: _buildField(left)),
+                    const SizedBox(width: DsSpacing.md),
+                    Expanded(
+                      child: right != null
+                          ? _buildField(right)
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: rows,
+            );
+          },
+        ),
+      );
+    }
+
+    if (trailingFields.isNotEmpty) {
+      sections.add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            for (var i = 0; i < trailingFields.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(height: DsSpacing.md),
+              _buildField(trailingFields[i]),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return SurfaceCard(
+      level: DsSurfaceLevel.outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (var i = 0; i < sections.length; i++) ...<Widget>[
+            if (i > 0)
+              Divider(height: DsSpacing.lg * 1.25, color: colors.border),
+            sections[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// 警情详情单个字段块（内嵌手机号/固话自动识别高亮与点击拨打）。
 class IncidentDetailFieldBlock extends StatelessWidget {
   const IncidentDetailFieldBlock({
     super.key,
     required this.label,
     required this.value,
+    this.tabularValue = false,
     this.phoneLauncher,
   });
 
   final String label;
   final String value;
+  final bool tabularValue;
   final PhoneLauncher? phoneLauncher;
 
   @override
   Widget build(BuildContext context) {
     final ds = context.ds;
+    final baseStyle = tabularValue ? ds.typography.bodyTabular : ds.typography.body;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -33,7 +198,7 @@ class IncidentDetailFieldBlock extends StatelessWidget {
         const SizedBox(height: DsSpacing.xs),
         _InlinePhoneText(
           text: value,
-          style: ds.typography.body.copyWith(
+          style: baseStyle.copyWith(
             color: ds.colors.textPrimary,
             fontWeight: FontWeight.w600,
           ),
@@ -149,10 +314,12 @@ class IncidentContactItemRow extends StatelessWidget {
     final colors = ds.colors;
     final normalized = phone.trim();
     final canDial = PhoneCaller.isValidPhoneNumber(normalized);
+    final trimmedRole = role.trim();
+    final trimmedName = name.trim();
     final label = <String>[
-      role.trim(),
-      name.trim(),
-    ].where((String s) => s.isNotEmpty).join(' · ');
+      if (trimmedRole.isNotEmpty) trimmedRole,
+      if (trimmedName.isNotEmpty && trimmedName != trimmedRole) trimmedName,
+    ].join(' · ');
 
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: DsSizes.touchTarget),
@@ -258,29 +425,68 @@ class IncidentExpandableListCard extends StatelessWidget {
                 )
               : null,
           children: <Widget>[
-            for (final item in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: DsSpacing.sm),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: selectable
-                      ? SelectableText(
-                          item,
-                          style: ds.typography.body.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                        )
-                      : Text(
-                          item,
-                          style: ds.typography.body.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                        ),
+            for (var i = 0; i < items.length; i++) ...<Widget>[
+              if (i > 0) Divider(height: DsSpacing.md, color: colors.border),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _buildExpandableItem(
+                  ds: ds,
+                  item: items[i],
+                  selectable: selectable,
                 ),
               ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildExpandableItem({
+    required DsTheme ds,
+    required String item,
+    required bool selectable,
+  }) {
+    final colors = ds.colors;
+    final newlineIdx = item.indexOf('\n');
+    if (newlineIdx > 0 && newlineIdx < item.length - 1) {
+      final header = item.substring(0, newlineIdx).trim();
+      final body = item.substring(newlineIdx + 1).trim();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            header,
+            style: ds.typography.captionTabular.copyWith(
+              color: colors.textTertiary,
+            ),
+          ),
+          const SizedBox(height: DsSpacing.xs),
+          selectable
+              ? SelectableText(
+                  body,
+                  style: ds.typography.body.copyWith(
+                    color: colors.textPrimary,
+                    height: 1.45,
+                  ),
+                )
+              : Text(
+                  body,
+                  style: ds.typography.body.copyWith(
+                    color: colors.textPrimary,
+                    height: 1.45,
+                  ),
+                ),
+        ],
+      );
+    }
+
+    final style = ds.typography.body.copyWith(
+      color: colors.textSecondary,
+      height: 1.45,
+    );
+    return selectable
+        ? SelectableText(item, style: style)
+        : Text(item, style: style);
   }
 }

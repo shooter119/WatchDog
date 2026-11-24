@@ -271,7 +271,47 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('incident-card-details')), findsOneWidget);
       expect(find.text('力量待登记'), findsNothing);
-      expect(find.text('1支队伍'), findsNWidgets(2));
+      // 队伍数量仅在参战力量标题右侧展示一次，不在展开胶囊区重复
+      expect(find.text('1支队伍'), findsOneWidget);
+      // 展开后不再重复渲染红底类别芯片与顶部已展示的官方状态胶囊
+      expect(find.byType(IncidentCategoryChip), findsNothing);
+      expect(find.text('官方状态: 归队'), findsNothing);
+      // 展开态仅底部保留单一收起箭头
+      expect(find.byIcon(DsIcons.chevronUp), findsOneWidget);
+    });
+
+    testWidgets('顶部被风险标签覆盖时展开区按需补展官方状态且不重复类别芯片', (
+      WidgetTester tester,
+    ) async {
+      const incident = Incident(
+        id: 'inc-dedup',
+        number: '2026-11-24-02',
+        title: '示范小区民房火警',
+        info: <String, dynamic>{
+          'location': '示例县示范街10号',
+          'original_category': '火灾扑救',
+          'incident_status': '到场',
+        },
+        status: 'active',
+        createdAt: 1,
+        lastActivityAt: 1,
+      );
+
+      await tester.pumpWidget(
+        _wrap(
+          IncidentSituationCard(
+            incident: incident,
+            highestRiskStatus: DsStatus.alarm,
+            highestRiskLabel: '最高风险 · 告警',
+            initialExpanded: true,
+            now: fixedNow,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(IncidentCategoryChip), findsNothing);
+      expect(find.text('官方状态: 到场'), findsOneWidget);
     });
 
     testWidgets('更多菜单支持改名、退出与归档二次确认 Key(incident-archive-confirm-btn)', (

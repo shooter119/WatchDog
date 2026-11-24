@@ -7,7 +7,6 @@ import '../../../../services/settings.dart';
 import '../../data/models/incident.dart';
 import '../../data/models/incident_force.dart';
 import '../sheets/incident_basic_info_sheet.dart';
-import 'incident_category_chip.dart';
 import 'incident_category_style.dart';
 import 'incident_situation_parts.dart';
 
@@ -202,48 +201,60 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
             ? '状态 · ${data.officialStatus}'
             : (widget.hasActiveEntries ? '内攻在场' : '待命处置'));
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        KeyedSubtree(
-          key: const Key('toggle-incident-card'),
-          child: IncidentHeader(
-            incidentName: data.eventTitle,
-            category: data.category,
-            categoryLabel: data.rawCategoryPill.isNotEmpty
-                ? data.rawCategoryPill
-                : IncidentCategoryStyle.labelOf(data.category),
-            categoryIcon: IncidentCategoryStyle.iconOf(data.category),
-            elapsedText: data.timeText,
-            highestRiskStatus: widget.highestRiskStatus,
-            highestRiskLabel: riskLabel,
-            connectionState: widget.connectionState,
-            pendingSyncCount: widget.pendingSyncCount,
-            showConnectionPill: widget.showConnectionPill,
-            onTap: _toggleExpanded,
-            onConnectionTap: widget.onConnectionTap,
+    final colors = context.ds.colors;
+    final headerShowsOfficialStatus =
+        widget.highestRiskLabel == null && data.officialStatus.isNotEmpty;
+
+    return SurfaceCard(
+      level: DsSurfaceLevel.outlined,
+      padding: EdgeInsets.zero,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          KeyedSubtree(
+            key: const Key('toggle-incident-card'),
+            child: IncidentHeader(
+              incidentName: data.eventTitle,
+              category: data.category,
+              categoryLabel: data.rawCategoryPill.isNotEmpty
+                  ? data.rawCategoryPill
+                  : IncidentCategoryStyle.labelOf(data.category),
+              categoryIcon: IncidentCategoryStyle.iconOf(data.category),
+              elapsedText: data.timeText,
+              highestRiskStatus: widget.highestRiskStatus,
+              highestRiskLabel: riskLabel,
+              connectionState: widget.connectionState,
+              pendingSyncCount: widget.pendingSyncCount,
+              showConnectionPill: widget.showConnectionPill,
+              embedded: true,
+              onTap: _toggleExpanded,
+              onConnectionTap: widget.onConnectionTap,
+            ),
           ),
-        ),
-        const SizedBox(height: DsSpacing.xs),
-        SurfaceCard(
-          level: DsSurfaceLevel.outlined,
-          padding: const EdgeInsets.symmetric(horizontal: DsSpacing.md, vertical: DsSpacing.xs),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _buildSummaryControlBar(context, data, compactForces),
-              if (_expanded)
-                _buildExpandedDetails(
-                  context,
-                  data,
-                  showPendingForcePill: showPendingForcePill,
-                ),
-            ],
+          Divider(height: 1, color: colors.border),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: DsSpacing.md,
+              vertical: DsSpacing.xs,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _buildSummaryControlBar(context, data, compactForces),
+                if (_expanded)
+                  _buildExpandedDetails(
+                    context,
+                    data,
+                    showPendingForcePill: showPendingForcePill,
+                    headerShowsOfficialStatus: headerShowsOfficialStatus,
+                  ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -273,11 +284,12 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
                       compactForces: compactForces,
                     ),
                   ),
-                  Icon(
-                    _expanded ? DsIcons.chevronUp : DsIcons.chevronDown,
-                    size: DsSizes.iconMd,
-                    color: colors.textSecondary,
-                  ),
+                  if (!_expanded)
+                    Icon(
+                      DsIcons.chevronDown,
+                      size: DsSizes.iconMd,
+                      color: colors.textSecondary,
+                    ),
                 ],
               ),
             ),
@@ -297,57 +309,55 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
     BuildContext context,
     IncidentCardViewModel data, {
     required bool showPendingForcePill,
+    required bool headerShowsOfficialStatus,
   }) {
     final ds = context.ds;
     final colors = ds.colors;
     final typo = ds.typography;
+
+    final extraPills = <Widget>[
+      if (data.officialStatus.isNotEmpty && !headerShowsOfficialStatus)
+        StatusPill(
+          status: DsStatus.neutral,
+          icon: DsIcons.flag,
+          label: '官方状态: ${data.officialStatus}',
+        ),
+      for (final tag in data.extraTags)
+        StatusPill(
+          status: DsStatus.neutral,
+          icon: DsIcons.statusNeutral,
+          label: tag,
+        ),
+      if (showPendingForcePill)
+        const StatusPill(
+          status: DsStatus.neutral,
+          icon: DsIcons.hourglass,
+          label: '力量待登记',
+        ),
+    ];
 
     return Column(
       key: const Key('incident-card-details'),
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Divider(height: DsSpacing.md, color: colors.border),
-        Wrap(
-          spacing: DsSpacing.xs,
-          runSpacing: DsSpacing.xs,
-          children: <Widget>[
-            if (data.rawCategoryPill.isNotEmpty)
-              IncidentCategoryChip(
-                category: data.category,
-                label: data.rawCategoryPill,
-              ),
-            if (data.officialStatus.isNotEmpty)
-              StatusPill(
-                status: DsStatus.neutral,
-                icon: DsIcons.flag,
-                label: '官方状态: ${data.officialStatus}',
-              ),
-            for (final tag in data.extraTags)
-              StatusPill(
-                status: DsStatus.neutral,
-                icon: DsIcons.statusNeutral,
-                label: tag,
-              ),
-            if (widget.forces.isNotEmpty)
-              StatusPill(
-                status: DsStatus.neutral,
-                icon: DsIcons.roster,
-                label: '${widget.forces.length}支队伍',
-              )
-            else if (showPendingForcePill)
-              const StatusPill(
-                status: DsStatus.neutral,
-                icon: DsIcons.hourglass,
-                label: '力量待登记',
-              ),
-          ],
-        ),
+        Divider(height: DsSpacing.sm, color: colors.border),
+        if (extraPills.isNotEmpty) ...<Widget>[
+          const SizedBox(height: DsSpacing.xs),
+          Wrap(
+            spacing: DsSpacing.xs,
+            runSpacing: DsSpacing.xs,
+            children: extraPills,
+          ),
+        ],
         if (data.extraNotes.isNotEmpty) ...<Widget>[
-          const SizedBox(height: DsSpacing.sm),
+          SizedBox(height: extraPills.isNotEmpty ? DsSpacing.sm : DsSpacing.xs),
           Text(
             data.extraNotes.join(' · '),
-            style: typo.caption.copyWith(color: colors.textSecondary),
+            style: typo.caption.copyWith(
+              color: colors.textSecondary,
+              height: 1.45,
+            ),
           ),
         ],
         const SizedBox(height: DsSpacing.md),
@@ -356,10 +366,6 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
           onImportInfo: widget.onImportInfo,
           onAdjustIncident: widget.onAdjustIncident,
         ),
-        if (widget.keySiteSlot != null) ...<Widget>[
-          const SizedBox(height: DsSpacing.sm),
-          widget.keySiteSlot!,
-        ],
         if (widget.forces.isNotEmpty) ...<Widget>[
           const SizedBox(height: DsSpacing.md),
           Row(
@@ -367,7 +373,10 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
               Expanded(
                 child: Text(
                   '参战力量',
-                  style: typo.title.copyWith(color: colors.textPrimary),
+                  style: typo.caption.copyWith(
+                    color: colors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               Text(
@@ -379,9 +388,9 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
               ),
             ],
           ),
-          const SizedBox(height: DsSpacing.sm),
+          const SizedBox(height: DsSpacing.xs),
           for (var i = 0; i < widget.forces.length; i++) ...<Widget>[
-            if (i > 0) const SizedBox(height: DsSpacing.sm),
+            if (i > 0) const SizedBox(height: DsSpacing.xs),
             IncidentForceItemRow(
               force: widget.forces[i],
               onEdit: widget.onEditForce != null
@@ -393,7 +402,14 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
             ),
           ],
         ],
-        const SizedBox(height: DsSpacing.sm),
+        if (widget.keySiteSlot != null) ...<Widget>[
+          const SizedBox(height: DsSpacing.sm),
+          Divider(height: 1, color: colors.border),
+          widget.keySiteSlot!,
+        ],
+        if (widget.keySiteSlot == null)
+          const SizedBox(height: DsSpacing.sm),
+        Divider(height: 1, color: colors.border),
         InkWell(
           key: const Key('open-incident-details'),
           borderRadius: DsRadius.borderSm,
@@ -402,6 +418,12 @@ class _IncidentSituationCardState extends State<IncidentSituationCard> {
             constraints: const BoxConstraints(minHeight: DsSizes.touchTarget),
             child: Row(
               children: <Widget>[
+                Icon(
+                  DsIcons.toolTacticalBrief,
+                  size: DsSizes.iconMd,
+                  color: colors.textSecondary,
+                ),
+                const SizedBox(width: DsSpacing.sm),
                 Expanded(
                   child: Text(
                     '警情详情',

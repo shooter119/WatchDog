@@ -118,7 +118,6 @@ class IncidentActionStrip extends StatelessWidget {
 
     return SurfaceCard(
       level: DsSurfaceLevel.flat,
-      borderColor: colors.border,
       borderRadius: DsRadius.borderMd,
       padding: EdgeInsets.zero,
       child: LayoutBuilder(
@@ -258,7 +257,6 @@ class IncidentForceItemRow extends StatelessWidget {
     final colors = ds.colors;
     return SurfaceCard(
       level: DsSurfaceLevel.flat,
-      borderColor: colors.border,
       borderRadius: DsRadius.borderMd,
       padding: const EdgeInsets.fromLTRB(
         DsSpacing.sm,

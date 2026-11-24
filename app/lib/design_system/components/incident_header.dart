@@ -41,6 +41,7 @@ class IncidentHeader extends StatelessWidget {
     required this.connectionState,
     this.pendingSyncCount = 0,
     this.showConnectionPill = true,
+    this.embedded = false,
     this.onTap,
     this.onConnectionTap,
   });
@@ -55,6 +56,9 @@ class IncidentHeader extends StatelessWidget {
   final DsConnectionState connectionState;
   final int pendingSyncCount;
   final bool showConnectionPill;
+
+  /// 为 `true` 时不套外层 [SurfaceCard]，直接输出纯内容区块，便于无缝融入单张父卡片。
+  final bool embedded;
   final VoidCallback? onTap;
   final VoidCallback? onConnectionTap;
 
@@ -79,91 +83,102 @@ class IncidentHeader extends StatelessWidget {
             : defaultLabel;
     final resolvedCategoryIcon = categoryIcon ?? defaultIcon;
 
-    return SurfaceCard(
-      level: DsSurfaceLevel.outlined,
-      padding: const EdgeInsets.all(DsSpacing.md),
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(
-            incidentName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: typo.headline.copyWith(color: colors.textPrimary),
-          ),
-          const SizedBox(height: DsSpacing.sm),
-          Wrap(
-            spacing: DsSpacing.sm,
-            runSpacing: DsSpacing.xs,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              Container(
-                key: const Key('incident-header-category-pill'),
-                constraints: const BoxConstraints(minHeight: 26),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: DsSpacing.sm,
-                  vertical: DsSpacing.xs,
-                ),
-                decoration: BoxDecoration(
-                  color: tagBg,
-                  borderRadius: DsRadius.borderPill,
-                  border: Border.all(color: tagBorder, width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      resolvedCategoryIcon,
-                      size: DsSizes.iconSm,
-                      color: tagFg,
-                    ),
-                    const SizedBox(width: DsSpacing.xs),
-                    Flexible(
-                      child: Text(
-                        resolvedCategoryLabel,
-                        style: typo.micro.copyWith(
-                          color: tagFg,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+    final Widget content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(
+          incidentName,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: typo.headline.copyWith(color: colors.textPrimary),
+        ),
+        const SizedBox(height: DsSpacing.sm),
+        Wrap(
+          spacing: DsSpacing.sm,
+          runSpacing: DsSpacing.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            Container(
+              key: const Key('incident-header-category-pill'),
+              constraints: const BoxConstraints(minHeight: 26),
+              padding: const EdgeInsets.symmetric(
+                horizontal: DsSpacing.sm,
+                vertical: DsSpacing.xs,
               ),
-              Row(
+              decoration: BoxDecoration(
+                color: tagBg,
+                borderRadius: DsRadius.borderPill,
+                border: Border.all(color: tagBorder, width: 1),
+              ),
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   Icon(
-                    DsIcons.time,
+                    resolvedCategoryIcon,
                     size: DsSizes.iconSm,
-                    color: colors.textSecondary,
+                    color: tagFg,
                   ),
                   const SizedBox(width: DsSpacing.xs),
-                  Text(
-                    elapsedText,
-                    style: typo.captionTabular.copyWith(
-                      color: colors.textSecondary,
-                      fontWeight: FontWeight.w500,
+                  Flexible(
+                    child: Text(
+                      resolvedCategoryLabel,
+                      style: typo.micro.copyWith(
+                        color: tagFg,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
               ),
-              StatusPill(
-                status: highestRiskStatus,
-                label: highestRiskLabel,
-              ),
-              if (showConnectionPill)
-                ConnectionPill(
-                  state: connectionState,
-                  pendingCount: pendingSyncCount,
-                  onTap: onConnectionTap,
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  DsIcons.time,
+                  size: DsSizes.iconSm,
+                  color: colors.textSecondary,
                 ),
-            ],
-          ),
-        ],
-      ),
+                const SizedBox(width: DsSpacing.xs),
+                Text(
+                  elapsedText,
+                  style: typo.captionTabular.copyWith(
+                    color: colors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            StatusPill(
+              status: highestRiskStatus,
+              label: highestRiskLabel,
+            ),
+            if (showConnectionPill)
+              ConnectionPill(
+                state: connectionState,
+                pendingCount: pendingSyncCount,
+                onTap: onConnectionTap,
+              ),
+          ],
+        ),
+      ],
+    );
+
+    if (embedded) {
+      final padded = Padding(
+        padding: const EdgeInsets.all(DsSpacing.md),
+        child: content,
+      );
+      if (onTap == null) return padded;
+      return InkWell(onTap: onTap, child: padded);
+    }
+
+    return SurfaceCard(
+      level: DsSurfaceLevel.outlined,
+      padding: const EdgeInsets.all(DsSpacing.md),
+      onTap: onTap,
+      child: content,
     );
   }
 }

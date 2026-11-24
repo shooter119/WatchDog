@@ -201,7 +201,7 @@ class CommandHomeAssembly {
           unawaited(incidentActions.removeForce(f)),
       onArchive: incidentActions.archiveIncident,
       onExit: incidentActions.exitIncident,
-      keySiteSlot: incidentActions.buildKeySiteCard(incident),
+      keySiteSlot: incidentActions.buildKeySiteCard(incident, embedded: true),
     );
   }
 

@@ -1695,6 +1695,63 @@ void main() {
         expect(pillLabel.style?.color, colors.brandText);
       }
     });
+
+    testWidgets('IncidentHeader embedded=true 不套外层 SurfaceCard 且保留点击回调', (
+      WidgetTester tester,
+    ) async {
+      var tapped = 0;
+      await tester.pumpWidget(
+        _wrapWithDsTheme(
+          child: Scaffold(
+            body: IncidentHeader(
+              incidentName: '示例仓库火灾',
+              elapsedText: '今日 10:00',
+              highestRiskStatus: DsStatus.neutral,
+              connectionState: DsConnectionState.online,
+              embedded: true,
+              onTap: () => tapped++,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(SurfaceCard), findsNothing);
+      await tester.tap(find.text('示例仓库火灾'));
+      await tester.pump();
+      expect(tapped, 1);
+    });
+
+    testWidgets('CommandButton dangerOutlined 渲染克制描边样式且默认触发二次确认', (
+      WidgetTester tester,
+    ) async {
+      var confirmed = 0;
+      await tester.pumpWidget(
+        _wrapWithDsTheme(
+          child: Scaffold(
+            body: Center(
+              child: CommandButton(
+                label: '归档警情',
+                variant: CommandButtonVariant.dangerOutlined,
+                onPressed: () => confirmed++,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final colors = DsColors.of(Brightness.light);
+      final text = tester.widget<Text>(find.text('归档警情'));
+      expect(text.style?.color, colors.alarmText);
+
+      await tester.tap(find.text('归档警情'));
+      await tester.pumpAndSettle();
+      expect(confirmed, 0);
+      expect(find.text('确认归档警情'), findsNWidgets(2));
+
+      await tester.tap(find.widgetWithText(CommandButton, '确认归档警情'));
+      await tester.pumpAndSettle();
+      expect(confirmed, 1);
+    });
   });
 
   group('ToolGrid 现场工具锁定态组件测试', () {

@@ -41,12 +41,13 @@ class CommandHomeIncidentActions {
   }
 
   /// 构建可嵌入态势卡与警情详情页的重点单位关联卡。
-  Widget buildKeySiteCard(Incident incident) {
+  Widget buildKeySiteCard(Incident incident, {bool embedded = false}) {
     return IncidentKeySiteCard(
       accessListenable: controller,
       canReadKeySites: () => controller.canReadKeySites,
       protectedDataEpoch: () => controller.protectedDataEpoch,
       incident: incident,
+      embedded: embedded,
       fetchIncidentKeySite: (String incidentId) async {
         final api = controller.api;
         if (api == null) {

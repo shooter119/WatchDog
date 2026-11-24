@@ -63,6 +63,7 @@ class IncidentKeySiteCard extends StatelessWidget {
     required this.fetchLatestKeySite,
     required this.onChangeKeySiteLink,
     required this.onOpenKeySiteDetail,
+    this.embedded = false,
     this.refreshInterval = const Duration(seconds: 30),
   });
 
@@ -75,6 +76,9 @@ class IncidentKeySiteCard extends StatelessWidget {
   final KeySiteLatestFetcher fetchLatestKeySite;
   final IncidentKeySiteChangeCallback onChangeKeySiteLink;
   final KeySiteDetailOpener onOpenKeySiteDetail;
+
+  /// 为 `true` 时用于内嵌在父级主卡片中（如指挥台警情展开卡），避免嵌套描边盒子。
+  final bool embedded;
   final Duration refreshInterval;
 
   @override
@@ -276,56 +280,65 @@ class _IncidentKeySiteLinkBodyState extends State<_IncidentKeySiteLinkBody> {
         ? const <String>[]
         : _linkedProfileTags(link);
 
+    final body = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (link == null)
+          _buildUnlinkedRow(colors, typo, canSearch)
+        else
+          _buildLinkedBody(context, link, profileTags, canSearch),
+        if (_error != null) ...<Widget>[
+          const SizedBox(height: DsSpacing.sm),
+          SurfaceCard(
+            level: DsSurfaceLevel.flat,
+            backgroundColor: colors.statusColors(DsStatus.alarm).pillBg,
+            borderColor: colors.alarmFill.withValues(alpha: 0.3),
+            padding: const EdgeInsets.all(DsSpacing.sm),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    _formatError(_error!),
+                    style: typo.caption.copyWith(color: colors.alarmText),
+                  ),
+                ),
+                CommandButton(
+                  label: '重试',
+                  variant: CommandButtonVariant.ghost,
+                  size: CommandButtonSize.standard,
+                  enabled: !_busy,
+                  onPressed: _load,
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (_saving) ...<Widget>[
+          const SizedBox(height: DsSpacing.sm),
+          const LinearProgressIndicator(),
+        ],
+      ],
+    );
+
+    if (_host.embedded && link == null) {
+      return InkWell(
+        borderRadius: DsRadius.borderSm,
+        onTap: (_host.incident.isActive && canSearch) ? _change : null,
+        child: body,
+      );
+    }
+
     return SurfaceCard(
-      level: DsSurfaceLevel.flat,
-      borderColor: colors.border,
-      borderRadius: DsRadius.borderMd,
+      level: _host.embedded ? DsSurfaceLevel.flat : DsSurfaceLevel.outlined,
+      borderRadius: _host.embedded ? DsRadius.borderMd : DsRadius.borderLg,
       padding: link == null
           ? const EdgeInsets.symmetric(horizontal: DsSpacing.md)
           : const EdgeInsets.all(DsSpacing.md),
       onTap: (link == null && _host.incident.isActive && canSearch)
           ? _change
           : null,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (link == null)
-            _buildUnlinkedRow(colors, typo, canSearch)
-          else
-            _buildLinkedBody(context, link, profileTags, canSearch),
-          if (_error != null) ...<Widget>[
-            const SizedBox(height: DsSpacing.sm),
-            SurfaceCard(
-              level: DsSurfaceLevel.flat,
-              backgroundColor: colors.statusColors(DsStatus.alarm).pillBg,
-              borderColor: colors.alarmFill.withValues(alpha: 0.3),
-              padding: const EdgeInsets.all(DsSpacing.sm),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      _formatError(_error!),
-                      style: typo.caption.copyWith(color: colors.alarmText),
-                    ),
-                  ),
-                  CommandButton(
-                    label: '重试',
-                    variant: CommandButtonVariant.ghost,
-                    size: CommandButtonSize.standard,
-                    enabled: !_busy,
-                    onPressed: _load,
-                  ),
-                ],
-              ),
-            ),
-          ],
-          if (_saving) ...<Widget>[
-            const SizedBox(height: DsSpacing.sm),
-            const LinearProgressIndicator(),
-          ],
-        ],
-      ),
+      child: body,
     );
   }
 

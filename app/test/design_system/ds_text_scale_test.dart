@@ -324,6 +324,10 @@ void main() {
         await tester.pumpAndSettle();
         _expectNoOverflowOrTruncation(tester, errors);
 
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('pair-report')),
+          200,
+        );
         final reportRect = tester.getRect(find.byKey(const Key('pair-report')));
         final exitRect = tester.getRect(find.byKey(const Key('pair-exit')));
         expect(reportRect.height, greaterThanOrEqualTo(56.0));
