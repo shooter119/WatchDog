@@ -20,14 +20,14 @@
 5. **严谨施工与全套门禁验证（Coding & Verification）**：
    - 最小必要改动，保持代码内聚并维护防御性兼容；
    - 编码完成后必须本地全套门禁通过（后端 `npm test` 322+、App `flutter analyze` 0 警告、App `flutter test` 471+），保持 0 报警 0 失败，测试用例只增不减。
-6. **交付前代码审查与呈现（Pre-Commit Audit）**：
-   - **绝对红线：严禁在未经用户审核前擅自执行 `git commit`！**
-   - 编码与验证全绿后，必须向用户清晰呈现本次改动清单、核心 diff 差异、全量测试通过报告及拟提交的 commit message（必须含 `(closes #<id>)`），明确请求用户进行代码审核。
-7. **用户确认后自动提交、关闭与部署（Confirm -> Commit -> Auto-Close -> Deploy）**：
-   - **commit / push 在用户确认后自动执行**：经用户审核确认后，自动执行 `git add` + `git commit -m "... (closes #<id>)"` + `git push origin main`，GitHub 收到 push 后自动关闭对应的 Issue；
-   - **后端与部署联动**：后端代码（`backend/src/`、`deploy/`）有修改时，在本地测试全绿且用户确认后执行 VPS Docker Compose 部署与数据库迁移，部署完成后必须完成公网健康检查与路由验收；
+6. **自动自检、提交直推主干与清理分支（Auto-Audit -> Commit & Push main -> Clean Branch）**：
+   - 全套门禁全绿后，智能体自主检查 `git status` / `git diff`（确认无无关文件、无密钥或敏感信息泄露、文档按需同步），**无需反复打断用户询问是否提交或推主干/推分支**；
+   - 自动执行精准 `git add` + `git commit -m "... (closes #<id>)"`（微型任务可免 Issue 锚点），并**默认直接推送至 `origin/main`**（兼容 Worktree 使用 `git push origin HEAD:main`），确认关联 Issue 自动关闭；仅在用户明确要求“先放分支”时以分支形式推送；
+   - 推主干并确认无误后，**自动清理已完成任务的临时特性分支**（删除远端分支 `git push origin :<branch>` 与本地分支 `git branch -d <branch>`；若当前正处于活跃 Worktree 目录则自动跳过本地删除，避免报错）。
+7. **部署联动、高危闸门与发版边界（Deploy & Release Gate）**：
+   - **常规后端部署联动**：后端代码（`backend/src/`、`deploy/`）有修改且无破坏性数据库变更时，在本地测试全绿并推送后，可直接通过带自动备份与失败回滚保护的脚本执行 VPS Docker Compose 部署与公网健康检查验收；若涉及破坏性数据库迁移或核心生产配置大改，**必须先征询用户确认**；
    - **发版严格由用户决定**：版本号与构建号、`git tag`、正式 APK 构建、VPS OTA 清单更新、GitHub Release 等全部环节，必须等用户明确指令后才执行；
-   - **合并后分支即刻清理**：特性分支合并到主干 `main` 且确认无误后，**必须顺手清理并删除该特性分支**（自动删除远端分支 `git push origin :<branch>` 与本地分支 `git branch -d <branch>`），保持仓库分支整洁无陈旧游离分支。
+   - **人话版交付汇报**：完成后简洁汇报改动内容、测试结果、提交号、Issue 关闭及线上验收状态，便于用户直接验收效果或随时提出微调/撤回。
 
 - commit 前检查 `git status` / `git diff`，只提交本次相关的改动。
 - 提交信息简洁中文，符合仓库现有风格。
