@@ -27,6 +27,10 @@ const {
   formatBeijingIso,
   normalizeStationName,
 } = require('./external-incident-organizer');
+const {
+  computeExternalDetailSyncPatch,
+  findNewDispatchedForces,
+} = require('./external-incident-sync');
 
 // PostgreSQL 初始化是网络依赖，不能阻塞端口监听等待完成；探活在初始化期间
 // 仍可返回数据库状态，便于任意支持长连接的平台进行编排。
@@ -2006,39 +2010,8 @@ async function enrichAndAttachExternalClaimStatus(list, unitId, {
   const listWithClaimStatus = organizedList.map((item) => {
     const matched = claimedMap.get(item.external_id) || claimedMap.get(item.incident_number);
     if (matched) {
-      const nextStatus = policeApiService.sanitizeOfficialStatus(item.incident_status);
       const existingDetail = detailByIncidentId.get(matched.id);
-      const prevStatus = policeApiService.sanitizeOfficialStatus(existingDetail?.data?.incident_status || '');
-      if (nextStatus && nextStatus !== prevStatus) {
-        if (syncSupported() && matched.unit_id) {
-          statusSyncTasks.push((async () => {
-            try {
-              const store = require('./postgres-store');
-              const now = Date.now();
-              const nextData = { ...(existingDetail?.data || {}), incident_status: nextStatus };
-              const nextVersion = (Number(existingDetail?.version) || 0) + 1;
-              await store.query(
-                `INSERT INTO incident_details(incident_id, unit_id, data, version, updated_at, updated_by)
-                 VALUES($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT(incident_id) DO UPDATE SET data = EXCLUDED.data, version = EXCLUDED.version, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
-                [matched.id, matched.unit_id, JSON.stringify(nextData), nextVersion, now, 'police_api_sync']
-              );
-              if (typeof db.appendSyncEvent === 'function') {
-                await db.appendSyncEvent({
-                  unitId: matched.unit_id,
-                  incidentId: matched.id,
-                  eventType: 'details.updated',
-                  payload: { incident_id: matched.id, unit_id: matched.unit_id, data: nextData, version: nextVersion, updated_at: now },
-                });
-              }
-            } catch (err) {
-              logger.warn(`[PoliceApiService] Failed to sync official status for ${matched.id}: ${err.message}`);
-            }
-          })());
-        } else {
-          localIncidentDetails.set(matched.id, { ...(existingDetail?.data || {}), incident_status: nextStatus });
-        }
-      }
+      statusSyncTasks.push(syncSingleActiveIncidentFromExternal(matched, item, existingDetail));
     }
     return {
       ...item,
@@ -2053,6 +2026,148 @@ async function enrichAndAttachExternalClaimStatus(list, unitId, {
     Promise.allSettled(statusSyncTasks).catch(() => {});
   }
   return listWithClaimStatus;
+}
+
+const syncingExternalIncidentIds = new Set();
+
+async function syncSingleActiveIncidentFromExternal(matched, item, existingDetail = null) {
+  if (!matched?.id || !item) return { changed: false, forcesAdded: 0 };
+  if (syncingExternalIncidentIds.has(matched.id)) return { changed: false, forcesAdded: 0 };
+  syncingExternalIncidentIds.add(matched.id);
+  try {
+    let detailRow = existingDetail;
+    if (!detailRow) {
+      if (syncSupported() && matched.unit_id) {
+        try {
+          detailRow = await require('./incident-import-repository').details(matched.unit_id, matched.id);
+        } catch (_) {
+          detailRow = { incident_id: matched.id, unit_id: matched.unit_id, data: {}, version: 0 };
+        }
+      } else {
+        detailRow = { data: localIncidentDetails.get(matched.id) || {}, version: 1 };
+      }
+    }
+
+    const patch = computeExternalDetailSyncPatch(detailRow?.data || {}, item, {
+      version: detailRow?.version,
+      updatedBy: detailRow?.updated_by,
+    });
+    const now = Date.now();
+
+    if (patch.changed) {
+      if (syncSupported() && matched.unit_id) {
+        const store = require('./postgres-store');
+        const nextVersion = (Number(detailRow?.version) || 0) + 1;
+        await store.query(
+          `INSERT INTO incident_details(incident_id, unit_id, data, version, updated_at, updated_by)
+           VALUES($1, $2, $3, $4, $5, $6)
+           ON CONFLICT(incident_id) DO UPDATE SET data = EXCLUDED.data, version = EXCLUDED.version, updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
+          [matched.id, matched.unit_id, JSON.stringify(patch.nextData), nextVersion, now, 'police_api_sync'],
+        );
+        if (typeof db.appendSyncEvent === 'function') {
+          await db.appendSyncEvent({
+            unitId: matched.unit_id,
+            incidentId: matched.id,
+            eventType: 'details.updated',
+            payload: {
+              incident_id: matched.id,
+              unit_id: matched.unit_id,
+              data: patch.nextData,
+              version: nextVersion,
+              updated_at: now,
+            },
+          });
+        }
+      } else {
+        localIncidentDetails.set(matched.id, patch.nextData);
+      }
+    }
+
+    let forcesAdded = 0;
+    const upstreamForces = Array.isArray(item.dispatched_forces) ? item.dispatched_forces : [];
+    if (upstreamForces.length > 0) {
+      const existingForces = await db.listIncidentForces(matched.id);
+      const newForces = findNewDispatchedForces(existingForces, upstreamForces);
+      if (newForces.length > 0) {
+        await registerClaimedDispatchedForces({
+          incidentId: matched.id,
+          unitId: matched.unit_id || null,
+          forces: newForces,
+          device: 'police_api_sync',
+          actorName: '接警动态同步',
+          opId: null,
+          now,
+        });
+        forcesAdded = newForces.length;
+      }
+    }
+
+    return { changed: patch.changed, changedFields: patch.changedFields, forcesAdded };
+  } catch (err) {
+    logger.warn(`[PoliceApiService] Failed to sync external updates for ${matched.id}: ${err.message}`);
+    return { changed: false, forcesAdded: 0 };
+  } finally {
+    syncingExternalIncidentIds.delete(matched.id);
+  }
+}
+
+async function syncActiveIncidentsFromExternal(organizedList, { unitId = null } = {}) {
+  const list = Array.isArray(organizedList) ? organizedList : [];
+  if (list.length === 0) return { synced: 0, updated: 0, forcesAdded: 0 };
+
+  const activeIncidents = await db.listIncidents('active', { unitId: unitId || null, limit: 100, offset: 0 });
+  if (activeIncidents.length === 0) return { synced: 0, updated: 0, forcesAdded: 0 };
+
+  let batchDetailsMap = null;
+  if (syncSupported()) {
+    const syncIncidentIds = activeIncidents.filter((inc) => inc.unit_id).map((inc) => inc.id);
+    if (syncIncidentIds.length > 0) {
+      try {
+        batchDetailsMap = await require('./incident-import-repository').detailsBatch(syncIncidentIds, unitId || null);
+      } catch (err) {
+        logger.warn(`[PoliceApiService] syncActiveIncidents detailsBatch failed: ${err?.message || String(err)}`);
+        batchDetailsMap = new Map();
+      }
+    }
+  }
+
+  const byExternalId = new Map();
+  const byNumber = new Map();
+  for (const item of list) {
+    if (item?.external_id) byExternalId.set(String(item.external_id), item);
+    if (item?.incident_number) byNumber.set(String(item.incident_number), item);
+  }
+
+  let synced = 0;
+  let updated = 0;
+  let forcesAdded = 0;
+  for (const incident of activeIncidents) {
+    let detailRow = null;
+    if (syncSupported() && incident.unit_id) {
+      const row = batchDetailsMap?.get(incident.id);
+      detailRow = row && (!incident.unit_id || row.unit_id === incident.unit_id)
+        ? row
+        : { incident_id: incident.id, unit_id: incident.unit_id, data: {}, version: 0 };
+    } else if (localIncidentDetails.has(incident.id)) {
+      detailRow = { data: localIncidentDetails.get(incident.id), version: 1 };
+    }
+
+    const extId = detailRow?.data?.external_id ? String(detailRow.data.external_id) : '';
+    const extNum = detailRow?.data?.external_incident_number ? String(detailRow.data.external_incident_number) : '';
+    const matchedItem =
+      (extId && byExternalId.get(extId)) ||
+      (extNum && byNumber.get(extNum)) ||
+      (incident.number && byNumber.get(String(incident.number))) ||
+      null;
+    if (!matchedItem) continue;
+
+    synced++;
+    const res = await syncSingleActiveIncidentFromExternal(incident, matchedItem, detailRow);
+    if (res.changed) updated++;
+    forcesAdded += res.forcesAdded || 0;
+  }
+
+  return { synced, updated, forcesAdded };
 }
 
 // 获取外部官方派警列表（原始全量融合 + AI重组缓存），并标记认领状态
@@ -2084,7 +2199,10 @@ app.get('/api/external-incidents', async (req, res, next) => {
             limit: 200,
           })
         : null,
-      onRefreshed: (list) => externalIncidentOrganizer.syncIncidents(list, { awaitAi: false }),
+      onRefreshed: async (list) => {
+        const organized = await externalIncidentOrganizer.syncIncidents(list, { awaitAi: false });
+        await syncActiveIncidentsFromExternal(organized);
+      },
     });
     const listWithClaimStatus = await enrichAndAttachExternalClaimStatus(upstreamResult.list, effectiveUnitId, {
       awaitAi: forceRefresh && Boolean(CFG.llm.apiKey),
@@ -5044,7 +5162,10 @@ if (require.main === module) {
     const started = policeApiService.startBackgroundRefresh({
       intervalMs: policeApiService.CACHE_TTL_MS,
       initialDelayMs: 1500,
-      onRefreshed: (list) => externalIncidentOrganizer.syncIncidents(list, { awaitAi: false }),
+      onRefreshed: async (list) => {
+        const organized = await externalIncidentOrganizer.syncIncidents(list, { awaitAi: false });
+        await syncActiveIncidentsFromExternal(organized);
+      },
     });
     if (started) {
       logger.info(`[PoliceApiService] 已启动外部派警后台预热（周期 ${Math.round(policeApiService.CACHE_TTL_MS / 1000)}s）`);
@@ -5067,6 +5188,7 @@ if (require.main === module) {
 
 app.externalIncidentOrganizer = externalIncidentOrganizer;
 app._getLocalIncidentDetailsForTest = (incidentId) => localIncidentDetails.get(incidentId) || null;
+app._syncActiveIncidentsFromExternalForTest = syncActiveIncidentsFromExternal;
 app._isDetailedChatRequestForTest = isDetailedChatRequest;
 app._chatHistoryFromRequestForTest = chatHistoryFromRequest;
 app._downgradeFollowUpsForLegacyClientForTest = downgradeFollowUpsForLegacyClient;
