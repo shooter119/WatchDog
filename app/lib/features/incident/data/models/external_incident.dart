@@ -388,6 +388,57 @@ class ExternalIncident {
     );
   }
 
+  ExternalIncident copyWithClaimed({
+    required bool claimed,
+    String? claimedIncidentId,
+    String? claimedIncidentNumber,
+    String? claimedIncidentTitle,
+  }) {
+    return ExternalIncident(
+      externalId: externalId,
+      incidentNumber: incidentNumber,
+      detachmentName: detachmentName,
+      brigadeName: brigadeName,
+      squadronName: squadronName,
+      districtName: districtName,
+      incidentType: incidentType,
+      disposalObjectName: disposalObjectName,
+      incidentLevel: incidentLevel,
+      incidentStatus: incidentStatus,
+      crimeAddress: crimeAddress,
+      incidentDescribe: incidentDescribe,
+      registerTime: registerTime,
+      latitude: latitude,
+      longitude: longitude,
+      alarmPhone: alarmPhone,
+      alarmPersonPhone: alarmPersonPhone,
+      alarmPersonName: alarmPersonName,
+      alarmModeName: alarmModeName,
+      incidentNatureName: incidentNatureName,
+      dispatchVehicle: dispatchVehicle,
+      dispatchOrganization: dispatchOrganization,
+      eventSummary: eventSummary,
+      disasterCategory: disasterCategory,
+      specificType: specificType,
+      locationDisplay: locationDisplay,
+      officialStatus: officialStatus,
+      situationDetail: situationDetail,
+      trapped: trapped,
+      injured: injured,
+      hazardousMaterials: hazardousMaterials,
+      dispatchSummary: dispatchSummary,
+      dispatchedForces: dispatchedForces,
+      factHighlights: factHighlights,
+      aiStatus: aiStatus,
+      rawMergedText: rawMergedText,
+      claimed: claimed,
+      claimedIncidentId: claimedIncidentId ?? this.claimedIncidentId,
+      claimedIncidentNumber:
+          claimedIncidentNumber ?? this.claimedIncidentNumber,
+      claimedIncidentTitle: claimedIncidentTitle ?? this.claimedIncidentTitle,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
     'external_id': externalId,
     'incident_number': incidentNumber,

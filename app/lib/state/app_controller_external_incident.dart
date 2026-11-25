@@ -178,6 +178,37 @@ mixin _AppControllerExternalIncidentMixin on _AppControllerBase {
       incident,
       ...activeIncidents.where((item) => item.id != incident.id),
     ];
+    if (externalIncidents.isNotEmpty) {
+      final targetExtId = externalIncident.externalId.trim();
+      final targetExtNum = externalIncident.incidentNumber.trim();
+      var updatedExternal = false;
+      final nextExternal = externalIncidents.map((item) {
+        final sameExtId =
+            targetExtId.isNotEmpty && item.externalId.trim() == targetExtId;
+        final sameExtNum =
+            targetExtNum.isNotEmpty &&
+            item.incidentNumber.trim() == targetExtNum;
+        if (!sameExtId && !sameExtNum) return item;
+        updatedExternal = true;
+        return item.copyWithClaimed(
+          claimed: true,
+          claimedIncidentId: incident.id,
+          claimedIncidentNumber: incident.number,
+          claimedIncidentTitle: incident.displayName,
+        );
+      }).toList();
+      if (updatedExternal) {
+        externalIncidents = nextExternal;
+        if (a.cacheScope.isNotEmpty) {
+          unawaited(
+            ScopedJsonCache.write(a.cacheScope, 'external_incidents', {
+              'saved_at': _nowMs(),
+              'list': nextExternal.map((e) => e.toJson()).toList(),
+            }),
+          );
+        }
+      }
+    }
     entries = [];
     notes = [];
     forces = [];

@@ -1688,6 +1688,9 @@ function projectExternalIncident(item) {
 }
 
 const INCIDENT_INFO_KEYS = [
+  'external_id',
+  'external_incident_number',
+  'external_source',
   'event_summary',
   'disaster_category',
   'original_category',

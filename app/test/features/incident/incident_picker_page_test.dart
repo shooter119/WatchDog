@@ -743,5 +743,158 @@ void main() {
       await tester.pumpAndSettle();
       expect(joined?.id, customIncident.id);
     });
+
+    testWidgets('已建档外部警情即使编号带后缀且未刷新外部列表也不重复渲染，全部警情统一按时间倒序排列', (tester) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final nowMs = fixedNow.millisecondsSinceEpoch;
+      final tNewestExt = nowMs - 5 * 60 * 1000;
+      final tCustomMid = nowMs - 20 * 60 * 1000;
+      final tClaimedExt = nowMs - 40 * 60 * 1000;
+      final tOlderExt = nowMs - 90 * 60 * 1000;
+      final tExpiredClaimed = nowMs - 4 * 24 * 60 * 60 * 1000;
+
+      Incident? selected;
+      final claimedLocal = Incident(
+        id: 'inc-claimed-1',
+        number: 'POL-1120-a3f9',
+        title: '厂房仓库起火',
+        status: 'active',
+        createdAt: nowMs - 1 * 60 * 1000,
+        lastActivityAt: nowMs - 1 * 60 * 1000,
+        info: <String, dynamic>{
+          'external_id': 'ext-claimed-1',
+          'external_incident_number': 'POL-1120',
+          'external_source': 'police_api',
+          'administrative_area': '示例县',
+          'location': '示例县工业园8号',
+          'received_at': DateTime.fromMillisecondsSinceEpoch(
+            tClaimedExt,
+          ).toIso8601String(),
+        },
+      );
+      final customLocal = Incident(
+        id: 'inc-custom-1',
+        number: '2026-11-25-1140',
+        title: '自建演练现场',
+        status: 'active',
+        createdAt: tCustomMid,
+        lastActivityAt: tCustomMid,
+        info: const <String, dynamic>{'location': '训练塔北侧'},
+      );
+      final expiredClaimedLocal = Incident(
+        id: 'inc-expired-1',
+        number: 'POL-OLD-001',
+        title: '山林零星火点',
+        status: 'active',
+        createdAt: nowMs - 2 * 60 * 1000,
+        lastActivityAt: nowMs - 2 * 60 * 1000,
+        info: <String, dynamic>{
+          'external_id': 'ext-expired-1',
+          'external_incident_number': 'POL-OLD-001',
+          'external_source': 'police_api',
+          'administrative_area': '示例区',
+          'location': '示例区林场山坡',
+          'received_at': DateTime.fromMillisecondsSinceEpoch(
+            tExpiredClaimed,
+          ).toIso8601String(),
+        },
+      );
+
+      final extList = <ExternalIncident>[
+        ExternalIncident(
+          externalId: 'ext-newest',
+          incidentNumber: 'POL-1155',
+          districtName: '示例县',
+          incidentType: '火灾扑救',
+          crimeAddress: '示例县人民路1号',
+          eventSummary: '沿街商铺冒烟',
+          registerTime: tNewestExt,
+        ),
+        ExternalIncident(
+          externalId: 'ext-claimed-1',
+          incidentNumber: 'POL-1120',
+          districtName: '示例县',
+          incidentType: '火灾扑救',
+          crimeAddress: '示例县工业园8号',
+          eventSummary: '厂房仓库起火',
+          registerTime: tClaimedExt,
+          claimed: false,
+          claimedIncidentId: null,
+        ),
+        ExternalIncident(
+          externalId: 'ext-older',
+          incidentNumber: 'POL-1030',
+          districtName: '示例县',
+          incidentType: '抢险救援',
+          crimeAddress: '示例县大桥南口',
+          eventSummary: '货车追尾事故',
+          registerTime: tOlderExt,
+        ),
+      ];
+
+      await tester.pumpWidget(
+        wrap(
+          IncidentPickerPage(
+            activeIncidents: <Incident>[
+              claimedLocal,
+              expiredClaimedLocal,
+              customLocal,
+            ],
+            externalIncidents: extList,
+            loading: false,
+            now: fixedNow,
+            onSelect: (inc) async => selected = inc,
+            onCreate: () async {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('厂房仓库起火'), findsOneWidget);
+      expect(find.text('自建'), findsOneWidget);
+      expect(find.text('示例区'), findsOneWidget);
+
+      final y1 = tester.getTopLeft(find.text('沿街商铺冒烟')).dy;
+      final y2 = tester.getTopLeft(find.text('自建演练现场')).dy;
+      final y3 = tester.getTopLeft(find.text('厂房仓库起火')).dy;
+      final y4 = tester.getTopLeft(find.text('货车追尾事故')).dy;
+      final y5 = tester.getTopLeft(find.text('山林零星火点')).dy;
+      expect(y1, lessThan(y2));
+      expect(y2, lessThan(y3));
+      expect(y3, lessThan(y4));
+      expect(y4, lessThan(y5));
+
+      await tester.tap(find.text('厂房仓库起火'));
+      await tester.pumpAndSettle();
+      expect(selected?.id, 'inc-claimed-1');
+    });
+
+    test('ExternalIncident.copyWithClaimed 正确回写认领状态且保留原字段', () {
+      const origin = ExternalIncident(
+        externalId: 'ext-99',
+        incidentNumber: 'POL-99',
+        crimeAddress: '示例路99号',
+        eventSummary: '民房厨房起火',
+        registerTime: 1700000000000,
+      );
+      final updated = origin.copyWithClaimed(
+        claimed: true,
+        claimedIncidentId: 'inc-99',
+        claimedIncidentNumber: 'POL-99-abcd',
+        claimedIncidentTitle: '民房厨房起火',
+      );
+      expect(updated.claimed, isTrue);
+      expect(updated.claimedIncidentId, 'inc-99');
+      expect(updated.claimedIncidentNumber, 'POL-99-abcd');
+      expect(updated.claimedIncidentTitle, '民房厨房起火');
+      expect(updated.externalId, origin.externalId);
+      expect(updated.registerTime, origin.registerTime);
+    });
   });
 }

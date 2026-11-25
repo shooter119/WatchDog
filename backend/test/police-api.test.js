@@ -232,6 +232,9 @@ test('POST /api/incidents/claim-external 认领建档与幂等防重', async () 
     assert.ok(body1.id);
     assert.equal(body1.number, extIncident.incident_number);
     assert.equal(body1.title, '商铺电线短路起火', '认领后主标题应为提炼后的灾情事件而非地址');
+    assert.equal(body1.info.external_id, extIncident.external_id, 'info 应透传 external_id 供前端精确去重');
+    assert.equal(body1.info.external_incident_number, extIncident.incident_number, 'info 应透传 external_incident_number');
+    assert.equal(body1.info.external_source, 'police_api', 'info 应透传 external_source');
     assert.equal(body1.info.event_summary, '商铺电线短路起火');
     assert.equal(body1.info.disaster_category, 'fire');
     assert.equal(body1.info.latitude, '28.8693');
