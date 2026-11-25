@@ -449,14 +449,14 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
 
-        // 1. 删除与保存同为 56dp 且删除使用克制描边 dangerOutlined
+        // 1. 删除与保存同为 56dp 且删除使用实心红 danger
         final saveBtnFinder = find.byKey(const Key('note-editor-save-btn'));
         final deleteBtnFinder = find.byKey(const Key('note-editor-delete-btn'));
         final saveBtn = tester.widget<CommandButton>(saveBtnFinder);
         final deleteBtn = tester.widget<CommandButton>(deleteBtnFinder);
         expect(saveBtn.variant, CommandButtonVariant.primary);
         expect(saveBtn.size, CommandButtonSize.large);
-        expect(deleteBtn.variant, CommandButtonVariant.dangerOutlined);
+        expect(deleteBtn.variant, CommandButtonVariant.danger);
         expect(deleteBtn.size, CommandButtonSize.large);
         expect(
           tester.getSize(deleteBtnFinder).height,

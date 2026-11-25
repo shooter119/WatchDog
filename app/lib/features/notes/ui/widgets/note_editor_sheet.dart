@@ -209,7 +209,7 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
               key: const Key('note-editor-delete-btn'),
               label: '删除这条日志',
               icon: DsIcons.delete,
-              variant: CommandButtonVariant.dangerOutlined,
+              variant: CommandButtonVariant.danger,
               size: CommandButtonSize.large,
               expanded: true,
               confirmTitle: '删除日志',
