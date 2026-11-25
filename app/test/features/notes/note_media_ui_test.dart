@@ -279,5 +279,59 @@ void main() {
         );
       });
     }
+
+    testWidgets('NotePreviewSection 内带视频附件的卡片在 IntrinsicHeight 下底部不留多余空白', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final videoNote = Note(
+        id: 'n-video-height',
+        text: '现场人员已被救出。',
+        category: NoteCategory.water,
+        author: '张三',
+        createdAt: baseTs,
+        updatedAt: baseTs + 5000,
+        media: const <NoteMediaAttachment>[
+          NoteMediaAttachment(
+            id: 'nm-video-1',
+            kind: 'video',
+            durationMs: 4000,
+            available: true,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        _wrap(
+          Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: NotePreviewSection(
+                notes: <Note>[videoNote],
+                onSeeAll: () {},
+                onOpenMedia: (_) {},
+                now: fixedNow,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final mediaRect = tester.getRect(
+        find.byKey(const Key('note-media-card-nm-video-1')),
+      );
+      expect(mediaRect.width, closeTo(168.0, 1.0));
+      expect(mediaRect.height, closeTo(168.0 * 9 / 16, 1.0));
+
+      final cardRect = tester.getRect(find.byType(SurfaceCard).first);
+      final subtitleRect = tester.getRect(find.textContaining('张三'));
+      // 卡片底部到最后一行元信息底部应仅为卡片内边距（12dp），不应被 IntrinsicHeight 拉出大段空白
+      expect(cardRect.bottom - subtitleRect.bottom, lessThanOrEqualTo(16.0));
+    });
   });
 }

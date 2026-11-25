@@ -120,15 +120,19 @@ class _NoteMediaTile extends StatelessWidget {
     }
 
     final double targetMax = compact ? 168.0 : 216.0;
+    const double aspectRatio = 16 / 9;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
+        // 外层 TimelineList 使用 IntrinsicHeight 时，RenderConstrainedBox 不会用 maxWidth
+        // 裁剪传入 AspectRatio 的 width；必须同步声明 maxHeight，避免卡片底部拉出多余空白。
         ConstrainedBox(
           constraints: BoxConstraints(
             minWidth: 96.0,
             maxWidth: targetMax,
+            maxHeight: targetMax / aspectRatio,
           ),
           child: Semantics(
             button: onOpen != null,
@@ -144,7 +148,7 @@ class _NoteMediaTile extends StatelessWidget {
                 key: Key('note-media-card-${item.id}'),
                 onTap: onOpen,
                 child: AspectRatio(
-                  aspectRatio: 16 / 9,
+                  aspectRatio: aspectRatio,
                   child: Stack(
                     fit: StackFit.expand,
                     children: <Widget>[
