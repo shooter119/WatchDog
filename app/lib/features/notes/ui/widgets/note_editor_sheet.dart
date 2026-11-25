@@ -19,7 +19,9 @@ class NoteEditorResult {
 
 /// 弹出基于 [CommandSheet] 的火场日志新增/编辑/删除面板。
 ///
-/// 删除操作使用 [CommandButtonVariant.danger]，默认弹出二次确认 [CommandSheet]。
+/// 遵循 DS v3.0 `[ds:restrained-destructive]` 与 `[ds:sheet-form-layout]`：
+/// - 删除入口使用克制描边 [CommandButtonVariant.dangerOutlined] 且与保存主按钮同为 56dp（[CommandButtonSize.large]）；
+/// - 点击删除默认弹出二次确认 [CommandSheet]，确认抽屉内使用实心红 [CommandButtonVariant.danger]。
 Future<NoteEditorResult?> showNoteEditorSheet(
   BuildContext context, {
   Note? note,
@@ -46,20 +48,41 @@ class _NoteEditorSheet extends StatefulWidget {
 }
 
 class _NoteEditorSheetState extends State<_NoteEditorSheet> {
+  static const int _maxLength = 2000;
+  static const int _counterWarningThreshold = 1800;
+
   late final TextEditingController _controller;
   late String _category;
+  late int _textLength;
+  late bool _canSave;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: widget.note?.text ?? '');
+    final initialText = widget.note?.text ?? '';
+    _controller = TextEditingController(text: initialText);
     _category = widget.note?.category ?? NoteCategory.other;
+    _textLength = initialText.characters.length;
+    _canSave = initialText.trim().isNotEmpty;
+    _controller.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged() {
+    final nextLength = _controller.text.characters.length;
+    final nextCanSave = _controller.text.trim().isNotEmpty;
+    if (nextLength != _textLength || nextCanSave != _canSave) {
+      setState(() {
+        _textLength = nextLength;
+        _canSave = nextCanSave;
+      });
+    }
   }
 
   String _formatFullTime(int ts) {
@@ -88,6 +111,7 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
     final typo = ds.typography;
     final note = widget.note;
     final isEditing = note != null;
+    final counterNearLimit = _textLength >= _counterWarningThreshold;
 
     return CommandSheet(
       title: isEditing ? '编辑日志' : '手动记录',
@@ -100,6 +124,7 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
           variant: CommandButtonVariant.primary,
           size: CommandButtonSize.large,
           expanded: true,
+          enabled: _canSave,
           onPressed: _save,
         ),
       ],
@@ -107,12 +132,42 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '日志内容',
+                  style: typo.caption.copyWith(
+                    color: colors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                '$_textLength/$_maxLength',
+                key: const Key('note-editor-char-counter'),
+                style: typo.captionTabular.copyWith(
+                  color: counterNearLimit
+                      ? colors.cautionText
+                      : colors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: DsSpacing.sm),
           TextField(
             key: const Key('note-editor-text-field'),
             controller: _controller,
             maxLines: 4,
             minLines: 3,
-            maxLength: 2000,
+            maxLength: _maxLength,
+            buildCounter:
+                (
+                  BuildContext context, {
+                  required int currentLength,
+                  required bool isFocused,
+                  required int? maxLength,
+                }) => null,
             style: typo.body.copyWith(color: colors.textPrimary),
             decoration: InputDecoration(
               hintText: '记录此刻发生了什么…',
@@ -134,7 +189,7 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
               ),
             ),
           ),
-          const SizedBox(height: DsSpacing.md),
+          const SizedBox(height: DsSpacing.lg),
           Text(
             '日志分类',
             style: typo.caption.copyWith(
@@ -143,17 +198,10 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
             ),
           ),
           const SizedBox(height: DsSpacing.sm),
-          Wrap(
-            spacing: DsSpacing.sm,
-            runSpacing: DsSpacing.sm,
-            children: <Widget>[
-              for (final cat in NoteCategory.all)
-                _CategoryChip(
-                  label: cat,
-                  selected: _category == cat,
-                  onTap: () => setState(() => _category = cat),
-                ),
-            ],
+          _CategoryGrid(
+            categories: NoteCategory.all,
+            selectedCategory: _category,
+            onSelected: (String cat) => setState(() => _category = cat),
           ),
           if (isEditing) ...<Widget>[
             const SizedBox(height: DsSpacing.lg),
@@ -161,8 +209,8 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
               key: const Key('note-editor-delete-btn'),
               label: '删除这条日志',
               icon: DsIcons.delete,
-              variant: CommandButtonVariant.danger,
-              size: CommandButtonSize.standard,
+              variant: CommandButtonVariant.dangerOutlined,
+              size: CommandButtonSize.large,
               expanded: true,
               confirmTitle: '删除日志',
               confirmMessage: '确认删除这条日志？\n${note.text}',
@@ -172,6 +220,64 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// 响应式规整等宽分类网格（常规 3 列 × 2 行，大字号/极窄屏自动降为 2 列 × 3 行）。
+class _CategoryGrid extends StatelessWidget {
+  const _CategoryGrid({
+    required this.categories,
+    required this.selectedCategory,
+    required this.onSelected,
+  });
+
+  final List<String> categories;
+  final String selectedCategory;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final columns = (constraints.maxWidth < 280 || textScale > 1.15)
+            ? 2
+            : 3;
+        final rows = <Widget>[];
+        for (var i = 0; i < categories.length; i += columns) {
+          if (i > 0) {
+            rows.add(const SizedBox(height: DsSpacing.sm));
+          }
+          final rowChildren = <Widget>[];
+          for (var col = 0; col < columns; col++) {
+            if (col > 0) {
+              rowChildren.add(const SizedBox(width: DsSpacing.sm));
+            }
+            final index = i + col;
+            if (index < categories.length) {
+              final cat = categories[index];
+              rowChildren.add(
+                Expanded(
+                  child: _CategoryChip(
+                    label: cat,
+                    selected: selectedCategory == cat,
+                    onTap: () => onSelected(cat),
+                  ),
+                ),
+              );
+            } else {
+              rowChildren.add(const Expanded(child: SizedBox.shrink()));
+            }
+          }
+          rows.add(Row(children: rowChildren));
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: rows,
+        );
+      },
     );
   }
 }
@@ -197,32 +303,32 @@ class _CategoryChip extends StatelessWidget {
       label: label,
       excludeSemantics: true,
       child: Material(
-        type: MaterialType.transparency,
+        color: selected ? colors.brand : colors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: DsRadius.borderMd,
+          side: BorderSide(
+            color: selected ? colors.brand : colors.border,
+            width: 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
-          borderRadius: DsRadius.borderPill,
+          borderRadius: DsRadius.borderMd,
           onTap: onTap,
           child: ConstrainedBox(
             constraints: const BoxConstraints(
               minHeight: DsSizes.touchTarget,
-              minWidth: DsSizes.touchTarget,
             ),
-            child: Center(
-              widthFactor: 1,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: selected ? colors.brand : colors.surface,
-                  borderRadius: DsRadius.borderPill,
-                  border: Border.all(
-                    color: selected ? colors.brand : colors.border,
-                    width: 1,
-                  ),
-                ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: DsSpacing.sm,
+                vertical: DsSpacing.xs,
+              ),
+              child: Center(
                 child: Text(
                   label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: ds.typography.caption.copyWith(
                     color: selected ? colors.onBrand : colors.textPrimary,
                     fontWeight: FontWeight.w600,

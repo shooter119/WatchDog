@@ -1873,6 +1873,28 @@ void main() {
         );
       }
     });
+
+    testWidgets('CommandSheet 副标题默认启用 tabularFigures 等宽数字', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrapWithDsTheme(
+          child: const Scaffold(
+            body: CommandSheet(
+              title: '编辑日志',
+              subtitle: '2026-11-25 11:03:01',
+              child: Text('内容'),
+            ),
+          ),
+        ),
+      );
+
+      final subtitle = tester.widget<Text>(find.text('2026-11-25 11:03:01'));
+      expect(
+        subtitle.style?.fontFeatures,
+        contains(const FontFeature.tabularFigures()),
+      );
+    });
   });
 }
 

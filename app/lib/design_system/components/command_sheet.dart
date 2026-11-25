@@ -144,7 +144,7 @@ class CommandSheet extends StatelessWidget {
                   const SizedBox(height: DsSpacing.xs),
                   Text(
                     subtitle!,
-                    style: ds.typography.caption.copyWith(
+                    style: ds.typography.captionTabular.copyWith(
                       color: colors.textSecondary,
                     ),
                   ),

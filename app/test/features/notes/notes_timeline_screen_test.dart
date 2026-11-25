@@ -411,5 +411,81 @@ void main() {
       await tester.pump();
       expect(dialed, <Uri>[Uri(scheme: 'tel', path: '13800138000')]);
     });
+
+    testWidgets(
+      '编辑日志抽屉遵循 DS v3.0：删除与保存同为 56dp、删除克制描边、空值禁用保存且 360dp/130% 无溢出',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(360, 740);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final store = NotesStore(
+          initialNotes: <Note>[
+            Note(
+              id: 'ds-check-1',
+              text: '测试 123',
+              category: NoteCategory.rescue,
+              author: '张三',
+              createdAt: baseTs,
+              updatedAt: baseTs,
+            ),
+          ],
+          realNameProvider: () async => '张三',
+        );
+        addTearDown(store.dispose);
+
+        await tester.pumpWidget(
+          _wrap(
+            NotesTimelineScreen(store: store, now: fixedNow),
+            textScale: 1.3,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('测试 123'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        // 1. 删除与保存同为 56dp 且删除使用克制描边 dangerOutlined
+        final saveBtnFinder = find.byKey(const Key('note-editor-save-btn'));
+        final deleteBtnFinder = find.byKey(const Key('note-editor-delete-btn'));
+        final saveBtn = tester.widget<CommandButton>(saveBtnFinder);
+        final deleteBtn = tester.widget<CommandButton>(deleteBtnFinder);
+        expect(saveBtn.variant, CommandButtonVariant.primary);
+        expect(saveBtn.size, CommandButtonSize.large);
+        expect(deleteBtn.variant, CommandButtonVariant.dangerOutlined);
+        expect(deleteBtn.size, CommandButtonSize.large);
+        expect(
+          tester.getSize(deleteBtnFinder).height,
+          equals(tester.getSize(saveBtnFinder).height),
+        );
+        expect(
+          tester.getSize(saveBtnFinder).height,
+          greaterThanOrEqualTo(DsSizes.primaryAction),
+        );
+
+        // 2. 字数计数置于标题行右侧且启用等宽数字
+        final counterFinder = find.byKey(const Key('note-editor-char-counter'));
+        expect(counterFinder, findsOneWidget);
+        final counterText = tester.widget<Text>(counterFinder);
+        expect(counterText.data, '6/2000');
+        expect(
+          counterText.style?.fontFeatures,
+          contains(const FontFeature.tabularFigures()),
+        );
+
+        // 3. 清空输入时「保存修改」自动禁用
+        await tester.enterText(
+          find.byKey(const Key('note-editor-text-field')),
+          '   ',
+        );
+        await tester.pump();
+        final disabledSave = tester.widget<CommandButton>(saveBtnFinder);
+        expect(disabledSave.enabled, isFalse);
+      },
+    );
   });
 }
