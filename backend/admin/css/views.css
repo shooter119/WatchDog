@@ -485,10 +485,54 @@
   }
 
   /* Hazmat Specific Styles */
+  .hazmat-table {
+    table-layout: fixed;
+    width: 100%;
+    min-width: 900px;
+  }
+
+  .hazmat-table .col-name {
+    width: 20%;
+    min-width: 170px;
+  }
+
+  .hazmat-table .col-un-cas {
+    width: 128px;
+    white-space: nowrap;
+  }
+
+  .hazmat-table .col-category {
+    width: 168px;
+  }
+
+  .hazmat-table .col-water {
+    width: 118px;
+    white-space: nowrap;
+  }
+
+  .hazmat-table .col-risk {
+    width: auto;
+  }
+
+  .hazmat-table .col-actions {
+    width: 178px;
+    white-space: nowrap;
+  }
+
+  .hazmat-row {
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+  }
+
+  .hazmat-row:hover {
+    background: var(--surface-hover);
+  }
+
   .hazmat-name-cell {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
   }
 
   .hazmat-name-main {
@@ -499,6 +543,52 @@
   .hazmat-name-sub {
     font-size: 12px;
     color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  .hazmat-category-pill {
+    white-space: normal;
+    max-width: 152px;
+    line-height: 1.35;
+    text-align: left;
+    word-break: break-word;
+  }
+
+  .hazmat-risk-summary {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    font-size: 13px;
+    word-break: break-word;
+    outline: none;
+  }
+
+  .hazmat-risk-summary:focus-visible {
+    box-shadow: 0 0 0 2px var(--brand-accent);
+    border-radius: 4px;
+  }
+
+  .hazmat-risk-popover {
+    position: fixed;
+    z-index: var(--z-drawer);
+    max-width: 380px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    pointer-events: none;
   }
 
   .alias-badges {

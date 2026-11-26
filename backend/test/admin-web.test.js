@@ -387,3 +387,46 @@ test('前端 ES 模块纯函数：出处保留、地图互斥、危化品无兜�
   assert.equal(mem.size, 0);
   delete globalThis.sessionStorage;
 });
+
+test('危化品表格排版 CSS 与交互纯函数：列宽防折行、两行摘要截断、浮层边界适配与行点击防误触', async () => {
+  const viewsCss = fs.readFileSync(path.join(adminDir, 'css', 'views.css'), 'utf8');
+  assert.match(viewsCss, /\.hazmat-table\s*\{[^}]*table-layout:\s*fixed/i);
+  assert.match(viewsCss, /\.hazmat-table\s+\.col-un-cas\s*\{[^}]*white-space:\s*nowrap/i);
+  assert.match(viewsCss, /\.hazmat-category-pill\s*\{[^}]*white-space:\s*normal/i);
+  assert.match(viewsCss, /\.hazmat-risk-summary\s*\{[^}]*-webkit-line-clamp:\s*2/i);
+  assert.match(viewsCss, /\.hazmat-risk-popover\s*\{[^}]*position:\s*fixed/i);
+
+  const hazmatsView = await import(pathToFileURL(path.join(adminDir, 'js', 'views', 'hazmats', 'table-helpers.js')).href);
+
+  // 普通单元格点击应打开处置卡抽屉
+  assert.equal(
+    hazmatsView.shouldOpenDrawerFromRowClick({ target: { closest: () => null } }, () => ''),
+    true,
+  );
+  // 点击按钮/表单控件时不触发行点击
+  assert.equal(
+    hazmatsView.shouldOpenDrawerFromRowClick({ target: { closest: () => ({ tagName: 'BUTTON' }) } }, () => ''),
+    false,
+  );
+  // 划词复制文本时不触发行点击
+  assert.equal(
+    hazmatsView.shouldOpenDrawerFromRowClick({ target: { closest: () => null } }, () => '7664-93-9'),
+    false,
+  );
+
+  // 浮层默认位于锚点下方
+  const below = hazmatsView.computeRiskPopoverPosition(
+    { left: 200, top: 120, bottom: 160 },
+    { width: 300, height: 100 },
+    { width: 1280, height: 800 },
+  );
+  assert.deepEqual(below, { left: 200, top: 168 });
+
+  // 底部空间不足时自动翻转至上方，右侧溢出时钳制到视口内
+  const flipped = hazmatsView.computeRiskPopoverPosition(
+    { left: 1080, top: 700, bottom: 740 },
+    { width: 320, height: 120 },
+    { width: 1280, height: 800 },
+  );
+  assert.deepEqual(flipped, { left: 948, top: 572 });
+});

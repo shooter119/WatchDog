@@ -6,6 +6,9 @@ import { toast } from '../../ui/toast.js';
 import { openHazmatDrawer, signColorClass, waterReactivityMeta } from './drawer.js';
 import { openHazmatFormModal } from './form-modal.js';
 import { openHazmatImportModal } from './import-modal.js';
+import { computeRiskPopoverPosition, shouldOpenDrawerFromRowClick } from './table-helpers.js';
+
+export { computeRiskPopoverPosition, shouldOpenDrawerFromRowClick };
 
 const PAGE_SIZE = 20;
 
@@ -18,12 +21,43 @@ export function createHazmatsView() {
   let totalCount = 0;
   let loadSeq = 0;
   let loadAbort = null;
+  let activePopover = null;
+  let scrollCleanupBound = false;
 
   let searchInput = null;
   let waterSelect = null;
   let categorySelect = null;
   let tableContainer = null;
   let paginationContainer = null;
+
+  function hideRiskPopover() {
+    if (activePopover) {
+      activePopover.remove();
+      activePopover = null;
+    }
+  }
+
+  function showRiskPopover(anchorEl, text) {
+    const clean = String(text || '').trim();
+    if (!clean || !anchorEl || typeof document === 'undefined') return;
+    hideRiskPopover();
+    const overlayRoot = $('overlay-root') || document.body;
+    const popover = el('div', { className: 'hazmat-risk-popover', role: 'tooltip' }, clean);
+    popover.style.visibility = 'hidden';
+    overlayRoot.appendChild(popover);
+
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const popoverRect = popover.getBoundingClientRect();
+    const pos = computeRiskPopoverPosition(
+      anchorRect,
+      { width: popoverRect.width, height: popoverRect.height },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    popover.style.left = `${pos.left}px`;
+    popover.style.top = `${pos.top}px`;
+    popover.style.visibility = 'visible';
+    activePopover = popover;
+  }
 
   const debouncedSearch = debounce(() => {
     currentPage = 0;
@@ -34,6 +68,11 @@ export function createHazmatsView() {
     const root = $('hazmat-manager');
     if (!root || mounted) return;
     mounted = true;
+    if (!scrollCleanupBound && typeof window !== 'undefined') {
+      window.addEventListener('scroll', hideRiskPopover, true);
+      window.addEventListener('resize', hideRiskPopover);
+      scrollCleanupBound = true;
+    }
 
     searchInput = el('input', {
       type: 'search',
@@ -140,6 +179,7 @@ export function createHazmatsView() {
 
   function renderTable(items) {
     if (!tableContainer) return;
+    hideRiskPopover();
     if (!items.length) {
       tableContainer.replaceChildren(
         el(
@@ -158,14 +198,19 @@ export function createHazmatsView() {
       el(
         'tr',
         null,
-        el('th', null, '危化品名称 / 别名'),
-        el('th', null, 'UN / CAS'),
-        el('th', null, '危险类别'),
-        el('th', null, '水反应性'),
-        el('th', null, '核心风险'),
-        el('th', null, '操作'),
+        el('th', { className: 'col-name' }, '危化品名称 / 别名'),
+        el('th', { className: 'col-un-cas' }, 'UN / CAS'),
+        el('th', { className: 'col-category' }, '危险类别'),
+        el('th', { className: 'col-water' }, '水反应性'),
+        el('th', { className: 'col-risk' }, '核心风险'),
+        el('th', { className: 'col-actions' }, '操作'),
       ),
     );
+
+    const openDrawerFor = (item) => openHazmatDrawer(item, {
+      onEdit: (target) => openHazmatFormModal(target, { onSaved: () => loadList() }),
+      onDelete: handleDelete,
+    });
 
     const tbody = el(
       'tbody',
@@ -187,10 +232,7 @@ export function createHazmatsView() {
         const viewBtn = el('button', {
           type: 'button',
           className: 'btn btn-secondary btn-xs',
-          onClick: () => openHazmatDrawer(item, {
-            onEdit: (target) => openHazmatFormModal(target, { onSaved: () => loadList() }),
-            onDelete: handleDelete,
-          }),
+          onClick: () => openDrawerFor(item),
         }, '处置卡');
 
         const editBtn = el('button', {
@@ -201,41 +243,60 @@ export function createHazmatsView() {
 
         const delBtn = createAsyncButton('删除', 'btn btn-danger-outline btn-xs', () => handleDelete(item));
 
+        const riskSummaryText = String(item.danger_summary || '').trim();
+        const riskNode = riskSummaryText
+          ? el('div', {
+              className: 'hazmat-risk-summary',
+              tabIndex: 0,
+              onMouseEnter: (ev) => showRiskPopover(ev.currentTarget, riskSummaryText),
+              onMouseLeave: hideRiskPopover,
+              onFocus: (ev) => showRiskPopover(ev.currentTarget, riskSummaryText),
+              onBlur: hideRiskPopover,
+            }, riskSummaryText)
+          : el('span', { className: 'muted' }, '未录入');
+
         return el(
           'tr',
-          null,
+          {
+            className: 'hazmat-row',
+            onClick: (ev) => {
+              if (!shouldOpenDrawerFromRowClick(ev)) return;
+              hideRiskPopover();
+              openDrawerFor(item);
+            },
+          },
           el(
             'td',
-            null,
+            { className: 'col-name' },
             el(
               'div',
               { className: 'hazmat-name-cell' },
               el('span', { className: 'hazmat-name-main' }, item.name_cn || '—'),
-              item.name_en ? el('span', { className: 'hazmat-name-sub' }, item.name_en) : null,
+              item.name_en ? el('span', { className: 'hazmat-name-sub', title: item.name_en }, item.name_en) : null,
               aliasNodes.length ? el('div', { className: 'alias-badges' }, ...aliasNodes) : null,
             ),
           ),
           el(
             'td',
-            { className: 'mono' },
+            { className: 'mono col-un-cas' },
             el('div', null, item.un_number ? `UN ${item.un_number}` : '—'),
             item.cas_number ? el('div', { className: 'muted', style: { fontSize: '12px' } }, item.cas_number) : null,
           ),
           el(
             'td',
-            null,
+            { className: 'col-category' },
             item.danger_category
-              ? el('span', { className: `pill ${signColorClass(item.danger_sign_color)}` }, item.danger_category)
+              ? el('span', { className: `pill hazmat-category-pill ${signColorClass(item.danger_sign_color)}` }, item.danger_category)
               : el('span', { className: 'muted' }, '未标注'),
           ),
-          el('td', null, el('span', { className: `pill ${water.pillClass}` }, water.label)),
-          el('td', { style: { maxWidth: '280px' } }, item.danger_summary || el('span', { className: 'muted' }, '未录入')),
-          el('td', null, el('div', { className: 'table-actions' }, viewBtn, editBtn, delBtn)),
+          el('td', { className: 'col-water' }, el('span', { className: `pill ${water.pillClass}` }, water.label)),
+          el('td', { className: 'col-risk' }, riskNode),
+          el('td', { className: 'col-actions' }, el('div', { className: 'table-actions' }, viewBtn, editBtn, delBtn)),
         );
       }),
     );
 
-    tableContainer.replaceChildren(el('table', { className: 'data-table' }, thead, tbody));
+    tableContainer.replaceChildren(el('table', { className: 'data-table hazmat-table' }, thead, tbody));
   }
 
   function renderPagination() {
@@ -273,6 +334,7 @@ export function createHazmatsView() {
 
   async function loadList() {
     if (!tableContainer) return;
+    hideRiskPopover();
     const seq = ++loadSeq;
     loadAbort?.abort();
     loadAbort = new AbortController();
@@ -325,6 +387,12 @@ export function createHazmatsView() {
     debouncedSearch.cancel();
     loadAbort?.abort();
     loadSeq += 1;
+    hideRiskPopover();
+    if (scrollCleanupBound && typeof window !== 'undefined') {
+      window.removeEventListener('scroll', hideRiskPopover, true);
+      window.removeEventListener('resize', hideRiskPopover);
+      scrollCleanupBound = false;
+    }
     closeDrawer();
     closeAllModals();
     mounted = false;

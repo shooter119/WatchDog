@@ -20,7 +20,7 @@
   - `ui/`: `toast.js`、`modal.js`、`drawer.js`、`tag-input.js`、`dropzone.js`
   - `views/login.js`: 扫码登录状态机（生成、单飞轮询、基于 `expiresInMs` 倒计时、成功即销毁 DOM 与定时器）
   - `views/sites/`: 重点单位列表、基本信息表单、九大分项左纲右编编辑器（含吸底操作栏、应急预案正文与附件管理、历史版本预览）
-  - `views/hazmats/`: 危化品速查表、安全详情抽屉（空字段绝不兜底推荐用水）、新增/编辑弹窗、Excel 批量导入弹窗
+  - `views/hazmats/`: 危化品速查表（固定语义列宽防 UN/CAS 折行、核心风险两行摘要截断 + `#overlay-root` 悬浮气泡、整行点击开处置卡并防误触）、安全详情抽屉（空字段绝不兜底推荐用水）、新增/编辑弹窗、Excel 批量导入弹窗
   - `views/water-sources/`: 大队级水源台账与回收站视图（平台管理员大队切换、分类统计卡片、筛选分页、GCJ-02 数值编辑弹窗与回收站恢复，严格遵守 `script-src 'self'` CSP 不加载外部地图脚本）
   - `views/access/`: 平台管理员成员授权与审计日志
   - `pano/main.js`: 360° 全景查看器（请求取消防竞态、WebGL `MAX_TEXTURE_SIZE` 自动降级 `page-1.jpg`、`requestAnimationFrame` VR 同步与离页资源释放）
